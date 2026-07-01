@@ -11,10 +11,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f12ca0ae-71b8-404b-9251-033208bec667" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/F1_XR_Visualizer/01_Scenes/SampleScene.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/F1_XR_Visualizer/01_Scenes/SampleScene.unity" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/F1_XR_Visualizer/02_Scripts/ARPlanePlacementController.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/F1_XR_Visualizer/02_Scripts/ARPlanePlacementController.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/F1_XR_Visualizer/02_Scripts/Editor/ARPlanePlacementSceneSetup.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/F1_XR_Visualizer/02_Scripts/Editor/ARPlanePlacementSceneSetup.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/encodings.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/indexLayout.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/projectSettingsUpdater.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.F1_XR_Visualizer/.idea/vcs.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tools/UnityMcpServer/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tools/UnityMcpServer/official-client.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tools/UnityMcpServer/server.js" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -45,7 +50,7 @@
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "cidr.known.project.marker": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "dev/CYE",
+    "git-widget-placeholder": "Merging develop",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -101,6 +106,7 @@
       <updated>1782731135572</updated>
       <workItem from="1782731139311" duration="498000" />
       <workItem from="1782893232277" duration="109000" />
+      <workItem from="1782895182770" duration="1106000" />
     </task>
     <servers />
   </component>
