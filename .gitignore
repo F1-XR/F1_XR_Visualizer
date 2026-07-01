@@ -41,6 +41,9 @@
 # JetBrains IDE project settings
 .idea/
 
+# Local Unity MCP tooling
+Tools/UnityMcpServer/
+
 # Visual Studio cache directory
 .vs/
 
