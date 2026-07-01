@@ -74,6 +74,10 @@ namespace F1XR.Editor
             serialized.FindProperty("minimumPlacementHeight").floatValue = 0.35f;
             serialized.FindProperty("verticalOffset").floatValue = 0.04f;
             serialized.FindProperty("defaultCubeSize").floatValue = 0.08f;
+            serialized.FindProperty("showPlacementReticle").boolValue = true;
+            serialized.FindProperty("reticleSize").floatValue = 0.025f;
+            serialized.FindProperty("reticleSurfaceOffset").floatValue = 0.005f;
+            serialized.FindProperty("reticleColor").colorValue = Color.red;
             serialized.FindProperty("useControllerTriggerPlacement").boolValue = true;
             serialized.FindProperty("useHandPinchPlacement").boolValue = true;
             serialized.FindProperty("inputArmDelay").floatValue = 0.5f;

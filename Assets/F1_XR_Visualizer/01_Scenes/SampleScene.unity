@@ -1417,6 +1417,10 @@ MonoBehaviour:
   minimumPlacementHeight: 0.35
   verticalOffset: 0.04
   defaultCubeSize: 0.08
+  showPlacementReticle: 1
+  reticleSize: 0.025
+  reticleSurfaceOffset: 0.005
+  reticleColor: {r: 1, g: 0, b: 0, a: 1}
   placeAction:
     m_UseReference: 0
     m_Action:
