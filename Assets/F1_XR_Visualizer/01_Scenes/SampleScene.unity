@@ -1339,6 +1339,7 @@ GameObject:
   - component: {fileID: 1240350764}
   - component: {fileID: 1240350763}
   - component: {fileID: 1240350767}
+  - component: {fileID: 1240350768}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -1417,10 +1418,6 @@ MonoBehaviour:
   minimumPlacementHeight: 0.35
   verticalOffset: 0.04
   defaultCubeSize: 0.08
-  showPlacementReticle: 1
-  reticleSize: 0.025
-  reticleSurfaceOffset: 0.005
-  reticleColor: {r: 1, g: 0, b: 0, a: 1}
   placeAction:
     m_UseReference: 0
     m_Action:
@@ -1504,6 +1501,34 @@ MonoBehaviour:
   planeManager: {fileID: 0}
   raycastManager: {fileID: 0}
   disableManagersUntilPermissionGranted: 1
+--- !u!114 &1240350768
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1240350759}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.RedPointer
+  placementController: {fileID: 1240350763}
+  showPointer: 1
+  showControllerPointers: 1
+  showHandPointers: 1
+  pointerSize: 0.01
+  surfaceOffset: 0.005
+  pointerColor:
+    r: 1
+    g: 0
+    b: 0
+    a: 1
+  pointerMaterial: {fileID: 0}
+  leftControllerPointer: {fileID: 0}
+  rightControllerPointer: {fileID: 0}
+  leftHandPointer: {fileID: 0}
+  rightHandPointer: {fileID: 0}
 --- !u!1 &1252842142 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3133494152545806682, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
