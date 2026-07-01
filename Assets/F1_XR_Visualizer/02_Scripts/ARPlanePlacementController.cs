@@ -26,6 +26,12 @@ namespace F1XR.AR
         [SerializeField] float verticalOffset = 0.04f;
         [SerializeField] float defaultCubeSize = 0.08f;
 
+        [Header("Placement Reticle")]
+        [SerializeField] bool showPlacementReticle = true;
+        [SerializeField] float reticleSize = 0.025f;
+        [SerializeField] float reticleSurfaceOffset = 0.005f;
+        [SerializeField] Color reticleColor = Color.red;
+
         [Header("Optional Input")]
         [SerializeField] InputActionProperty placeAction;
         [SerializeField] bool useControllerTriggerPlacement = true;
@@ -49,6 +55,8 @@ namespace F1XR.AR
         bool wasRightPinching;
         bool placementInputsArmed;
         float enableTime;
+        GameObject placementReticle;
+        Material placementReticleMaterial;
 
         void Reset()
         {
@@ -94,6 +102,7 @@ namespace F1XR.AR
             if (placeAction.action != null)
                 placeAction.action.Disable();
 
+            HidePlacementReticle();
             UnsubscribeHandSubsystem();
         }
 
@@ -107,8 +116,11 @@ namespace F1XR.AR
                 if (Time.time >= enableTime + inputArmDelay && !IsAnyPlacementInputHeld())
                     placementInputsArmed = true;
 
+                HidePlacementReticle();
                 return;
             }
+
+            UpdatePlacementReticle();
 
             if (placeAction.action != null && placeAction.action.WasPressedThisFrame())
             {
@@ -124,6 +136,54 @@ namespace F1XR.AR
 
             if (useHandPinchPlacement && handSubsystem == null)
                 TrySubscribeHandSubsystem();
+        }
+
+        void UpdatePlacementReticle()
+        {
+            if (!showPlacementReticle ||
+                spawnedCube != null ||
+                !TryGetPlacementHit(out var pose, out _))
+            {
+                HidePlacementReticle();
+                return;
+            }
+
+            EnsurePlacementReticle();
+            placementReticle.transform.SetPositionAndRotation(
+                pose.position + pose.up * reticleSurfaceOffset,
+                Quaternion.identity);
+            placementReticle.SetActive(true);
+        }
+
+        void EnsurePlacementReticle()
+        {
+            if (placementReticle != null)
+                return;
+
+            placementReticle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            placementReticle.name = "AR Placement Reticle";
+            placementReticle.transform.localScale = Vector3.one * reticleSize;
+
+            var collider = placementReticle.GetComponent<Collider>();
+            if (collider != null)
+                Destroy(collider);
+
+            placementReticleMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color") ?? Shader.Find("Standard"))
+            {
+                color = reticleColor
+            };
+
+            var renderer = placementReticle.GetComponent<MeshRenderer>();
+            if (renderer != null)
+                renderer.sharedMaterial = placementReticleMaterial;
+
+            placementReticle.SetActive(false);
+        }
+
+        void HidePlacementReticle()
+        {
+            if (placementReticle != null)
+                placementReticle.SetActive(false);
         }
 
         bool IsAnyPlacementInputHeld()
@@ -279,6 +339,19 @@ namespace F1XR.AR
             if (spawnedCube != null && !allowReplaceExistingCube)
                 return false;
 
+            if (!TryGetPlacementHit(out var pose, out var plane))
+                return false;
+
+            PlaceAt(pose, plane);
+            HidePlacementReticle();
+            return true;
+        }
+
+        bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
+        {
+            pose = default;
+            plane = null;
+
             if (raycastManager == null || rayOrigin == null)
                 return false;
 
@@ -288,11 +361,12 @@ namespace F1XR.AR
 
             foreach (var hit in s_Hits)
             {
-                var plane = planeManager != null ? planeManager.GetPlane(hit.trackableId) : null;
-                if (!ShouldAcceptPlane(hit.pose, plane))
+                var hitPlane = planeManager != null ? planeManager.GetPlane(hit.trackableId) : null;
+                if (!ShouldAcceptPlane(hit.pose, hitPlane))
                     continue;
 
-                PlaceAt(hit.pose, plane);
+                pose = hit.pose;
+                plane = hitPlane;
                 return true;
             }
 
