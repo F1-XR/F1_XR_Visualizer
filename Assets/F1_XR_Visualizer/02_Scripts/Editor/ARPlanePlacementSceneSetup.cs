@@ -34,6 +34,15 @@ namespace F1XR.Editor
             if (controller == null)
                 controller = xrOrigin.AddComponent<ARPlanePlacementController>();
 
+            var redPointerType = System.Type.GetType("F1XR.AR.RedPointer, Assembly-CSharp");
+            Component redPointer = null;
+            if (redPointerType != null)
+            {
+                redPointer = xrOrigin.GetComponent(redPointerType);
+                if (redPointer == null)
+                    redPointer = xrOrigin.AddComponent(redPointerType);
+            }
+
             var raycastManager = xrOrigin.GetComponent<ARRaycastManager>();
             if (raycastManager == null)
                 raycastManager = xrOrigin.AddComponent<ARRaycastManager>();
@@ -74,10 +83,6 @@ namespace F1XR.Editor
             serialized.FindProperty("minimumPlacementHeight").floatValue = 0.35f;
             serialized.FindProperty("verticalOffset").floatValue = 0.04f;
             serialized.FindProperty("defaultCubeSize").floatValue = 0.08f;
-            serialized.FindProperty("showPlacementReticle").boolValue = true;
-            serialized.FindProperty("reticleSize").floatValue = 0.025f;
-            serialized.FindProperty("reticleSurfaceOffset").floatValue = 0.005f;
-            serialized.FindProperty("reticleColor").colorValue = Color.red;
             serialized.FindProperty("useControllerTriggerPlacement").boolValue = true;
             serialized.FindProperty("useHandPinchPlacement").boolValue = true;
             serialized.FindProperty("inputArmDelay").floatValue = 0.5f;
@@ -87,8 +92,23 @@ namespace F1XR.Editor
             serialized.FindProperty("pinchDistanceReleaseThreshold").floatValue = 0.04f;
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
+            if (redPointer != null)
+            {
+                var pointerSerialized = new SerializedObject(redPointer);
+                pointerSerialized.FindProperty("placementController").objectReferenceValue = controller;
+                pointerSerialized.FindProperty("showPointer").boolValue = true;
+                pointerSerialized.FindProperty("showControllerPointers").boolValue = true;
+                pointerSerialized.FindProperty("showHandPointers").boolValue = true;
+                pointerSerialized.FindProperty("pointerSize").floatValue = 0.025f;
+                pointerSerialized.FindProperty("surfaceOffset").floatValue = 0.005f;
+                pointerSerialized.FindProperty("pointerColor").colorValue = Color.red;
+                pointerSerialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+
             EditorUtility.SetDirty(xrOrigin);
             EditorUtility.SetDirty(controller);
+            if (redPointer != null)
+                EditorUtility.SetDirty(redPointer);
             EditorUtility.SetDirty(anchorManager);
             EditorUtility.SetDirty(raycastManager);
             EditorUtility.SetDirty(planeManager);

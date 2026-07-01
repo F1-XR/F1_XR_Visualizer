@@ -26,12 +26,6 @@ namespace F1XR.AR
         [SerializeField] float verticalOffset = 0.04f;
         [SerializeField] float defaultCubeSize = 0.08f;
 
-        [Header("Placement Reticle")]
-        [SerializeField] bool showPlacementReticle = true;
-        [SerializeField] float reticleSize = 0.025f;
-        [SerializeField] float reticleSurfaceOffset = 0.005f;
-        [SerializeField] Color reticleColor = Color.red;
-
         [Header("Optional Input")]
         [SerializeField] InputActionProperty placeAction;
         [SerializeField] bool useControllerTriggerPlacement = true;
@@ -55,8 +49,14 @@ namespace F1XR.AR
         bool wasRightPinching;
         bool placementInputsArmed;
         float enableTime;
-        GameObject placementReticle;
-        Material placementReticleMaterial;
+        InputDeviceCharacteristics lastPressedControllerHandedness;
+        Handedness lastPinchHandedness = Handedness.Invalid;
+        InputAction leftControllerPointerPositionAction;
+        InputAction leftControllerPointerRotationAction;
+        InputAction leftControllerTrackingStateAction;
+        InputAction rightControllerPointerPositionAction;
+        InputAction rightControllerPointerRotationAction;
+        InputAction rightControllerTrackingStateAction;
 
         void Reset()
         {
@@ -81,12 +81,16 @@ namespace F1XR.AR
 
             if (rayOrigin == null && Camera.main != null)
                 rayOrigin = Camera.main.transform;
+
+            CreateControllerPointerActions();
         }
 
         void OnEnable()
         {
             if (placeAction.action != null)
                 placeAction.action.Enable();
+
+            SetControllerPointerActionsEnabled(true);
 
             enableTime = Time.time;
             placementInputsArmed = false;
@@ -102,8 +106,13 @@ namespace F1XR.AR
             if (placeAction.action != null)
                 placeAction.action.Disable();
 
-            HidePlacementReticle();
+            SetControllerPointerActionsEnabled(false);
             UnsubscribeHandSubsystem();
+        }
+
+        void OnDestroy()
+        {
+            DisposeControllerPointerActions();
         }
 
         void Update()
@@ -116,11 +125,8 @@ namespace F1XR.AR
                 if (Time.time >= enableTime + inputArmDelay && !IsAnyPlacementInputHeld())
                     placementInputsArmed = true;
 
-                HidePlacementReticle();
                 return;
             }
-
-            UpdatePlacementReticle();
 
             if (placeAction.action != null && placeAction.action.WasPressedThisFrame())
             {
@@ -138,54 +144,6 @@ namespace F1XR.AR
                 TrySubscribeHandSubsystem();
         }
 
-        void UpdatePlacementReticle()
-        {
-            if (!showPlacementReticle ||
-                spawnedCube != null ||
-                !TryGetPlacementHit(out var pose, out _))
-            {
-                HidePlacementReticle();
-                return;
-            }
-
-            EnsurePlacementReticle();
-            placementReticle.transform.SetPositionAndRotation(
-                pose.position + pose.up * reticleSurfaceOffset,
-                Quaternion.identity);
-            placementReticle.SetActive(true);
-        }
-
-        void EnsurePlacementReticle()
-        {
-            if (placementReticle != null)
-                return;
-
-            placementReticle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            placementReticle.name = "AR Placement Reticle";
-            placementReticle.transform.localScale = Vector3.one * reticleSize;
-
-            var collider = placementReticle.GetComponent<Collider>();
-            if (collider != null)
-                Destroy(collider);
-
-            placementReticleMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color") ?? Shader.Find("Standard"))
-            {
-                color = reticleColor
-            };
-
-            var renderer = placementReticle.GetComponent<MeshRenderer>();
-            if (renderer != null)
-                renderer.sharedMaterial = placementReticleMaterial;
-
-            placementReticle.SetActive(false);
-        }
-
-        void HidePlacementReticle()
-        {
-            if (placementReticle != null)
-                placementReticle.SetActive(false);
-        }
-
         bool IsAnyPlacementInputHeld()
         {
             return wasLeftControllerTriggerPressed ||
@@ -201,6 +159,11 @@ namespace F1XR.AR
             var rightPressed = IsControllerTriggerPressed(InputDeviceCharacteristics.Right);
             var leftPressedThisFrame = leftPressed && !wasLeftControllerTriggerPressed;
             var rightPressedThisFrame = rightPressed && !wasRightControllerTriggerPressed;
+
+            if (rightPressedThisFrame)
+                lastPressedControllerHandedness = InputDeviceCharacteristics.Right;
+            else if (leftPressedThisFrame)
+                lastPressedControllerHandedness = InputDeviceCharacteristics.Left;
 
             wasLeftControllerTriggerPressed = leftPressed;
             wasRightControllerTriggerPressed = rightPressed;
@@ -274,6 +237,11 @@ namespace F1XR.AR
                 HasUpdateSuccessFlag(updateSuccessFlags, XRHandSubsystem.UpdateSuccessFlags.RightHandJoints),
                 ref wasRightPinching);
 
+            if (rightPinchStarted)
+                lastPinchHandedness = Handedness.Right;
+            else if (leftPinchStarted)
+                lastPinchHandedness = Handedness.Left;
+
             if (placementInputsArmed && (leftPinchStarted || rightPinchStarted))
                 TryPlaceCube();
         }
@@ -343,19 +311,49 @@ namespace F1XR.AR
                 return false;
 
             PlaceAt(pose, plane);
-            HidePlacementReticle();
             return true;
         }
 
-        bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
+        public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
             pose = default;
             plane = null;
 
-            if (raycastManager == null || rayOrigin == null)
+            if (raycastManager == null || !TryGetPlacementRay(out var ray))
                 return false;
 
-            var ray = new Ray(rayOrigin.position, rayOrigin.forward);
+            return TryGetPlacementHit(ray, out pose, out plane);
+        }
+
+        public bool TryGetControllerPlacementHit(InputDeviceCharacteristics handedness, out Pose pose, out ARPlane plane)
+        {
+            pose = default;
+            plane = null;
+
+            return TryGetControllerRay(handedness, out var ray) &&
+                TryGetPlacementHit(ray, out pose, out plane);
+        }
+
+        public bool TryGetHandPlacementHit(Handedness handedness, out Pose pose, out ARPlane plane)
+        {
+            pose = default;
+            plane = null;
+
+            if (handSubsystem == null)
+                TrySubscribeHandSubsystem();
+
+            return TryGetHandAimRay(handedness, out var ray) &&
+                TryGetPlacementHit(ray, out pose, out plane);
+        }
+
+        public bool TryGetPlacementHit(Ray ray, out Pose pose, out ARPlane plane)
+        {
+            pose = default;
+            plane = null;
+
+            if (raycastManager == null)
+                return false;
+
             if (!raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
                 return false;
 
@@ -370,6 +368,191 @@ namespace F1XR.AR
                 return true;
             }
 
+            return false;
+        }
+
+        bool TryGetPlacementRay(out Ray ray)
+        {
+            if (lastPinchHandedness == Handedness.Right && TryGetHandAimRay(Handedness.Right, out ray))
+                return true;
+
+            if (lastPinchHandedness == Handedness.Left && TryGetHandAimRay(Handedness.Left, out ray))
+                return true;
+
+            if (lastPressedControllerHandedness != 0 && TryGetControllerRay(lastPressedControllerHandedness, out ray))
+                return true;
+
+            if (TryGetControllerRay(InputDeviceCharacteristics.Right, out ray) ||
+                TryGetControllerRay(InputDeviceCharacteristics.Left, out ray) ||
+                TryGetHandAimRay(Handedness.Right, out ray) ||
+                TryGetHandAimRay(Handedness.Left, out ray))
+            {
+                return true;
+            }
+
+            ray = default;
+            return false;
+        }
+
+        bool TryGetControllerRay(InputDeviceCharacteristics handedness, out Ray ray)
+        {
+            if (TryGetControllerPointerActionRay(handedness, out ray))
+                return true;
+
+            return TryGetControllerDeviceRay(handedness, out ray);
+        }
+
+        static bool TryGetControllerDeviceRay(InputDeviceCharacteristics handedness, out Ray ray)
+        {
+            s_InputDevices.Clear();
+            InputDevices.GetDevicesWithCharacteristics(
+                handedness | InputDeviceCharacteristics.Controller,
+                s_InputDevices);
+
+            foreach (var device in s_InputDevices)
+            {
+                if (device.isValid &&
+                    device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.devicePosition, out var position) &&
+                    device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.deviceRotation, out var rotation))
+                {
+                    ray = new Ray(position, rotation * Vector3.forward);
+                    return true;
+                }
+            }
+
+            ray = default;
+            return false;
+        }
+
+        bool TryGetControllerPointerActionRay(InputDeviceCharacteristics handedness, out Ray ray)
+        {
+            var positionAction = (handedness & InputDeviceCharacteristics.Left) != 0
+                ? leftControllerPointerPositionAction
+                : rightControllerPointerPositionAction;
+            var rotationAction = (handedness & InputDeviceCharacteristics.Left) != 0
+                ? leftControllerPointerRotationAction
+                : rightControllerPointerRotationAction;
+            var trackingStateAction = (handedness & InputDeviceCharacteristics.Left) != 0
+                ? leftControllerTrackingStateAction
+                : rightControllerTrackingStateAction;
+
+            if (positionAction == null ||
+                rotationAction == null ||
+                positionAction.controls.Count == 0 ||
+                rotationAction.controls.Count == 0)
+            {
+                ray = default;
+                return false;
+            }
+
+            if (trackingStateAction != null && trackingStateAction.controls.Count > 0)
+            {
+                var trackingState = (InputTrackingState)trackingStateAction.ReadValue<int>();
+                var hasPositionAndRotation =
+                    (trackingState & InputTrackingState.Position) != 0 &&
+                    (trackingState & InputTrackingState.Rotation) != 0;
+                if (!hasPositionAndRotation)
+                {
+                    ray = default;
+                    return false;
+                }
+            }
+
+            var position = positionAction.ReadValue<Vector3>();
+            var rotation = rotationAction.ReadValue<Quaternion>();
+            ray = new Ray(position, rotation * Vector3.forward);
+            return true;
+        }
+
+        void CreateControllerPointerActions()
+        {
+            leftControllerPointerPositionAction ??= CreateValueAction(
+                "Left Controller Pointer Position",
+                "<XRController>{LeftHand}/pointerPosition",
+                "Vector3");
+            leftControllerPointerRotationAction ??= CreateValueAction(
+                "Left Controller Pointer Rotation",
+                "<XRController>{LeftHand}/pointerRotation",
+                "Quaternion");
+            leftControllerTrackingStateAction ??= CreateValueAction(
+                "Left Controller Tracking State",
+                "<XRController>{LeftHand}/trackingState",
+                "Integer");
+            rightControllerPointerPositionAction ??= CreateValueAction(
+                "Right Controller Pointer Position",
+                "<XRController>{RightHand}/pointerPosition",
+                "Vector3");
+            rightControllerPointerRotationAction ??= CreateValueAction(
+                "Right Controller Pointer Rotation",
+                "<XRController>{RightHand}/pointerRotation",
+                "Quaternion");
+            rightControllerTrackingStateAction ??= CreateValueAction(
+                "Right Controller Tracking State",
+                "<XRController>{RightHand}/trackingState",
+                "Integer");
+        }
+
+        static InputAction CreateValueAction(string name, string binding, string expectedControlType)
+        {
+            return new InputAction(
+                name,
+                InputActionType.Value,
+                binding,
+                expectedControlType: expectedControlType);
+        }
+
+        void SetControllerPointerActionsEnabled(bool enabled)
+        {
+            SetActionEnabled(leftControllerPointerPositionAction, enabled);
+            SetActionEnabled(leftControllerPointerRotationAction, enabled);
+            SetActionEnabled(leftControllerTrackingStateAction, enabled);
+            SetActionEnabled(rightControllerPointerPositionAction, enabled);
+            SetActionEnabled(rightControllerPointerRotationAction, enabled);
+            SetActionEnabled(rightControllerTrackingStateAction, enabled);
+        }
+
+        static void SetActionEnabled(InputAction action, bool enabled)
+        {
+            if (action == null)
+                return;
+
+            if (enabled)
+                action.Enable();
+            else
+                action.Disable();
+        }
+
+        void DisposeControllerPointerActions()
+        {
+            leftControllerPointerPositionAction?.Dispose();
+            leftControllerPointerRotationAction?.Dispose();
+            leftControllerTrackingStateAction?.Dispose();
+            rightControllerPointerPositionAction?.Dispose();
+            rightControllerPointerRotationAction?.Dispose();
+            rightControllerTrackingStateAction?.Dispose();
+        }
+
+        bool TryGetHandAimRay(Handedness handedness, out Ray ray)
+        {
+            if (handSubsystem == null)
+            {
+                ray = default;
+                return false;
+            }
+
+            var commonHandGestures = handedness == Handedness.Left
+                ? handSubsystem.leftHandCommonGestures
+                : handedness == Handedness.Right
+                    ? handSubsystem.rightHandCommonGestures
+                    : null;
+
+            if (commonHandGestures != null && commonHandGestures.TryGetAimPose(out var aimPose))
+            {
+                ray = new Ray(aimPose.position, aimPose.rotation * Vector3.forward);
+                return true;
+            }
+
+            ray = default;
             return false;
         }
 
