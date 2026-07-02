@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -16,9 +17,8 @@ namespace F1XR.RestAPI.UI
         public Button playPauseButton;
         public TMP_Text playPauseLabel;
 
-        public Button[] speedButtons;
-        public float[] speedValues = { 0.5f, 1f, 2f, 4f };
-        public TMP_Text speedLabel;
+        public TMP_Dropdown speedDropdown;
+        public float[] speedValues = { 0.5f, 1f, 2f, 4f, 8f, 16f };
 
         public TMP_Text timeLabel;
 
@@ -27,18 +27,32 @@ namespace F1XR.RestAPI.UI
             if (bar != null && bar.player == null)
                 bar.player = player;
         }
+        
+        private void Start()
+        {
+            if (speedDropdown == null)
+                return;
+
+            speedDropdown.ClearOptions();
+
+            List<string> labels = new();
+            foreach (float speed in speedValues)
+                labels.Add($"{speed:0.##}x");
+
+            speedDropdown.AddOptions(labels);
+            speedDropdown.value = 1;
+            speedDropdown.RefreshShownValue();
+
+            SetSpeedIndex(speedDropdown.value);
+        }
 
         private void OnEnable()
         {
             if (playPauseButton != null)
                 playPauseButton.onClick.AddListener(TogglePlayPause);
 
-            for (int i = 0; i < speedButtons.Length && i < speedValues.Length; i++)
-            {
-                int index = i;
-                if (speedButtons[index] != null)
-                    speedButtons[index].onClick.AddListener(() => SetSpeed(speedValues[index]));
-            }
+            if (speedDropdown != null)
+                speedDropdown.onValueChanged.AddListener(SetSpeedIndex);
         }
 
         private void OnDisable()
@@ -46,11 +60,8 @@ namespace F1XR.RestAPI.UI
             if (playPauseButton != null)
                 playPauseButton.onClick.RemoveListener(TogglePlayPause);
 
-            for (int i = 0; i < speedButtons.Length; i++)
-            {
-                if (speedButtons[i] != null)
-                    speedButtons[i].onClick.RemoveAllListeners();
-            }
+            if (speedDropdown != null)
+                speedDropdown.onValueChanged.RemoveListener(SetSpeedIndex);
         }
 
         private void Update()
@@ -84,9 +95,6 @@ namespace F1XR.RestAPI.UI
             if (playPauseLabel != null)
                 playPauseLabel.text = player.IsPlaying ? "Pause" : "Play";
 
-            if (speedLabel != null)
-                speedLabel.text = $"{player.playbackSpeed:0.##}x";
-
             if (timeLabel != null)
                 timeLabel.text = $"{FormatTime(player.CurrentTime)} / {FormatTime(player.Duration)}";
 
@@ -102,6 +110,14 @@ namespace F1XR.RestAPI.UI
             int secs = totalSeconds % 60;
 
             return $"{minutes:00}:{secs:00}";
+        }
+        
+        private void SetSpeedIndex(int index)
+        {
+            if (speedValues == null || index < 0 || index >= speedValues.Length)
+                return;
+
+            SetSpeed(speedValues[index]);
         }
     }
 }
