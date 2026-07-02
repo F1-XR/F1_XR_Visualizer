@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 namespace F1XR.AR
 {
@@ -13,9 +15,14 @@ namespace F1XR.AR
         [SerializeField] float pinchEndDistance = 0.05f;
         [SerializeField] float minScale = 0.02f;
         [SerializeField] float maxScale = 5f;
+        [SerializeField] float controllerRayDistance = 20f;
+        [SerializeField] LayerMask controllerRayMask = ~0;
+        [SerializeField] XRBaseInputInteractor leftInteractor;
+        [SerializeField] XRBaseInputInteractor rightInteractor;
         [SerializeField] XRGrabInteractable grab;
 
         static readonly List<XRHandSubsystem> HandSubsystems = new();
+        static readonly List<InputDevice> InputDevices = new();
 
         XRHandSubsystem handSubsystem;
         bool scaling;
@@ -24,8 +31,11 @@ namespace F1XR.AR
         bool hadGrab;
         bool wasGrabEnabled;
         bool waitForPinchRelease;
+        bool controllerScaling;
         float startHandDistance;
         Vector3 startHandVector;
+        Vector3 startPivotWorld;
+        Vector3 startPivotLocal;
         Vector3 startScale;
 
         void Awake()
@@ -49,6 +59,9 @@ namespace F1XR.AR
 
         void Update()
         {
+            if (TryUpdateControllerScale())
+                return;
+
             if (handSubsystem == null || !handSubsystem.running)
                 FindHandSubsystem();
 
@@ -86,7 +99,10 @@ namespace F1XR.AR
                 scaling = true;
                 startHandDistance = handDistance;
                 startHandVector = handVector;
+                startPivotWorld = Vector3.Lerp(leftGrabPoint, rightGrabPoint, 0.5f);
+                startPivotLocal = target.InverseTransformPoint(startPivotWorld);
                 startScale = target.localScale;
+                controllerScaling = false;
                 SetGrabEnabled(false);
                 return;
             }
@@ -99,7 +115,7 @@ namespace F1XR.AR
             }
 
             var scaleRatio = handDistance / startHandDistance;
-            target.localScale = ClampScale(startScale * scaleRatio);
+            ApplyScale(scaleRatio);
         }
 
         void StopScaling()
@@ -108,6 +124,7 @@ namespace F1XR.AR
                 return;
 
             scaling = false;
+            controllerScaling = false;
             SetGrabEnabled(true);
         }
 
@@ -128,6 +145,185 @@ namespace F1XR.AR
                 grab.enabled = wasGrabEnabled;
 
             hadGrab = false;
+        }
+
+        bool TryUpdateControllerScale()
+        {
+            if (scaling && !controllerScaling)
+                return false;
+
+            if (!TryGetTrigger(XRNode.LeftHand, out var leftDevicePoint) ||
+                !TryGetTrigger(XRNode.RightHand, out var rightDevicePoint))
+            {
+                if (controllerScaling)
+                    StopScaling();
+
+                return false;
+            }
+
+            if (leftInteractor == null || rightInteractor == null ||
+                !IsInteractorNear(leftInteractor, leftDevicePoint) ||
+                !IsInteractorNear(rightInteractor, rightDevicePoint))
+                FindControllerInteractors(leftDevicePoint, rightDevicePoint);
+
+            if (!TryGetRayHit(leftInteractor, out var leftPoint) ||
+                !TryGetRayHit(rightInteractor, out var rightPoint))
+            {
+                if (controllerScaling)
+                    StopScaling();
+
+                return false;
+            }
+
+            var controllerDistance = Vector3.Distance(leftPoint, rightPoint);
+            if (controllerDistance <= Mathf.Epsilon)
+                return true;
+
+            var controllerVector = rightPoint - leftPoint;
+            if (!scaling)
+            {
+                scaling = true;
+                startHandDistance = controllerDistance;
+                startHandVector = controllerVector;
+                startPivotWorld = Vector3.Lerp(leftPoint, rightPoint, 0.5f);
+                startPivotLocal = target.InverseTransformPoint(startPivotWorld);
+                startScale = target.localScale;
+                controllerScaling = true;
+                SetGrabEnabled(false);
+                return true;
+            }
+
+            if (Vector3.Dot(startHandVector.normalized, controllerVector.normalized) <= 0.25f)
+            {
+                StopScaling();
+                return true;
+            }
+
+            ApplyScale(controllerDistance / startHandDistance);
+            return true;
+        }
+
+        void FindControllerInteractors(Vector3 leftDevicePoint, Vector3 rightDevicePoint)
+        {
+            var interactors = FindObjectsByType<XRBaseInputInteractor>(FindObjectsInactive.Exclude);
+            var leftDistance = float.MaxValue;
+            var rightDistance = float.MaxValue;
+
+            foreach (var interactor in interactors)
+            {
+                if (interactor is not IXRRayProvider)
+                    continue;
+
+                var objectName = interactor.name;
+                if (objectName.Contains("Left"))
+                    SetNearestInteractor(interactor, leftDevicePoint, ref leftInteractor, ref leftDistance);
+                else if (objectName.Contains("Right"))
+                    SetNearestInteractor(interactor, rightDevicePoint, ref rightInteractor, ref rightDistance);
+            }
+        }
+
+        static void SetNearestInteractor(XRBaseInputInteractor interactor, Vector3 devicePoint, ref XRBaseInputInteractor nearest, ref float nearestDistance)
+        {
+            var distance = Vector3.Distance(GetInteractorPoint(interactor), devicePoint);
+            if (distance >= nearestDistance)
+                return;
+
+            nearest = interactor;
+            nearestDistance = distance;
+        }
+
+        static bool IsInteractorNear(XRBaseInputInteractor interactor, Vector3 devicePoint)
+        {
+            return interactor != null && Vector3.Distance(GetInteractorPoint(interactor), devicePoint) <= 0.35f;
+        }
+
+        static Vector3 GetInteractorPoint(XRBaseInputInteractor interactor)
+        {
+            if (interactor is IXRRayProvider rayProvider)
+            {
+                var origin = rayProvider.GetOrCreateRayOrigin();
+                if (origin != null)
+                    return origin.position;
+            }
+
+            return interactor.transform.position;
+        }
+
+        static bool TryGetTrigger(XRNode node, out Vector3 point)
+        {
+            InputDevices.Clear();
+            UnityEngine.XR.InputDevices.GetDevicesAtXRNode(node, InputDevices);
+
+            foreach (var device in InputDevices)
+            {
+                if (!device.TryGetFeatureValue(CommonUsages.triggerButton, out var pressed) || !pressed)
+                    continue;
+
+                if (!device.TryGetFeatureValue(CommonUsages.devicePosition, out point))
+                    point = default;
+
+                return true;
+            }
+
+            point = default;
+            return false;
+        }
+
+        bool TryGetRayHit(XRBaseInputInteractor interactor, out Vector3 point)
+        {
+            if (interactor == null)
+            {
+                point = default;
+                return false;
+            }
+
+            if (interactor is IXRRayProvider rayProvider)
+            {
+                var origin = rayProvider.GetOrCreateRayOrigin();
+                if (origin != null && TryRaycastTarget(origin, out point))
+                    return true;
+
+                var hitTransform = rayProvider.rayEndTransform;
+                if (hitTransform != null && IsTargetHit(hitTransform))
+                {
+                    point = rayProvider.rayEndPoint;
+                    return true;
+                }
+            }
+
+            if (interactor is XRRayInteractor rayInteractor &&
+                rayInteractor.TryGetCurrent3DRaycastHit(out var hit) &&
+                IsTargetHit(hit.transform))
+            {
+                point = hit.point;
+                return true;
+            }
+
+            point = default;
+            return false;
+        }
+
+        bool TryRaycastTarget(Transform rayOrigin, out Vector3 point)
+        {
+            var hits = Physics.RaycastAll(rayOrigin.position, rayOrigin.forward, controllerRayDistance, controllerRayMask, QueryTriggerInteraction.Ignore);
+            var bestDistance = float.MaxValue;
+            point = default;
+
+            foreach (var hit in hits)
+            {
+                if (!IsTargetHit(hit.transform) || hit.distance >= bestDistance)
+                    continue;
+
+                bestDistance = hit.distance;
+                point = hit.point;
+            }
+
+            return bestDistance < float.MaxValue;
+        }
+
+        bool IsTargetHit(Transform hitTransform)
+        {
+            return hitTransform == target || hitTransform.IsChildOf(target);
         }
 
         void FindHandSubsystem()
@@ -207,6 +403,12 @@ namespace F1XR.AR
 
             var ratio = Mathf.Clamp(size, minScale, maxScale) / size;
             return scale * ratio;
+        }
+
+        void ApplyScale(float scaleRatio)
+        {
+            target.localScale = ClampScale(startScale * scaleRatio);
+            target.position += startPivotWorld - target.TransformPoint(startPivotLocal);
         }
     }
 }
