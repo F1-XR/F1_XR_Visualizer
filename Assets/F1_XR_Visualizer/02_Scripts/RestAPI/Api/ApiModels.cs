@@ -62,6 +62,16 @@ namespace F1XR.RestAPI.Api
     }
 
     [System.Serializable]
+    public class DriverInfoDto
+    {
+        public int driverNumber;
+        public string nameAcronym;
+        public string fullName;
+        public string teamName;
+        public string teamColour;
+    }
+    
+    [System.Serializable]
     public class DatasetManifestDto
     {
         public string datasetId;
@@ -83,6 +93,7 @@ namespace F1XR.RestAPI.Api
         public float playbackStartT;
 
         public ChunkInfoDto[] chunks;
+        public DriverInfoDto[] drivers;
     }
 
     [System.Serializable]
@@ -105,6 +116,7 @@ namespace F1XR.RestAPI.Api
         public float endT;
         public int overlapSeconds;
         public LocationSample[] samples;
+        public PositionSampleDto[] positions;
     }
 
     [Serializable]
@@ -115,6 +127,14 @@ namespace F1XR.RestAPI.Api
         public float x;
         public float y;
         public float z;
+    }
+    
+    [Serializable]
+    public class PositionSampleDto
+    {
+        public float t;
+        public int driverNumber;
+        public int position;
     }
 }
 

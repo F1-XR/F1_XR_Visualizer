@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Serialization;
 using UnityEngine.UI;
 using F1XR.RestAPI.Replay;
+using F1XR.RestAPI.Api;
 
 namespace F1XR.RestAPI.UI
 {
@@ -21,6 +22,7 @@ namespace F1XR.RestAPI.UI
         public float[] speedValues = { 0.5f, 1f, 2f, 4f, 8f, 16f };
 
         public TMP_Text timeLabel;
+        public TMP_Text rankText;
 
         private void Awake()
         {
@@ -86,6 +88,19 @@ namespace F1XR.RestAPI.UI
             player.SetSpeed(speed);
             Refresh();
         }
+        
+        private static string FormatRanks(System.Collections.Generic.List<PositionSampleDto> positions)
+        {
+            if (positions == null || positions.Count == 0)
+                return "";
+
+            System.Text.StringBuilder builder = new();
+
+            foreach (PositionSampleDto item in positions)
+                builder.AppendLine($"P{item.position}  #{item.driverNumber}");
+
+            return builder.ToString();
+        }
 
         public void Refresh()
         {
@@ -100,6 +115,9 @@ namespace F1XR.RestAPI.UI
 
             if (bar != null)
                 bar.Refresh();
+            
+            if (rankText != null)
+                rankText.text = FormatRanks(player.GetPositions());
         }
 
         private static string FormatTime(float seconds)
