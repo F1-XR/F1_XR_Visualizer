@@ -1340,6 +1340,7 @@ GameObject:
   - component: {fileID: 1240350763}
   - component: {fileID: 1240350767}
   - component: {fileID: 1240350768}
+  - component: {fileID: 1240350769}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -1430,6 +1431,7 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: 0}
+  inputSourcePriority: 1
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
   inputArmDelay: 0.5
@@ -1520,6 +1522,26 @@ MonoBehaviour:
   pointerSize: 0.01
   surfaceOffset: 0.005
   pointerColor: {r: 1, g: 0, b: 0, a: 1}
+--- !u!114 &1240350769
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1240350759}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d9f4d99a1a447b4870a5e7f2f49ef7a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.XRInputViewGate
+  placementController: {fileID: 1240350763}
+  controllerViews:
+  - {fileID: 949741818}
+  - {fileID: 1873976510}
+  handViews:
+  - {fileID: 1389989642}
+  - {fileID: 1772523067}
+  - {fileID: 2147431192}
 --- !u!1 &1252842142 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3133494152545806682, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
@@ -2282,7 +2304,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &2147431193
 Transform:
   m_ObjectHideFlags: 0
