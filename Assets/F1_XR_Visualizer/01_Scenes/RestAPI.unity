@@ -2890,6 +2890,7 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: 0}
+  inputSourcePriority: 1
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
   inputArmDelay: 0.5
@@ -3425,7 +3426,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RestApiAutoReplayController
   api: {fileID: 1518326053}
   player: {fileID: 1518326052}
-  autoStart: 0
+  autoStart: 1
   preferredYear: 2024
   preferredCircuitShortName: 
   preferredSessionName: Race
