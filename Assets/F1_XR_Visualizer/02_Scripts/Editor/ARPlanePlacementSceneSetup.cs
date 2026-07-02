@@ -132,14 +132,16 @@ namespace F1XR.Editor
 
             var meshRenderer = plane.AddComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = material;
+            meshRenderer.enabled = false;
 
             plane.AddComponent<MeshCollider>();
 
             var lineRenderer = plane.AddComponent<LineRenderer>();
             lineRenderer.sharedMaterial = material;
+            lineRenderer.enabled = false;
             lineRenderer.loop = true;
             lineRenderer.useWorldSpace = false;
-            lineRenderer.widthMultiplier = 0.01f;
+            lineRenderer.widthMultiplier = 0f;
 
             var prefab = PrefabUtility.SaveAsPrefabAsset(plane, PlanePrefabPath);
             Object.DestroyImmediate(plane);
@@ -173,7 +175,7 @@ namespace F1XR.Editor
 
         static void ConfigurePlaneMaterial(Material material)
         {
-            material.color = new Color(0f, 0.9f, 0.8f, 0.2f);
+            material.color = new Color(0f, 0.9f, 0.8f, 0f);
 
             if (material.HasProperty("_Surface"))
                 material.SetFloat("_Surface", 1f);
