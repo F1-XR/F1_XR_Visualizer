@@ -10,6 +10,7 @@ namespace F1XR.RestAPI.Replay
         private readonly GameObject carPrefab;
         private readonly Dictionary<int, CarAgent> cars = new();
         private readonly Dictionary<int, Quaternion> baseRotations = new();
+        private readonly Dictionary<int, Color> driverColors = new();
 
         public CarReplayView(GameObject carPrefab)
         {
@@ -75,6 +76,8 @@ namespace F1XR.RestAPI.Replay
                 car = obj.AddComponent<CarAgent>();
 
             car.Init(driver);
+            if (driverColors.TryGetValue(driver, out Color color))
+                car.SetColor(color);
             baseRotations.Add(driver, obj.transform.rotation);
             cars.Add(driver, car);
 
@@ -100,6 +103,23 @@ namespace F1XR.RestAPI.Replay
                     : Quaternion.identity;
 
                 car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+            }
+        }
+        
+        public void SetDrivers(DriverInfoDto[] drivers)
+        {
+            driverColors.Clear();
+
+            if (drivers == null)
+                return;
+
+            foreach (DriverInfoDto driver in drivers)
+            {
+                if (string.IsNullOrWhiteSpace(driver.teamColour))
+                    continue;
+
+                if (ColorUtility.TryParseHtmlString("#" + driver.teamColour, out Color color))
+                    driverColors[driver.driverNumber] = color;
             }
         }
     }

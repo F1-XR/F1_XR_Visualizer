@@ -18,5 +18,19 @@ namespace F1XR.RestAPI.Replay
             rawPosition = position;
             transform.position = position;
         }
+        
+        public void SetColor(Color color)
+        {
+            Renderer[] renderers = GetComponentsInChildren<Renderer>();
+
+            foreach (Renderer item in renderers)
+            {
+                MaterialPropertyBlock block = new();
+                item.GetPropertyBlock(block);
+                block.SetColor("_BaseColor", color);
+                block.SetColor("_Color", color);
+                item.SetPropertyBlock(block);
+            }
+        }
     }
 }
