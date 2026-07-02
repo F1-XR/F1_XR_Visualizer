@@ -36,6 +36,7 @@ namespace F1XR.RestAPI.Replay
         
         private readonly ReplaySamples replaySamples = new();
         private readonly ReplayPositions replayPositions = new();
+        private readonly ReplayTires replayTires = new();
         private CarReplayView carView;
     
         public float CurrentTime => _time;
@@ -241,16 +242,7 @@ namespace F1XR.RestAPI.Replay
             if (!_playOnReady || _hasStarted || _manifest == null || _manifest.chunks == null)
                 return;
 
-            int firstIndex = -1;
-
-            foreach (ChunkInfoDto chunk in _manifest.chunks)
-            {
-                if (chunk.status == "ready" && chunk.sampleCount > 0)
-                {
-                    firstIndex = chunk.index;
-                    break;
-                }
-            }
+            int firstIndex = FindReadyStartChunk();
 
             if (firstIndex < 0)
                 return;
@@ -263,9 +255,30 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            _time = _manifest.chunks[firstIndex].startT;
+            ChunkInfoDto startChunk = _manifest.chunks[firstIndex];
+            _time = Mathf.Clamp(_manifest.playbackStartT, startChunk.startT, startChunk.endT);
             _hasStarted = true;
             Play();
+        }
+
+        private int FindReadyStartChunk()
+        {
+            int fallbackIndex = -1;
+            bool requiresStartChunk = _manifest.playbackStartT > 0.0f;
+
+            foreach (ChunkInfoDto chunk in _manifest.chunks)
+            {
+                if (chunk.status != "ready" || chunk.sampleCount <= 0)
+                    continue;
+
+                if (fallbackIndex < 0)
+                    fallbackIndex = chunk.index;
+
+                if (_manifest.playbackStartT >= chunk.startT && _manifest.playbackStartT <= chunk.endT)
+                    return chunk.index;
+            }
+
+            return requiresStartChunk ? -1 : fallbackIndex;
         }
 
         private IEnumerator LoadChunk(int chunkIndex)
@@ -303,6 +316,7 @@ namespace F1XR.RestAPI.Replay
             {
                 replaySamples.Add(loadedChunk);
                 replayPositions.Add(loadedChunk);
+                replayTires.Add(loadedChunk);
                 Debug.Log($"Loaded chunk {loadedChunk.chunkIndex}, samples={loadedChunk.samples.Length}");
             }
 
@@ -340,6 +354,63 @@ namespace F1XR.RestAPI.Replay
             return replayPositions.Get(_time);
         }
 
+        public TireSampleDto GetTire(int driverNumber)
+        {
+            return replayTires.Get(driverNumber, _time);
+        }
+
+        public string GetDriverLabel(int driverNumber)
+        {
+            if (_manifest == null || _manifest.drivers == null)
+                return $"#{driverNumber}";
+
+            foreach (DriverInfoDto driver in _manifest.drivers)
+            {
+                if (driver.driverNumber != driverNumber)
+                    continue;
+
+                return string.IsNullOrWhiteSpace(driver.nameAcronym)
+                    ? $"#{driverNumber}"
+                    : driver.nameAcronym;
+            }
+
+            return $"#{driverNumber}";
+        }
+
+        public DriverInfoDto GetDriverInfo(int driverNumber)
+        {
+            if (_manifest == null || _manifest.drivers == null)
+                return null;
+
+            foreach (DriverInfoDto driver in _manifest.drivers)
+            {
+                if (driver.driverNumber == driverNumber)
+                    return driver;
+            }
+
+            return null;
+        }
+
+        public Color GetDriverColor(int driverNumber)
+        {
+            if (_manifest == null || _manifest.drivers == null)
+                return new Color(0.25f, 0.28f, 0.34f);
+
+            foreach (DriverInfoDto driver in _manifest.drivers)
+            {
+                if (driver.driverNumber != driverNumber)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(driver.teamColour) &&
+                    ColorUtility.TryParseHtmlString("#" + driver.teamColour, out Color color))
+                    return color;
+
+                break;
+            }
+
+            return new Color(0.25f, 0.28f, 0.34f);
+        }
+
         private void ClearReplay()
         {
             if (_seekCoroutine != null)
@@ -353,6 +424,7 @@ namespace F1XR.RestAPI.Replay
             _loadingChunks.Clear();
             carView.Clear();
             replayPositions.Clear();
+            replayTires.Clear();
         }
 
         private void OnDestroy()

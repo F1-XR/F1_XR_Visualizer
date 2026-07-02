@@ -15,6 +15,7 @@ public class RestApiAutoReplayController : MonoBehaviour
     public int replayMinutes = 6;
     public int chunkMinutes = 2;
     public int overlapSeconds = 2;
+    public bool skipWarmupLap = true;
 
     private void Awake()
     {
@@ -80,7 +81,8 @@ public class RestApiAutoReplayController : MonoBehaviour
             overlapSeconds = overlapSeconds,
             initialChunks = 1,
             prefetchChunks = 0,
-            requestedMinutes = Mathf.Max(1, replayMinutes)
+            requestedMinutes = Mathf.Max(1, replayMinutes),
+            skipWarmupLap = skipWarmupLap
         };
 
         yield return api.CreateDataset(
