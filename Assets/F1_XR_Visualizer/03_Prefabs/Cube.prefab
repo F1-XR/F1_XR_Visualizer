@@ -13,9 +13,10 @@ GameObject:
   - component: {fileID: 395979875581047549}
   - component: {fileID: 4566510001405849141}
   - component: {fileID: 4139923384712111477}
+  - component: {fileID: -4986074849990570823}
   - component: {fileID: -8101045832309729982}
   m_Layer: 0
-  m_Name: ARPlanePlacementCube
+  m_Name: Cube
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -141,6 +142,25 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 0
   m_CollisionDetection: 0
+--- !u!114 &-4986074849990570823
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5460963645228481172}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bde3547c14b275e45803af69a1b40f81, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ScaleController
+  target: {fileID: 0}
+  grabRadius: 0.3
+  pinchStartDistance: 0.035
+  pinchEndDistance: 0.05
+  minScale: 0.001
+  maxScale: 5
+  grab: {fileID: 0}
 --- !u!114 &-8101045832309729982
 MonoBehaviour:
   m_ObjectHideFlags: 0
