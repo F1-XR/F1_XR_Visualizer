@@ -25,7 +25,6 @@ namespace F1XR.Editor
             EditorApplication.quitting += Stop;
         }
 
-        [MenuItem("F1 XR/MCP/Start Unity Bridge")]
         public static void Start()
         {
             if (running)
@@ -54,7 +53,6 @@ namespace F1XR.Editor
             }
         }
 
-        [MenuItem("F1 XR/MCP/Stop Unity Bridge")]
         public static void Stop()
         {
             running = false;

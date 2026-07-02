@@ -16,7 +16,6 @@ namespace F1XR.Editor
         const string PlanePrefabPath = "Assets/F1_XR_Visualizer/03_Prefabs/ARPlaneVisualizer.prefab";
         const string PlaneMaterialPath = "Assets/F1_XR_Visualizer/08_Materials/ARPlaneVisualizer.mat";
 
-        [MenuItem("F1 XR/Setup AR Plane Placement")]
         public static void ConfigureSampleScene()
         {
             var scene = SceneManager.GetActiveScene();
