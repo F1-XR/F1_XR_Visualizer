@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using F1XR.AR;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using UnityEngine;
@@ -9,6 +10,13 @@ namespace F1XR.RestAPI.Replay
     {
         private readonly GameObject carPrefab;
         private readonly Dictionary<int, CarAgent> cars = new();
+        
+        private bool hasOrigin;
+        private Vector3 origin;
+        private ARPlanePlacementController placement;
+        
+        private readonly Dictionary<int, Quaternion> baseRotations = new();
+        private readonly Dictionary<int, Color> driverColors = new();
 
         public CarReplayView(GameObject carPrefab)
         {
@@ -52,6 +60,9 @@ namespace F1XR.RestAPI.Replay
             }
 
             cars.Clear();
+            baseRotations.Clear();
+            hasOrigin = false;
+            origin = Vector3.zero;
         }
 
         private CarAgent CreateCar(int driver)
@@ -73,25 +84,69 @@ namespace F1XR.RestAPI.Replay
                 car = obj.AddComponent<CarAgent>();
 
             car.Init(driver);
+            if (driverColors.TryGetValue(driver, out Color color))
+                car.SetColor(color);
+            baseRotations.Add(driver, obj.transform.rotation);
             cars.Add(driver, car);
 
             return car;
         }
+        
+        public void SetPlacement(ARPlanePlacementController source)
+        {
+            placement = source;
+        }
 
-        private static void MoveCar(CarAgent car, LocationSample a, LocationSample b, float time)
+        private void MoveCar(CarAgent car, LocationSample a, LocationSample b, float time)
         {
             float duration = Mathf.Max(0.001f, b.t - a.t);
             float u = Mathf.Clamp01((time - a.t) / duration);
 
             Vector3 posA = CoordinateUtil.ToUnity(a);
             Vector3 posB = CoordinateUtil.ToUnity(b);
+
+            if (!hasOrigin)
+            {
+                origin = posA;
+                hasOrigin = true;
+            }
+
+            posA -= origin;
+            posB -= origin;
+
             Vector3 position = Vector3.Lerp(posA, posB, u);
+
+            if (placement != null && placement.HasPlacement)
+                position += placement.PlacementPosition;
 
             car.SetPosition(position);
 
             Vector3 direction = posB - posA;
             if (direction.sqrMagnitude > 0.0001f)
-                car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            {
+                Quaternion baseRotation = baseRotations.TryGetValue(car.driverNumber, out Quaternion rotation)
+                    ? rotation
+                    : Quaternion.identity;
+
+                car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+            }
+        }
+        
+        public void SetDrivers(DriverInfoDto[] drivers)
+        {
+            driverColors.Clear();
+
+            if (drivers == null)
+                return;
+
+            foreach (DriverInfoDto driver in drivers)
+            {
+                if (string.IsNullOrWhiteSpace(driver.teamColour))
+                    continue;
+
+                if (ColorUtility.TryParseHtmlString("#" + driver.teamColour, out Color color))
+                    driverColors[driver.driverNumber] = color;
+            }
         }
     }
 }

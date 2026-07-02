@@ -5,7 +5,7 @@ namespace F1XR.RestAPI.Utility
 {
     public static class CoordinateUtil
     {
-        public static float scale = 0.01f;
+        public static float scale = 0.001f;
 
         public static Vector3 ToUnity(LocationSample sample)
         {
