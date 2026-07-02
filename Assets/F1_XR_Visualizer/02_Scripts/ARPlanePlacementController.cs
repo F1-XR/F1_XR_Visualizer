@@ -51,6 +51,11 @@ namespace F1XR.AR
 
         ARAnchor currentAnchor;
         GameObject spawnedCube;
+        
+        public bool HasPlacement => spawnedCube != null;
+        public Transform PlacementTransform => spawnedCube != null ? spawnedCube.transform : null;
+        public Vector3 PlacementPosition => spawnedCube != null ? spawnedCube.transform.position : Vector3.zero;
+        
         bool wasLeftControllerTriggerPressed;
         bool wasRightControllerTriggerPressed;
         XRHandSubsystem handSubsystem;

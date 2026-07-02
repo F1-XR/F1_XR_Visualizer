@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using F1XR.RestAPI.Api;
+using F1XR.RestAPI.Utility;
+using F1XR.AR;
 
 namespace F1XR.RestAPI.Replay
 {
@@ -9,11 +11,14 @@ namespace F1XR.RestAPI.Replay
     {
         public ApiClient api;
         public GameObject carPrefab;
+        public ARPlanePlacementController placement;
 
         public bool playOnReady = true;
         public float playbackSpeed = 1f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
+        
+        public float positionScale = 0.01f;
 
         private string _datasetId;
         private DatasetManifestDto _manifest;
@@ -30,6 +35,7 @@ namespace F1XR.RestAPI.Replay
         private readonly HashSet<int> _loadingChunks = new();
         
         private readonly ReplaySamples replaySamples = new();
+        private readonly ReplayPositions replayPositions = new();
         private CarReplayView carView;
     
         public float CurrentTime => _time;
@@ -62,12 +68,19 @@ namespace F1XR.RestAPI.Replay
         
         private void Awake()
         {
+            if (placement == null)
+                placement = FindFirstObjectByType<ARPlanePlacementController>();
+
             carView = new CarReplayView(carPrefab);
+            carView.SetPlacement(placement);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
         {
+            CoordinateUtil.scale = positionScale;
+            
             _manifest = manifest;
+            carView.SetDrivers(manifest.drivers);
             _datasetId = manifest.datasetId;
             _time = manifest.playbackStartT;
             _isPlaying = false;
@@ -75,6 +88,11 @@ namespace F1XR.RestAPI.Replay
             _hasStarted = false;
 
             ClearReplay();
+
+            if (placement == null)
+                placement = FindFirstObjectByType<ARPlanePlacementController>();
+
+            carView.SetPlacement(placement);
 
             if (_manifestPollingCoroutine != null)
                 StopCoroutine(_manifestPollingCoroutine);
@@ -284,6 +302,7 @@ namespace F1XR.RestAPI.Replay
             if (loadedChunk.samples != null && loadedChunk.samples.Length > 0)
             {
                 replaySamples.Add(loadedChunk);
+                replayPositions.Add(loadedChunk);
                 Debug.Log($"Loaded chunk {loadedChunk.chunkIndex}, samples={loadedChunk.samples.Length}");
             }
 
@@ -315,6 +334,11 @@ namespace F1XR.RestAPI.Replay
 
             return _manifest.chunks.Length - 1;
         }
+        
+        public List<PositionSampleDto> GetPositions()
+        {
+            return replayPositions.Get(_time);
+        }
 
         private void ClearReplay()
         {
@@ -328,6 +352,7 @@ namespace F1XR.RestAPI.Replay
             _loadedChunks.Clear();
             _loadingChunks.Clear();
             carView.Clear();
+            replayPositions.Clear();
         }
 
         private void OnDestroy()
