@@ -48,22 +48,24 @@ namespace F1XR.AR
             var leftControllerPose = default(Pose);
             var rightHandPose = default(Pose);
             var leftHandPose = default(Pose);
-            var rightControllerHit = showControllerPointers &&
+            var useControllers = showControllerPointers && placementController.CanUseControllers();
+            var useHands = showHandPointers && placementController.CanUseHands();
+            var rightControllerHit = useControllers &&
                 placementController.TryGetControllerPlacementHit(
                     InputDeviceCharacteristics.Right,
                     out rightControllerPose,
                     out _);
-            var leftControllerHit = showControllerPointers &&
+            var leftControllerHit = useControllers &&
                 placementController.TryGetControllerPlacementHit(
                     InputDeviceCharacteristics.Left,
                     out leftControllerPose,
                     out _);
-            var rightHandHit = showHandPointers &&
+            var rightHandHit = useHands &&
                 placementController.TryGetHandPlacementHit(
                     Handedness.Right,
                     out rightHandPose,
                     out _);
-            var leftHandHit = showHandPointers &&
+            var leftHandHit = useHands &&
                 placementController.TryGetHandPlacementHit(
                     Handedness.Left,
                     out leftHandPose,
