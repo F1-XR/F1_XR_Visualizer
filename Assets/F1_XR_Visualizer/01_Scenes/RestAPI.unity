@@ -3518,11 +3518,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1518326053}
-  carPrefab: {fileID: 2422433936049914456, guid: 7ea40ec6fc0058d4488894c3fcd748b0, type: 3}
+  carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  placement: {fileID: 1240350763}
   playOnReady: 1
   playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
+  positionScale: 0.0001
 --- !u!114 &1518326053
 MonoBehaviour:
   m_ObjectHideFlags: 0

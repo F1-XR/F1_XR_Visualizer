@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using F1XR.RestAPI.Api;
+using F1XR.RestAPI.Utility;
+using F1XR.AR;
 
 namespace F1XR.RestAPI.Replay
 {
@@ -9,11 +11,14 @@ namespace F1XR.RestAPI.Replay
     {
         public ApiClient api;
         public GameObject carPrefab;
+        public ARPlanePlacementController placement;
 
         public bool playOnReady = true;
         public float playbackSpeed = 1f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
+        
+        public float positionScale = 0.01f;
 
         private string _datasetId;
         private DatasetManifestDto _manifest;
@@ -63,11 +68,17 @@ namespace F1XR.RestAPI.Replay
         
         private void Awake()
         {
+            if (placement == null)
+                placement = FindFirstObjectByType<ARPlanePlacementController>();
+
             carView = new CarReplayView(carPrefab);
+            carView.SetPlacement(placement);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
         {
+            CoordinateUtil.scale = positionScale;
+            
             _manifest = manifest;
             carView.SetDrivers(manifest.drivers);
             _datasetId = manifest.datasetId;
@@ -77,6 +88,11 @@ namespace F1XR.RestAPI.Replay
             _hasStarted = false;
 
             ClearReplay();
+
+            if (placement == null)
+                placement = FindFirstObjectByType<ARPlanePlacementController>();
+
+            carView.SetPlacement(placement);
 
             if (_manifestPollingCoroutine != null)
                 StopCoroutine(_manifestPollingCoroutine);
