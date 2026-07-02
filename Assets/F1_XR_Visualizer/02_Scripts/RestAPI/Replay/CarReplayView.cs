@@ -9,6 +9,7 @@ namespace F1XR.RestAPI.Replay
     {
         private readonly GameObject carPrefab;
         private readonly Dictionary<int, CarAgent> cars = new();
+        private readonly Dictionary<int, Quaternion> baseRotations = new();
 
         public CarReplayView(GameObject carPrefab)
         {
@@ -39,7 +40,7 @@ namespace F1XR.RestAPI.Replay
 
                 indices[driver] = index;
 
-                MoveCar(car, list[index], list[index + 1], time);
+                MoveCar(driver, car, list[index], list[index + 1], time);
             }
         }
 
@@ -52,6 +53,7 @@ namespace F1XR.RestAPI.Replay
             }
 
             cars.Clear();
+            baseRotations.Clear();
         }
 
         private CarAgent CreateCar(int driver)
@@ -73,12 +75,13 @@ namespace F1XR.RestAPI.Replay
                 car = obj.AddComponent<CarAgent>();
 
             car.Init(driver);
+            baseRotations.Add(driver, obj.transform.rotation);
             cars.Add(driver, car);
 
             return car;
         }
 
-        private static void MoveCar(CarAgent car, LocationSample a, LocationSample b, float time)
+        private void MoveCar(int driver, CarAgent car, LocationSample a, LocationSample b, float time)
         {
             float duration = Mathf.Max(0.001f, b.t - a.t);
             float u = Mathf.Clamp01((time - a.t) / duration);
@@ -91,7 +94,13 @@ namespace F1XR.RestAPI.Replay
 
             Vector3 direction = posB - posA;
             if (direction.sqrMagnitude > 0.0001f)
-                car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            {
+                Quaternion baseRotation = baseRotations.TryGetValue(driver, out Quaternion rotation)
+                    ? rotation
+                    : Quaternion.identity;
+
+                car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+            }
         }
     }
 }
