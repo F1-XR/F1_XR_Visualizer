@@ -2076,7 +2076,7 @@ Canvas:
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
   m_UseReflectionProbes: 0
-  m_AdditionalShaderChannelsFlag: 0
+  m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 0
@@ -3425,7 +3425,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RestApiAutoReplayController
   api: {fileID: 1518326053}
   player: {fileID: 1518326052}
-  autoStart: 1
+  autoStart: 0
   preferredYear: 2024
   preferredCircuitShortName: 
   preferredSessionName: Race
