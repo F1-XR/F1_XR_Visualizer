@@ -10,6 +10,14 @@ namespace F1XR.AR
 {
     public sealed class ARPlanePlacementController : MonoBehaviour
     {
+        enum InputSourcePriority
+        {
+            ControllerFirst,
+            HandFirst,
+            ControllerOnly,
+            HandOnly
+        }
+
         [Header("AR Managers")]
         [SerializeField] ARRaycastManager raycastManager;
         [SerializeField] ARPlaneManager planeManager;
@@ -28,6 +36,7 @@ namespace F1XR.AR
 
         [Header("Optional Input")]
         [SerializeField] InputActionProperty placeAction;
+        [SerializeField] InputSourcePriority inputSourcePriority = InputSourcePriority.HandFirst;
         [SerializeField] bool useControllerTriggerPlacement = true;
         [SerializeField] bool useHandPinchPlacement = true;
         [SerializeField] float inputArmDelay = 0.5f;
@@ -117,7 +126,7 @@ namespace F1XR.AR
 
         void Update()
         {
-            var controllerTriggerPressedThisFrame = useControllerTriggerPlacement &&
+            var controllerTriggerPressedThisFrame = CanUseControllers() &&
                 WasControllerTriggerPressedThisFrame();
 
             if (!placementInputsArmed)
@@ -225,7 +234,7 @@ namespace F1XR.AR
             XRHandSubsystem.UpdateSuccessFlags updateSuccessFlags,
             XRHandSubsystem.UpdateType updateType)
         {
-            if (!useHandPinchPlacement || updateType != XRHandSubsystem.UpdateType.Dynamic)
+            if (!CanUseHands() || updateType != XRHandSubsystem.UpdateType.Dynamic)
                 return;
 
             var leftPinchStarted = UpdatePinchState(
@@ -330,6 +339,9 @@ namespace F1XR.AR
             pose = default;
             plane = null;
 
+            if (!CanUseControllers())
+                return false;
+
             return TryGetControllerRay(handedness, out var ray) &&
                 TryGetPlacementHit(ray, out pose, out plane);
         }
@@ -338,6 +350,9 @@ namespace F1XR.AR
         {
             pose = default;
             plane = null;
+
+            if (!CanUseHands())
+                return false;
 
             if (handSubsystem == null)
                 TrySubscribeHandSubsystem();
@@ -373,19 +388,25 @@ namespace F1XR.AR
 
         bool TryGetPlacementRay(out Ray ray)
         {
-            if (lastPinchHandedness == Handedness.Right && TryGetHandAimRay(Handedness.Right, out ray))
+            if (CanUseHands() && lastPinchHandedness == Handedness.Right && TryGetHandAimRay(Handedness.Right, out ray))
                 return true;
 
-            if (lastPinchHandedness == Handedness.Left && TryGetHandAimRay(Handedness.Left, out ray))
+            if (CanUseHands() && lastPinchHandedness == Handedness.Left && TryGetHandAimRay(Handedness.Left, out ray))
                 return true;
 
-            if (lastPressedControllerHandedness != 0 && TryGetControllerRay(lastPressedControllerHandedness, out ray))
+            if (CanUseControllers() && lastPressedControllerHandedness != 0 && TryGetControllerRay(lastPressedControllerHandedness, out ray))
                 return true;
 
-            if (TryGetControllerRay(InputDeviceCharacteristics.Right, out ray) ||
-                TryGetControllerRay(InputDeviceCharacteristics.Left, out ray) ||
-                TryGetHandAimRay(Handedness.Right, out ray) ||
-                TryGetHandAimRay(Handedness.Left, out ray))
+            if (CanUseControllers() &&
+                (TryGetControllerRay(InputDeviceCharacteristics.Right, out ray) ||
+                TryGetControllerRay(InputDeviceCharacteristics.Left, out ray)))
+            {
+                return true;
+            }
+
+            if (CanUseHands() &&
+                (TryGetHandAimRay(Handedness.Right, out ray) ||
+                TryGetHandAimRay(Handedness.Left, out ray)))
             {
                 return true;
             }
@@ -400,6 +421,127 @@ namespace F1XR.AR
                 return true;
 
             return TryGetControllerDeviceRay(handedness, out ray);
+        }
+
+        public bool CanUseControllers()
+        {
+            if (!useControllerTriggerPlacement)
+                return false;
+
+            if (inputSourcePriority == InputSourcePriority.HandOnly)
+                return false;
+
+            if (inputSourcePriority == InputSourcePriority.ControllerOnly)
+                return true;
+
+            if (inputSourcePriority == InputSourcePriority.HandFirst && IsAnyHandTracked())
+                return false;
+
+            return inputSourcePriority == InputSourcePriority.HandFirst ||
+                IsAnyControllerTracked();
+        }
+
+        public bool CanUseHands()
+        {
+            if (!useHandPinchPlacement)
+                return false;
+
+            if (inputSourcePriority == InputSourcePriority.ControllerOnly)
+                return false;
+
+            if (inputSourcePriority == InputSourcePriority.HandOnly)
+                return true;
+
+            if (inputSourcePriority == InputSourcePriority.ControllerFirst && IsAnyControllerTracked())
+                return false;
+
+            return inputSourcePriority == InputSourcePriority.ControllerFirst ||
+                IsAnyHandTracked();
+        }
+
+        public bool IsAnyControllerTracked()
+        {
+            return IsControllerTracked(InputDeviceCharacteristics.Left) ||
+                IsControllerTracked(InputDeviceCharacteristics.Right);
+        }
+
+        public bool IsAnyControllerActive()
+        {
+            return IsControllerActive(InputDeviceCharacteristics.Left) ||
+                IsControllerActive(InputDeviceCharacteristics.Right);
+        }
+
+        public bool IsAnyHandTracked()
+        {
+            if (handSubsystem == null)
+                TrySubscribeHandSubsystem();
+
+            return IsHandTracked(Handedness.Left) || IsHandTracked(Handedness.Right);
+        }
+
+        static bool IsControllerTracked(InputDeviceCharacteristics handedness)
+        {
+            s_InputDevices.Clear();
+            InputDevices.GetDevicesWithCharacteristics(
+                handedness | InputDeviceCharacteristics.Controller,
+                s_InputDevices);
+
+            foreach (var device in s_InputDevices)
+            {
+                if (!device.isValid)
+                    continue;
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.trackingState, out InputTrackingState trackingState))
+                {
+                    if ((trackingState & InputTrackingState.Position) != 0 ||
+                        (trackingState & InputTrackingState.Rotation) != 0)
+                    {
+                        return true;
+                    }
+                }
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out var isTracked) && isTracked)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool IsControllerActive(InputDeviceCharacteristics handedness)
+        {
+            s_InputDevices.Clear();
+            InputDevices.GetDevicesWithCharacteristics(
+                handedness | InputDeviceCharacteristics.Controller,
+                s_InputDevices);
+
+            foreach (var device in s_InputDevices)
+            {
+                if (!device.isValid)
+                    continue;
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.userPresence, out var userPresent) &&
+                    !userPresent)
+                {
+                    continue;
+                }
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.triggerButton, out var trigger) && trigger)
+                    return true;
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out var grip) && grip)
+                    return true;
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out var primary) && primary)
+                    return true;
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.secondaryButton, out var secondary) && secondary)
+                    return true;
+
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primary2DAxisTouch, out var axisTouch) && axisTouch)
+                    return true;
+            }
+
+            return false;
         }
 
         static bool TryGetControllerDeviceRay(InputDeviceCharacteristics handedness, out Ray ray)
@@ -554,6 +696,20 @@ namespace F1XR.AR
 
             ray = default;
             return false;
+        }
+
+        bool IsHandTracked(Handedness handedness)
+        {
+            if (handSubsystem == null)
+                return false;
+
+            var hand = handedness == Handedness.Left
+                ? handSubsystem.leftHand
+                : handedness == Handedness.Right
+                    ? handSubsystem.rightHand
+                    : default;
+
+            return hand.isTracked;
         }
 
         bool ShouldAcceptPlane(Pose hitPose, ARPlane plane)
