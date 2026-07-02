@@ -59,6 +59,7 @@ namespace F1XR.RestAPI.Api
         public int initialChunks = 1;
         public int prefetchChunks = 0;
         public int requestedMinutes = 6;
+        public bool skipWarmupLap = true;
     }
 
     [System.Serializable]
@@ -117,6 +118,7 @@ namespace F1XR.RestAPI.Api
         public int overlapSeconds;
         public LocationSample[] samples;
         public PositionSampleDto[] positions;
+        public TireSampleDto[] tires;
     }
 
     [Serializable]
@@ -135,6 +137,15 @@ namespace F1XR.RestAPI.Api
         public float t;
         public int driverNumber;
         public int position;
+    }
+
+    [Serializable]
+    public class TireSampleDto
+    {
+        public float t;
+        public int driverNumber;
+        public string compound;
+        public int tireAge;
     }
 }
 
