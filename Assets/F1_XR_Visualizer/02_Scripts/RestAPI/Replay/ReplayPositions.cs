@@ -43,6 +43,9 @@ namespace F1XR.RestAPI.Replay
                     latest = sample;
                 }
 
+                if (latest == null && pair.Value.Count > 0)
+                    latest = pair.Value[0];
+
                 if (latest != null)
                     result.Add(latest);
             }

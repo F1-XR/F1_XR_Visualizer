@@ -23,6 +23,7 @@ namespace F1XR.RestAPI.UI
         public int replayMinutes = 6;
         public int chunkMinutes = 2;
         public int overlapSeconds = 2;
+        public bool skipWarmupLap = true;
         public float manifestPollSeconds = 0.5f;
 
         private int[] years;
@@ -106,7 +107,8 @@ namespace F1XR.RestAPI.UI
                 overlapSeconds = overlapSeconds,
                 initialChunks = 1,
                 prefetchChunks = 0,
-                requestedMinutes = Mathf.Max(1, replayMinutes)
+                requestedMinutes = Mathf.Max(1, replayMinutes),
+                skipWarmupLap = skipWarmupLap
             };
 
             yield return api.CreateDataset(body, result => manifest = result, Debug.LogError);
