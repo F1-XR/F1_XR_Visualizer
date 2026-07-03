@@ -1,7 +1,8 @@
-using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
+using F1XR.RestAPI.Utility;
 
 public static class RestApiSceneRuntimeInstaller
 {
