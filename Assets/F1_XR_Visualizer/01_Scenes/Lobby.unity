@@ -5164,10 +5164,11 @@ MonoBehaviour:
   sessionDropdown: {fileID: 929240652}
   playButton: {fileID: 1141738581}
   statusText: {fileID: 273000642}
-  replaySceneName: RestAPI
+  replaySceneName: RestAPI_DriverDetail
   replayMinutes: 30
   chunkMinutes: 2
   overlapSeconds: 2
+  skipWarmupLap: 1
   manifestPollSeconds: 0.5
 --- !u!114 &1693262434
 MonoBehaviour:
