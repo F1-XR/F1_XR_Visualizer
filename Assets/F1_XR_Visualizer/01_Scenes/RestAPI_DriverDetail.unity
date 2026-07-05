@@ -3525,6 +3525,7 @@ MonoBehaviour:
   api: {fileID: 1518326053}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
   placement: {fileID: 1240350763}
+  trackCalibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   playOnReady: 1
   playbackSpeed: 2
   preloadChunksAhead: 3
