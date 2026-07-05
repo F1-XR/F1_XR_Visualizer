@@ -30,12 +30,21 @@ namespace F1XR.RestAPI.UI
         private TrackOption[] tracks;
         private SessionOption[] sessions;
         private bool loading;
+        private bool changingOptions;
 
         private void Start()
         {
             playButton.onClick.AddListener(Play);
-            yearDropdown.onValueChanged.AddListener(_ => StartCoroutine(LoadTracks()));
-            trackDropdown.onValueChanged.AddListener(_ => StartCoroutine(LoadSessions()));
+            yearDropdown.onValueChanged.AddListener(_ =>
+            {
+                if (!changingOptions)
+                    StartCoroutine(LoadTracks());
+            });
+            trackDropdown.onValueChanged.AddListener(_ =>
+            {
+                if (!changingOptions)
+                    StartCoroutine(LoadSessions());
+            });
 
             StartCoroutine(LoadYears());
         }
@@ -163,10 +172,12 @@ namespace F1XR.RestAPI.UI
 
         private void SetOptions(TMP_Dropdown dropdown, List<string> labels)
         {
+            changingOptions = true;
             dropdown.ClearOptions();
             dropdown.AddOptions(labels);
-            dropdown.value = 0;
+            dropdown.SetValueWithoutNotify(0);
             dropdown.RefreshShownValue();
+            changingOptions = false;
         }
 
         private List<string> YearLabels(int[] values)
@@ -190,7 +201,12 @@ namespace F1XR.RestAPI.UI
                 return labels;
 
             foreach (TrackOption value in values)
-                labels.Add($"{value.circuitShortName} - {value.meetingName}");
+            {
+                if (string.IsNullOrWhiteSpace(value.meetingName) || value.meetingName == value.circuitShortName)
+                    labels.Add(value.circuitShortName);
+                else
+                    labels.Add($"{value.circuitShortName} - {value.meetingName}");
+            }
 
             return labels;
         }
