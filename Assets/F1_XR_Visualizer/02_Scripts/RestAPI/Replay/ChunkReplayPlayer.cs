@@ -12,6 +12,7 @@ namespace F1XR.RestAPI.Replay
         public ApiClient api;
         public GameObject carPrefab;
         public ARPlanePlacementController placement;
+        public TrackCalibration trackCalibration;
 
         public bool playOnReady = true;
         public float playbackSpeed = 1f;
@@ -74,6 +75,7 @@ namespace F1XR.RestAPI.Replay
 
             carView = new CarReplayView(carPrefab);
             carView.SetPlacement(placement);
+            carView.SetCalibration(trackCalibration);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -94,6 +96,7 @@ namespace F1XR.RestAPI.Replay
                 placement = FindFirstObjectByType<ARPlanePlacementController>();
 
             carView.SetPlacement(placement);
+            carView.SetCalibration(trackCalibration);
 
             if (_manifestPollingCoroutine != null)
                 StopCoroutine(_manifestPollingCoroutine);
