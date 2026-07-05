@@ -24,6 +24,12 @@ namespace F1XR.RestAPI.Replay
             transform.position = position;
         }
 
+        public void SetLocalPosition(Vector3 position)
+        {
+            rawPosition = position;
+            transform.localPosition = position;
+        }
+
         public void SetLabel(string text)
         {
             if (label == null)

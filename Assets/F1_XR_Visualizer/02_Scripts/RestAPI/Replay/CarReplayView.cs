@@ -34,7 +34,7 @@ namespace F1XR.RestAPI.Replay
                 if (list.Count < 2)
                     continue;
 
-                if (!cars.TryGetValue(driver, out CarAgent car))
+                if (!cars.TryGetValue(driver, out CarAgent car) || car == null)
                     car = CreateCar(driver);
 
                 int index = indices[driver];
@@ -120,11 +120,15 @@ namespace F1XR.RestAPI.Replay
             posB -= origin;
 
             Vector3 position = Vector3.Lerp(posA, posB, u);
+            Transform placementTransform = placement != null && placement.HasPlacement
+                ? placement.PlacementTransform
+                : null;
 
-            if (placement != null && placement.HasPlacement)
-                position += placement.PlacementPosition;
-
-            car.SetPosition(position);
+            SetCarParent(car, placementTransform);
+            if (placementTransform != null)
+                car.SetLocalPosition(position);
+            else
+                car.SetPosition(position);
 
             Vector3 direction = posB - posA;
             direction.y = 0f;
@@ -135,8 +139,20 @@ namespace F1XR.RestAPI.Replay
                     ? rotation
                     : Quaternion.identity;
 
-                car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+                Quaternion carRotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+                if (placementTransform != null)
+                    car.transform.localRotation = carRotation;
+                else
+                    car.transform.rotation = carRotation;
             }
+        }
+
+        private static void SetCarParent(CarAgent car, Transform parent)
+        {
+            if (car.transform.parent == parent)
+                return;
+
+            car.transform.SetParent(parent, worldPositionStays: false);
         }
         
         public void SetDrivers(DriverInfoDto[] drivers)

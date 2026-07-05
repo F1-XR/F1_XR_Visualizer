@@ -13,13 +13,21 @@ namespace F1XR.AR
         [SerializeField] float grabRadius = 0.2f;
         [SerializeField] float pinchStartDistance = 0.035f;
         [SerializeField] float pinchEndDistance = 0.05f;
+        [SerializeField] float minScaleStartDistance = 0.08f;
         [SerializeField] float minScale = 0.02f;
         [SerializeField] float maxScale = 5f;
+        [SerializeField] bool keepPivotFixed = true;
+        [SerializeField] bool keepPositionWhileScaling;
+        [SerializeField] bool keepRotationWhileScaling;
+        [SerializeField] bool keepOnlyYRotationWhileScaling;
+        [SerializeField] bool keepRotationWhileMoving;
+        [SerializeField] bool keepOnlyYRotationWhileMoving;
         [SerializeField] float controllerRayDistance = 20f;
         [SerializeField] LayerMask controllerRayMask = ~0;
         [SerializeField] XRBaseInputInteractor leftInteractor;
         [SerializeField] XRBaseInputInteractor rightInteractor;
         [SerializeField] XRGrabInteractable grab;
+        [SerializeField] Rigidbody body;
 
         static readonly List<XRHandSubsystem> HandSubsystems = new();
         static readonly List<InputDevice> InputDevices = new();
@@ -32,11 +40,18 @@ namespace F1XR.AR
         bool wasGrabEnabled;
         bool waitForPinchRelease;
         bool controllerScaling;
+        bool moving;
         float startHandDistance;
         Vector3 startHandVector;
         Vector3 startPivotWorld;
         Vector3 startPivotLocal;
         Vector3 startScale;
+        Vector3 startPosition;
+        Quaternion startRotation;
+        Vector3 startEulerAngles;
+        Quaternion moveStartRotation;
+        Vector3 moveStartEulerAngles;
+        RigidbodyConstraints startConstraints;
 
         void Awake()
         {
@@ -45,15 +60,21 @@ namespace F1XR.AR
 
             if (grab == null)
                 grab = GetComponent<XRGrabInteractable>();
+
+            if (body == null)
+                body = GetComponent<Rigidbody>();
         }
 
         void OnEnable()
         {
             FindHandSubsystem();
+            Application.onBeforeRender += UpdateMoveRotationLock;
         }
 
         void OnDisable()
         {
+            Application.onBeforeRender -= UpdateMoveRotationLock;
+            StopMoving();
             StopScaling();
         }
 
@@ -93,6 +114,9 @@ namespace F1XR.AR
             var handVector = rightPoint - leftPoint;
             if (!scaling)
             {
+                if (handDistance < minScaleStartDistance)
+                    return;
+
                 if (!IsNearTarget(leftGrabPoint) || !IsNearTarget(rightGrabPoint))
                     return;
 
@@ -102,6 +126,9 @@ namespace F1XR.AR
                 startPivotWorld = Vector3.Lerp(leftGrabPoint, rightGrabPoint, 0.5f);
                 startPivotLocal = target.InverseTransformPoint(startPivotWorld);
                 startScale = target.localScale;
+                startPosition = target.position;
+                startRotation = target.rotation;
+                startEulerAngles = target.eulerAngles;
                 controllerScaling = false;
                 SetGrabEnabled(false);
                 return;
@@ -116,6 +143,11 @@ namespace F1XR.AR
 
             var scaleRatio = handDistance / startHandDistance;
             ApplyScale(scaleRatio);
+        }
+
+        void LateUpdate()
+        {
+            UpdateMoveRotationLock();
         }
 
         void StopScaling()
@@ -145,6 +177,52 @@ namespace F1XR.AR
                 grab.enabled = wasGrabEnabled;
 
             hadGrab = false;
+        }
+
+        void UpdateMoveRotationLock()
+        {
+            if (scaling || grab == null || !grab.isSelected)
+            {
+                StopMoving();
+                return;
+            }
+
+            if (!moving)
+            {
+                moving = true;
+                moveStartRotation = target.rotation;
+                moveStartEulerAngles = target.eulerAngles;
+                LockMoveRotationConstraints();
+            }
+
+            if (keepRotationWhileMoving)
+                target.rotation = moveStartRotation;
+            else if (keepOnlyYRotationWhileMoving)
+                target.rotation = Quaternion.Euler(moveStartEulerAngles.x, target.eulerAngles.y, moveStartEulerAngles.z);
+        }
+
+        void StopMoving()
+        {
+            if (!moving)
+                return;
+
+            moving = false;
+
+            if (body != null)
+                body.constraints = startConstraints;
+        }
+
+        void LockMoveRotationConstraints()
+        {
+            if (body == null)
+                return;
+
+            startConstraints = body.constraints;
+
+            if (keepRotationWhileMoving)
+                body.constraints |= RigidbodyConstraints.FreezeRotation;
+            else if (keepOnlyYRotationWhileMoving)
+                body.constraints |= RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
         }
 
         bool TryUpdateControllerScale()
@@ -182,12 +260,18 @@ namespace F1XR.AR
             var controllerVector = rightPoint - leftPoint;
             if (!scaling)
             {
+                if (controllerDistance < minScaleStartDistance)
+                    return true;
+
                 scaling = true;
                 startHandDistance = controllerDistance;
                 startHandVector = controllerVector;
                 startPivotWorld = Vector3.Lerp(leftPoint, rightPoint, 0.5f);
                 startPivotLocal = target.InverseTransformPoint(startPivotWorld);
                 startScale = target.localScale;
+                startPosition = target.position;
+                startRotation = target.rotation;
+                startEulerAngles = target.eulerAngles;
                 controllerScaling = true;
                 SetGrabEnabled(false);
                 return true;
@@ -408,7 +492,16 @@ namespace F1XR.AR
         void ApplyScale(float scaleRatio)
         {
             target.localScale = ClampScale(startScale * scaleRatio);
-            target.position += startPivotWorld - target.TransformPoint(startPivotLocal);
+
+            if (keepRotationWhileScaling)
+                target.rotation = startRotation;
+            else if (keepOnlyYRotationWhileScaling)
+                target.rotation = Quaternion.Euler(startEulerAngles.x, target.eulerAngles.y, startEulerAngles.z);
+
+            if (keepPositionWhileScaling)
+                target.position = startPosition;
+            else if (keepPivotFixed)
+                target.position += startPivotWorld - target.TransformPoint(startPivotLocal);
         }
     }
 }
