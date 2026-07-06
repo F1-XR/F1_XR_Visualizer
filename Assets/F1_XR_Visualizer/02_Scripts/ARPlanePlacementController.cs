@@ -39,6 +39,7 @@ namespace F1XR.AR
         [SerializeField] InputSourcePriority inputSourcePriority = InputSourcePriority.HandFirst;
         [SerializeField] bool useControllerTriggerPlacement = true;
         [SerializeField] bool useHandPinchPlacement = true;
+        [SerializeField] bool handlePlacementInput = true;
         [SerializeField] float inputArmDelay = 0.5f;
         [SerializeField, Range(0f, 1f)] float pinchPressThreshold = 0.8f;
         [SerializeField, Range(0f, 1f)] float pinchReleaseThreshold = 0.55f;
@@ -132,8 +133,16 @@ namespace F1XR.AR
 
         void Update()
         {
+            if (!handlePlacementInput)
+            {
+                if (useHandPinchPlacement && handSubsystem == null)
+                    TrySubscribeHandSubsystem();
+
+                return;
+            }
+
             var controllerTriggerPressedThisFrame = CanUseControllers() &&
-                WasControllerTriggerPressedThisFrame();
+                                                    WasControllerTriggerPressedThisFrame();
 
             if (!placementInputsArmed)
             {

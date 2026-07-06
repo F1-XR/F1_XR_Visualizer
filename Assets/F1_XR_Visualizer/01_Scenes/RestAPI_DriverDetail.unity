@@ -2944,6 +2944,7 @@ GameObject:
   - component: {fileID: 1240350763}
   - component: {fileID: 1240350767}
   - component: {fileID: 1240350768}
+  - component: {fileID: 1240350769}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -3037,6 +3038,7 @@ MonoBehaviour:
   inputSourcePriority: 0
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
+  handlePlacementInput: 0
   inputArmDelay: 0.5
   pinchPressThreshold: 0.8
   pinchReleaseThreshold: 0.55
@@ -3113,7 +3115,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1240350759}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
   m_Name: 
@@ -3129,6 +3131,44 @@ MonoBehaviour:
   validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.5176471}
   invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.5176471}
   prefabPreviewAlpha: 0.4
+--- !u!114 &1240350769
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1240350759}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9aa9b5ee3551f6e44a8d42f56bb3859d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ARBuildRevealPlacer
+  placementController: {fileID: 1240350763}
+  anchorManager: {fileID: 1240350764}
+  placementPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
+  placeAction:
+    m_UseReference: 0
+    m_Action:
+      m_Name: Place
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 30827df3-4ebb-4e9f-96e2-0315405e734c
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 0}
+  useControllerTriggerFallback: 1
+  inputArmDelay: 0.5
+  previewMaterial: {fileID: 0}
+  previewColor: {r: 0.2, g: 1, b: 0.35, a: 0.35}
+  verticalOffset: 0.01
+  useHitRotation: 1
+  buildDuration: 3
+  buildEdgeWidth: 0.01
+  buildEdgeColor: {r: 1, g: 0.55, b: 0.05, a: 1}
+  restoreOriginalMaterialsAfterBuild: 1
+  allowReplaceExisting: 0
 --- !u!1 &1252842142 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3133494152545806682, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
