@@ -22,6 +22,8 @@ namespace F1XR.RestAPI.Replay
         public float localY;
         public float heightOffset;
         public bool useNearestPointHeight = true;
+        [Range(0f, 1f)] public float pointHeightBlend = 0.25f;
+        public bool loopPointHeightSegments = true;
         public Point[] points;
 
         [Serializable]
@@ -51,7 +53,7 @@ namespace F1XR.RestAPI.Replay
             var x = a * mappedSourcePosition.x - b * mappedSourcePosition.y + translation.x;
             var z = b * mappedSourcePosition.x + a * mappedSourcePosition.y + translation.y;
             var y = useNearestPointHeight
-                ? GetNearestPointHeight(mappedSourcePosition)
+                ? GetBlendedPointHeight(mappedSourcePosition)
                 : localY;
 
             localPosition = new Vector3(x, y + heightOffset, z);
@@ -221,13 +223,13 @@ namespace F1XR.RestAPI.Replay
             rmsError = Mathf.Sqrt(squaredErrorSum / count);
         }
 
-        float GetNearestPointHeight(Vector2 sourcePosition)
+        float GetBlendedPointHeight(Vector2 sourcePosition)
         {
             if (points == null || points.Length == 0)
                 return localY;
 
-            var bestDistance = float.MaxValue;
-            var height = localY;
+            if (TryGetSegmentHeight(sourcePosition, out var segmentHeight))
+                return BlendPointHeight(segmentHeight);
 
             foreach (var point in points)
             {
@@ -235,14 +237,111 @@ namespace F1XR.RestAPI.Replay
                     continue;
 
                 var distance = (MapSourceAxes(point.sourcePosition) - sourcePosition).sqrMagnitude;
-                if (distance >= bestDistance)
-                    continue;
-
-                bestDistance = distance;
-                height = point.targetLocalPosition.y;
+                if (distance <= 0.000001f)
+                    return BlendPointHeight(point.targetLocalPosition.y);
             }
 
-            return height;
+            return localY;
+        }
+
+        bool TryGetSegmentHeight(Vector2 sourcePosition, out float height)
+        {
+            height = localY;
+
+            if (points == null)
+                return false;
+
+            var bestDistance = float.MaxValue;
+            var found = false;
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                var a = points[i];
+                if (!IsConfigured(a))
+                    continue;
+
+                for (int j = i + 1; j < points.Length; j++)
+                {
+                    var b = points[j];
+                    if (!IsConfigured(b))
+                        continue;
+
+                    if (TryUseHeightSegment(sourcePosition, a, b, ref bestDistance, ref height))
+                        found = true;
+
+                    break;
+                }
+
+                if (!loopPointHeightSegments)
+                    continue;
+
+                var first = GetFirstConfiguredPoint();
+                if (first.HasValue && i == GetLastConfiguredPointIndex() && TryUseHeightSegment(sourcePosition, a, first.Value, ref bestDistance, ref height))
+                    found = true;
+            }
+
+            return found;
+        }
+
+        bool TryUseHeightSegment(
+            Vector2 sourcePosition,
+            Point a,
+            Point b,
+            ref float bestDistance,
+            ref float height
+        )
+        {
+            var sourceA = MapSourceAxes(a.sourcePosition);
+            var sourceB = MapSourceAxes(b.sourcePosition);
+            var segment = sourceB - sourceA;
+            var segmentLength = segment.sqrMagnitude;
+
+            if (segmentLength <= 0.000001f)
+                return false;
+
+            var t = Mathf.Clamp01(Vector2.Dot(sourcePosition - sourceA, segment) / segmentLength);
+            var projected = sourceA + segment * t;
+            var distance = (sourcePosition - projected).sqrMagnitude;
+
+            if (distance >= bestDistance)
+                return false;
+
+            bestDistance = distance;
+            height = Mathf.Lerp(a.targetLocalPosition.y, b.targetLocalPosition.y, t);
+            return true;
+        }
+
+        Point? GetFirstConfiguredPoint()
+        {
+            if (points == null)
+                return null;
+
+            foreach (var point in points)
+            {
+                if (IsConfigured(point))
+                    return point;
+            }
+
+            return null;
+        }
+
+        int GetLastConfiguredPointIndex()
+        {
+            if (points == null)
+                return -1;
+
+            for (int i = points.Length - 1; i >= 0; i--)
+            {
+                if (IsConfigured(points[i]))
+                    return i;
+            }
+
+            return -1;
+        }
+
+        float BlendPointHeight(float height)
+        {
+            return Mathf.Lerp(localY, height, Mathf.Clamp01(pointHeightBlend));
         }
 
         int GetConfiguredPointCount()
