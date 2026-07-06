@@ -14,6 +14,7 @@ namespace F1XR.RestAPI.Replay
         private bool hasOrigin;
         private Vector3 origin;
         private ARPlanePlacementController placement;
+        private TrackCalibration calibration;
         
         private readonly Dictionary<int, Quaternion> baseRotations = new();
         private readonly Dictionary<int, Color> driverColors = new();
@@ -34,7 +35,7 @@ namespace F1XR.RestAPI.Replay
                 if (list.Count < 2)
                     continue;
 
-                if (!cars.TryGetValue(driver, out CarAgent car))
+                if (!cars.TryGetValue(driver, out CarAgent car) || car == null)
                     car = CreateCar(driver);
 
                 int index = indices[driver];
@@ -102,29 +103,54 @@ namespace F1XR.RestAPI.Replay
             placement = source;
         }
 
+        public void SetCalibration(TrackCalibration source)
+        {
+            calibration = source;
+            hasOrigin = false;
+            origin = Vector3.zero;
+        }
+
         private void MoveCar(CarAgent car, LocationSample a, LocationSample b, float time)
         {
             float duration = Mathf.Max(0.001f, b.t - a.t);
             float u = Mathf.Clamp01((time - a.t) / duration);
 
-            Vector3 posA = CoordinateUtil.ToUnity(a);
-            Vector3 posB = CoordinateUtil.ToUnity(b);
+            Vector3 posA = default;
+            Vector3 posB = default;
+            bool useCalibration = false;
 
-            if (!hasOrigin)
+            if (calibration != null)
             {
-                origin = posA;
-                hasOrigin = true;
+                bool mappedA = calibration.TryMap(a, out posA);
+                bool mappedB = calibration.TryMap(b, out posB);
+                useCalibration = mappedA && mappedB;
             }
 
-            posA -= origin;
-            posB -= origin;
+            if (!useCalibration)
+            {
+                posA = CoordinateUtil.ToUnity(a);
+                posB = CoordinateUtil.ToUnity(b);
+
+                if (!hasOrigin)
+                {
+                    origin = posA;
+                    hasOrigin = true;
+                }
+
+                posA -= origin;
+                posB -= origin;
+            }
 
             Vector3 position = Vector3.Lerp(posA, posB, u);
+            Transform placementTransform = placement != null && placement.HasPlacement
+                ? placement.PlacementTransform
+                : null;
 
-            if (placement != null && placement.HasPlacement)
-                position += placement.PlacementPosition;
-
-            car.SetPosition(position);
+            SetCarParent(car, placementTransform);
+            if (placementTransform != null)
+                car.SetLocalPosition(position);
+            else
+                car.SetPosition(position);
 
             Vector3 direction = posB - posA;
             direction.y = 0f;
@@ -135,8 +161,20 @@ namespace F1XR.RestAPI.Replay
                     ? rotation
                     : Quaternion.identity;
 
-                car.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+                Quaternion carRotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
+                if (placementTransform != null)
+                    car.transform.localRotation = carRotation;
+                else
+                    car.transform.rotation = carRotation;
             }
+        }
+
+        private static void SetCarParent(CarAgent car, Transform parent)
+        {
+            if (car.transform.parent == parent)
+                return;
+
+            car.transform.SetParent(parent, worldPositionStays: false);
         }
         
         public void SetDrivers(DriverInfoDto[] drivers)
