@@ -3034,7 +3034,7 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: 0}
-  inputSourcePriority: 1
+  inputSourcePriority: 0
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
   inputArmDelay: 0.5
@@ -3125,6 +3125,10 @@ MonoBehaviour:
   pointerSize: 0.01
   surfaceOffset: 0.005
   pointerColor: {r: 1, g: 0, b: 0, a: 1}
+  previewLineWidth: 0.01
+  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.5176471}
+  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.5176471}
+  prefabPreviewAlpha: 0.4
 --- !u!1 &1252842142 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3133494152545806682, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
