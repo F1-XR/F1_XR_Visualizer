@@ -1347,7 +1347,7 @@ GameObject:
   - component: {fileID: 8771815587854655358}
   - component: {fileID: 3499721452277442332}
   m_Layer: 0
-  m_Name: TrackPlacement
+  m_Name: TrackVisualizer
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
