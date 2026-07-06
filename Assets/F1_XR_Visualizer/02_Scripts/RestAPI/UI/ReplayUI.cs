@@ -294,6 +294,27 @@ namespace F1XR.RestAPI.UI
                 dropdown.itemText.fontSize = 15f;
                 dropdown.itemText.color = new Color(0.92f, 0.94f, 0.98f);
             }
+
+            StyleDropdownTemplate(dropdown);
+        }
+
+        private static void StyleDropdownTemplate(TMP_Dropdown dropdown)
+        {
+            if (dropdown.template == null)
+                return;
+
+            foreach (Image image in dropdown.template.GetComponentsInChildren<Image>(true))
+            {
+                image.color = image.gameObject.name.Contains("Checkmark")
+                    ? new Color(0.92f, 0.94f, 0.98f, 1f)
+                    : new Color(0.05f, 0.055f, 0.075f, 0.98f);
+            }
+
+            foreach (TMP_Text text in dropdown.template.GetComponentsInChildren<TMP_Text>(true))
+            {
+                text.fontSize = 15f;
+                text.color = new Color(0.92f, 0.94f, 0.98f);
+            }
         }
 
         private void StyleReplayBar()

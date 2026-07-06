@@ -5666,7 +5666,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 76e4e4d4c7de45a4eb9e1603fc460aa0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Api.ApiClient
-  baseUrl: http://192.168.0.18:8000
+  baseUrl: http://127.0.0.1:8000
 --- !u!4 &1693262435
 Transform:
   m_ObjectHideFlags: 0
