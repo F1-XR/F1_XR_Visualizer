@@ -302,8 +302,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.WorldGrabPolicy
   grab: {fileID: 8771815587854655358}
   target: {fileID: 4950043802248642531}
-  blockFarGrab: 1
+  allowFarGrab: 1
   keepOnlyYRotation: 1
+  farMoveSpeed: 2
+  farRotateSpeed: 135
+  thumbstickDeadzone: 0.15
 --- !u!1 &8335670326271928987
 GameObject:
   m_ObjectHideFlags: 0
