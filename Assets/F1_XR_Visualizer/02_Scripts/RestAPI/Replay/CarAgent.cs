@@ -145,7 +145,7 @@ namespace F1XR.RestAPI.Replay
             obj.transform.SetParent(transform, false);
 
             LineRenderer line = obj.AddComponent<LineRenderer>();
-            line.useWorldSpace = true;
+            line.useWorldSpace = false;
             line.positionCount = 2;
             line.numCapVertices = 4;
             line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -292,7 +292,7 @@ namespace F1XR.RestAPI.Replay
                 bounds.max.y + textHeight * LabelGapRatio,
                 bounds.center.z
             );
-            label.transform.position = labelPosition;
+            label.transform.localPosition = transform.InverseTransformPoint(labelPosition);
 
             Vector3 lineStart = new Vector3(
                 bounds.center.x,
@@ -307,8 +307,8 @@ namespace F1XR.RestAPI.Replay
 
             labelLine.startWidth = lineStartWidth;
             labelLine.endWidth = lineEndWidth;
-            labelLine.SetPosition(0, lineStart);
-            labelLine.SetPosition(1, lineEnd);
+            labelLine.SetPosition(0, transform.InverseTransformPoint(lineStart));
+            labelLine.SetPosition(1, transform.InverseTransformPoint(lineEnd));
 
             SetDot(labelBottomDot, lineStart, dotSize);
             SetDot(labelTopDot, lineEnd, dotSize);
@@ -371,7 +371,10 @@ namespace F1XR.RestAPI.Replay
 
         private static void SetDot(MeshRenderer dot, Vector3 position, float worldSize)
         {
-            dot.transform.position = position;
+            Transform parent = dot.transform.parent;
+            dot.transform.localPosition = parent != null
+                ? parent.InverseTransformPoint(position)
+                : position;
             dot.transform.localScale = ToLocalScale(dot.transform, worldSize);
         }
 

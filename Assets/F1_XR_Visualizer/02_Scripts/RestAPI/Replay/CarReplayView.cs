@@ -154,6 +154,9 @@ namespace F1XR.RestAPI.Replay
         public void SetCalibration(TrackCalibration source)
         {
             calibration = source;
+            if (calibration != null)
+                calibration.ResetRuntimeHeightOrigin();
+
             hasOrigin = false;
             origin = Vector3.zero;
         }

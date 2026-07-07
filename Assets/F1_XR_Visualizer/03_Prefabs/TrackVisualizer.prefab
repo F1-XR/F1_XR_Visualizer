@@ -28,8 +28,7 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 953513948765871325}
+  m_Children: []
   m_Father: {fileID: 4950043802248642531}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &6741167992287166459
@@ -44,6 +43,9 @@ GameObject:
   - component: {fileID: 2420830369800079882}
   - component: {fileID: 8771815587854655358}
   - component: {fileID: 3499721452277442332}
+  - component: {fileID: 1122334455667788990}
+  - component: {fileID: 8623215418091420220}
+  - component: {fileID: 7142912082451956104}
   m_Layer: 0
   m_Name: TrackVisualizer
   m_TagString: Untagged
@@ -171,9 +173,9 @@ MonoBehaviour:
   m_ParentInteractableObject: {fileID: 0}
   m_AttachTransform: {fileID: 0}
   m_SecondaryAttachTransform: {fileID: 0}
-  m_UseDynamicAttach: 0
+  m_UseDynamicAttach: 1
   m_MatchAttachPosition: 1
-  m_MatchAttachRotation: 1
+  m_MatchAttachRotation: 0
   m_SnapToColliderVolume: 1
   m_ReinitializeDynamicAttachEverySingleGrab: 1
   m_AttachEaseInTime: 0.15
@@ -187,7 +189,7 @@ MonoBehaviour:
   m_SmoothPosition: 0
   m_SmoothPositionAmount: 8
   m_TightenPosition: 0.1
-  m_TrackRotation: 1
+  m_TrackRotation: 0
   m_SmoothRotation: 0
   m_SmoothRotationAmount: 8
   m_TightenRotation: 0.1
@@ -257,6 +259,51 @@ MonoBehaviour:
   rightInteractor: {fileID: 0}
   grab: {fileID: 0}
   body: {fileID: 2420830369800079882}
+--- !u!114 &1122334455667788990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6741167992287166459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a72a4e189d944af4aaf560ca39a8dba1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.TrackMapView
+  visualRoot: {fileID: 261145745905350354}
+  grabBox: {fileID: 5656575596644433392}
+  mapPrefab: {fileID: 0}
+  colliderPadding: {x: 0.02, y: 0.02, z: 0.02}
+  minColliderHeight: 0.04
+--- !u!114 &8623215418091420220
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6741167992287166459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a8c29f1bc8e4b4ab4c946d5ec15a7d0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.WorldGrabTarget
+--- !u!114 &7142912082451956104
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6741167992287166459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3b79e2f46a24e14a918677b877516ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.WorldGrabPolicy
+  grab: {fileID: 8771815587854655358}
+  target: {fileID: 4950043802248642531}
+  blockFarGrab: 1
+  keepOnlyYRotation: 1
 --- !u!1 &8335670326271928987
 GameObject:
   m_ObjectHideFlags: 0
@@ -310,65 +357,3 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.9985368, y: 0.052253064, z: 1.4990076}
   m_Center: {x: 0, y: -0.0029898826, z: 0}
---- !u!1001 &784316884449569599
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 261145745905350354}
-    m_Modifications:
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5460453572809760404, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_Name
-      value: BahrainTrack
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
---- !u!4 &953513948765871325 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-  m_PrefabInstance: {fileID: 784316884449569599}
-  m_PrefabAsset: {fileID: 0}

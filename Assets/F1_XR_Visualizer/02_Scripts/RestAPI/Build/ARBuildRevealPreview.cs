@@ -39,6 +39,7 @@ namespace F1XR.RestAPI.AR
             previewInstance = Instantiate(placementPrefab);
             previewInstance.name = placementPrefab.name + " Preview";
 
+            ApplyTrackMap(previewInstance);
             DisablePreviewBehaviours(previewInstance);
             ApplyPreviewMaterial(previewInstance);
 
@@ -159,6 +160,17 @@ namespace F1XR.RestAPI.AR
         {
             if (previewInstance != null && previewInstance.activeSelf)
                 previewInstance.SetActive(false);
+        }
+
+        void ClearPreview()
+        {
+            if (previewInstance != null)
+            {
+                Destroy(previewInstance);
+                previewInstance = null;
+            }
+
+            ClearPreviewCaches();
         }
 
         void ClearPreviewCaches()

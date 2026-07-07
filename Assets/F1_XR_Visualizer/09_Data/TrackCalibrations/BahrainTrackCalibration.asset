@@ -16,8 +16,12 @@ MonoBehaviour:
   circuitName: Bahrain
   active: 1
   sourceAxisMode: 0
+  heightMode: 0
   localY: 0
   heightOffset: 0.005
+  useFirstSourceHeightAsOrigin: 1
+  sourceHeightOrigin: 0
+  sourceHeightScale: 0.0001
   useNearestPointHeight: 1
   pointHeightBlend: 1
   loopPointHeightSegments: 1

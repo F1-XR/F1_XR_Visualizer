@@ -3016,6 +3016,10 @@ MonoBehaviour:
   anchorManager: {fileID: 1240350764}
   rayOrigin: {fileID: 1742760904}
   cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
+  trackMapPrefab: {fileID: 0}
+  trackMapScale: 1
+  fitTrackMapToBounds: 0
+  trackMapTargetXZSize: {x: 0, y: 0}
   allowReplaceExistingCube: 0
   requireHorizontalUpPlane: 1
   rejectFloorPlanes: 1
@@ -3146,6 +3150,10 @@ MonoBehaviour:
   placementController: {fileID: 1240350763}
   anchorManager: {fileID: 1240350764}
   placementPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
+  trackMapPrefab: {fileID: 0}
+  trackMapScale: 1
+  fitTrackMapToBounds: 0
+  trackMapTargetXZSize: {x: 0, y: 0}
   placeAction:
     m_UseReference: 0
     m_Action:
@@ -3167,7 +3175,7 @@ MonoBehaviour:
   buildDuration: 3
   buildEdgeWidth: 0.01
   buildEdgeColor: {r: 1, g: 0.55, b: 0.05, a: 1}
-  restoreOriginalMaterialsAfterBuild: 1
+  restoreMaterialsAfterBuild: 1
   allowReplaceExisting: 0
 --- !u!1 &1252842142 stripped
 GameObject:
@@ -3570,10 +3578,23 @@ MonoBehaviour:
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
   placement: {fileID: 1240350763}
   trackCalibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
+  trackVisualizerPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
+  buildPlacer: {fileID: 1240350769}
+  trackAssets:
+  - circuitKey: 63
+    circuitName: Bahrain
+    circuitShortName: Bahrain
+    visualizerPrefab: {fileID: 0}
+    mapPrefab: {fileID: 5460453572809760404, guid: d1a604b6fab34bc8b298a4b5daeb1e1c, type: 3}
+    mapScale: 0.01
+    fitMapToCalibrationBounds: 1
+    mapFitScaleMultiplier: 1.25
+    calibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   playOnReady: 1
   playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
+  showCarLabels: 1
   positionScale: 0.0001
 --- !u!114 &1518326053
 MonoBehaviour:
@@ -3619,7 +3640,7 @@ MonoBehaviour:
   player: {fileID: 1518326052}
   autoStart: 1
   preferredYear: 2024
-  preferredCircuitShortName: 
+  preferredCircuitShortName: Bahrain
   preferredSessionName: Race
   replayMinutes: 10
   chunkMinutes: 2

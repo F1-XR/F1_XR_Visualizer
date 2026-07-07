@@ -12,6 +12,10 @@ namespace F1XR.RestAPI.AR
         [SerializeField] ARPlanePlacementController placementController;
         [SerializeField] ARAnchorManager anchorManager;
         [SerializeField] GameObject placementPrefab;
+        [SerializeField] GameObject trackMapPrefab;
+        [SerializeField] float trackMapScale = 1f;
+        [SerializeField] bool fitTrackMapToBounds;
+        [SerializeField] Vector2 trackMapTargetXZSize;
 
         [Header("Input")]
         [SerializeField] InputActionProperty placeAction;
@@ -51,10 +55,19 @@ namespace F1XR.RestAPI.AR
 
         Material runtimePreviewMaterial;
 
-        public void SetPlacementPrefab(GameObject prefab)
+        public void SetPlacementPrefab(
+            GameObject prefab,
+            GameObject mapPrefab = null,
+            float mapScale = 1f,
+            bool fitMapToBounds = false,
+            Vector2 mapTargetXZSize = default)
         {
             placementPrefab = prefab;
-            HidePreview();
+            trackMapPrefab = mapPrefab;
+            trackMapScale = mapScale > 0f ? mapScale : 1f;
+            fitTrackMapToBounds = fitMapToBounds;
+            trackMapTargetXZSize = mapTargetXZSize;
+            ClearPreview();
         }
 
         void Reset()
