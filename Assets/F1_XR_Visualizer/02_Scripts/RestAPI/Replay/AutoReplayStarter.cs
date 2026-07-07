@@ -1,11 +1,10 @@
 using System.Collections;
 using UnityEngine;
 using F1XR.RestAPI.Api;
-using F1XR.RestAPI.Replay;
 
-namespace F1XR.RestAPI.Utility
+namespace F1XR.RestAPI.Replay
 {
-    public class RestApiAutoReplayController : MonoBehaviour
+    public class AutoReplayStarter : MonoBehaviour
     {
         public ApiClient api;
         public ChunkReplayPlayer player;
@@ -47,7 +46,7 @@ namespace F1XR.RestAPI.Utility
         {
             if (api == null || player == null)
             {
-                Debug.LogError("RestApiAutoReplayController requires ApiClient and ChunkReplayPlayer.");
+                Debug.LogError("AutoReplayStarter requires ApiClient and ChunkReplayPlayer.");
                 yield break;
             }
 
@@ -58,6 +57,7 @@ namespace F1XR.RestAPI.Utility
 
             TrackCatalogResponse tracks = null;
             yield return api.GetTracks(year, result => tracks = result, Debug.LogError);
+            LogTracks(year, tracks?.tracks);
 
             TrackOption track = PickTrack(tracks);
             if (track == null)
@@ -92,7 +92,7 @@ namespace F1XR.RestAPI.Utility
                 manifest =>
                 {
                     Debug.Log($"RestAPI scene dataset created: {manifest.datasetId}");
-                    player.LoadDataset(manifest, true);
+                    player.LoadDataset(manifest, track, true);
                 },
                 error => Debug.LogError($"Create dataset failed: {error}")
             );
@@ -127,6 +127,24 @@ namespace F1XR.RestAPI.Utility
             }
 
             return tracks.tracks[0];
+        }
+
+        private void LogTracks(int year, TrackOption[] tracks)
+        {
+            if (tracks == null || tracks.Length == 0)
+            {
+                Debug.Log($"[AutoReplayStarter] No tracks returned. year={year}");
+                return;
+            }
+
+            foreach (TrackOption track in tracks)
+            {
+                Debug.Log(
+                    $"[Track] year={year}, circuitKey={track.circuitKey}, " +
+                    $"circuitShortName={track.circuitShortName}, location={track.location}, " +
+                    $"countryName={track.countryName}, meetingName={track.meetingName}"
+                );
+            }
         }
 
         private SessionOption PickSession(SessionCatalogResponse sessions)

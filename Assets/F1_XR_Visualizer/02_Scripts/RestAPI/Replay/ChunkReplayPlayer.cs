@@ -1,9 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
+using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using F1XR.AR;
+using F1XR.RestAPI.AR;
 
 namespace F1XR.RestAPI.Replay
 {
@@ -13,11 +16,15 @@ namespace F1XR.RestAPI.Replay
         public GameObject carPrefab;
         public ARPlanePlacementController placement;
         public TrackCalibration trackCalibration;
+        public GameObject trackVisualizerPrefab;
+        public ARBuildRevealPlacer buildPlacer;
+        public TrackAsset[] trackAssets;
 
         public bool playOnReady = true;
         public float playbackSpeed = 1f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
+        public bool showCarLabels = true;
         
         public float positionScale = 0.01f;
 
@@ -71,18 +78,29 @@ namespace F1XR.RestAPI.Replay
         private void Awake()
         {
             if (placement == null)
-                placement = FindFirstObjectByType<ARPlanePlacementController>();
+                placement = FindAnyObjectByType<ARPlanePlacementController>();
 
             carView = new CarReplayView(carPrefab);
             carView.SetPlacement(placement);
+            if (buildPlacer == null)
+                buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+
+            carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
+            carView.SetLabelsVisible(showCarLabels);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
         {
-            CoordinateUtil.scale = positionScale;
+            LoadDataset(manifest, null, playOnReady);
+        }
+
+        public void LoadDataset(DatasetManifestDto manifest, TrackOption track, bool playOnReady = true)
+        {
+            ReplayCoordinate.scale = positionScale;
             
             _manifest = manifest;
+            ApplyTrack(track, manifest);
             carView.SetDrivers(manifest.drivers);
             _datasetId = manifest.datasetId;
             _time = manifest.playbackStartT;
@@ -93,15 +111,86 @@ namespace F1XR.RestAPI.Replay
             ClearReplay();
 
             if (placement == null)
-                placement = FindFirstObjectByType<ARPlanePlacementController>();
+                placement = FindAnyObjectByType<ARPlanePlacementController>();
 
             carView.SetPlacement(placement);
+            if (buildPlacer == null)
+                buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+
+            carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
+            carView.SetLabelsVisible(showCarLabels);
 
             if (_manifestPollingCoroutine != null)
                 StopCoroutine(_manifestPollingCoroutine);
 
             _manifestPollingCoroutine = StartCoroutine(PollManifestLoop());
+        }
+
+        private void ApplyTrack(TrackOption track, DatasetManifestDto manifest)
+        {
+            if (placement == null)
+                placement = FindAnyObjectByType<ARPlanePlacementController>();
+
+            TrackAsset asset = default;
+            bool found = false;
+
+            if (trackAssets != null)
+            {
+                foreach (TrackAsset candidate in trackAssets)
+                {
+                    if (!candidate.Matches(track, manifest))
+                        continue;
+
+                    asset = candidate;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                Debug.LogWarning($"Track asset not found. circuit={manifest?.circuit}, circuitKey={track?.circuitKey}");
+                return;
+            }
+
+            GameObject visualizerPrefab = asset.visualizerPrefab != null
+                ? asset.visualizerPrefab
+                : trackVisualizerPrefab;
+
+            if (visualizerPrefab == null && placement != null)
+                visualizerPrefab = placement.PlacementPrefab;
+
+            if (asset.calibration != null)
+                trackCalibration = asset.calibration;
+
+            bool fitMapToBounds = asset.TryGetMapTargetXZSize(out Vector2 mapTargetXZSize);
+
+            if (visualizerPrefab != null)
+            {
+                if (placement != null)
+                {
+                    placement.SetPlacementPrefab(
+                        visualizerPrefab,
+                        asset.mapPrefab,
+                        asset.MapScale,
+                        fitMapToBounds,
+                        mapTargetXZSize);
+                }
+
+                if (buildPlacer == null)
+                    buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+
+                if (buildPlacer != null)
+                {
+                    buildPlacer.SetPlacementPrefab(
+                        visualizerPrefab,
+                        asset.mapPrefab,
+                        asset.MapScale,
+                        fitMapToBounds,
+                        mapTargetXZSize);
+                }
+            }
         }
 
         public void Play()
@@ -161,7 +250,7 @@ namespace F1XR.RestAPI.Replay
                 yield return LoadChunk(chunkIndex);
 
             LoadNearChunks();
-            carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time);
+            carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
 
             _seekCoroutine = null;
         }
@@ -170,6 +259,8 @@ namespace F1XR.RestAPI.Replay
 
         private void Update()
         {
+            carView.SetLabelsVisible(showCarLabels);
+
             if (!_isPlaying || _manifest == null)
                 return;
 
@@ -186,7 +277,7 @@ namespace F1XR.RestAPI.Replay
             }
 
             LoadNearChunks();
-            carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time);
+            carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
         }
 
         private IEnumerator PollManifestLoop()
@@ -437,6 +528,87 @@ namespace F1XR.RestAPI.Replay
 
             if (_seekCoroutine != null)
                 StopCoroutine(_seekCoroutine);
+        }
+    }
+
+    [Serializable]
+    public struct TrackAsset
+    {
+        public int circuitKey;
+        public string circuitName;
+        public string circuitShortName;
+        [FormerlySerializedAs("prefab")]
+        public GameObject visualizerPrefab;
+        public GameObject mapPrefab;
+        public float mapScale;
+        public bool fitMapToCalibrationBounds;
+        public float mapFitScaleMultiplier;
+        public TrackCalibration calibration;
+
+        public float MapScale => mapScale > 0f ? mapScale : 1f;
+        public float MapFitScaleMultiplier => mapFitScaleMultiplier > 0f ? mapFitScaleMultiplier : 1f;
+
+        public bool TryGetMapTargetXZSize(out Vector2 size)
+        {
+            size = default;
+
+            if (!fitMapToCalibrationBounds || calibration == null || calibration.points == null)
+                return false;
+
+            bool found = false;
+            Vector2 min = default;
+            Vector2 max = default;
+
+            foreach (TrackCalibration.Point point in calibration.points)
+            {
+                if (string.IsNullOrWhiteSpace(point.name))
+                    continue;
+
+                Vector2 position = new Vector2(point.targetLocalPosition.x, point.targetLocalPosition.z);
+                if (!found)
+                {
+                    min = position;
+                    max = position;
+                    found = true;
+                    continue;
+                }
+
+                min = Vector2.Min(min, position);
+                max = Vector2.Max(max, position);
+            }
+
+            if (!found)
+                return false;
+
+            size = (max - min) * MapFitScaleMultiplier;
+            return size.x > 0.0001f && size.y > 0.0001f;
+        }
+
+        public bool Matches(TrackOption track, DatasetManifestDto manifest)
+        {
+            if (track != null)
+            {
+                if (circuitKey > 0 && circuitKey == track.circuitKey)
+                    return true;
+
+                if (MatchesName(circuitShortName, track.circuitShortName) ||
+                    MatchesName(circuitName, track.meetingName) ||
+                    MatchesName(circuitName, track.location))
+                {
+                    return true;
+                }
+            }
+
+            return manifest != null &&
+                (MatchesName(circuitName, manifest.circuit) ||
+                MatchesName(circuitShortName, manifest.circuit));
+        }
+
+        static bool MatchesName(string a, string b)
+        {
+            return !string.IsNullOrWhiteSpace(a) &&
+                !string.IsNullOrWhiteSpace(b) &&
+                string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
         }
     }
 }

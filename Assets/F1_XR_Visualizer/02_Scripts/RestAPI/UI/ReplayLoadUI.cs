@@ -73,6 +73,7 @@ namespace F1XR.RestAPI.UI
             yield return api.GetTracks(SelectedYear(), result => response = result, Debug.LogError);
 
             tracks = response?.tracks;
+            LogTracks(SelectedYear(), tracks);
             SetOptions(trackDropdown, TrackLabels(tracks));
 
             yield return LoadSessions();
@@ -135,6 +136,7 @@ namespace F1XR.RestAPI.UI
             }
 
             ReplayLoad.Manifest = manifest;
+            ReplayLoad.Track = SelectedTrack();
             SceneManager.LoadScene(replaySceneName);
         }
 
@@ -209,6 +211,24 @@ namespace F1XR.RestAPI.UI
             }
 
             return labels;
+        }
+
+        private void LogTracks(int year, TrackOption[] values)
+        {
+            if (values == null || values.Length == 0)
+            {
+                Debug.Log($"[ReplayLoadUI] No tracks returned. year={year}");
+                return;
+            }
+
+            foreach (TrackOption value in values)
+            {
+                Debug.Log(
+                    $"[Track] year={year}, circuitKey={value.circuitKey}, " +
+                    $"circuitShortName={value.circuitShortName}, location={value.location}, " +
+                    $"countryName={value.countryName}, meetingName={value.meetingName}"
+                );
+            }
         }
 
         private List<string> SessionLabels(SessionOption[] values)
