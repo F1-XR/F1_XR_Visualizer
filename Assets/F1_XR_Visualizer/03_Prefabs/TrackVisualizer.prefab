@@ -242,7 +242,7 @@ MonoBehaviour:
   pinchEndDistance: 0.05
   minScaleStartDistance: 0.08
   minScale: 0.2
-  maxScale: 3
+  maxScale: 10
   keepPivotFixed: 0
   keepPositionWhileScaling: 1
   keepRotationWhileScaling: 0

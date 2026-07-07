@@ -1,11 +1,10 @@
 using System.Collections;
 using UnityEngine;
 using F1XR.RestAPI.Api;
-using F1XR.RestAPI.Replay;
 
-namespace F1XR.RestAPI.Utility
+namespace F1XR.RestAPI.Replay
 {
-    public class RestApiAutoReplayController : MonoBehaviour
+    public class AutoReplayStarter : MonoBehaviour
     {
         public ApiClient api;
         public ChunkReplayPlayer player;
@@ -47,7 +46,7 @@ namespace F1XR.RestAPI.Utility
         {
             if (api == null || player == null)
             {
-                Debug.LogError("RestApiAutoReplayController requires ApiClient and ChunkReplayPlayer.");
+                Debug.LogError("AutoReplayStarter requires ApiClient and ChunkReplayPlayer.");
                 yield break;
             }
 
@@ -92,7 +91,7 @@ namespace F1XR.RestAPI.Utility
                 manifest =>
                 {
                     Debug.Log($"RestAPI scene dataset created: {manifest.datasetId}");
-                    player.LoadDataset(manifest, true);
+                    player.LoadDataset(manifest, track, true);
                 },
                 error => Debug.LogError($"Create dataset failed: {error}")
             );

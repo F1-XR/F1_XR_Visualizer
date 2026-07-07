@@ -2,7 +2,6 @@ using UnityEngine.SceneManagement;
 using UnityEngine;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
-using F1XR.RestAPI.Utility;
 
 public static class RestApiSceneRuntimeInstaller
 {
@@ -33,7 +32,7 @@ public static class RestApiSceneRuntimeInstaller
 
         ApiClient api = runtime.AddComponent<ApiClient>();
         ChunkReplayPlayer player = runtime.AddComponent<ChunkReplayPlayer>();
-        RestApiAutoReplayController controller = runtime.AddComponent<RestApiAutoReplayController>();
+        AutoReplayStarter controller = runtime.AddComponent<AutoReplayStarter>();
 
         player.api = api;
         player.playOnReady = true;
