@@ -2,16 +2,23 @@ Shader "F1XR/BuildRevealURP"
 {
     Properties
     {
+        // 원본 머티리얼에서 복사되는 기본 텍스처/색입니다. 트랙 자체의 색감이 바뀝니다.
         _BaseMap ("Base Map", 2D) = "white" {}
         _BaseColor ("Base Color", Color) = (1,1,1,1)
 
+        // _BuildHeight를 올리면 이 높이보다 아래에 있는 부분만 보입니다. 코드가 매 프레임 올려서 아래->위 생성 효과를 만듭니다.
         _BuildHeight ("Build Height", Float) = 0
+        // 생성 경계선의 두께입니다. 값을 키우면 빛나는 라인이 두꺼워지고, 줄이면 얇아집니다.
         _EdgeWidth ("Edge Width", Float) = 0.18
+        // 생성 경계선의 색입니다. HDR 색이라 값을 1보다 크게 주면 더 강하게 빛납니다.
         [HDR]_EdgeColor ("Edge Color", Color) = (4,1.8,0.1,1)
 
+        // 생성 중 전체 모델에 살짝 섞이는 색입니다. 완성 후 원본 머티리얼을 복구하면 최종 색에는 남지 않습니다.
         _BuildTintColor ("Build Tint Color", Color) = (1,0.62,0.15,1)
+        // 위 색을 얼마나 섞을지 정합니다. 0이면 원본색, 1이면 거의 Build Tint Color가 됩니다.
         _BuildTintStrength ("Build Tint Strength", Range(0,1)) = 0.1
 
+        // 전체 투명도입니다. 현재 빌드 리빌은 불투명 렌더링 기준이라 보통 1로 둡니다.
         _Alpha ("Alpha", Range(0,1)) = 1
     }
 

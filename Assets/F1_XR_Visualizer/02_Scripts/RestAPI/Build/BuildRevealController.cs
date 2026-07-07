@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace F1XR.RestAPI.AR
 {
@@ -14,16 +15,27 @@ namespace F1XR.RestAPI.AR
         static readonly int AlphaId = Shader.PropertyToID("_Alpha");
 
         [Header("Target")]
+        [Tooltip("빌드 리빌 효과를 적용할 시각 모델 루트입니다. 비워두면 visualRootName으로 자식 오브젝트를 찾습니다.")]
         [SerializeField] Transform visualRoot;
+        [Tooltip("visualRoot가 비어 있을 때 찾을 자식 이름입니다. 기본값 Visual이면 프리팹의 Visual 하위 Renderer에만 효과가 적용됩니다.")]
         [SerializeField] string visualRootName = "Visual";
 
         [Header("Build Reveal")]
+        [Tooltip("아래에서 위로 생성되는 데 걸리는 시간입니다. 값을 키우면 더 천천히 올라옵니다.")]
         [SerializeField] float duration = 1.2f;
+        [Tooltip("생성 경계선 두께입니다. 키우면 빛나는 라인이 두꺼워집니다.")]
         [SerializeField] float edgeWidth = 0.06f;
+        [Tooltip("생성 경계선 색입니다. 밝은 HDR 색을 주면 더 강하게 빛납니다.")]
         [SerializeField] Color edgeColor = new Color(1f, 0.55f, 0.05f, 1f);
+        [Tooltip("시작 높이를 모델 최저점보다 얼마나 더 아래에서 시작할지 정합니다. 키우면 등장 전 여백이 늘어납니다.")]
         [SerializeField] float startPadding = 0.00f;
+        [Tooltip("끝 높이를 모델 최고점보다 얼마나 더 위까지 올릴지 정합니다. 일부 윗면이 늦게 잘리면 조금 키웁니다.")]
         [SerializeField] float endPadding = 0.005f;
-        [SerializeField] bool restoreOriginalMaterialsOnComplete = true;
+        [FormerlySerializedAs("restoreOriginalMaterialsOnComplete")]
+        [Tooltip("생성 완료 후 원래 머티리얼로 되돌릴지 정합니다. 끄면 리빌 셰이더 상태가 계속 유지됩니다.")]
+        [SerializeField] bool restoreMaterialsOnComplete = true;
+        [Tooltip("켜면 각 Renderer의 높이 범위를 Console에 출력합니다. 효과 범위가 이상할 때만 사용합니다.")]
+        [SerializeField] bool logBoundsDetails;
 
         Renderer[] renderers;
         Material[][] originalMaterials;
@@ -40,7 +52,7 @@ namespace F1XR.RestAPI.AR
             duration = Mathf.Max(0.01f, newDuration);
             edgeWidth = Mathf.Max(0.001f, newEdgeWidth);
             edgeColor = newEdgeColor;
-            restoreOriginalMaterialsOnComplete = restoreMaterialsOnComplete;
+            this.restoreMaterialsOnComplete = restoreMaterialsOnComplete;
         }
 
         public void Play()
@@ -84,7 +96,7 @@ namespace F1XR.RestAPI.AR
 
             ApplyBuildHeight(maxY);
 
-            if (restoreOriginalMaterialsOnComplete)
+            if (restoreMaterialsOnComplete)
                 RestoreOriginalMaterials();
 
             revealRoutine = null;
@@ -187,7 +199,8 @@ namespace F1XR.RestAPI.AR
             bounds = default;
             bool hasBounds = false;
 
-            Debug.Log("========== [BuildReveal] Renderer Bounds Check ==========", this);
+            if (logBoundsDetails)
+                Debug.Log("========== [BuildReveal] Renderer Bounds Check ==========", this);
 
             foreach (Renderer renderer in renderers)
             {
@@ -196,11 +209,14 @@ namespace F1XR.RestAPI.AR
 
                 Bounds rb = renderer.bounds;
 
-                Debug.Log(
-                    $"[BuildReveal] Renderer: {GetTransformPath(renderer.transform)} / " +
-                    $"minY={rb.min.y:F3}, maxY={rb.max.y:F3}, sizeY={rb.size.y:F3}",
-                    renderer
-                );
+                if (logBoundsDetails)
+                {
+                    Debug.Log(
+                        $"[BuildReveal] Renderer: {GetTransformPath(renderer.transform)} / " +
+                        $"minY={rb.min.y:F3}, maxY={rb.max.y:F3}, sizeY={rb.size.y:F3}",
+                        renderer
+                    );
+                }
 
                 if (!hasBounds)
                 {
@@ -219,11 +235,14 @@ namespace F1XR.RestAPI.AR
                 return false;
             }
 
-            Debug.Log(
-                $"[BuildReveal] FINAL BOUNDS / " +
-                $"minY={bounds.min.y:F3}, maxY={bounds.max.y:F3}, sizeY={bounds.size.y:F3}",
-                this
-            );
+            if (logBoundsDetails)
+            {
+                Debug.Log(
+                    $"[BuildReveal] FINAL BOUNDS / " +
+                    $"minY={bounds.min.y:F3}, maxY={bounds.max.y:F3}, sizeY={bounds.size.y:F3}",
+                    this
+                );
+            }
 
             return true;
         }

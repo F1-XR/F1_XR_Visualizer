@@ -3,6 +3,7 @@ using F1XR.AR;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using UnityEngine;
+using F1XR.RestAPI.AR;
 
 namespace F1XR.RestAPI.Replay
 {
@@ -15,6 +16,8 @@ namespace F1XR.RestAPI.Replay
         private Vector3 origin;
         private ARPlanePlacementController placement;
         private TrackCalibration calibration;
+        private ARBuildRevealPlacer buildPlacer;
+        private bool labelsVisible = true;
         
         private readonly Dictionary<int, Quaternion> baseRotations = new();
         private readonly Dictionary<int, Color> driverColors = new();
@@ -25,8 +28,14 @@ namespace F1XR.RestAPI.Replay
             this.carPrefab = carPrefab;
         }
 
-        public void Show(Dictionary<int, List<LocationSample>> samples, Dictionary<int, int> indices, float time)
+        public void Show(
+            Dictionary<int, List<LocationSample>> samples,
+            Dictionary<int, int> indices,
+            float time,
+            List<PositionSampleDto> positions = null)
         {
+            Dictionary<int, int> ranks = GetRanksByDriver(positions);
+
             foreach (KeyValuePair<int, List<LocationSample>> pair in samples)
             {
                 int driver = pair.Key;
@@ -37,6 +46,9 @@ namespace F1XR.RestAPI.Replay
 
                 if (!cars.TryGetValue(driver, out CarAgent car) || car == null)
                     car = CreateCar(driver);
+
+                if (ranks.TryGetValue(driver, out int rank))
+                    car.SetRank(rank);
 
                 int index = indices[driver];
                 index = Mathf.Clamp(index, 0, list.Count - 2);
@@ -51,6 +63,24 @@ namespace F1XR.RestAPI.Replay
 
                 MoveCar(car, list[index], list[index + 1], time);
             }
+        }
+
+        private static Dictionary<int, int> GetRanksByDriver(List<PositionSampleDto> positions)
+        {
+            Dictionary<int, int> result = new();
+
+            if (positions == null)
+                return result;
+
+            foreach (PositionSampleDto position in positions)
+            {
+                if (position == null)
+                    continue;
+
+                result[position.driverNumber] = position.position;
+            }
+
+            return result;
         }
 
         public void Clear()
@@ -86,6 +116,8 @@ namespace F1XR.RestAPI.Replay
                 car = obj.AddComponent<CarAgent>();
 
             car.Init(driver);
+            car.SetLabelVisible(labelsVisible);
+
             if (driverLabels.TryGetValue(driver, out string label))
                 car.SetLabel(label);
 
@@ -97,15 +129,34 @@ namespace F1XR.RestAPI.Replay
 
             return car;
         }
-        
+
         public void SetPlacement(ARPlanePlacementController source)
         {
             placement = source;
         }
 
+        public void SetBuildPlacer(ARBuildRevealPlacer source)
+        {
+            buildPlacer = source;
+        }
+
+        public void SetLabelsVisible(bool visible)
+        {
+            labelsVisible = visible;
+
+            foreach (CarAgent car in cars.Values)
+            {
+                if (car != null)
+                    car.SetLabelVisible(visible);
+            }
+        }
+
         public void SetCalibration(TrackCalibration source)
         {
             calibration = source;
+            if (calibration != null)
+                calibration.ResetRuntimeHeightOrigin();
+
             hasOrigin = false;
             origin = Vector3.zero;
         }
@@ -128,8 +179,8 @@ namespace F1XR.RestAPI.Replay
 
             if (!useCalibration)
             {
-                posA = CoordinateUtil.ToUnity(a);
-                posB = CoordinateUtil.ToUnity(b);
+                posA = ReplayCoordinate.ToUnity(a);
+                posB = ReplayCoordinate.ToUnity(b);
 
                 if (!hasOrigin)
                 {
@@ -142,9 +193,11 @@ namespace F1XR.RestAPI.Replay
             }
 
             Vector3 position = Vector3.Lerp(posA, posB, u);
-            Transform placementTransform = placement != null && placement.HasPlacement
-                ? placement.PlacementTransform
-                : null;
+            Transform placementTransform = buildPlacer != null && buildPlacer.HasPlacement
+                ? buildPlacer.PlacementTransform
+                : placement != null && placement.HasPlacement
+                    ? placement.PlacementTransform
+                    : null;
 
             SetCarParent(car, placementTransform);
             if (placementTransform != null)

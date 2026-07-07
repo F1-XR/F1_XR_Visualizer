@@ -70,7 +70,7 @@ namespace F1XR.Editor
             serialized.FindProperty("planeManager").objectReferenceValue = planeManager;
             serialized.FindProperty("anchorManager").objectReferenceValue = anchorManager;
 
-            var mainCamera = Camera.main != null ? Camera.main : Object.FindFirstObjectByType<Camera>();
+            var mainCamera = Camera.main != null ? Camera.main : Object.FindAnyObjectByType<Camera>();
             if (mainCamera != null)
                 serialized.FindProperty("rayOrigin").objectReferenceValue = mainCamera.transform;
 
