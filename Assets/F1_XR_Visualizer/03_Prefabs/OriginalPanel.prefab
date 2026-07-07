@@ -146,7 +146,7 @@ MonoBehaviour:
   m_SecondaryAttachTransform: {fileID: 0}
   m_UseDynamicAttach: 1
   m_MatchAttachPosition: 1
-  m_MatchAttachRotation: 0
+  m_MatchAttachRotation: 1
   m_SnapToColliderVolume: 1
   m_ReinitializeDynamicAttachEverySingleGrab: 1
   m_AttachEaseInTime: 0.15
@@ -213,8 +213,15 @@ MonoBehaviour:
   grabRadius: 0.35
   pinchStartDistance: 0.035
   pinchEndDistance: 0.05
+  minScaleStartDistance: 0.08
   minScale: 0.00025
   maxScale: 0.0025
+  keepPivotFixed: 1
+  keepPositionWhileScaling: 0
+  keepRotationWhileScaling: 0
+  keepOnlyYRotationWhileScaling: 0
+  keepRotationWhileMoving: 0
+  keepOnlyYRotationWhileMoving: 0
   controllerRayDistance: 20
   controllerRayMask:
     serializedVersion: 2
@@ -222,6 +229,7 @@ MonoBehaviour:
   leftInteractor: {fileID: 0}
   rightInteractor: {fileID: 0}
   grab: {fileID: 0}
+  body: {fileID: 0}
 --- !u!1 &1580624249736806759
 GameObject:
   m_ObjectHideFlags: 0

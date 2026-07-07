@@ -4813,7 +4813,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1240350759}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0b61b32f92b86a04c8795d7232f1c648, type: 3}
   m_Name: 
@@ -4845,6 +4845,7 @@ MonoBehaviour:
   inputSourcePriority: 1
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
+  handlePlacementInput: 1
   inputArmDelay: 0.5
   pinchPressThreshold: 0.8
   pinchReleaseThreshold: 0.55
@@ -4921,7 +4922,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1240350759}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
   m_Name: 
@@ -4933,6 +4934,10 @@ MonoBehaviour:
   pointerSize: 0.01
   surfaceOffset: 0.005
   pointerColor: {r: 1, g: 0, b: 0, a: 1}
+  previewLineWidth: 0.01
+  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.9}
+  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.9}
+  prefabPreviewAlpha: 0.4
 --- !u!114 &1240350769
 MonoBehaviour:
   m_ObjectHideFlags: 0
