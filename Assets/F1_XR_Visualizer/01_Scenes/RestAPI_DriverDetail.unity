@@ -2944,6 +2944,7 @@ GameObject:
   - component: {fileID: 1240350763}
   - component: {fileID: 1240350767}
   - component: {fileID: 1240350768}
+  - component: {fileID: 1240350769}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -3014,7 +3015,7 @@ MonoBehaviour:
   planeManager: {fileID: 1240350765}
   anchorManager: {fileID: 1240350764}
   rayOrigin: {fileID: 1742760904}
-  cubePrefab: {fileID: 5460963645228481172, guid: 1968288085a84f647926f8364845d9b5, type: 3}
+  cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   allowReplaceExistingCube: 0
   requireHorizontalUpPlane: 1
   rejectFloorPlanes: 1
@@ -3034,9 +3035,10 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: 0}
-  inputSourcePriority: 1
+  inputSourcePriority: 0
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
+  handlePlacementInput: 0
   inputArmDelay: 0.5
   pinchPressThreshold: 0.8
   pinchReleaseThreshold: 0.55
@@ -3113,7 +3115,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1240350759}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
   m_Name: 
@@ -3125,6 +3127,48 @@ MonoBehaviour:
   pointerSize: 0.01
   surfaceOffset: 0.005
   pointerColor: {r: 1, g: 0, b: 0, a: 1}
+  previewLineWidth: 0.01
+  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.5176471}
+  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.5176471}
+  prefabPreviewAlpha: 0.4
+--- !u!114 &1240350769
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1240350759}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9aa9b5ee3551f6e44a8d42f56bb3859d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ARBuildRevealPlacer
+  placementController: {fileID: 1240350763}
+  anchorManager: {fileID: 1240350764}
+  placementPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
+  placeAction:
+    m_UseReference: 0
+    m_Action:
+      m_Name: Place
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 30827df3-4ebb-4e9f-96e2-0315405e734c
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 0}
+  useControllerTriggerFallback: 1
+  inputArmDelay: 0.5
+  previewMaterial: {fileID: 0}
+  previewColor: {r: 0.2, g: 1, b: 0.35, a: 0.35}
+  verticalOffset: 0.01
+  useHitRotation: 1
+  buildDuration: 3
+  buildEdgeWidth: 0.01
+  buildEdgeColor: {r: 1, g: 0.55, b: 0.05, a: 1}
+  restoreOriginalMaterialsAfterBuild: 1
+  allowReplaceExisting: 0
 --- !u!1 &1252842142 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3133494152545806682, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
@@ -3525,6 +3569,7 @@ MonoBehaviour:
   api: {fileID: 1518326053}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
   placement: {fileID: 1240350763}
+  trackCalibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   playOnReady: 1
   playbackSpeed: 2
   preloadChunksAhead: 3
@@ -3542,7 +3587,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 76e4e4d4c7de45a4eb9e1603fc460aa0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ApiClient
-  baseUrl: http://192.168.0.18:8000
+  baseUrl: http://127.0.0.1:8000
 --- !u!4 &1518326054
 Transform:
   m_ObjectHideFlags: 0
@@ -3569,14 +3614,14 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6f65fd07fb0f4e94382beeb43ca1a868, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RestApiAutoReplayController
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.AutoReplayStarter
   api: {fileID: 1518326053}
   player: {fileID: 1518326052}
   autoStart: 1
   preferredYear: 2024
   preferredCircuitShortName: 
   preferredSessionName: Race
-  replayMinutes: 6
+  replayMinutes: 10
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 1
@@ -4451,79 +4496,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1913551049}
   m_CullTransparentMesh: 1
---- !u!1001 &1966676152
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 0.001
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 0.001
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 0.001
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 1.3
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.768
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0.37
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 565760233811802082, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_ConstrainProportionsScale
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 5460453572809760404, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
-      propertyPath: m_Name
-      value: BahrainTrack
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 2ad9a4a767d9e214abce19d3d327f06c, type: 3}
 --- !u!1 &2043465640
 GameObject:
   m_ObjectHideFlags: 0
@@ -4883,4 +4855,3 @@ SceneRoots:
   - {fileID: 1009886932}
   - {fileID: 903086105}
   - {fileID: 379529744}
-  - {fileID: 1966676152}

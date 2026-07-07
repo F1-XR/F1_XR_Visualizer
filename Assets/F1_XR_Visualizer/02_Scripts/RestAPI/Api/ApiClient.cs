@@ -8,7 +8,7 @@ namespace F1XR.RestAPI.Api
 {
     public class ApiClient : MonoBehaviour
     {
-        public string baseUrl = "http://192.168.0.18:8000";
+        public string baseUrl = "http://127.0.0.1:8000";
 
         public IEnumerator GetYears(Action<YearsResponse> onSuccess, Action<string> onError = null)
         {

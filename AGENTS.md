@@ -103,6 +103,15 @@ CoordinateUtil
 * If editing directly, keep the scope tight and say exactly what changed.
 * If a command or file read would use many tokens, explain the cheaper option first.
 
+## Notion Document Instructions
+
+When a task requires checking Notion documents:
+
+* Always check the Notion document's `AI 작업 지침` before answering or making changes.
+* Start the response by explicitly stating which `AI 작업 지침` was checked.
+* Follow the checked `AI 작업 지침` when summarizing, planning, or implementing work from the Notion document.
+* If the `AI 작업 지침` cannot be found, state that clearly before continuing.
+
 ## Testing and Validation
 
 Before finishing a task:

@@ -16,10 +16,10 @@ namespace F1XR.RestAPI.Replay
         private void Start()
         {
             if (api == null)
-                api = FindFirstObjectByType<ApiClient>();
+                api = FindAnyObjectByType<ApiClient>();
 
             if (player == null)
-                player = FindFirstObjectByType<ChunkReplayPlayer>();
+                player = FindAnyObjectByType<ChunkReplayPlayer>();
 
             Debug.Log($"ReplaySceneStart Start manifest={ReplayLoad.Manifest != null}, api={api != null}, player={player != null}");
 
@@ -27,7 +27,7 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             player.api = api;
-            player.LoadDataset(ReplayLoad.Manifest, true);
+            player.LoadDataset(ReplayLoad.Manifest, ReplayLoad.Track, true);
 
             Debug.Log($"ReplaySceneStart LoadDataset: {ReplayLoad.Manifest.datasetId}");
 

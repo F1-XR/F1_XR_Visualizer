@@ -44,6 +44,10 @@
 # Local Unity MCP tooling
 Tools/UnityMcpServer/
 
+# Unity recovery files
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+
 # Visual Studio cache directory
 .vs/
 
