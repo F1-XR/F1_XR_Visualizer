@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/F1_XR_Visualizer/01_Scenes/Lobby.unity
+    path: Assets/F1_XR_Visualizer/01_Scenes/HomeSpace.unity
     guid: 57bc5e6066a351948900ff19363f940f
   - enabled: 1
     path: Assets/F1_XR_Visualizer/01_Scenes/Play.unity
