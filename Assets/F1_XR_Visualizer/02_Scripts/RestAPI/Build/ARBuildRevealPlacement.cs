@@ -32,6 +32,7 @@ namespace F1XR.RestAPI.AR
             {
                 target = Instantiate(placementPrefab);
                 target.name = placementPrefab.name;
+                ApplyTrackMap(target);
                 ConfigurePhysics(target);
             }
 
@@ -91,6 +92,16 @@ namespace F1XR.RestAPI.AR
                 rigidbody.useGravity = false;
                 rigidbody.isKinematic = true;
             }
+        }
+
+        void ApplyTrackMap(GameObject target)
+        {
+            if (trackMapPrefab == null || target == null)
+                return;
+
+            F1XR.AR.TrackMapView mapView = target.GetComponent<F1XR.AR.TrackMapView>();
+            if (mapView != null)
+                mapView.Show(trackMapPrefab, trackMapScale, fitTrackMapToBounds, trackMapTargetXZSize);
         }
 
         public void ClearSpawned()

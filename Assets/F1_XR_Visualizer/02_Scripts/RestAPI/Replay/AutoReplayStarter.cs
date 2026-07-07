@@ -57,6 +57,7 @@ namespace F1XR.RestAPI.Replay
 
             TrackCatalogResponse tracks = null;
             yield return api.GetTracks(year, result => tracks = result, Debug.LogError);
+            LogTracks(year, tracks?.tracks);
 
             TrackOption track = PickTrack(tracks);
             if (track == null)
@@ -126,6 +127,24 @@ namespace F1XR.RestAPI.Replay
             }
 
             return tracks.tracks[0];
+        }
+
+        private void LogTracks(int year, TrackOption[] tracks)
+        {
+            if (tracks == null || tracks.Length == 0)
+            {
+                Debug.Log($"[AutoReplayStarter] No tracks returned. year={year}");
+                return;
+            }
+
+            foreach (TrackOption track in tracks)
+            {
+                Debug.Log(
+                    $"[Track] year={year}, circuitKey={track.circuitKey}, " +
+                    $"circuitShortName={track.circuitShortName}, location={track.location}, " +
+                    $"countryName={track.countryName}, meetingName={track.meetingName}"
+                );
+            }
         }
 
         private SessionOption PickSession(SessionCatalogResponse sessions)

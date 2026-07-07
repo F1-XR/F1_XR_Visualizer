@@ -26,6 +26,10 @@ namespace F1XR.AR
         [Header("Placement")]
         [SerializeField] Transform rayOrigin;
         [SerializeField] GameObject cubePrefab;
+        [SerializeField] GameObject trackMapPrefab;
+        [SerializeField] float trackMapScale = 1f;
+        [SerializeField] bool fitTrackMapToBounds;
+        [SerializeField] Vector2 trackMapTargetXZSize;
         [SerializeField] bool allowReplaceExistingCube = false;
         [SerializeField] bool requireHorizontalUpPlane = true;
         [SerializeField] bool rejectFloorPlanes = true;
@@ -58,9 +62,18 @@ namespace F1XR.AR
         public Vector3 PlacementPosition => spawnedCube != null ? spawnedCube.transform.position : Vector3.zero;
         public GameObject PlacementPrefab => cubePrefab;
 
-        public void SetPlacementPrefab(GameObject prefab)
+        public void SetPlacementPrefab(
+            GameObject prefab,
+            GameObject mapPrefab = null,
+            float mapScale = 1f,
+            bool fitMapToBounds = false,
+            Vector2 mapTargetXZSize = default)
         {
             cubePrefab = prefab;
+            trackMapPrefab = mapPrefab;
+            trackMapScale = mapScale > 0f ? mapScale : 1f;
+            fitTrackMapToBounds = fitMapToBounds;
+            trackMapTargetXZSize = mapTargetXZSize;
         }
         
         bool wasLeftTriggerPressed;
@@ -489,6 +502,7 @@ namespace F1XR.AR
             if (cubePrefab != null)
             {
                 cube = Instantiate(cubePrefab, position, rotation);
+                ApplyTrackMap(cube);
             }
             else
             {
@@ -500,6 +514,16 @@ namespace F1XR.AR
             cube.name = "Placed AR Cube";
             ConfigureCubePhysics(cube);
             return cube;
+        }
+
+        void ApplyTrackMap(GameObject target)
+        {
+            if (trackMapPrefab == null || target == null)
+                return;
+
+            TrackMapView mapView = target.GetComponent<TrackMapView>();
+            if (mapView != null)
+                mapView.Show(trackMapPrefab, trackMapScale, fitTrackMapToBounds, trackMapTargetXZSize);
         }
 
         static void ConfigureCubePhysics(GameObject cube)

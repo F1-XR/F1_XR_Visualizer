@@ -15,16 +15,30 @@ namespace F1XR.RestAPI.Replay
             NegativeYX
         }
 
+        public enum HeightMode
+        {
+            CalibrationPoints,
+            SourceSample,
+            Flat
+        }
+
         public int circuitKey;
         public string circuitName;
         public bool active;
         public SourceAxisMode sourceAxisMode;
+        public HeightMode heightMode;
         public float localY;
         public float heightOffset;
+        public bool useFirstSourceHeightAsOrigin = true;
+        public float sourceHeightOrigin;
+        public float sourceHeightScale = 0.0001f;
         public bool useNearestPointHeight = true;
         [Range(0f, 1f)] public float pointHeightBlend = 0.25f;
         public bool loopPointHeightSegments = true;
         public Point[] points;
+
+        bool hasRuntimeSourceHeightOrigin;
+        float runtimeSourceHeightOrigin;
 
         [Serializable]
         public struct Point
@@ -36,7 +50,19 @@ namespace F1XR.RestAPI.Replay
 
         public bool TryMap(LocationSample sample, out Vector3 localPosition)
         {
-            return TryMap(new Vector2(sample.x, sample.y), out localPosition);
+            if (!TryMap(new Vector2(sample.x, sample.y), out localPosition))
+                return false;
+
+            if (heightMode == HeightMode.SourceSample)
+                localPosition.y = localY + GetSourceHeight(sample.z) + heightOffset;
+
+            return true;
+        }
+
+        public void ResetRuntimeHeightOrigin()
+        {
+            hasRuntimeSourceHeightOrigin = false;
+            runtimeSourceHeightOrigin = 0f;
         }
 
         public bool TryMap(Vector2 sourcePosition, out Vector3 localPosition)
@@ -52,12 +78,38 @@ namespace F1XR.RestAPI.Replay
             var mappedSourcePosition = MapSourceAxes(sourcePosition);
             var x = a * mappedSourcePosition.x - b * mappedSourcePosition.y + translation.x;
             var z = b * mappedSourcePosition.x + a * mappedSourcePosition.y + translation.y;
-            var y = useNearestPointHeight
-                ? GetBlendedPointHeight(mappedSourcePosition)
-                : localY;
+            var y = GetHeight(mappedSourcePosition);
 
             localPosition = new Vector3(x, y + heightOffset, z);
             return true;
+        }
+
+        float GetHeight(Vector2 mappedSourcePosition)
+        {
+            if (heightMode == HeightMode.Flat)
+                return localY;
+
+            return useNearestPointHeight
+                ? GetBlendedPointHeight(mappedSourcePosition)
+                : localY;
+        }
+
+        float GetSourceHeight(float sourceHeight)
+        {
+            float origin = sourceHeightOrigin;
+
+            if (useFirstSourceHeightAsOrigin)
+            {
+                if (!hasRuntimeSourceHeightOrigin)
+                {
+                    runtimeSourceHeightOrigin = sourceHeight;
+                    hasRuntimeSourceHeightOrigin = true;
+                }
+
+                origin = runtimeSourceHeightOrigin;
+            }
+
+            return (sourceHeight - origin) * sourceHeightScale;
         }
 
         [ContextMenu("Log Calibration Report")]
