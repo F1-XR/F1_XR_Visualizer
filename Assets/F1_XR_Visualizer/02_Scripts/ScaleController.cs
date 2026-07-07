@@ -38,6 +38,8 @@ namespace F1XR.AR
         Vector3 startPivotLocal;
         Vector3 startScale;
 
+        public bool IsScaling => scaling;
+
         void Awake()
         {
             if (target == null)
