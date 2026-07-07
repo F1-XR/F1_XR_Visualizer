@@ -1,9 +1,11 @@
 using UnityEngine;
 using UnityEngine.Serialization;
+using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.Filtering;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Inputs;
 
 namespace F1XR.AR
 {
@@ -16,6 +18,9 @@ namespace F1XR.AR
         [SerializeField] float farMoveSpeed = 0.7f;
         [SerializeField] float farRotateSpeed = 90f;
         [SerializeField] float farRotationFollowSpeed = 18f;
+        [SerializeField] float leftPitchDirection = 1f;
+        [SerializeField] float leftRollDirection = -1f;
+        [SerializeField] InputActionReference leftThumbstickAction;
         [SerializeField] float thumbstickDeadzone = 0.15f;
         [FormerlySerializedAs("centerAttachOnWorldGrabTarget")]
         [SerializeField] bool centerAttachOnFarGrabTarget = true;
@@ -30,7 +35,10 @@ namespace F1XR.AR
         bool farMoving;
         float farGrabDistance;
         float farYawOffset;
+        float farPitchOffset;
+        float farRollOffset;
         float farViewYaw;
+        InputAction cachedLeftThumbstickAction;
         bool hadGrabSettings;
         bool startTrackPosition;
         bool startTrackRotation;
@@ -43,6 +51,7 @@ namespace F1XR.AR
         static readonly System.Collections.Generic.List<Collider> Colliders = new();
 
         public bool canProcess => isActiveAndEnabled;
+        public bool IsFarGrabMoving => farMoving;
 
         void Awake()
         {
@@ -130,13 +139,12 @@ namespace F1XR.AR
                     : 0f;
                 farViewYaw = GetViewYaw();
                 farYawOffset = Mathf.DeltaAngle(farViewYaw, startEulerAngles.y);
+                farPitchOffset = 0f;
+                farRollOffset = 0f;
             }
 
-            var axis = GetRightThumbstick();
-            if (axis.sqrMagnitude < thumbstickDeadzone * thumbstickDeadzone)
-                axis = Vector2.zero;
-            else if (preferMoveOnDiagonalThumbstick)
-                axis = DominantAxis(axis);
+            var axis = ApplyThumbstickDeadzone(GetRightThumbstick());
+            var leftAxis = ApplyThumbstickDeadzone(GetLeftThumbstick());
 
             var deltaTime = Time.deltaTime;
             farGrabDistance = Mathf.Max(0.1f, farGrabDistance + axis.y * farMoveSpeed * deltaTime);
@@ -146,8 +154,14 @@ namespace F1XR.AR
             if (keepOnlyYRotation)
             {
                 farYawOffset += axis.x * farRotateSpeed * deltaTime;
+                farPitchOffset += leftAxis.y * leftPitchDirection * farRotateSpeed * deltaTime;
+                farRollOffset += leftAxis.x * leftRollDirection * farRotateSpeed * deltaTime;
                 farViewYaw = SmoothAngle(farViewYaw, GetViewYaw(), farRotationFollowSpeed, deltaTime);
-                target.rotation = Quaternion.Euler(startEulerAngles.x, farViewYaw + farYawOffset, startEulerAngles.z);
+
+                var yawRotation = Quaternion.Euler(startEulerAngles.x, farViewYaw + farYawOffset, startEulerAngles.z);
+                var viewTilt = Quaternion.AngleAxis(farPitchOffset, GetViewRight()) *
+                               Quaternion.AngleAxis(farRollOffset, GetViewForward());
+                target.rotation = viewTilt * yawRotation;
             }
         }
 
@@ -247,11 +261,62 @@ namespace F1XR.AR
 
             foreach (var device in InputDevices)
             {
-                if (device.TryGetFeatureValue(CommonUsages.primary2DAxis, out var axis))
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primary2DAxis, out var axis))
                     return axis;
             }
 
             return Vector2.zero;
+        }
+
+        Vector2 GetLeftThumbstick()
+        {
+            var action = GetLeftThumbstickAction();
+            if (action != null)
+                return action.ReadValue<Vector2>();
+
+            InputDevices.Clear();
+            UnityEngine.XR.InputDevices.GetDevicesAtXRNode(XRNode.LeftHand, InputDevices);
+
+            foreach (var device in InputDevices)
+            {
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primary2DAxis, out var axis))
+                    return axis;
+            }
+
+            return Vector2.zero;
+        }
+
+        InputAction GetLeftThumbstickAction()
+        {
+            if (leftThumbstickAction != null && leftThumbstickAction.action != null)
+                return leftThumbstickAction.action;
+
+            if (cachedLeftThumbstickAction != null)
+                return cachedLeftThumbstickAction;
+
+            var managers = FindObjectsByType<InputActionManager>();
+            foreach (var manager in managers)
+            {
+                foreach (var asset in manager.actionAssets)
+                {
+                    var action = asset.FindActionMap("XRI Left", false)?.FindAction("Thumbstick", false);
+                    if (action == null)
+                        continue;
+
+                    cachedLeftThumbstickAction = action;
+                    return cachedLeftThumbstickAction;
+                }
+            }
+
+            return null;
+        }
+
+        Vector2 ApplyThumbstickDeadzone(Vector2 axis)
+        {
+            if (axis.sqrMagnitude < thumbstickDeadzone * thumbstickDeadzone)
+                return Vector2.zero;
+
+            return preferMoveOnDiagonalThumbstick ? DominantAxis(axis) : axis;
         }
 
         static Vector2 DominantAxis(Vector2 axis)
@@ -280,6 +345,28 @@ namespace F1XR.AR
                 return target.eulerAngles.y;
 
             return Quaternion.LookRotation(forward.normalized, Vector3.up).eulerAngles.y;
+        }
+
+        Vector3 GetViewForward()
+        {
+            var viewTransform = Camera.main != null ? Camera.main.transform : null;
+            var forward = viewTransform != null ? viewTransform.forward : target.forward;
+
+            if (forward.sqrMagnitude < 0.0001f)
+                return Vector3.forward;
+
+            return forward.normalized;
+        }
+
+        Vector3 GetViewRight()
+        {
+            var viewTransform = Camera.main != null ? Camera.main.transform : null;
+            var right = viewTransform != null ? viewTransform.right : target.right;
+
+            if (right.sqrMagnitude < 0.0001f)
+                return Vector3.right;
+
+            return right.normalized;
         }
 
         bool IsFarSelectingInteractor()
