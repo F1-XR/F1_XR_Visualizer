@@ -3614,7 +3614,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6f65fd07fb0f4e94382beeb43ca1a868, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RestApiAutoReplayController
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.AutoReplayStarter
   api: {fileID: 1518326053}
   player: {fileID: 1518326052}
   autoStart: 1

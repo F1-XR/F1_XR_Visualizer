@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Utility
 {
-    public static class CoordinateUtil
+    public static class ReplayCoordinate
     {
         public static float scale = 0.001f;
 

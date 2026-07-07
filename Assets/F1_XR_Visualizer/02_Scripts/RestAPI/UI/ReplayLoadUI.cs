@@ -135,6 +135,7 @@ namespace F1XR.RestAPI.UI
             }
 
             ReplayLoad.Manifest = manifest;
+            ReplayLoad.Track = SelectedTrack();
             SceneManager.LoadScene(replaySceneName);
         }
 
