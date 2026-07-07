@@ -39,6 +39,7 @@ namespace F1XR.RestAPI.AR
 
         public bool HasPlacement => spawnedInstance != null;
         public Transform PlacementTransform => spawnedInstance != null ? spawnedInstance.transform : null;
+        public Transform CarsTransform => spawnedInstance != null ? EnsureCarsRoot(spawnedInstance.transform) : null;
 
         GameObject previewInstance;
         GameObject spawnedInstance;
@@ -54,6 +55,21 @@ namespace F1XR.RestAPI.AR
         bool wasRightTriggerPressed;
 
         Material runtimePreviewMaterial;
+
+        static Transform EnsureCarsRoot(Transform placementRoot)
+        {
+            Transform visualRoot = placementRoot.Find("Visual");
+            if (visualRoot == null)
+                visualRoot = placementRoot;
+
+            Transform carsRoot = visualRoot.Find("Cars");
+            if (carsRoot != null)
+                return carsRoot;
+
+            GameObject obj = new GameObject("Cars");
+            obj.transform.SetParent(visualRoot, worldPositionStays: false);
+            return obj.transform;
+        }
 
         public void SetPlacementPrefab(
             GameObject prefab,
