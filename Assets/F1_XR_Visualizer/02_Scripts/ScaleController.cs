@@ -53,6 +53,8 @@ namespace F1XR.AR
         Vector3 moveStartEulerAngles;
         RigidbodyConstraints startConstraints;
 
+        public bool IsScaling => scaling;
+
         void Awake()
         {
             if (target == null)
