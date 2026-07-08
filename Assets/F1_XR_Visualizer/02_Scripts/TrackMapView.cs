@@ -15,6 +15,7 @@ namespace F1XR.AR
         void Awake()
         {
             ResolveReferences();
+            EnsureOcclusionTarget();
 
             if (mapPrefab != null)
                 Show(mapPrefab);
@@ -43,6 +44,7 @@ namespace F1XR.AR
             mapInstance.name = mapPrefab.name;
             mapInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
             mapInstance.transform.localScale = Vector3.one * Mathf.Max(0.0001f, scale);
+            EnsureOcclusionTarget();
 
             if (fitToTargetBounds)
                 FitMapScale(targetXZSize);
@@ -85,6 +87,15 @@ namespace F1XR.AR
 
             grabBox.center = bounds.center;
             grabBox.size = size;
+        }
+
+        void EnsureOcclusionTarget()
+        {
+            RealWorldOcclusionTarget target = GetComponent<RealWorldOcclusionTarget>();
+            if (target == null)
+                target = gameObject.AddComponent<RealWorldOcclusionTarget>();
+
+            target.Apply();
         }
 
         bool TryGetVisualBounds(out Bounds bounds)

@@ -134,6 +134,19 @@ namespace F1XR.RestAPI.AR
             // 이미 하나 배치했고 교체 허용이 꺼져 있으면 더 이상 preview를 보여주지 않음
             if (spawnedInstance != null && !allowReplaceExisting)
             {
+                if (!HasEnabledRenderer(spawnedInstance))
+                {
+                    ClearSpawned();
+                }
+                else
+                {
+                    HidePreview();
+                    return;
+                }
+            }
+
+            if (spawnedInstance != null && !allowReplaceExisting)
+            {
                 HidePreview();
                 return;
             }
@@ -166,6 +179,21 @@ namespace F1XR.RestAPI.AR
         {
             hasCurrentHit = placementController != null &&
                 placementController.TryGetPlacementHit(out currentPose, out currentPlane);
+        }
+
+        static bool HasEnabledRenderer(GameObject target)
+        {
+            if (target == null || !target.activeInHierarchy)
+                return false;
+
+            Renderer[] renderers = target.GetComponentsInChildren<Renderer>(includeInactive: false);
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer != null && renderer.enabled)
+                    return true;
+            }
+
+            return false;
         }
 
     }
