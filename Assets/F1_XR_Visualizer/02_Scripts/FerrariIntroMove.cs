@@ -1,5 +1,7 @@
 using DG.Tweening;
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 namespace F1XR.AR
 {
@@ -11,10 +13,13 @@ namespace F1XR.AR
         [SerializeField] bool playOnEnable = true;
         [SerializeField] GameObject frontLeftTyre;
         [SerializeField] ParticleSystem frontLeftTyrePuff;
+        [SerializeField] XRSocketInteractor frontLeftTyreSocket;
         [SerializeField] float tiltDelay = 1.5f;
         [SerializeField] Vector3 tiltLocalEuler = new(3f, 0f, 4f);
         [SerializeField] float tiltDuration = 0.6f;
         [SerializeField] Ease tiltEase = Ease.OutQuad;
+        [SerializeField] float riseDuration = 0.6f;
+        [SerializeField] Ease riseEase = Ease.OutQuad;
 
         Tween moveTween;
         Tween tiltTween;
@@ -22,15 +27,38 @@ namespace F1XR.AR
 
         void OnEnable()
         {
+            if (frontLeftTyreSocket != null)
+            {
+                frontLeftTyreSocket.selectEntered.AddListener(OnWheelSocketed);
+                frontLeftTyreSocket.selectExited.AddListener(OnWheelUnsocketed);
+            }
+
             if (playOnEnable)
                 Play();
         }
 
         void OnDisable()
         {
+            if (frontLeftTyreSocket != null)
+            {
+                frontLeftTyreSocket.selectEntered.RemoveListener(OnWheelSocketed);
+                frontLeftTyreSocket.selectExited.RemoveListener(OnWheelUnsocketed);
+            }
+
             moveTween?.Kill();
             tiltTween?.Kill();
             tiltDelayTween?.Kill();
+        }
+
+        void OnWheelSocketed(SelectEnterEventArgs args) => Tilt(-tiltLocalEuler, riseDuration, riseEase);
+
+        void OnWheelUnsocketed(SelectExitEventArgs args) => Tilt(tiltLocalEuler, tiltDuration, tiltEase);
+
+        void Tilt(Vector3 localEulerDelta, float animDuration, Ease ease)
+        {
+            tiltTween?.Kill();
+            tiltTween = transform.DOLocalRotate(localEulerDelta, animDuration, RotateMode.LocalAxisAdd)
+                .SetEase(ease);
         }
 
         public void Play()
@@ -44,6 +72,9 @@ namespace F1XR.AR
                     if (frontLeftTyre != null)
                         frontLeftTyre.SetActive(false);
 
+                    if (frontLeftTyreSocket != null)
+                        frontLeftTyreSocket.gameObject.SetActive(true);
+
                     if (frontLeftTyrePuff != null)
                     {
                         frontLeftTyrePuff.gameObject.SetActive(true);
@@ -51,12 +82,7 @@ namespace F1XR.AR
                     }
 
                     tiltDelayTween?.Kill();
-                    tiltDelayTween = DOVirtual.DelayedCall(tiltDelay, () =>
-                    {
-                        tiltTween?.Kill();
-                        tiltTween = transform.DOLocalRotate(tiltLocalEuler, tiltDuration, RotateMode.LocalAxisAdd)
-                            .SetEase(tiltEase);
-                    });
+                    tiltDelayTween = DOVirtual.DelayedCall(tiltDelay, () => Tilt(tiltLocalEuler, tiltDuration, tiltEase));
                 });
         }
     }
