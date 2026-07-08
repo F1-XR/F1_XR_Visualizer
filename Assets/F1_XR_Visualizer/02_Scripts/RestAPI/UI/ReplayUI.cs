@@ -19,7 +19,7 @@ namespace F1XR.RestAPI.UI
         public TMP_Text playPauseLabel;
 
         public TMP_Dropdown speedDropdown;
-        public float[] speedValues = { 0.5f, 1f, 2f, 4f, 8f, 16f };
+        public float[] speedValues = { 0.5f, 1f, 2f, 4f, 6f, 8f, 16f };
 
         public TMP_Text timeLabel;
         public TMP_Text rankText;
@@ -64,7 +64,7 @@ namespace F1XR.RestAPI.UI
                     labels.Add($"{speed:0.##}x");
 
                 speedDropdown.AddOptions(labels);
-                speedDropdown.value = 1;
+                speedDropdown.value = DefaultSpeedIndex();
                 speedDropdown.RefreshShownValue();
 
                 SetSpeedIndex(speedDropdown.value);
@@ -198,6 +198,28 @@ namespace F1XR.RestAPI.UI
                 return;
 
             SetSpeed(speedValues[index]);
+        }
+
+        private int DefaultSpeedIndex()
+        {
+            if (speedValues == null || speedValues.Length == 0)
+                return 0;
+
+            float speed = player != null ? player.playbackSpeed : 6f;
+            int bestIndex = 0;
+            float bestDistance = Mathf.Abs(speedValues[0] - speed);
+
+            for (int i = 1; i < speedValues.Length; i++)
+            {
+                float distance = Mathf.Abs(speedValues[i] - speed);
+                if (distance >= bestDistance)
+                    continue;
+
+                bestIndex = i;
+                bestDistance = distance;
+            }
+
+            return bestIndex;
         }
 
     }

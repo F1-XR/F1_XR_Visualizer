@@ -21,7 +21,7 @@ namespace F1XR.RestAPI.Replay
         public TrackAsset[] trackAssets;
 
         public bool playOnReady = true;
-        public float playbackSpeed = 1f;
+        public float playbackSpeed = 6f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
         public bool showCarLabels = true;
@@ -36,6 +36,7 @@ namespace F1XR.RestAPI.Replay
         private bool _isPlaying;
         private bool _playOnReady;
         private bool _hasStarted;
+        private bool _refreshedEngineSoundAfterCars;
         private bool _lastRedBullOnly;
         private string _lastTeamNameFilter;
 
@@ -116,6 +117,7 @@ namespace F1XR.RestAPI.Replay
             _isPlaying = false;
             _playOnReady = playOnReady;
             _hasStarted = false;
+            _refreshedEngineSoundAfterCars = false;
 
             ClearReplay();
 
@@ -266,6 +268,7 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            RefreshEngineSoundAfterCarsReady();
 
             _seekCoroutine = null;
         }
@@ -297,6 +300,7 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            RefreshEngineSoundAfterCarsReady();
         }
 
         private IEnumerator PollManifestLoop()
@@ -308,6 +312,9 @@ namespace F1XR.RestAPI.Replay
                     manifest =>
                     {
                         _manifest = manifest;
+                        _refreshedEngineSoundAfterCars = false;
+                        carView.SetDrivers(manifest.drivers);
+                        RefreshEngineSoundAfterCarsReady();
                         LoadNearChunks();
                         TryAutoPlay();
                     },
@@ -564,6 +571,25 @@ namespace F1XR.RestAPI.Replay
 
             carView.SetEngineSound(engineSound);
             RememberEngineSoundFilter();
+        }
+
+        private void RefreshEngineSoundAfterCarsReady()
+        {
+            if (_refreshedEngineSoundAfterCars || carView == null || !carView.HasCars)
+                return;
+
+            if (engineSound != null && engineSound.redBullOnly && (_manifest == null || _manifest.drivers == null || _manifest.drivers.Length == 0))
+                return;
+
+            if (!carView.HasEngineSoundTarget(engineSound))
+                return;
+
+            if (_manifest != null)
+                carView.SetDrivers(_manifest.drivers);
+
+            carView.SetEngineSound(engineSound);
+            RememberEngineSoundFilter();
+            _refreshedEngineSoundAfterCars = true;
         }
 
         private bool HasPlacedTrack()
