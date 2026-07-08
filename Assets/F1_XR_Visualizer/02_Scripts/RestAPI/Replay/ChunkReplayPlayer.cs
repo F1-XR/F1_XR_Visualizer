@@ -21,7 +21,7 @@ namespace F1XR.RestAPI.Replay
         public TrackAsset[] trackAssets;
 
         public bool playOnReady = true;
-        public float playbackSpeed = 1f;
+        public float playbackSpeed = 6f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
         public bool showCarLabels = true;
@@ -36,6 +36,7 @@ namespace F1XR.RestAPI.Replay
         private bool _isPlaying;
         private bool _playOnReady;
         private bool _hasStarted;
+        private bool _refreshedEngineSoundAfterCars;
         private bool _lastRedBullOnly;
         private string _lastTeamNameFilter;
 
@@ -93,8 +94,7 @@ namespace F1XR.RestAPI.Replay
             carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
-            carView.SetEngineSound(engineSound);
-            RememberEngineSoundFilter();
+            RefreshEngineSound();
             carView.SetSoundPlacementReady(HasPlacedTrack());
         }
     
@@ -110,12 +110,12 @@ namespace F1XR.RestAPI.Replay
             
             _manifest = manifest;
             ApplyTrack(track, manifest);
-            carView.SetDrivers(manifest.drivers);
             _datasetId = manifest.datasetId;
             _time = manifest.playbackStartT;
             _isPlaying = false;
             _playOnReady = playOnReady;
             _hasStarted = false;
+            _refreshedEngineSoundAfterCars = false;
 
             ClearReplay();
 
@@ -129,8 +129,7 @@ namespace F1XR.RestAPI.Replay
             carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
-            carView.SetEngineSound(engineSound);
-            RememberEngineSoundFilter();
+            RefreshEngineSound();
             carView.SetSoundPlacementReady(HasPlacedTrack());
             carView.SetSoundPlaying(false);
 
@@ -266,6 +265,7 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            RefreshEngineSoundAfterCarsReady();
 
             _seekCoroutine = null;
         }
@@ -297,6 +297,7 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            RefreshEngineSoundAfterCarsReady();
         }
 
         private IEnumerator PollManifestLoop()
@@ -308,6 +309,9 @@ namespace F1XR.RestAPI.Replay
                     manifest =>
                     {
                         _manifest = manifest;
+                        _refreshedEngineSoundAfterCars = false;
+                        carView.SetDrivers(manifest.drivers);
+                        RefreshEngineSoundAfterCarsReady();
                         LoadNearChunks();
                         TryAutoPlay();
                     },
@@ -472,6 +476,11 @@ namespace F1XR.RestAPI.Replay
             return replayTires.Get(driverNumber, _time);
         }
 
+        public void SetSelectedDriver(int driverNumber)
+        {
+            carView.SetSelectedDriver(driverNumber);
+        }
+
         public string GetDriverLabel(int driverNumber)
         {
             if (_manifest == null || _manifest.drivers == null)
@@ -561,6 +570,23 @@ namespace F1XR.RestAPI.Replay
             {
                 return;
             }
+
+            RefreshEngineSound();
+        }
+
+        private void RefreshEngineSoundAfterCarsReady()
+        {
+            if (_refreshedEngineSoundAfterCars || carView == null || !carView.HasCars)
+                return;
+
+            RefreshEngineSound();
+            _refreshedEngineSoundAfterCars = true;
+        }
+
+        private void RefreshEngineSound()
+        {
+            if (_manifest != null)
+                carView.SetDrivers(_manifest.drivers);
 
             carView.SetEngineSound(engineSound);
             RememberEngineSoundFilter();

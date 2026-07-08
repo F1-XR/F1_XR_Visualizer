@@ -46,6 +46,7 @@ namespace F1XR.AR
         bool hadAttachSettings;
         bool startUseDynamicAttach;
         bool startMatchAttachPosition;
+        IXRSelectInteractor farGrabInteractor;
 
         static readonly System.Collections.Generic.List<UnityEngine.XR.InputDevice> InputDevices = new();
         static readonly System.Collections.Generic.List<Collider> Colliders = new();
@@ -84,7 +85,7 @@ namespace F1XR.AR
                 return;
             }
 
-            var farGrab = IsFarSelectingInteractor();
+            var farGrab = farMoving || IsFarSelectingInteractor();
             if (farGrab)
                 UpdateFarGrab();
             else
@@ -133,6 +134,7 @@ namespace F1XR.AR
             {
                 moving = false;
                 farMoving = true;
+                farGrabInteractor = GetSelectingInteractor();
                 startEulerAngles = target.eulerAngles;
                 farGrabDistance = TryGetFarRayPose(out var rayOrigin, out _)
                     ? Vector3.Distance(rayOrigin, target.position)
@@ -167,7 +169,13 @@ namespace F1XR.AR
 
         public bool Process(IXRSelectInteractor interactor, IXRSelectInteractable interactable)
         {
-            if (!ReferenceEquals(interactable, grab) || allowFarGrab)
+            if (!ReferenceEquals(interactable, grab))
+                return true;
+
+            if (farMoving && !ReferenceEquals(interactor, farGrabInteractor))
+                return false;
+
+            if (allowFarGrab)
                 return true;
 
             if (interactor is XRRayInteractor)
@@ -243,6 +251,7 @@ namespace F1XR.AR
             moving = false;
             farMoving = false;
             hasNearGrabPivot = false;
+            farGrabInteractor = null;
             RestoreGrabSettings();
         }
 
@@ -371,10 +380,10 @@ namespace F1XR.AR
 
         bool IsFarSelectingInteractor()
         {
-            if (grab == null || grab.interactorsSelecting.Count == 0)
+            var interactor = GetSelectingInteractor();
+            if (interactor == null)
                 return false;
 
-            var interactor = grab.interactorsSelecting[0];
             if (interactor is XRRayInteractor)
                 return true;
 
@@ -387,10 +396,10 @@ namespace F1XR.AR
             origin = Vector3.zero;
             forward = Vector3.forward;
 
-            if (grab == null || grab.interactorsSelecting.Count == 0)
+            var interactor = farGrabInteractor ?? GetSelectingInteractor();
+            if (interactor == null)
                 return false;
 
-            var interactor = grab.interactorsSelecting[0];
             Transform rayTransform = null;
 
             if (interactor is IXRRayProvider rayProvider)
@@ -411,6 +420,14 @@ namespace F1XR.AR
                 ? rayTransform.forward.normalized
                 : Vector3.forward;
             return true;
+        }
+
+        IXRSelectInteractor GetSelectingInteractor()
+        {
+            if (grab == null || grab.interactorsSelecting.Count == 0)
+                return null;
+
+            return grab.interactorsSelecting[0];
         }
 
         bool TryGetSelectingInteractorTransform(out Transform interactorTransform)
