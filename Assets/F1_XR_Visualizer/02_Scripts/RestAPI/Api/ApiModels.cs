@@ -129,6 +129,13 @@ namespace F1XR.RestAPI.Api
         public float x;
         public float y;
         public float z;
+        public float rpm;
+        public float throttle;
+        public float speed;
+        public int nGear;
+        public int n_gear;
+        public int brake;
+        public int drs;
     }
     
     [Serializable]

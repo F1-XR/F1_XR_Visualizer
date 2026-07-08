@@ -15,6 +15,7 @@ namespace F1XR.Editor
         const string MaterialPath = "Assets/F1_XR_Visualizer/08_Materials/ARPlanePlacementCube.mat";
         const string PlanePrefabPath = "Assets/F1_XR_Visualizer/03_Prefabs/ARPlaneVisualizer.prefab";
         const string PlaneMaterialPath = "Assets/F1_XR_Visualizer/08_Materials/ARPlaneVisualizer.mat";
+        const string PlaneShaderName = "F1XR/RealWorldDepthOnly";
 
         public static void ConfigureSampleScene()
         {
@@ -132,7 +133,7 @@ namespace F1XR.Editor
 
             var meshRenderer = plane.AddComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = material;
-            meshRenderer.enabled = false;
+            meshRenderer.enabled = true;
 
             plane.AddComponent<MeshCollider>();
 
@@ -157,9 +158,11 @@ namespace F1XR.Editor
                 return existingMaterial;
             }
 
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            var shader = Shader.Find(PlaneShaderName);
             if (shader == null)
-                shader = Shader.Find("Unlit/Color");
+                shader = Shader.Find("Unlit/DepthOnly");
+            if (shader == null)
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
             if (shader == null)
                 shader = Shader.Find("Standard");
 
@@ -175,7 +178,12 @@ namespace F1XR.Editor
 
         static void ConfigurePlaneMaterial(Material material)
         {
-            material.color = new Color(0f, 0.9f, 0.8f, 0f);
+            var shader = Shader.Find(PlaneShaderName);
+            if (shader != null)
+                material.shader = shader;
+
+            if (material.HasProperty("_Color"))
+                material.color = new Color(0f, 0.9f, 0.8f, 0f);
 
             if (material.HasProperty("_Surface"))
                 material.SetFloat("_Surface", 1f);
@@ -184,7 +192,7 @@ namespace F1XR.Editor
             if (material.HasProperty("_DstBlend"))
                 material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             if (material.HasProperty("_ZWrite"))
-                material.SetFloat("_ZWrite", 0f);
+                material.SetFloat("_ZWrite", 1f);
 
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             material.SetOverrideTag("RenderType", "Transparent");
