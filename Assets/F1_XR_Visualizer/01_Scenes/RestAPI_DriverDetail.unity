@@ -3642,40 +3642,40 @@ MonoBehaviour:
       gain: 0.8
       perspective: 0
     lowOn:
-      clip: {fileID: 0}
-      baseRpm: 7000
+      clip: {fileID: 8300000, guid: 3e8a3ee70f652f1479a89d542fd70cec, type: 3}
+      baseRpm: 6600
       loadType: 1
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 1
+      gain: 0.4
       perspective: 0
     lowOff:
-      clip: {fileID: 0}
-      baseRpm: 7000
+      clip: {fileID: 8300000, guid: d77107f1b9c054c49bfdda81a0505b0b, type: 3}
+      baseRpm: 6600
       loadType: 2
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.75
+      gain: 0.3
       perspective: 0
     midOn:
-      clip: {fileID: 0}
-      baseRpm: 11000
+      clip: {fileID: 8300000, guid: 888f47f78dcd2ee40b290c917357ba39, type: 3}
+      baseRpm: 9900
       loadType: 1
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 1
+      gain: 0.7
       perspective: 0
     midOff:
-      clip: {fileID: 0}
-      baseRpm: 11000
+      clip: {fileID: 8300000, guid: 01178c21031cc284b8662cf768efa3b7, type: 3}
+      baseRpm: 9900
       loadType: 2
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.8
+      gain: 0.5
       perspective: 0
     highOn:
       clip: {fileID: 8300000, guid: 4ad6921f5771d1349ac05fa344f409fa, type: 3}
@@ -3693,7 +3693,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.85
+      gain: 0.7
       perspective: 0
     veryHighOn:
       clip: {fileID: 0}
@@ -3760,6 +3760,8 @@ MonoBehaviour:
     priority: 128
     enableFullEngineLayers: 1
     selectedCarGetsFullAudio: 0
+    fadeOutCars: 2
+    fadeOutVolume: 0.35
   positionScale: 0.0001
 --- !u!114 &1518326053
 MonoBehaviour:
