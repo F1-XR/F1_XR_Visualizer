@@ -177,6 +177,8 @@ namespace F1XR.RestAPI.Replay
         [Header("Audio LOD")]
         public bool enableFullEngineLayers = true;
         public bool selectedCarGetsFullAudio;
+        public int fadeOutCars = 2;
+        public float fadeOutVolume = 0.35f;
 
         public void EnsureDefaults()
         {
@@ -267,6 +269,7 @@ namespace F1XR.RestAPI.Replay
         private float fallbackFlareDuration;
         private bool playing = true;
         private bool audible = true;
+        private float audibility = 1f;
         private volatile float audioRpm01;
         private volatile float audioThrottle01;
         private volatile float audioSpeed01;
@@ -275,7 +278,15 @@ namespace F1XR.RestAPI.Replay
         private double enginePhase;
         private double roughPhase;
         private uint noiseState = 22222u;
+        private float pitchVariation = 1f;
+        private float volumeVariation = 1f;
 
+        public void SetVariation(float pitchMultiplier, float volumeMultiplier)
+        {
+            pitchVariation = Mathf.Clamp(pitchMultiplier, 0.94f, 1.06f);
+            volumeVariation = Mathf.Clamp(volumeMultiplier, 0.75f, 1.15f);
+        }
+        
         public void Configure(CarEngineSoundSettings source)
         {
             settings = source;
@@ -337,6 +348,13 @@ namespace F1XR.RestAPI.Replay
         public void SetAudible(bool value)
         {
             audible = value;
+            audibility = value ? 1f : 0f;
+        }
+
+        public void SetAudibility(float value)
+        {
+            audibility = Mathf.Clamp01(value);
+            audible = audibility > 0f;
         }
 
         private void Update()
@@ -353,16 +371,14 @@ namespace F1XR.RestAPI.Replay
             smoothBrake01 = Mathf.Lerp(smoothBrake01, targetBrake01, responseValue);
             smoothSpeedMps = Mathf.Lerp(smoothSpeedMps, targetSpeedMps, responseValue);
 
-            float targetLoad = smoothThrottle01 > Mathf.Clamp01(settings.loadThreshold) ? 1f : 0f;
-            if (smoothBrake01 > 0.05f && smoothThrottle01 <= Mathf.Clamp01(settings.loadThreshold))
-                targetLoad = 0f;
+            float targetLoad = smoothThrottle01 > Mathf.Clamp01(settings.loadThreshold) && smoothBrake01 <= 0.05f ? 1f : 0f;
 
             smoothLoad01 = Mathf.Lerp(smoothLoad01, targetLoad, ExpResponse(settings.loadResponse));
 
             float rpm01 = Mathf.InverseLerp(settings.minRpm, RpmCeiling(), smoothRpm);
             float speed01 = Mathf.InverseLerp(0f, 95f, smoothSpeedMps);
             float master = playing && audible && Time.time - lastTelemetryTime < 0.5f
-                ? Mathf.Clamp01(settings.masterVolume)
+                ? Mathf.Clamp01(settings.masterVolume * volumeVariation) * audibility
                 : 0f;
 
             if (settings.mode == EngineAudioMode.Procedural)
@@ -517,7 +533,7 @@ namespace F1XR.RestAPI.Replay
                         layer.sample.minimumPitch,
                         layer.sample.maximumPitch
                     );
-                    SetPitch(layer.source, pitch, responseValue);
+                    SetPitch(layer.source, pitch * pitchVariation, responseValue);
                 }
 
                 SetVolume(layer.source, targetVolume, responseValue);
@@ -532,7 +548,7 @@ namespace F1XR.RestAPI.Replay
             if (gearboxSource == null || gearboxSource.clip == null)
                 return;
 
-            SetPitch(gearboxSource, Mathf.Lerp(0.75f, 1.35f, speed01), responseValue);
+            SetPitch(gearboxSource, Mathf.Lerp(0.75f, 1.35f, speed01) * pitchVariation, responseValue);
             SetVolume(gearboxSource, speed01 * master * 0.18f, responseValue);
         }
 

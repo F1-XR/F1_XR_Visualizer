@@ -3622,7 +3622,7 @@ MonoBehaviour:
     mapFitScaleMultiplier: 1.25
     calibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   playOnReady: 1
-  playbackSpeed: 2
+  playbackSpeed: 6
   preloadChunksAhead: 3
   manifestPollSeconds: 1
   showCarLabels: 1
@@ -3678,8 +3678,8 @@ MonoBehaviour:
       gain: 0.8
       perspective: 0
     highOn:
-      clip: {fileID: 0}
-      baseRpm: 15000
+      clip: {fileID: 8300000, guid: 4ad6921f5771d1349ac05fa344f409fa, type: 3}
+      baseRpm: 11950
       loadType: 1
       isLoop: 1
       minimumPitch: 0.82
@@ -3687,8 +3687,8 @@ MonoBehaviour:
       gain: 1
       perspective: 0
     highOff:
-      clip: {fileID: 0}
-      baseRpm: 15000
+      clip: {fileID: 8300000, guid: 3c154b4fdb8ae9345a5964e9018a0b0d, type: 3}
+      baseRpm: 11000
       loadType: 2
       isLoop: 1
       minimumPitch: 0.82
@@ -3738,8 +3738,8 @@ MonoBehaviour:
     overrunCrackle: {fileID: 0}
     proceduralTone: 0.85
     proceduralRoughness: 0.55
-    masterVolume: 1
-    maxActiveCars: 8
+    masterVolume: 0.5
+    maxActiveCars: 1
     minRpm: 4500
     maxRpm: 12000
     idleRpm: 5000
