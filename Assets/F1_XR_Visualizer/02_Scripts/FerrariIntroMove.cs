@@ -20,10 +20,16 @@ namespace F1XR.AR
         [SerializeField] Ease tiltEase = Ease.OutQuad;
         [SerializeField] float riseDuration = 0.6f;
         [SerializeField] Ease riseEase = Ease.OutQuad;
+        [SerializeField] float exitDelay = 2f;
+        [SerializeField] Vector3 exitStartLocalPosition = new(0f, -0.55f, 9f);
+        [SerializeField] Vector3 exitEndLocalPosition = new(0f, -0.55f, -20f);
+        [SerializeField] float exitDuration = 2f;
 
         Tween moveTween;
         Tween tiltTween;
         Tween tiltDelayTween;
+        Tween exitDelayTween;
+        Tween exitMoveTween;
 
         void OnEnable()
         {
@@ -48,9 +54,24 @@ namespace F1XR.AR
             moveTween?.Kill();
             tiltTween?.Kill();
             tiltDelayTween?.Kill();
+            exitDelayTween?.Kill();
+            exitMoveTween?.Kill();
         }
 
-        void OnWheelSocketed(SelectEnterEventArgs args) => Tilt(-tiltLocalEuler, riseDuration, riseEase);
+        void OnWheelSocketed(SelectEnterEventArgs args)
+        {
+            Tilt(-tiltLocalEuler, riseDuration, riseEase);
+
+            exitDelayTween?.Kill();
+            exitDelayTween = DOVirtual.DelayedCall(exitDelay, () =>
+            {
+                transform.localPosition = exitStartLocalPosition;
+                exitMoveTween?.Kill();
+                exitMoveTween = transform.DOLocalMove(exitEndLocalPosition, exitDuration)
+                    .SetEase(Ease.InOutQuart)
+                    .OnComplete(() => gameObject.SetActive(false));
+            });
+        }
 
         void OnWheelUnsocketed(SelectExitEventArgs args) => Tilt(tiltLocalEuler, tiltDuration, tiltEase);
 
