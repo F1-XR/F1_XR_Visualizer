@@ -42,6 +42,7 @@ namespace F1XR.RestAPI.Replay
         private CarEngineSoundSettings engineSoundSettings;
         private bool soundPlaying = true;
         private bool soundPlacementReady;
+        private int selectedDriverNumber;
         private bool loggedEngineSound;
         private bool loggedMissingSoundTeam;
         private bool loggedNoAudioListener;
@@ -55,27 +56,6 @@ namespace F1XR.RestAPI.Replay
         }
 
         public bool HasCars => cars.Count > 0;
-
-        public bool HasEngineSoundTarget(CarEngineSoundSettings settings)
-        {
-            if (settings == null || !settings.useEngineSound || cars.Count == 0)
-                return false;
-
-            if (!settings.redBullOnly || string.IsNullOrWhiteSpace(settings.teamNameFilter))
-                return true;
-
-            foreach (int driver in cars.Keys)
-            {
-                if (driverTeams.TryGetValue(driver, out string team) &&
-                    !string.IsNullOrWhiteSpace(team) &&
-                    team.IndexOf(settings.teamNameFilter, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
 
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
@@ -113,6 +93,7 @@ namespace F1XR.RestAPI.Replay
                 indices[driver] = index;
 
                 MoveCar(car, list[index], list[index + 1], time);
+                car.SetSelected(driver == selectedDriverNumber, SelectionColor(driver));
             }
 
             UpdateSoundAudibility();
@@ -159,6 +140,17 @@ namespace F1XR.RestAPI.Replay
             loggedDriverTeams = false;
         }
 
+        public void SetSelectedDriver(int driverNumber)
+        {
+            selectedDriverNumber = driverNumber;
+
+            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            {
+                if (pair.Value != null)
+                    pair.Value.SetSelected(pair.Key == selectedDriverNumber, SelectionColor(pair.Key));
+            }
+        }
+
         private CarAgent CreateCar(int driver)
         {
             GameObject obj;
@@ -186,11 +178,20 @@ namespace F1XR.RestAPI.Replay
             if (driverColors.TryGetValue(driver, out Color color))
                 car.SetColor(color);
 
+            car.SetSelected(driver == selectedDriverNumber, SelectionColor(driver));
+
             baseRotations.Add(driver, obj.transform.rotation);
             cars.Add(driver, car);
             ConfigureEngineSound(driver, car);
 
             return car;
+        }
+
+        private Color SelectionColor(int driver)
+        {
+            return driverColors.TryGetValue(driver, out Color color)
+                ? color
+                : new Color(0.25f, 0.28f, 0.34f);
         }
 
         public void SetPlacement(ARPlanePlacementController source)
@@ -510,11 +511,15 @@ namespace F1XR.RestAPI.Replay
                 return distanceA.CompareTo(distanceB);
             });
 
+            int fullCars = Mathf.Max(0, engineSoundSettings.maxActiveCars);
+            int fadeCars = Mathf.Max(0, engineSoundSettings.fadeOutCars);
+            float fadeVolume = Mathf.Clamp01(engineSoundSettings.fadeOutVolume);
+
             for (int i = 0; i < soundOrder.Count; i++)
             {
                 bool inRange = maxDistanceSqr <= 0f
                     || Vector3.SqrMagnitude(soundOrder[i].transform.position - listenerPosition) <= maxDistanceSqr;
-                soundOrder[i].SetAudible(i < engineSoundSettings.maxActiveCars && inRange);
+                soundOrder[i].SetAudibility(inRange ? AudibilityForRank(i, fullCars, fadeCars, fadeVolume) : 0f);
             }
 
             if (!loggedNoAudibleCars && soundOrder.Count > 0)
@@ -525,7 +530,7 @@ namespace F1XR.RestAPI.Replay
                 {
                     bool inRange = maxDistanceSqr <= 0f
                         || Vector3.SqrMagnitude(soundOrder[i].transform.position - listenerPosition) <= maxDistanceSqr;
-                    if (i < engineSoundSettings.maxActiveCars && inRange)
+                    if (inRange && AudibilityForRank(i, fullCars, fadeCars, fadeVolume) > 0f)
                         audibleCount++;
                 }
 
@@ -536,6 +541,19 @@ namespace F1XR.RestAPI.Replay
                     loggedNoAudibleCars = true;
                 }
             }
+        }
+
+        private static float AudibilityForRank(int rank, int fullCars, int fadeCars, float fadeVolume)
+        {
+            if (rank < fullCars)
+                return 1f;
+
+            if (fadeCars <= 0 || rank >= fullCars + fadeCars)
+                return 0f;
+
+            int fadeRank = rank - fullCars;
+            float fade01 = 1f - (fadeRank + 1f) / (fadeCars + 1f);
+            return fadeVolume * fade01;
         }
 
         private static int Gear(LocationSample sample)
@@ -773,7 +791,8 @@ namespace F1XR.RestAPI.Replay
         {
             return renderer != null
                 && renderer.enabled
-                && !renderer.name.StartsWith("DriverLabel");
+                && !renderer.name.StartsWith("DriverLabel")
+                && !renderer.name.StartsWith("SelectedCar");
         }
 
         private void EnsureTrackSurfaceColliders(Transform root)
