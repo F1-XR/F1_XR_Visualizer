@@ -15,16 +15,44 @@ namespace F1XR.RestAPI.Replay
             NegativeYX
         }
 
+        public enum HeightMode
+        {
+            CalibrationPoints,
+            SourceSample,
+            Flat
+        }
+
+        public enum MappingMode
+        {
+            Global,
+            Segment
+        }
+
+        private const float SegmentEndpointPadding = 0.08f;
+        private const float MinSegmentSourceDistance = 120f;
+        private const float MaxSegmentSourceDistance = 900f;
+        private const float SegmentSourceDistanceRatio = 0.12f;
+
         public int circuitKey;
         public string circuitName;
         public bool active;
+        public MappingMode mappingMode;
+        [Range(0f, 1f)] public float segmentBlend = 1f;
+        public bool loopMappingSegments = true;
         public SourceAxisMode sourceAxisMode;
+        public HeightMode heightMode;
         public float localY;
         public float heightOffset;
+        public bool useFirstSourceHeightAsOrigin = true;
+        public float sourceHeightOrigin;
+        public float sourceHeightScale = 0.0001f;
         public bool useNearestPointHeight = true;
         [Range(0f, 1f)] public float pointHeightBlend = 0.25f;
         public bool loopPointHeightSegments = true;
         public Point[] points;
+
+        bool hasRuntimeSourceHeightOrigin;
+        float runtimeSourceHeightOrigin;
 
         [Serializable]
         public struct Point
@@ -36,7 +64,19 @@ namespace F1XR.RestAPI.Replay
 
         public bool TryMap(LocationSample sample, out Vector3 localPosition)
         {
-            return TryMap(new Vector2(sample.x, sample.y), out localPosition);
+            if (!TryMap(new Vector2(sample.x, sample.y), out localPosition))
+                return false;
+
+            if (heightMode == HeightMode.SourceSample)
+                localPosition.y = localY + GetSourceHeight(sample.z) + heightOffset;
+
+            return true;
+        }
+
+        public void ResetRuntimeHeightOrigin()
+        {
+            hasRuntimeSourceHeightOrigin = false;
+            runtimeSourceHeightOrigin = 0f;
         }
 
         public bool TryMap(Vector2 sourcePosition, out Vector3 localPosition)
@@ -50,14 +90,155 @@ namespace F1XR.RestAPI.Replay
                 return false;
 
             var mappedSourcePosition = MapSourceAxes(sourcePosition);
-            var x = a * mappedSourcePosition.x - b * mappedSourcePosition.y + translation.x;
-            var z = b * mappedSourcePosition.x + a * mappedSourcePosition.y + translation.y;
-            var y = useNearestPointHeight
+            var globalPosition = MapGlobal(mappedSourcePosition, a, b, translation);
+            var mappedPosition = globalPosition;
+
+            if (mappingMode == MappingMode.Segment && TryMapSegment(mappedSourcePosition, out var segmentPosition))
+                mappedPosition = Vector2.Lerp(globalPosition, segmentPosition, Mathf.Clamp01(segmentBlend));
+
+            var y = GetHeight(mappedSourcePosition);
+
+            localPosition = new Vector3(mappedPosition.x, y + heightOffset, mappedPosition.y);
+            return true;
+        }
+
+        public bool TryMapGlobalPreview(Vector2 sourcePosition, out Vector3 localPosition)
+        {
+            localPosition = default;
+
+            if (!active)
+                return false;
+
+            if (!TrySolve(out var a, out var b, out var translation))
+                return false;
+
+            var mappedSourcePosition = MapSourceAxes(sourcePosition);
+            var mappedPosition = MapGlobal(mappedSourcePosition, a, b, translation);
+            var y = GetHeight(mappedSourcePosition);
+
+            localPosition = new Vector3(mappedPosition.x, y + heightOffset, mappedPosition.y);
+            return true;
+        }
+
+        static Vector2 MapGlobal(Vector2 sourcePosition, float a, float b, Vector2 translation)
+        {
+            return new Vector2(
+                a * sourcePosition.x - b * sourcePosition.y + translation.x,
+                b * sourcePosition.x + a * sourcePosition.y + translation.y
+            );
+        }
+
+        bool TryMapSegment(Vector2 sourcePosition, out Vector2 targetPosition)
+        {
+            targetPosition = default;
+
+            if (points == null || GetConfiguredPointCount() < 2)
+                return false;
+
+            var bestDistance = float.MaxValue;
+            var found = false;
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                var a = points[i];
+                if (!IsConfigured(a))
+                    continue;
+
+                if (TryGetNextConfiguredPoint(i, out var b) && TryUseMappingSegment(sourcePosition, a, b, ref bestDistance, ref targetPosition))
+                    found = true;
+
+                if (!loopMappingSegments || i != GetLastConfiguredPointIndex())
+                    continue;
+
+                var first = GetFirstConfiguredPoint();
+                if (first.HasValue && TryUseMappingSegment(sourcePosition, a, first.Value, ref bestDistance, ref targetPosition))
+                    found = true;
+            }
+
+            return found;
+        }
+
+        bool TryUseMappingSegment(
+            Vector2 sourcePosition,
+            Point a,
+            Point b,
+            ref float bestDistance,
+            ref Vector2 targetPosition
+        )
+        {
+            var sourceA = MapSourceAxes(a.sourcePosition);
+            var sourceB = MapSourceAxes(b.sourcePosition);
+            var sourceSegment = sourceB - sourceA;
+            var sourceLengthSquared = sourceSegment.sqrMagnitude;
+
+            if (sourceLengthSquared <= 0.000001f)
+                return false;
+
+            var sourceLength = Mathf.Sqrt(sourceLengthSquared);
+            var rawT = Vector2.Dot(sourcePosition - sourceA, sourceSegment) / sourceLengthSquared;
+            if (rawT < -SegmentEndpointPadding || rawT > 1f + SegmentEndpointPadding)
+                return false;
+
+            var t = Mathf.Clamp01(rawT);
+            var projectedSource = sourceA + sourceSegment * t;
+            var distance = (sourcePosition - projectedSource).sqrMagnitude;
+            var maxDistance = Mathf.Min(
+                MaxSegmentSourceDistance,
+                Mathf.Max(MinSegmentSourceDistance, sourceLength * SegmentSourceDistanceRatio)
+            );
+
+            if (distance > maxDistance * maxDistance)
+                return false;
+
+            if (distance >= bestDistance)
+                return false;
+
+            var targetA = new Vector2(a.targetLocalPosition.x, a.targetLocalPosition.z);
+            var targetB = new Vector2(b.targetLocalPosition.x, b.targetLocalPosition.z);
+            var targetSegment = targetB - targetA;
+            var targetLength = targetSegment.magnitude;
+
+            if (targetLength <= 0.000001f || sourceLength <= 0.000001f)
+                return false;
+
+            var sourceDirection = sourceSegment / sourceLength;
+            var targetDirection = targetSegment / targetLength;
+            var sourceNormal = new Vector2(-sourceDirection.y, sourceDirection.x);
+            var targetNormal = new Vector2(-targetDirection.y, targetDirection.x);
+            var signedOffset = Vector2.Dot(sourcePosition - projectedSource, sourceNormal);
+            var offsetScale = targetLength / sourceLength;
+
+            bestDistance = distance;
+            targetPosition = Vector2.Lerp(targetA, targetB, t) + targetNormal * signedOffset * offsetScale;
+            return true;
+        }
+
+        float GetHeight(Vector2 mappedSourcePosition)
+        {
+            if (heightMode == HeightMode.Flat)
+                return localY;
+
+            return useNearestPointHeight
                 ? GetBlendedPointHeight(mappedSourcePosition)
                 : localY;
+        }
 
-            localPosition = new Vector3(x, y + heightOffset, z);
-            return true;
+        float GetSourceHeight(float sourceHeight)
+        {
+            float origin = sourceHeightOrigin;
+
+            if (useFirstSourceHeightAsOrigin)
+            {
+                if (!hasRuntimeSourceHeightOrigin)
+                {
+                    runtimeSourceHeightOrigin = sourceHeight;
+                    hasRuntimeSourceHeightOrigin = true;
+                }
+
+                origin = runtimeSourceHeightOrigin;
+            }
+
+            return (sourceHeight - origin) * sourceHeightScale;
         }
 
         [ContextMenu("Log Calibration Report")]
@@ -323,6 +504,25 @@ namespace F1XR.RestAPI.Replay
             }
 
             return null;
+        }
+
+        bool TryGetNextConfiguredPoint(int startIndex, out Point nextPoint)
+        {
+            nextPoint = default;
+
+            if (points == null)
+                return false;
+
+            for (int i = startIndex + 1; i < points.Length; i++)
+            {
+                if (!IsConfigured(points[i]))
+                    continue;
+
+                nextPoint = points[i];
+                return true;
+            }
+
+            return false;
         }
 
         int GetLastConfiguredPointIndex()

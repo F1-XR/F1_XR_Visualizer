@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -43,6 +44,8 @@ namespace F1XR.RestAPI.AR
         MaterialPropertyBlock propertyBlock;
         Coroutine revealRoutine;
 
+        public event Action Completed;
+
         public void Configure(
             float newDuration,
             float newEdgeWidth,
@@ -69,10 +72,16 @@ namespace F1XR.RestAPI.AR
         IEnumerator PlayRoutine()
         {
             if (!PrepareRenderers())
+            {
+                FinishReveal();
                 yield break;
+            }
 
             if (!TryCalculateWorldBounds(out var bounds))
+            {
+                FinishReveal();
                 yield break;
+            }
 
             float minY = bounds.min.y - startPadding;
             float maxY = bounds.max.y + endPadding;
@@ -99,7 +108,13 @@ namespace F1XR.RestAPI.AR
             if (restoreMaterialsOnComplete)
                 RestoreOriginalMaterials();
 
+            FinishReveal();
+        }
+
+        void FinishReveal()
+        {
             revealRoutine = null;
+            Completed?.Invoke();
         }
 
         bool PrepareRenderers()
@@ -111,8 +126,13 @@ namespace F1XR.RestAPI.AR
 
             if (renderers == null || renderers.Length == 0)
             {
-                Debug.LogWarning("[BuildRevealController] Renderer를 찾지 못했습니다.", this);
-                return false;
+                renderers = GetComponentsInChildren<Renderer>(includeInactive: true);
+
+                if (renderers == null || renderers.Length == 0)
+                {
+                    Debug.LogWarning("[BuildRevealController] Renderer를 찾지 못했습니다.", this);
+                    return false;
+                }
             }
 
             Shader revealShader = Shader.Find("F1XR/BuildRevealURP");

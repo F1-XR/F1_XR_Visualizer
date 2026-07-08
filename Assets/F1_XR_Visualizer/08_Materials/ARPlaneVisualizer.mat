@@ -21,7 +21,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: ARPlaneVisualizer
-  m_Shader: {fileID: 4800000, guid: 650dd9526735d5b46b79224bc6e94025, type: 3}
+  m_Shader: {fileID: 4800000, guid: 9c0f1d5d2d2f4b74ab3df2d2d1c9b105, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
@@ -66,7 +66,7 @@ Material:
     - _SrcBlendAlpha: 1
     - _Surface: 1
     - _XRMotionVectorsPass: 1
-    - _ZWrite: 0
+    - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 0, g: 0.9, b: 0.8, a: 0}
     - _Color: {r: 0, g: 0.9, b: 0.8, a: 0}

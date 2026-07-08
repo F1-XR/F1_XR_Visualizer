@@ -29,7 +29,8 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
     private int pointIndex;
     private bool isPicking;
     private bool showSourcePreview = true;
-    private float targetPositionScale = 0.001f;
+    private bool advanceAfterPick = true;
+    private float targetPositionScale = 1000f;
     private readonly List<MeshCollider> temporaryColliders = new();
     private readonly HashSet<Collider> pickableColliders = new();
 
@@ -98,6 +99,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
             return;
 
         showSourcePreview = EditorGUILayout.Toggle("Show Source Preview", showSourcePreview);
+        advanceAfterPick = EditorGUILayout.Toggle("Advance After Pick", advanceAfterPick);
 
         pointIndex = Mathf.Clamp(pointIndex, 0, calibration.points.Length - 1);
         pointIndex = EditorGUILayout.Popup("Point", pointIndex, PointNames());
@@ -243,7 +245,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
             $"world={worldPosition}, root={localRoot.name}, hit={hitSource}"
         );
 
-        if (pointIndex < calibration.points.Length - 1)
+        if (advanceAfterPick && pointIndex < calibration.points.Length - 1)
             pointIndex++;
 
         SceneView.RepaintAll();
@@ -269,7 +271,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
         TrackCalibration.Point[] points = calibration.points;
         TrackCalibration.Point point = points[pointIndex];
 
-        if (!calibration.TryMap(point.sourcePosition, out Vector3 mappedLocalPosition))
+        if (!calibration.TryMapGlobalPreview(point.sourcePosition, out Vector3 mappedLocalPosition))
         {
             Debug.LogWarning($"{calibration.name}: source preview failed for {point.name}.");
             return;
@@ -299,7 +301,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
 
         for (int i = 0; i < oldPoints.Length; i++)
         {
-            if (!calibration.TryMap(oldPoints[i].sourcePosition, out mappedPositions[i]))
+            if (!calibration.TryMapGlobalPreview(oldPoints[i].sourcePosition, out mappedPositions[i]))
             {
                 Debug.LogWarning($"{calibration.name}: source preview failed for {oldPoints[i].name}.");
                 return;
@@ -334,7 +336,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
 
         TrackCalibration.Point[] points = calibration.points;
         TrackCalibration.Point point = points[pointIndex];
-        point.targetLocalPosition *= scale;
+        point.targetLocalPosition = ScaleTargetPosition(point.targetLocalPosition, scale);
         points[pointIndex] = point;
         calibration.points = points;
 
@@ -357,7 +359,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
         for (int i = 0; i < points.Length; i++)
         {
             TrackCalibration.Point point = points[i];
-            point.targetLocalPosition *= scale;
+            point.targetLocalPosition = ScaleTargetPosition(point.targetLocalPosition, scale);
             points[i] = point;
         }
 
@@ -368,6 +370,11 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
         Repaint();
 
         Debug.Log($"{calibration.name}: scaled {points.Length} targetLocalPositions by {scale}.");
+    }
+
+    private static Vector3 ScaleTargetPosition(Vector3 position, float scale)
+    {
+        return new Vector3(position.x * scale, position.y, position.z * scale);
     }
 
     private void InsertMidPointAfterSelected()
@@ -433,7 +440,7 @@ public sealed class TrackCalibrationPointPicker : EditorWindow
             if (!showSourcePreview)
                 continue;
 
-            if (!calibration.TryMap(point.sourcePosition, out Vector3 mappedLocalPosition))
+            if (!calibration.TryMapGlobalPreview(point.sourcePosition, out Vector3 mappedLocalPosition))
                 continue;
 
             Vector3 mappedWorldPosition = localRoot.TransformPoint(mappedLocalPosition);

@@ -32,6 +32,7 @@ namespace F1XR.RestAPI.AR
             {
                 target = Instantiate(placementPrefab);
                 target.name = placementPrefab.name;
+                ApplyTrackMap(target);
                 ConfigurePhysics(target);
             }
 
@@ -51,6 +52,9 @@ namespace F1XR.RestAPI.AR
             }
 
             spawnedInstance = target;
+            Transform carsRoot = CarsTransform;
+            if (carsRoot != null)
+                carsRoot.gameObject.SetActive(false);
 
             BuildRevealController revealController =
                 spawnedInstance.GetComponent<BuildRevealController>();
@@ -64,7 +68,16 @@ namespace F1XR.RestAPI.AR
                 buildEdgeColor,
                 restoreMaterialsAfterBuild);
 
+            revealController.Completed -= ShowCarsAfterReveal;
+            revealController.Completed += ShowCarsAfterReveal;
             revealController.Play();
+        }
+
+        void ShowCarsAfterReveal()
+        {
+            Transform carsRoot = CarsTransform;
+            if (carsRoot != null)
+                carsRoot.gameObject.SetActive(true);
         }
 
         ARAnchor CreateAnchor(Pose pose, ARPlane plane)
@@ -91,6 +104,16 @@ namespace F1XR.RestAPI.AR
                 rigidbody.useGravity = false;
                 rigidbody.isKinematic = true;
             }
+        }
+
+        void ApplyTrackMap(GameObject target)
+        {
+            if (trackMapPrefab == null || target == null)
+                return;
+
+            F1XR.AR.TrackMapView mapView = target.GetComponent<F1XR.AR.TrackMapView>();
+            if (mapView != null)
+                mapView.Show(trackMapPrefab, trackMapScale, fitTrackMapToBounds, trackMapTargetXZSize);
         }
 
         public void ClearSpawned()
