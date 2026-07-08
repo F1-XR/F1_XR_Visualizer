@@ -3039,7 +3039,7 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: 0}
-  inputSourcePriority: 0
+  inputSourcePriority: 1
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
   handlePlacementInput: 0

@@ -306,7 +306,13 @@ MonoBehaviour:
   keepOnlyYRotation: 1
   farMoveSpeed: 2
   farRotateSpeed: 135
+  farRotationFollowSpeed: 18
+  leftPitchDirection: 1
+  leftRollDirection: -1
+  leftThumbstickAction: {fileID: 0}
   thumbstickDeadzone: 0.15
+  centerAttachOnFarGrabTarget: 1
+  preferMoveOnDiagonalThumbstick: 1
 --- !u!1 &8335670326271928987
 GameObject:
   m_ObjectHideFlags: 0
