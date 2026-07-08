@@ -177,6 +177,8 @@ namespace F1XR.RestAPI.Replay
         [Header("Audio LOD")]
         public bool enableFullEngineLayers = true;
         public bool selectedCarGetsFullAudio;
+        public int fadeOutCars = 2;
+        public float fadeOutVolume = 0.35f;
 
         public void EnsureDefaults()
         {
@@ -267,6 +269,7 @@ namespace F1XR.RestAPI.Replay
         private float fallbackFlareDuration;
         private bool playing = true;
         private bool audible = true;
+        private float audibility = 1f;
         private volatile float audioRpm01;
         private volatile float audioThrottle01;
         private volatile float audioSpeed01;
@@ -345,6 +348,13 @@ namespace F1XR.RestAPI.Replay
         public void SetAudible(bool value)
         {
             audible = value;
+            audibility = value ? 1f : 0f;
+        }
+
+        public void SetAudibility(float value)
+        {
+            audibility = Mathf.Clamp01(value);
+            audible = audibility > 0f;
         }
 
         private void Update()
@@ -368,7 +378,7 @@ namespace F1XR.RestAPI.Replay
             float rpm01 = Mathf.InverseLerp(settings.minRpm, RpmCeiling(), smoothRpm);
             float speed01 = Mathf.InverseLerp(0f, 95f, smoothSpeedMps);
             float master = playing && audible && Time.time - lastTelemetryTime < 0.5f
-                ? Mathf.Clamp01(settings.masterVolume * volumeVariation)
+                ? Mathf.Clamp01(settings.masterVolume * volumeVariation) * audibility
                 : 0f;
 
             if (settings.mode == EngineAudioMode.Procedural)
