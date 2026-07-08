@@ -36,7 +36,7 @@ public static class RestApiSceneRuntimeInstaller
 
         player.api = api;
         player.playOnReady = true;
-        player.playbackSpeed = 1f;
+        player.playbackSpeed = 6f;
         player.preloadChunksAhead = 3;
 
         controller.api = api;

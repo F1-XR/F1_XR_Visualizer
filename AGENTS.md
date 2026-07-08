@@ -121,6 +121,31 @@ Before finishing a task:
 * State exactly what was validated.
 * If validation was not possible, say so clearly.
 
+## Unity Feedback Requests
+
+When asking the user to verify behavior in Unity, always give a short, exact checklist instead of vague "try it" instructions.
+
+Include only the items relevant to the change, but prefer these checks:
+
+* Scene to open, for example `RestAPI_DriverDetail`.
+* Whether Play Mode must be restarted or Inspector changes can be checked live.
+* Unity Console errors or warnings to look for.
+* Specific GameObject path to inspect in Hierarchy.
+* Specific component and field names to check in Inspector.
+* Expected runtime values, for example `AudioSource.volume > 0`, `isPlaying = true`, or nonzero telemetry logs.
+* User action sequence, for example place track, start replay, pause, toggle setting, move listener.
+* What result confirms success and what result means the change failed.
+* Ask for a screenshot only when it would materially help diagnose the next step.
+
+For engine audio work, include checks such as:
+
+* `RestAPI Replay Runtime > ChunkReplayPlayer > Engine Sound` settings.
+* Runtime car object path like `TrackVisualizer/Visual/Cars/Car_*/Audio/HighOn`.
+* `HighOn` and `HighOff` `AudioSource` clip, volume, pitch, loop, mute, and spatial blend.
+* Console logs beginning with `[EngineSound]`.
+* Whether `Red Bull Only`, `maxActiveCars`, distance, playback state, and track placement are gating audio.
+* Whether audible cars are limited as expected instead of all cars playing full audio.
+
 ## Security Rules
 
 * Never commit secrets, API keys, tokens, passwords, or private credentials.
