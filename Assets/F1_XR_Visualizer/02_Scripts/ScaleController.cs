@@ -28,6 +28,7 @@ namespace F1XR.AR
         [SerializeField] XRBaseInputInteractor rightInteractor;
         [SerializeField] XRGrabInteractable grab;
         [SerializeField] Rigidbody body;
+        [SerializeField] WorldGrabPolicy worldGrabPolicy;
 
         static readonly List<XRHandSubsystem> HandSubsystems = new();
         static readonly List<InputDevice> InputDevices = new();
@@ -65,6 +66,9 @@ namespace F1XR.AR
 
             if (body == null)
                 body = GetComponent<Rigidbody>();
+
+            if (worldGrabPolicy == null)
+                worldGrabPolicy = GetComponent<WorldGrabPolicy>();
         }
 
         void OnEnable()
@@ -183,7 +187,7 @@ namespace F1XR.AR
 
         void UpdateMoveRotationLock()
         {
-            if (scaling || grab == null || !grab.isSelected)
+            if (scaling || grab == null || !grab.isSelected || IsWorldFarGrabMoving())
             {
                 StopMoving();
                 return;
@@ -225,6 +229,11 @@ namespace F1XR.AR
                 body.constraints |= RigidbodyConstraints.FreezeRotation;
             else if (keepOnlyYRotationWhileMoving)
                 body.constraints |= RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+        }
+
+        bool IsWorldFarGrabMoving()
+        {
+            return worldGrabPolicy != null && worldGrabPolicy.IsFarGrabMoving;
         }
 
         bool TryUpdateControllerScale()

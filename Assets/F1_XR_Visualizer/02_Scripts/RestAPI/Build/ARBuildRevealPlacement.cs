@@ -52,6 +52,9 @@ namespace F1XR.RestAPI.AR
             }
 
             spawnedInstance = target;
+            Transform carsRoot = CarsTransform;
+            if (carsRoot != null)
+                carsRoot.gameObject.SetActive(false);
 
             BuildRevealController revealController =
                 spawnedInstance.GetComponent<BuildRevealController>();
@@ -65,7 +68,16 @@ namespace F1XR.RestAPI.AR
                 buildEdgeColor,
                 restoreMaterialsAfterBuild);
 
+            revealController.Completed -= ShowCarsAfterReveal;
+            revealController.Completed += ShowCarsAfterReveal;
             revealController.Play();
+        }
+
+        void ShowCarsAfterReveal()
+        {
+            Transform carsRoot = CarsTransform;
+            if (carsRoot != null)
+                carsRoot.gameObject.SetActive(true);
         }
 
         ARAnchor CreateAnchor(Pose pose, ARPlane plane)

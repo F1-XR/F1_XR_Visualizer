@@ -198,12 +198,20 @@ namespace F1XR.RestAPI.Replay
                 : placement != null && placement.HasPlacement
                     ? placement.PlacementTransform
                     : null;
+            Transform carParent = buildPlacer != null && buildPlacer.HasPlacement
+                ? buildPlacer.CarsTransform
+                : placementTransform;
 
-            SetCarParent(car, placementTransform);
+            SetCarParent(car, carParent);
             if (placementTransform != null)
-                car.SetLocalPosition(position);
+            {
+                car.rawPosition = position;
+                car.transform.position = placementTransform.TransformPoint(position);
+            }
             else
+            {
                 car.SetPosition(position);
+            }
 
             Vector3 direction = posB - posA;
             direction.y = 0f;
@@ -216,7 +224,7 @@ namespace F1XR.RestAPI.Replay
 
                 Quaternion carRotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * baseRotation;
                 if (placementTransform != null)
-                    car.transform.localRotation = carRotation;
+                    car.transform.rotation = placementTransform.rotation * carRotation;
                 else
                     car.transform.rotation = carRotation;
             }
