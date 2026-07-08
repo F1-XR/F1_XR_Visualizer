@@ -137,8 +137,8 @@ namespace F1XR.AR
                 farGrabDistance = TryGetFarRayPose(out var rayOrigin, out _)
                     ? Vector3.Distance(rayOrigin, target.position)
                     : 0f;
-                farViewYaw = GetViewYaw();
-                farYawOffset = Mathf.DeltaAngle(farViewYaw, startEulerAngles.y);
+                farViewYaw = GetFaceYaw();
+                farYawOffset = 0f;
                 farPitchOffset = 0f;
                 farRollOffset = 0f;
             }
@@ -156,7 +156,7 @@ namespace F1XR.AR
                 farYawOffset += axis.x * farRotateSpeed * deltaTime;
                 farPitchOffset += leftAxis.y * leftPitchDirection * farRotateSpeed * deltaTime;
                 farRollOffset += leftAxis.x * leftRollDirection * farRotateSpeed * deltaTime;
-                farViewYaw = SmoothAngle(farViewYaw, GetViewYaw(), farRotationFollowSpeed, deltaTime);
+                farViewYaw = SmoothAngle(farViewYaw, GetFaceYaw(), farRotationFollowSpeed, deltaTime);
 
                 var yawRotation = Quaternion.Euler(startEulerAngles.x, farViewYaw + farYawOffset, startEulerAngles.z);
                 var viewTilt = Quaternion.AngleAxis(farPitchOffset, GetViewRight()) *
@@ -335,10 +335,10 @@ namespace F1XR.AR
             return Mathf.LerpAngle(current, targetAngle, t);
         }
 
-        float GetViewYaw()
+        float GetFaceYaw()
         {
             var viewTransform = Camera.main != null ? Camera.main.transform : null;
-            var forward = viewTransform != null ? viewTransform.forward : target.forward;
+            var forward = viewTransform != null ? viewTransform.position - target.position : target.forward;
             forward.y = 0f;
 
             if (forward.sqrMagnitude < 0.0001f)

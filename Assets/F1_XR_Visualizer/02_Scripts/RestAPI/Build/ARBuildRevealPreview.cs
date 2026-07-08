@@ -43,6 +43,9 @@ namespace F1XR.RestAPI.AR
             DisablePreviewBehaviours(previewInstance);
             ApplyPreviewMaterial(previewInstance);
 
+            if (previewInstance.GetComponentsInChildren<Renderer>(includeInactive: true).Length == 0)
+                Debug.LogWarning("[ARBuildRevealPlacer] Preview renderer를 찾지 못했습니다.", this);
+
             previewInstance.SetActive(false);
         }
 
@@ -69,6 +72,9 @@ namespace F1XR.RestAPI.AR
             foreach (MonoBehaviour behaviour in target.GetComponentsInChildren<MonoBehaviour>(includeInactive: true))
             {
                 if (!behaviour.enabled)
+                    continue;
+
+                if (behaviour is F1XR.AR.TrackMapView || behaviour is BuildRevealController)
                     continue;
 
                 previewDisabledBehaviours.Add(behaviour);
