@@ -12,6 +12,10 @@ namespace F1XR.RestAPI.AR
         [SerializeField] ARPlanePlacementController placementController;
         [SerializeField] ARAnchorManager anchorManager;
         [SerializeField] GameObject placementPrefab;
+        [SerializeField] GameObject trackMapPrefab;
+        [SerializeField] float trackMapScale = 1f;
+        [SerializeField] bool fitTrackMapToBounds;
+        [SerializeField] Vector2 trackMapTargetXZSize;
 
         [Header("Input")]
         [SerializeField] InputActionProperty placeAction;
@@ -35,6 +39,7 @@ namespace F1XR.RestAPI.AR
 
         public bool HasPlacement => spawnedInstance != null;
         public Transform PlacementTransform => spawnedInstance != null ? spawnedInstance.transform : null;
+        public Transform CarsTransform => spawnedInstance != null ? EnsureCarsRoot(spawnedInstance.transform) : null;
 
         GameObject previewInstance;
         GameObject spawnedInstance;
@@ -51,10 +56,34 @@ namespace F1XR.RestAPI.AR
 
         Material runtimePreviewMaterial;
 
-        public void SetPlacementPrefab(GameObject prefab)
+        static Transform EnsureCarsRoot(Transform placementRoot)
+        {
+            Transform visualRoot = placementRoot.Find("Visual");
+            if (visualRoot == null)
+                visualRoot = placementRoot;
+
+            Transform carsRoot = visualRoot.Find("Cars");
+            if (carsRoot != null)
+                return carsRoot;
+
+            GameObject obj = new GameObject("Cars");
+            obj.transform.SetParent(visualRoot, worldPositionStays: false);
+            return obj.transform;
+        }
+
+        public void SetPlacementPrefab(
+            GameObject prefab,
+            GameObject mapPrefab = null,
+            float mapScale = 1f,
+            bool fitMapToBounds = false,
+            Vector2 mapTargetXZSize = default)
         {
             placementPrefab = prefab;
-            HidePreview();
+            trackMapPrefab = mapPrefab;
+            trackMapScale = mapScale > 0f ? mapScale : 1f;
+            fitTrackMapToBounds = fitMapToBounds;
+            trackMapTargetXZSize = mapTargetXZSize;
+            ClearPreview();
         }
 
         void Reset()
@@ -105,6 +134,19 @@ namespace F1XR.RestAPI.AR
             // 이미 하나 배치했고 교체 허용이 꺼져 있으면 더 이상 preview를 보여주지 않음
             if (spawnedInstance != null && !allowReplaceExisting)
             {
+                if (!HasEnabledRenderer(spawnedInstance))
+                {
+                    ClearSpawned();
+                }
+                else
+                {
+                    HidePreview();
+                    return;
+                }
+            }
+
+            if (spawnedInstance != null && !allowReplaceExisting)
+            {
                 HidePreview();
                 return;
             }
@@ -137,6 +179,21 @@ namespace F1XR.RestAPI.AR
         {
             hasCurrentHit = placementController != null &&
                 placementController.TryGetPlacementHit(out currentPose, out currentPlane);
+        }
+
+        static bool HasEnabledRenderer(GameObject target)
+        {
+            if (target == null || !target.activeInHierarchy)
+                return false;
+
+            Renderer[] renderers = target.GetComponentsInChildren<Renderer>(includeInactive: false);
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer != null && renderer.enabled)
+                    return true;
+            }
+
+            return false;
         }
 
     }

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using F1XR.AR;
@@ -15,6 +16,7 @@ namespace F1XR.RestAPI.Replay
         public GameObject carPrefab;
         public ARPlanePlacementController placement;
         public TrackCalibration trackCalibration;
+        public GameObject trackVisualizerPrefab;
         public ARBuildRevealPlacer buildPlacer;
         public TrackAsset[] trackAssets;
 
@@ -152,18 +154,43 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            if (asset.prefab != null)
-            {
-                if (placement != null)
-                    placement.SetPlacementPrefab(asset.prefab);
+            GameObject visualizerPrefab = asset.visualizerPrefab != null
+                ? asset.visualizerPrefab
+                : trackVisualizerPrefab;
 
-                ARBuildRevealPlacer buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
-                if (buildPlacer != null)
-                    buildPlacer.SetPlacementPrefab(asset.prefab);
-            }
+            if (visualizerPrefab == null && placement != null)
+                visualizerPrefab = placement.PlacementPrefab;
 
             if (asset.calibration != null)
                 trackCalibration = asset.calibration;
+
+            bool fitMapToBounds = asset.TryGetMapTargetXZSize(out Vector2 mapTargetXZSize);
+
+            if (visualizerPrefab != null)
+            {
+                if (placement != null)
+                {
+                    placement.SetPlacementPrefab(
+                        visualizerPrefab,
+                        asset.mapPrefab,
+                        asset.MapScale,
+                        fitMapToBounds,
+                        mapTargetXZSize);
+                }
+
+                if (buildPlacer == null)
+                    buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+
+                if (buildPlacer != null)
+                {
+                    buildPlacer.SetPlacementPrefab(
+                        visualizerPrefab,
+                        asset.mapPrefab,
+                        asset.MapScale,
+                        fitMapToBounds,
+                        mapTargetXZSize);
+                }
+            }
         }
 
         public void Play()
@@ -510,8 +537,52 @@ namespace F1XR.RestAPI.Replay
         public int circuitKey;
         public string circuitName;
         public string circuitShortName;
-        public GameObject prefab;
+        [FormerlySerializedAs("prefab")]
+        public GameObject visualizerPrefab;
+        public GameObject mapPrefab;
+        public float mapScale;
+        public bool fitMapToCalibrationBounds;
+        public float mapFitScaleMultiplier;
         public TrackCalibration calibration;
+
+        public float MapScale => mapScale > 0f ? mapScale : 1f;
+        public float MapFitScaleMultiplier => mapFitScaleMultiplier > 0f ? mapFitScaleMultiplier : 1f;
+
+        public bool TryGetMapTargetXZSize(out Vector2 size)
+        {
+            size = default;
+
+            if (!fitMapToCalibrationBounds || calibration == null || calibration.points == null)
+                return false;
+
+            bool found = false;
+            Vector2 min = default;
+            Vector2 max = default;
+
+            foreach (TrackCalibration.Point point in calibration.points)
+            {
+                if (string.IsNullOrWhiteSpace(point.name))
+                    continue;
+
+                Vector2 position = new Vector2(point.targetLocalPosition.x, point.targetLocalPosition.z);
+                if (!found)
+                {
+                    min = position;
+                    max = position;
+                    found = true;
+                    continue;
+                }
+
+                min = Vector2.Min(min, position);
+                max = Vector2.Max(max, position);
+            }
+
+            if (!found)
+                return false;
+
+            size = (max - min) * MapFitScaleMultiplier;
+            return size.x > 0.0001f && size.y > 0.0001f;
+        }
 
         public bool Matches(TrackOption track, DatasetManifestDto manifest)
         {
