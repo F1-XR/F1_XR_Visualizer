@@ -25,6 +25,7 @@ namespace F1XR.RestAPI.Replay
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
         public bool showCarLabels = true;
+        public CarEngineSoundSettings engineSound = new();
         
         public float positionScale = 0.01f;
 
@@ -35,6 +36,8 @@ namespace F1XR.RestAPI.Replay
         private bool _isPlaying;
         private bool _playOnReady;
         private bool _hasStarted;
+        private bool _lastRedBullOnly;
+        private string _lastTeamNameFilter;
 
         private Coroutine _manifestPollingCoroutine;
         private Coroutine _seekCoroutine;
@@ -77,6 +80,8 @@ namespace F1XR.RestAPI.Replay
         
         private void Awake()
         {
+            EnsureEngineSound();
+
             if (placement == null)
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
 
@@ -88,6 +93,9 @@ namespace F1XR.RestAPI.Replay
             carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
+            carView.SetEngineSound(engineSound);
+            RememberEngineSoundFilter();
+            carView.SetSoundPlacementReady(HasPlacedTrack());
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -97,6 +105,7 @@ namespace F1XR.RestAPI.Replay
 
         public void LoadDataset(DatasetManifestDto manifest, TrackOption track, bool playOnReady = true)
         {
+            EnsureEngineSound();
             ReplayCoordinate.scale = positionScale;
             
             _manifest = manifest;
@@ -120,6 +129,10 @@ namespace F1XR.RestAPI.Replay
             carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
+            carView.SetEngineSound(engineSound);
+            RememberEngineSoundFilter();
+            carView.SetSoundPlacementReady(HasPlacedTrack());
+            carView.SetSoundPlaying(false);
 
             if (_manifestPollingCoroutine != null)
                 StopCoroutine(_manifestPollingCoroutine);
@@ -199,11 +212,13 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             _isPlaying = true;
+            carView.SetSoundPlaying(true);
         }
 
         public void Pause()
         {
             _isPlaying = false;
+            carView.SetSoundPlaying(false);
         }
     
         public void TogglePlay()
@@ -259,7 +274,10 @@ namespace F1XR.RestAPI.Replay
 
         private void Update()
         {
+            ApplyEngineSoundFilterChange();
             carView.SetLabelsVisible(showCarLabels);
+            carView.SetSoundPlacementReady(HasPlacedTrack());
+            carView.SetSoundPlaying(_isPlaying);
 
             if (!_isPlaying || _manifest == null)
                 return;
@@ -274,6 +292,7 @@ namespace F1XR.RestAPI.Replay
             {
                 _time = maxTime;
                 _isPlaying = false;
+                carView.SetSoundPlaying(false);
             }
 
             LoadNearChunks();
@@ -519,6 +538,38 @@ namespace F1XR.RestAPI.Replay
             carView.Clear();
             replayPositions.Clear();
             replayTires.Clear();
+            carView.SetSoundPlaying(false);
+        }
+
+        private void EnsureEngineSound()
+        {
+            engineSound ??= new CarEngineSoundSettings();
+        }
+
+        private void RememberEngineSoundFilter()
+        {
+            _lastRedBullOnly = engineSound != null && engineSound.redBullOnly;
+            _lastTeamNameFilter = engineSound != null ? engineSound.teamNameFilter : null;
+        }
+
+        private void ApplyEngineSoundFilterChange()
+        {
+            EnsureEngineSound();
+
+            if (_lastRedBullOnly == engineSound.redBullOnly &&
+                string.Equals(_lastTeamNameFilter, engineSound.teamNameFilter, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            carView.SetEngineSound(engineSound);
+            RememberEngineSoundFilter();
+        }
+
+        private bool HasPlacedTrack()
+        {
+            return buildPlacer != null && buildPlacer.HasPlacement ||
+                placement != null && placement.HasPlacement;
         }
 
         private void OnDestroy()
