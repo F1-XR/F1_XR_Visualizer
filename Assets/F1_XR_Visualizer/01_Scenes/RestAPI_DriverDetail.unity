@@ -1988,6 +1988,37 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 625473536}
   m_CullTransparentMesh: 1
+--- !u!1 &716418772
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 716418773}
+  m_Layer: 0
+  m_Name: EngineAudio
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &716418773
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 716418772}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -3595,6 +3626,140 @@ MonoBehaviour:
   preloadChunksAhead: 3
   manifestPollSeconds: 1
   showCarLabels: 1
+  engineSound:
+    useEngineSound: 1
+    generateFallbackClips: 0
+    mode: 1
+    redBullOnly: 1
+    teamNameFilter: Red Bull
+    idle:
+      clip: {fileID: 0}
+      baseRpm: 5000
+      loadType: 0
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 0.8
+      perspective: 0
+    lowOn:
+      clip: {fileID: 0}
+      baseRpm: 7000
+      loadType: 1
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 1
+      perspective: 0
+    lowOff:
+      clip: {fileID: 0}
+      baseRpm: 7000
+      loadType: 2
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 0.75
+      perspective: 0
+    midOn:
+      clip: {fileID: 0}
+      baseRpm: 11000
+      loadType: 1
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 1
+      perspective: 0
+    midOff:
+      clip: {fileID: 0}
+      baseRpm: 11000
+      loadType: 2
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 0.8
+      perspective: 0
+    highOn:
+      clip: {fileID: 0}
+      baseRpm: 15000
+      loadType: 1
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 1
+      perspective: 0
+    highOff:
+      clip: {fileID: 0}
+      baseRpm: 15000
+      loadType: 2
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 0.85
+      perspective: 0
+    veryHighOn:
+      clip: {fileID: 0}
+      baseRpm: 18000
+      loadType: 1
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 0.9
+      perspective: 0
+    veryHighOff:
+      clip: {fileID: 0}
+      baseRpm: 18000
+      loadType: 2
+      isLoop: 1
+      minimumPitch: 0.82
+      maximumPitch: 1.15
+      gain: 0.75
+      perspective: 0
+    idleLoop: {fileID: 0}
+    lowOnLoop: {fileID: 0}
+    lowOffLoop: {fileID: 0}
+    midOnLoop: {fileID: 0}
+    midOffLoop: {fileID: 0}
+    highOnLoop: {fileID: 0}
+    highOffLoop: {fileID: 0}
+    maxRpmLoop: {fileID: 0}
+    veryHighOnLoop: {fileID: 0}
+    veryHighOffLoop: {fileID: 0}
+    lowLoop: {fileID: 0}
+    midLoop: {fileID: 0}
+    highLoop: {fileID: 0}
+    loadLoop: {fileID: 0}
+    coastLoop: {fileID: 0}
+    gearShift: {fileID: 0}
+    upshift01: {fileID: 0}
+    upshift02: {fileID: 0}
+    downshift01: {fileID: 0}
+    downshift02: {fileID: 0}
+    gearboxWhine: {fileID: 0}
+    revLimiter: {fileID: 0}
+    overrunCrackle: {fileID: 0}
+    proceduralTone: 0.85
+    proceduralRoughness: 0.55
+    masterVolume: 1
+    maxActiveCars: 8
+    minRpm: 4500
+    maxRpm: 12000
+    idleRpm: 5000
+    offVolumeScale: 0.55
+    response: 8
+    loadThreshold: 0.05
+    loadResponse: 12
+    useSpeedRpmFallback: 1
+    shiftMinInterval: 0.12
+    shiftPitchRandom: 0.03
+    shiftVolume: 0.45
+    downshiftFallbackFlare: 0.08
+    fallbackFlareSeconds: 0.18
+    spatialBlend: 1
+    minDistance: 0.2
+    maxDistance: 12
+    maximumAudibleDistance: 12
+    priority: 128
+    enableFullEngineLayers: 1
+    selectedCarGetsFullAudio: 0
   positionScale: 0.0001
 --- !u!114 &1518326053
 MonoBehaviour:
@@ -4876,3 +5041,4 @@ SceneRoots:
   - {fileID: 1009886932}
   - {fileID: 903086105}
   - {fileID: 379529744}
+  - {fileID: 716418773}
