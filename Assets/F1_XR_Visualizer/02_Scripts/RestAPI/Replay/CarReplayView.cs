@@ -42,12 +42,20 @@ namespace F1XR.RestAPI.Replay
         private CarEngineSoundSettings engineSoundSettings;
         private bool soundPlaying = true;
         private bool soundPlacementReady;
+        private int selectedDriverNumber;
         private bool loggedEngineSound;
+        private bool loggedMissingSoundTeam;
+        private bool loggedNoAudioListener;
+        private bool loggedNoAudibleCars;
+        private bool loggedWaitingForTeams;
+        private bool loggedDriverTeams;
 
         public CarReplayView(GameObject carPrefab)
         {
             this.carPrefab = carPrefab;
         }
+
+        public bool HasCars => cars.Count > 0;
 
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
@@ -68,6 +76,8 @@ namespace F1XR.RestAPI.Replay
                 if (!cars.TryGetValue(driver, out CarAgent car) || car == null)
                     car = CreateCar(driver);
 
+                EnsureEngineSound(driver, car);
+
                 if (ranks.TryGetValue(driver, out int rank))
                     car.SetRank(rank);
 
@@ -83,6 +93,7 @@ namespace F1XR.RestAPI.Replay
                 indices[driver] = index;
 
                 MoveCar(car, list[index], list[index + 1], time);
+                car.SetSelected(driver == selectedDriverNumber, SelectionColor(driver));
             }
 
             UpdateSoundAudibility();
@@ -121,6 +132,23 @@ namespace F1XR.RestAPI.Replay
             engineSounds.Clear();
             hasOrigin = false;
             origin = Vector3.zero;
+            loggedEngineSound = false;
+            loggedMissingSoundTeam = false;
+            loggedNoAudioListener = false;
+            loggedNoAudibleCars = false;
+            loggedWaitingForTeams = false;
+            loggedDriverTeams = false;
+        }
+
+        public void SetSelectedDriver(int driverNumber)
+        {
+            selectedDriverNumber = driverNumber;
+
+            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            {
+                if (pair.Value != null)
+                    pair.Value.SetSelected(pair.Key == selectedDriverNumber, SelectionColor(pair.Key));
+            }
         }
 
         private CarAgent CreateCar(int driver)
@@ -150,11 +178,20 @@ namespace F1XR.RestAPI.Replay
             if (driverColors.TryGetValue(driver, out Color color))
                 car.SetColor(color);
 
+            car.SetSelected(driver == selectedDriverNumber, SelectionColor(driver));
+
             baseRotations.Add(driver, obj.transform.rotation);
             cars.Add(driver, car);
             ConfigureEngineSound(driver, car);
 
             return car;
+        }
+
+        private Color SelectionColor(int driver)
+        {
+            return driverColors.TryGetValue(driver, out Color color)
+                ? color
+                : new Color(0.25f, 0.28f, 0.34f);
         }
 
         public void SetPlacement(ARPlanePlacementController source)
@@ -321,6 +358,7 @@ namespace F1XR.RestAPI.Replay
                 if (sound == null)
                     sound = car.gameObject.AddComponent<CarEngineSound>();
 
+                sound.SetVariation(EnginePitchVariation(driver), EngineVolumeVariation(driver));
                 sound.Configure(engineSoundSettings);
                 sound.SetPlaying(soundPlaying && soundPlacementReady);
                 engineSounds[driver] = sound;
@@ -336,11 +374,43 @@ namespace F1XR.RestAPI.Replay
             }
             else
             {
+                if (engineSoundSettings.useEngineSound && !HasDriverTeams())
+                {
+                    if (!loggedWaitingForTeams)
+                    {
+                        Debug.Log("[EngineSound] waiting for driver team data before applying team filter.");
+                        loggedWaitingForTeams = true;
+                    }
+
+                    return;
+                }
+
+                if (engineSoundSettings.useEngineSound && !loggedMissingSoundTeam)
+                {
+                    string team = driverTeams.TryGetValue(driver, out string value) ? value : "";
+                    Debug.Log($"[EngineSound] skipped driver={driver}, team='{team}', filter='{engineSoundSettings.teamNameFilter}'");
+                    loggedMissingSoundTeam = true;
+                }
+
                 if (sound != null)
                     Object.Destroy(sound);
 
                 engineSounds.Remove(driver);
             }
+        }
+
+        private void EnsureEngineSound(int driver, CarAgent car)
+        {
+            if (car == null || engineSoundSettings == null || !engineSoundSettings.useEngineSound)
+                return;
+
+            if (engineSounds.ContainsKey(driver))
+                return;
+
+            if (!UsesEngineSound(driver))
+                return;
+
+            ConfigureEngineSound(driver, car);
         }
 
         private bool UsesEngineSound(int driver)
@@ -354,6 +424,32 @@ namespace F1XR.RestAPI.Replay
             return driverTeams.TryGetValue(driver, out string team)
                 && !string.IsNullOrWhiteSpace(team)
                 && team.IndexOf(engineSoundSettings.teamNameFilter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool HasDriverTeams()
+        {
+            return driverTeams.Count > 0;
+        }
+
+        private static float EnginePitchVariation(int driver)
+        {
+            return Mathf.Lerp(0.965f, 1.035f, Stable01(driver, 17));
+        }
+
+        private static float EngineVolumeVariation(int driver)
+        {
+            return Mathf.Lerp(0.85f, 1.1f, Stable01(driver, 43));
+        }
+
+        private static float Stable01(int driver, int salt)
+        {
+            unchecked
+            {
+                int hash = driver * 73856093 ^ salt * 19349663;
+                hash ^= hash >> 13;
+                hash *= 1274126177;
+                return (hash & 0x7fffffff) / (float)int.MaxValue;
+            }
         }
 
         private void UpdateEngineSound(CarAgent car, LocationSample a, LocationSample b, float u, float duration)
@@ -386,7 +482,15 @@ namespace F1XR.RestAPI.Replay
             else if (Camera.main != null)
                 listenerPosition = Camera.main.transform.position;
             else
+            {
+                if (!loggedNoAudioListener)
+                {
+                    Debug.LogWarning("[EngineSound] no AudioListener or MainCamera found; audio LOD cannot enable cars.");
+                    loggedNoAudioListener = true;
+                }
+
                 return;
+            }
 
             float maxDistance = engineSoundSettings.maximumAudibleDistance > 0f
                 ? engineSoundSettings.maximumAudibleDistance
@@ -407,12 +511,49 @@ namespace F1XR.RestAPI.Replay
                 return distanceA.CompareTo(distanceB);
             });
 
+            int fullCars = Mathf.Max(0, engineSoundSettings.maxActiveCars);
+            int fadeCars = Mathf.Max(0, engineSoundSettings.fadeOutCars);
+            float fadeVolume = Mathf.Clamp01(engineSoundSettings.fadeOutVolume);
+
             for (int i = 0; i < soundOrder.Count; i++)
             {
                 bool inRange = maxDistanceSqr <= 0f
                     || Vector3.SqrMagnitude(soundOrder[i].transform.position - listenerPosition) <= maxDistanceSqr;
-                soundOrder[i].SetAudible(i < engineSoundSettings.maxActiveCars && inRange);
+                soundOrder[i].SetAudibility(inRange ? AudibilityForRank(i, fullCars, fadeCars, fadeVolume) : 0f);
             }
+
+            if (!loggedNoAudibleCars && soundOrder.Count > 0)
+            {
+                int audibleCount = 0;
+
+                for (int i = 0; i < soundOrder.Count; i++)
+                {
+                    bool inRange = maxDistanceSqr <= 0f
+                        || Vector3.SqrMagnitude(soundOrder[i].transform.position - listenerPosition) <= maxDistanceSqr;
+                    if (inRange && AudibilityForRank(i, fullCars, fadeCars, fadeVolume) > 0f)
+                        audibleCount++;
+                }
+
+                if (audibleCount == 0)
+                {
+                    float nearest = Vector3.Distance(soundOrder[0].transform.position, listenerPosition);
+                    Debug.LogWarning($"[EngineSound] no audible cars. nearest={nearest:0.00}m, maxDistance={maxDistance:0.00}m, maxActiveCars={engineSoundSettings.maxActiveCars}");
+                    loggedNoAudibleCars = true;
+                }
+            }
+        }
+
+        private static float AudibilityForRank(int rank, int fullCars, int fadeCars, float fadeVolume)
+        {
+            if (rank < fullCars)
+                return 1f;
+
+            if (fadeCars <= 0 || rank >= fullCars + fadeCars)
+                return 0f;
+
+            int fadeRank = rank - fullCars;
+            float fade01 = 1f - (fadeRank + 1f) / (fadeCars + 1f);
+            return fadeVolume * fade01;
         }
 
         private static int Gear(LocationSample sample)
@@ -650,7 +791,8 @@ namespace F1XR.RestAPI.Replay
         {
             return renderer != null
                 && renderer.enabled
-                && !renderer.name.StartsWith("DriverLabel");
+                && !renderer.name.StartsWith("DriverLabel")
+                && !renderer.name.StartsWith("SelectedCar");
         }
 
         private void EnsureTrackSurfaceColliders(Transform root)
@@ -688,12 +830,12 @@ namespace F1XR.RestAPI.Replay
         
         public void SetDrivers(DriverInfoDto[] drivers)
         {
+            if (drivers == null)
+                return;
+
             driverColors.Clear();
             driverLabels.Clear();
             driverTeams.Clear();
-
-            if (drivers == null)
-                return;
 
             foreach (DriverInfoDto driver in drivers)
             {
@@ -707,6 +849,24 @@ namespace F1XR.RestAPI.Replay
 
                 if (ColorUtility.TryParseHtmlString("#" + driver.teamColour, out Color color))
                     driverColors[driver.driverNumber] = color;
+            }
+
+            if (!loggedDriverTeams)
+            {
+                int matched = 0;
+                foreach (KeyValuePair<int, string> pair in driverTeams)
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Value) &&
+                        engineSoundSettings != null &&
+                        !string.IsNullOrWhiteSpace(engineSoundSettings.teamNameFilter) &&
+                        pair.Value.IndexOf(engineSoundSettings.teamNameFilter, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        matched++;
+                    }
+                }
+
+                Debug.Log($"[EngineSound] driver teams loaded. count={driverTeams.Count}, filter='{engineSoundSettings?.teamNameFilter}', matches={matched}");
+                loggedDriverTeams = true;
             }
 
             foreach (KeyValuePair<int, CarAgent> pair in cars)

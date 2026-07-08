@@ -12,20 +12,33 @@ namespace F1XR.RestAPI.Replay
         private const float LabelLineGapRatio = 0.08f;
         private const float LabelLineWidthRatio = 0.014f;
         private const float LabelBackgroundDepthRatio = 0.03f;
+        private const float SelectionRingHeightRatio = 0.01f;
+        private const float SelectionRingWidthRatio = 0.026f;
+        private const float SelectionGlowSizeRatio = 1.15f;
+        private const float SelectionMinRadius = 0.012f;
+        private const float SelectionMaxRadius = 0.06f;
+        private const float SelectionMaxRingWidth = 0.0025f;
         private TextMesh label;
         private LineRenderer labelLine;
+        private LineRenderer selectionRing;
         private MeshRenderer labelBackground;
         private MeshRenderer labelRenderer;
         private MeshRenderer labelTopDot;
         private MeshRenderer labelBottomDot;
+        private MeshRenderer selectionGlow;
+        private Light selectionPointLight;
+        private Light selectionSpotLight;
         private Material labelTextMaterial;
         private Material labelLineMaterial;
         private Material labelBackgroundMaterial;
         private Material labelDotMaterial;
+        private Material selectionMaterial;
         private Color labelColor = Color.white;
+        private Color selectionColor = Color.white;
         private string driverLabel;
         private int rank;
         private bool labelVisible = true;
+        private bool selected;
 
         public void Init(int number)
         {
@@ -70,6 +83,28 @@ namespace F1XR.RestAPI.Replay
             SetLabelObjectsActive(visible);
         }
 
+        public void SetSelected(bool value)
+        {
+            SetSelected(value, labelColor);
+        }
+
+        public void SetSelected(bool value, Color color)
+        {
+            if (selected == value)
+            {
+                SetSelectionColor(color);
+                return;
+            }
+
+            SetSelectionColor(color);
+            selected = value;
+
+            if (selected)
+                EnsureSelectionEffect();
+
+            SetSelectionObjectsActive(selected);
+        }
+
         private void RefreshLabelText()
         {
             if (label == null)
@@ -88,6 +123,7 @@ namespace F1XR.RestAPI.Replay
 
             SetMaterialColor(labelTextMaterial, labelColor);
             SetMaterialColor(labelDotMaterial, labelColor);
+            SetSelectionColor(color);
 
             Renderer[] renderers = GetComponentsInChildren<Renderer>();
 
@@ -106,6 +142,9 @@ namespace F1XR.RestAPI.Replay
                     continue;
 
                 if (labelBottomDot != null && item.gameObject == labelBottomDot.gameObject)
+                    continue;
+
+                if (IsSelectionEffectRenderer(item))
                     continue;
 
                 MaterialPropertyBlock block = new();
@@ -251,10 +290,16 @@ namespace F1XR.RestAPI.Replay
 
             if (labelDotMaterial != null)
                 Destroy(labelDotMaterial);
+
+            if (selectionMaterial != null)
+                Destroy(selectionMaterial);
         }
 
         private void LateUpdate()
         {
+            if (selected)
+                UpdateSelectionEffect();
+
             if (!labelVisible || label == null || Camera.main == null)
                 return;
 
@@ -265,6 +310,129 @@ namespace F1XR.RestAPI.Replay
 
             UpdateLabelLayout();
             label.transform.rotation = Camera.main.transform.rotation;
+        }
+
+        private void EnsureSelectionEffect()
+        {
+            selectionMaterial ??= CreateUnlitMaterial(WithAlpha(selectionColor, 0.42f));
+
+            if (selectionRing == null)
+            {
+                GameObject ring = new GameObject("SelectedCarRing");
+                ring.transform.SetParent(transform, false);
+                selectionRing = ring.AddComponent<LineRenderer>();
+                selectionRing.useWorldSpace = false;
+                selectionRing.loop = true;
+                selectionRing.positionCount = 64;
+                selectionRing.numCapVertices = 4;
+                selectionRing.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                selectionRing.receiveShadows = false;
+                selectionRing.material = selectionMaterial;
+            }
+
+            if (selectionGlow == null)
+            {
+                GameObject glow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                glow.name = "SelectedCarGlow";
+                glow.transform.SetParent(transform, false);
+
+                Collider collider = glow.GetComponent<Collider>();
+                if (collider != null)
+                    Destroy(collider);
+
+                selectionGlow = glow.GetComponent<MeshRenderer>();
+                selectionGlow.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                selectionGlow.receiveShadows = false;
+                selectionGlow.material = selectionMaterial;
+            }
+
+            if (selectionPointLight == null)
+            {
+                GameObject lightObj = new GameObject("SelectedCarPointLight");
+                lightObj.transform.SetParent(transform, false);
+                selectionPointLight = lightObj.AddComponent<Light>();
+                selectionPointLight.type = LightType.Point;
+                selectionPointLight.intensity = 0f;
+                selectionPointLight.shadows = LightShadows.None;
+                selectionPointLight.enabled = false;
+            }
+
+            if (selectionSpotLight == null)
+            {
+                GameObject lightObj = new GameObject("SelectedCarSpotLight");
+                lightObj.transform.SetParent(transform, false);
+                selectionSpotLight = lightObj.AddComponent<Light>();
+                selectionSpotLight.type = LightType.Spot;
+                selectionSpotLight.intensity = 0f;
+                selectionSpotLight.spotAngle = 65f;
+                selectionSpotLight.shadows = LightShadows.None;
+                selectionSpotLight.enabled = false;
+            }
+
+            ApplySelectionColor();
+        }
+
+        private void SetSelectionColor(Color color)
+        {
+            selectionColor = color;
+            ApplySelectionColor();
+        }
+
+        private void ApplySelectionColor()
+        {
+            SetMaterialColor(selectionMaterial, WithAlpha(selectionColor, 0.42f));
+
+            if (selectionRing != null)
+            {
+                selectionRing.startColor = WithAlpha(selectionColor, 0.95f);
+                selectionRing.endColor = selectionRing.startColor;
+            }
+
+            if (selectionPointLight != null)
+                selectionPointLight.color = selectionColor;
+
+            if (selectionSpotLight != null)
+                selectionSpotLight.color = selectionColor;
+        }
+
+        private void UpdateSelectionEffect()
+        {
+            EnsureSelectionEffect();
+
+            if (!TryGetCarBounds(out Bounds bounds))
+                return;
+
+            float carSize = Mathf.Max(bounds.size.x, bounds.size.z);
+            float radius = Mathf.Clamp(carSize * 0.62f, SelectionMinRadius, SelectionMaxRadius);
+            float ringWidth = Mathf.Clamp(radius * SelectionRingWidthRatio, 0.0007f, SelectionMaxRingWidth);
+            float groundY = bounds.min.y + Mathf.Max(carSize * SelectionRingHeightRatio, 0.002f);
+            Vector3 center = new Vector3(bounds.center.x, groundY, bounds.center.z);
+            Vector3 localCenter = transform.InverseTransformPoint(center);
+
+            selectionRing.startWidth = ringWidth;
+            selectionRing.endWidth = ringWidth;
+            for (int i = 0; i < selectionRing.positionCount; i++)
+            {
+                float angle = i / (float)selectionRing.positionCount * Mathf.PI * 2f;
+                Vector3 point = center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+                selectionRing.SetPosition(i, transform.InverseTransformPoint(point));
+            }
+
+            selectionGlow.transform.localPosition = localCenter;
+            selectionGlow.transform.localRotation = Quaternion.identity;
+            selectionGlow.transform.localScale = ToLocalScale(
+                selectionGlow.transform,
+                radius * SelectionGlowSizeRatio,
+                Mathf.Max(ringWidth * 0.18f, 0.001f),
+                radius * SelectionGlowSizeRatio
+            );
+
+            selectionPointLight.transform.localPosition = localCenter + Vector3.up * Mathf.Max(radius * 0.35f, 0.03f);
+            selectionPointLight.range = radius * 1.2f;
+
+            selectionSpotLight.transform.position = bounds.center + Vector3.up * Mathf.Max(radius * 1.4f, 0.2f);
+            selectionSpotLight.transform.rotation = Quaternion.LookRotation(Vector3.down, transform.forward);
+            selectionSpotLight.range = radius * 1.5f;
         }
 
         private void UpdateLabelLayout()
@@ -350,6 +518,20 @@ namespace F1XR.RestAPI.Replay
             );
         }
 
+        private static Vector3 ToLocalScale(Transform target, float worldWidth, float worldHeight, float worldDepth)
+        {
+            Transform parent = target.parent;
+            if (parent == null)
+                return new Vector3(worldWidth, worldHeight, worldDepth);
+
+            Vector3 scale = parent.lossyScale;
+            return new Vector3(
+                worldWidth / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
+                worldHeight / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
+                worldDepth / Mathf.Max(0.0001f, Mathf.Abs(scale.z))
+            );
+        }
+
         private MeshRenderer CreateLabelDot(string objectName)
         {
             GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -406,6 +588,12 @@ namespace F1XR.RestAPI.Replay
                 material.SetColor("_Color", color);
         }
 
+        private static Color WithAlpha(Color color, float alpha)
+        {
+            color.a = alpha;
+            return color;
+        }
+
         private void SetLabelObjectsActive(bool active)
         {
             if (label != null)
@@ -422,6 +610,21 @@ namespace F1XR.RestAPI.Replay
 
             if (labelBottomDot != null)
                 labelBottomDot.gameObject.SetActive(active);
+        }
+
+        private void SetSelectionObjectsActive(bool active)
+        {
+            if (selectionRing != null)
+                selectionRing.gameObject.SetActive(active);
+
+            if (selectionGlow != null)
+                selectionGlow.gameObject.SetActive(active);
+
+            if (selectionPointLight != null)
+                selectionPointLight.gameObject.SetActive(active);
+
+            if (selectionSpotLight != null)
+                selectionSpotLight.gameObject.SetActive(active);
         }
 
         private bool TryGetCarBounds(out Bounds bounds)
@@ -447,6 +650,9 @@ namespace F1XR.RestAPI.Replay
                 if (labelBottomDot != null && item.gameObject == labelBottomDot.gameObject)
                     continue;
 
+                if (IsSelectionEffectRenderer(item))
+                    continue;
+
                 if (!hasBounds)
                 {
                     bounds = item.bounds;
@@ -459,6 +665,12 @@ namespace F1XR.RestAPI.Replay
             }
 
             return hasBounds;
+        }
+
+        private bool IsSelectionEffectRenderer(Renderer renderer)
+        {
+            return selectionRing != null && renderer.gameObject == selectionRing.gameObject ||
+                selectionGlow != null && renderer.gameObject == selectionGlow.gameObject;
         }
     }
 }
