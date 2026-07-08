@@ -470,10 +470,6 @@ PrefabInstance:
       propertyPath: m_Name
       value: OriginalPanel
       objectReference: {fileID: 0}
-    - target: {fileID: 969820009153490355, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PixelsPerUnitMultiplier
-      value: 1
-      objectReference: {fileID: 0}
     - target: {fileID: 1334238672736876639, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
       propertyPath: m_Pivot.x
       value: 0.5
@@ -516,7 +512,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1334238672736876639, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.771
+      value: 0.889
       objectReference: {fileID: 0}
     - target: {fileID: 1334238672736876639, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
       propertyPath: m_LocalRotation.w
@@ -536,11 +532,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1334238672736876639, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 0.021
+      value: 0.008
       objectReference: {fileID: 0}
     - target: {fileID: 1334238672736876639, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0.212
+      value: 0.414
       objectReference: {fileID: 0}
     - target: {fileID: 1334238672736876639, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -554,37 +550,25 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 1430828512758511957, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PixelsPerUnitMultiplier
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 2408261885546108452, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_CheckFor2DOcclusion
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2936160898317545299, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PresetInfoIsWorld
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3491734074206522588, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PixelsPerUnitMultiplier
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3847677256732605912, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: cornerRoundness
-      value: 2.22
+    - target: {fileID: 7288479115754545152, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
+      propertyPath: m_Color.a
+      value: 0.69803923
       objectReference: {fileID: 0}
     - target: {fileID: 7288479115754545152, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PixelsPerUnitMultiplier
-      value: 1
+      propertyPath: m_Color.b
+      value: 0.20754701
       objectReference: {fileID: 0}
-    - target: {fileID: 7328198422809747134, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PixelsPerUnitMultiplier
-      value: 1
+    - target: {fileID: 7288479115754545152, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
+      propertyPath: m_Color.g
+      value: 0.20754701
       objectReference: {fileID: 0}
-    - target: {fileID: 9000678214418480391, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
-      propertyPath: m_PixelsPerUnitMultiplier
-      value: 1
+    - target: {fileID: 7288479115754545152, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
+      propertyPath: m_Color.r
+      value: 0.20754701
+      objectReference: {fileID: 0}
+    - target: {fileID: 7336456724882016441, guid: d04d6adfae7515446ae84a64986e8c08, type: 3}
+      propertyPath: lineThickness
+      value: 5
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
