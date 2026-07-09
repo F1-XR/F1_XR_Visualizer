@@ -29,7 +29,9 @@ namespace F1XR.RestAPI.Replay
         private const float GroundSnapDebugLogInterval = 0.5f;
 
         private readonly GameObject carPrefab;
+        private readonly Dictionary<string, GameObject> teamPrefabs = new();
         private readonly Dictionary<int, CarAgent> cars = new();
+        private readonly Dictionary<int, GameObject> carPrefabsByDriver = new();
         
         private bool hasOrigin;
         private Vector3 origin;
@@ -87,6 +89,30 @@ namespace F1XR.RestAPI.Replay
         }
 
         public bool HasCars => cars.Count > 0;
+
+        public void SetTeamPrefabs(TeamCarPrefab[] prefabs)
+        {
+            teamPrefabs.Clear();
+
+            if (prefabs != null)
+            {
+                foreach (TeamCarPrefab entry in prefabs)
+                {
+                    if (entry.prefab == null)
+                        continue;
+
+                    string teamKey = NormalizeTeamName(
+                        string.IsNullOrWhiteSpace(entry.teamName)
+                            ? entry.prefab.name
+                            : entry.teamName);
+
+                    if (!string.IsNullOrEmpty(teamKey))
+                        teamPrefabs[teamKey] = entry.prefab;
+                }
+            }
+
+            ReplaceCarsWithTeamPrefabs();
+        }
 
         public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
         {
@@ -168,6 +194,7 @@ namespace F1XR.RestAPI.Replay
             }
 
             cars.Clear();
+            carPrefabsByDriver.Clear();
             baseRotations.Clear();
             snappedPositions.Clear();
             snappedRotations.Clear();
@@ -204,11 +231,12 @@ namespace F1XR.RestAPI.Replay
 
         private CarAgent CreateCar(int driver)
         {
+            GameObject prefab = FindPrefabForDriver(driver);
             GameObject obj;
 
-            if (carPrefab != null)
+            if (prefab != null)
             {
-                obj = Object.Instantiate(carPrefab);
+                obj = Object.Instantiate(prefab);
             }
             else
             {
@@ -231,11 +259,128 @@ namespace F1XR.RestAPI.Replay
 
             car.SetSelected(driver == selectedDriverNumber, SelectionColor(driver));
 
+            carPrefabsByDriver[driver] = prefab;
             baseRotations.Add(driver, obj.transform.rotation);
             cars.Add(driver, car);
             ConfigureEngineSound(driver, car);
 
             return car;
+        }
+
+        private void ReplaceCarsWithTeamPrefabs()
+        {
+            if (cars.Count == 0)
+                return;
+
+            List<int> driversToReplace = null;
+
+            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            {
+                GameObject expectedPrefab = FindPrefabForDriver(pair.Key);
+                carPrefabsByDriver.TryGetValue(pair.Key, out GameObject currentPrefab);
+
+                if (expectedPrefab == currentPrefab)
+                    continue;
+
+                driversToReplace ??= new List<int>();
+                driversToReplace.Add(pair.Key);
+            }
+
+            if (driversToReplace == null)
+                return;
+
+            foreach (int driver in driversToReplace)
+                ReplaceCar(driver);
+        }
+
+        private void ReplaceCar(int driver)
+        {
+            if (!cars.TryGetValue(driver, out CarAgent oldCar) || oldCar == null)
+                return;
+
+            Transform oldTransform = oldCar.transform;
+            Transform parent = oldTransform.parent;
+            Vector3 position = oldTransform.position;
+            Quaternion rotation = oldTransform.rotation;
+            Vector3 rawPosition = oldCar.rawPosition;
+
+            cars.Remove(driver);
+            carPrefabsByDriver.Remove(driver);
+            baseRotations.Remove(driver);
+            snappedPositions.Remove(driver);
+            snappedRotations.Remove(driver);
+            lastGroundSnapColliders.Remove(driver);
+            nextGroundSnapDebugLogTimes.Remove(driver);
+            groundSnapMissCounts.Remove(driver);
+            engineSounds.Remove(driver);
+
+            CarAgent newCar = CreateCar(driver);
+            newCar.rawPosition = rawPosition;
+            newCar.transform.SetParent(parent, worldPositionStays: false);
+            newCar.transform.position = position;
+            newCar.transform.rotation = rotation;
+
+            Object.Destroy(oldCar.gameObject);
+        }
+
+        private GameObject FindPrefabForDriver(int driver)
+        {
+            if (driverTeams.TryGetValue(driver, out string teamName) &&
+                TryFindTeamPrefab(teamName, out GameObject prefab))
+            {
+                return prefab;
+            }
+
+            return carPrefab;
+        }
+
+        private bool TryFindTeamPrefab(string teamName, out GameObject prefab)
+        {
+            prefab = null;
+
+            string teamKey = NormalizeTeamName(teamName);
+            if (string.IsNullOrEmpty(teamKey))
+                return false;
+
+            if (teamPrefabs.TryGetValue(teamKey, out prefab) && prefab != null)
+                return true;
+
+            foreach (KeyValuePair<string, GameObject> pair in teamPrefabs)
+            {
+                if (pair.Value == null)
+                    continue;
+
+                if (teamKey.Contains(pair.Key) || pair.Key.Contains(teamKey))
+                {
+                    prefab = pair.Value;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeTeamName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "";
+
+            string teamName = value.Trim();
+
+            if (teamName.StartsWith("F1_", StringComparison.OrdinalIgnoreCase))
+                teamName = teamName.Substring(3);
+
+            if (teamName.EndsWith("_Lowpoly", StringComparison.OrdinalIgnoreCase))
+                teamName = teamName.Substring(0, teamName.Length - "_Lowpoly".Length);
+
+            string result = "";
+            foreach (char c in teamName)
+            {
+                if (char.IsLetterOrDigit(c))
+                    result += char.ToLowerInvariant(c);
+            }
+
+            return result;
         }
 
         private Color SelectionColor(int driver)
@@ -1353,6 +1498,8 @@ namespace F1XR.RestAPI.Replay
                 if (ColorUtility.TryParseHtmlString("#" + driver.teamColour, out Color color))
                     driverColors[driver.driverNumber] = color;
             }
+
+            ReplaceCarsWithTeamPrefabs();
 
             if (!loggedDriverTeams)
             {
