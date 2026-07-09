@@ -53,6 +53,7 @@ namespace F1XR
             {
                 if (held)
                 {
+                    Debug.Log($"[LockUntilGrabbed] {name} everGrabbed -> true at pos={body.position}");
                     everGrabbed = true;
                     return;
                 }

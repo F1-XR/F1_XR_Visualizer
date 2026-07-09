@@ -277,13 +277,13 @@ MonoBehaviour:
   scaleController: {fileID: 2493743559907554475}
   panelCollider: {fileID: 5296101484811888904}
   panelRect: {fileID: 8705616675547931616}
-  edgeWidth: 35
+  edgeWidth: 10
   edgeDepth: 12
   rayDistance: 20
   handNearDistance: 0.08
-  edgeColor: {r: 0.92, g: 0.95, b: 0.95, a: 0.39607844}
-  highlightLength: 100
-  lineThickness: 3
+  edgeColor: {r: 0.92, g: 0.95, b: 0.95, a: 0.2}
+  highlightLength: 40
+  lineThickness: 1
   lineEndRoundness: 0.68
   lineFadeLength: 0.3
   lineForwardOffset: -0.01
@@ -306,13 +306,13 @@ MonoBehaviour:
   scaleController: {fileID: 2493743559907554475}
   panelCollider: {fileID: 5296101484811888904}
   panelRect: {fileID: 8705616675547931616}
-  edgeWidth: 35
+  edgeWidth: 10
   edgeDepth: 12
   rayDistance: 20
   handNearDistance: 0.08
-  edgeColor: {r: 0.92, g: 0.95, b: 0.95, a: 0.39607844}
-  highlightLength: 100
-  lineThickness: 20
+  edgeColor: {r: 0.92, g: 0.95, b: 0.95, a: 0.2}
+  highlightLength: 40
+  lineThickness: 3
   lineEndRoundness: 0.362
   lineFadeLength: 0.34
   lineForwardOffset: -0.3
@@ -377,7 +377,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0, g: 0, b: 0, a: 0.34}
+  m_Color: {r: 0, g: 0, b: 0, a: 0.22}
   m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -393,7 +393,7 @@ MonoBehaviour:
   m_FillClockwise: 1
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 2.22
+  m_PixelsPerUnitMultiplier: 7
 --- !u!1 &4105066211970748548
 GameObject:
   m_ObjectHideFlags: 0
