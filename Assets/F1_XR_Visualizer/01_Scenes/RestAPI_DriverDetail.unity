@@ -3663,7 +3663,7 @@ MonoBehaviour:
   startingLightFirstDelay: 1
   startingLightInterval: 1
   startingLightHideDelay: 2
-  playbackSpeed: 4
+  playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
   showCarLabels: 1

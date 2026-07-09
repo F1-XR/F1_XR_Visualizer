@@ -34,6 +34,8 @@ namespace F1XR.RestAPI.Replay
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
         public bool showCarLabels = true;
+        public bool hideLeaderHighlightAfterRaceStart = true;
+        public float leaderHighlightDelaySeconds = 10f;
         public CarEngineSoundSettings engineSound = new();
         
         public float positionScale = 0.01f;
@@ -140,6 +142,7 @@ namespace F1XR.RestAPI.Replay
             carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
+            carView.SetLeaderHighlightVisible(false);
             RefreshEngineSound();
             _wasTrackPlaced = HasPlacedTrack();
             carView.SetSoundPlacementReady(_wasTrackPlaced);
@@ -180,6 +183,7 @@ namespace F1XR.RestAPI.Replay
             carView.SetBuildPlacer(buildPlacer);
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
+            carView.SetLeaderHighlightVisible(false);
             RefreshEngineSound();
             _wasTrackPlaced = HasPlacedTrack();
             carView.SetSoundPlacementReady(_wasTrackPlaced);
@@ -264,6 +268,7 @@ namespace F1XR.RestAPI.Replay
 
             _isPlaying = true;
             LoadNearChunks();
+            carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             carView.SetSoundPlaying(true);
         }
 
@@ -317,6 +322,7 @@ namespace F1XR.RestAPI.Replay
                 yield return LoadChunk(chunkIndex);
 
             LoadNearChunks();
+            carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
             ApplyStartingLightTimeline();
 
@@ -360,7 +366,20 @@ namespace F1XR.RestAPI.Replay
             }
 
             LoadNearChunks();
+            carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+        }
+
+        private bool ShouldShowLeaderHighlight()
+        {
+            if (_manifest == null)
+                return false;
+
+            float showTime = RaceStartTime;
+            if (hideLeaderHighlightAfterRaceStart)
+                showTime += Mathf.Max(0f, leaderHighlightDelaySeconds);
+
+            return _time >= showTime;
         }
 
         private IEnumerator PollManifestLoop()
@@ -731,6 +750,7 @@ namespace F1XR.RestAPI.Replay
             carView.Clear();
             replayPositions.Clear();
             replayTires.Clear();
+            carView.SetLeaderHighlightVisible(false);
             carView.SetSoundPlaying(false);
         }
 

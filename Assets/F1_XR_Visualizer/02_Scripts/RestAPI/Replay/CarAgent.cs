@@ -13,17 +13,26 @@ namespace F1XR.RestAPI.Replay
         private const float LabelLineGapRatio = 0.08f;
         private const float LabelLineWidthRatio = 0.014f;
         private const float LabelBackgroundDepthRatio = 0.03f;
-        private const float SelectionRingHeightRatio = 0.012f;
-        private const float SelectionPulseHeightRatio = 0.018f;
-        private const float SelectionRingOuterRatio = 0.72f;
-        private const float SelectionPulseOuterRatio = 1.55f;
-        private const float SelectionMinRadius = 0.012f;
-        private const float SelectionMaxRadius = 0.06f;
+        private const float SelectionRingHeightRatio = 0.02f;
+        private const float SelectionPulseHeightRatio = 0.026f;
+        private const float SelectionRingOuterRatio = 0.95f;
+        private const float SelectionPulseOuterRatio = 1.8f;
+        private const float SelectionRingInnerRatio = 0.56f;
+        private const float SelectionPulseInnerRatio = 0.72f;
+        private const float SelectionRingAlpha = 0.88f;
+        private const float SelectionPulseAlpha = 0.82f;
         private const float SelectionRingRotationSpeed = 32f;
         private const float SelectionPulseDuration = 0.58f;
+        private const float LeaderRingHeightRatio = 0.035f;
+        private const float LeaderRingOuterRatio = 1.28f;
+        private const float LeaderRingInnerRatio = 0.76f;
+        private const float LeaderRingAlpha = 0.34f;
+        private const float LeaderRingPulseAlpha = 0.12f;
+        private const float LeaderRingRotationSpeed = -18f;
         private const float SelectionBodyTint = 0.48f;
         private const float SelectionBodyEmission = 0.9f;
         private const int SelectionRingSegments = 96;
+        private static readonly Color LeaderFxColor = new Color(1f, 0.78f, 0.12f, 1f);
         private static readonly bool TintCarBody = false;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -40,30 +49,35 @@ namespace F1XR.RestAPI.Replay
         private MeshRenderer labelTopDot;
         private MeshRenderer labelBottomDot;
         private Transform selectionRoot;
+        private Transform leaderRoot;
         private MeshRenderer selectionRing;
         private MeshRenderer selectionPulse;
+        private MeshRenderer leaderRing;
         private Material labelTextMaterial;
         private Material labelLineMaterial;
         private Material labelBackgroundMaterial;
         private Material labelDotMaterial;
         private Material selectionRingMaterial;
         private Material selectionPulseMaterial;
+        private Material leaderRingMaterial;
         private Mesh selectionRingMesh;
         private Mesh selectionPulseMesh;
+        private Mesh leaderRingMesh;
         private Vector3[] selectionRingVertices;
         private Vector3[] selectionPulseVertices;
+        private Vector3[] leaderRingVertices;
         private readonly List<Renderer> bodyRenderers = new();
         private readonly Dictionary<Renderer, MaterialPropertyBlock> bodyBlocks = new();
-        [SerializeField] private Color selectionFxColor = new Color(0f, 0.95f, 1f, 1f);
-        [SerializeField] private bool useDriverColorForSelection;
         private Color labelColor = Color.white;
         private Color selectionColor = Color.white;
         private string driverLabel;
         private int rank;
+        private float leaderAge;
         private float selectionAge;
         private float selectionPulseAge = SelectionPulseDuration;
         private bool labelVisible = true;
         private bool selected;
+        private bool leaderHighlightVisible;
         private bool bodyRenderersDirty = true;
 
         public void Init(int number)
@@ -102,12 +116,27 @@ namespace F1XR.RestAPI.Replay
         {
             rank = value;
             RefreshLabelText();
+
+            if (rank != 1)
+                SetLeaderObjectsActive(false);
+
+            SetLabelObjectsActive(ShouldShowLabel());
         }
 
         public void SetLabelVisible(bool visible)
         {
             labelVisible = visible;
-            SetLabelObjectsActive(visible);
+            SetLabelObjectsActive(ShouldShowLabel());
+        }
+
+        public void SetLeaderHighlightVisible(bool visible)
+        {
+            leaderHighlightVisible = visible;
+
+            if (!leaderHighlightVisible)
+                SetLeaderObjectsActive(false);
+
+            SetLabelObjectsActive(ShouldShowLabel());
         }
 
         public void CollectOnboardHiddenRenderers(List<Renderer> renderers)
@@ -122,6 +151,7 @@ namespace F1XR.RestAPI.Replay
             AddRenderer(renderers, labelBottomDot);
             AddRenderer(renderers, selectionRing);
             AddRenderer(renderers, selectionPulse);
+            AddRenderer(renderers, leaderRing);
         }
 
         public void SetSelected(bool value)
@@ -134,6 +164,7 @@ namespace F1XR.RestAPI.Replay
             if (selected == value)
             {
                 SetSelectionColor(color);
+                SetLabelObjectsActive(ShouldShowLabel());
                 ApplyBodyHighlight();
                 return;
             }
@@ -142,9 +173,10 @@ namespace F1XR.RestAPI.Replay
             selected = value;
 
             if (selected)
-                selectionPulseAge = SelectionPulseDuration;
+                selectionPulseAge = 0f;
 
             SetSelectionObjectsActive(false);
+            SetLabelObjectsActive(ShouldShowLabel());
             ApplyBodyHighlight();
         }
 
@@ -347,6 +379,12 @@ namespace F1XR.RestAPI.Replay
 
             if (selectionPulseMesh != null)
                 Destroy(selectionPulseMesh);
+
+            if (leaderRingMaterial != null)
+                Destroy(leaderRingMaterial);
+
+            if (leaderRingMesh != null)
+                Destroy(leaderRingMesh);
         }
 
         private void LateUpdate()
@@ -354,7 +392,10 @@ namespace F1XR.RestAPI.Replay
             if (selected)
                 UpdateSelectionEffect();
 
-            if (!labelVisible || label == null || Camera.main == null)
+            if (leaderHighlightVisible && rank == 1)
+                UpdateLeaderEffect();
+
+            if (!ShouldShowLabel() || label == null || Camera.main == null)
                 return;
 
             labelLine ??= CreateLabelLine();
@@ -368,14 +409,16 @@ namespace F1XR.RestAPI.Replay
 
         private void EnsureSelectionEffect()
         {
-            selectionRingMaterial ??= CreateSelectionMaterial(WithAlpha(CurrentSelectionFxColor(), 0.48f));
-            selectionPulseMaterial ??= CreateSelectionMaterial(WithAlpha(CurrentSelectionFxColor(), 0.72f));
+            bool created = false;
+            selectionRingMaterial ??= CreateSelectionMaterial(WithAlpha(CurrentSelectionFxColor(), SelectionRingAlpha));
+            selectionPulseMaterial ??= CreateSelectionMaterial(WithAlpha(CurrentSelectionFxColor(), SelectionPulseAlpha));
 
             if (selectionRoot == null)
             {
                 GameObject root = new GameObject("SelectionFx");
                 root.transform.SetParent(transform, false);
                 selectionRoot = root.transform;
+                created = true;
             }
 
             if (selectionRing == null)
@@ -389,6 +432,7 @@ namespace F1XR.RestAPI.Replay
                 selectionRing.material = selectionRingMaterial;
                 selectionRingMesh = CreateRingMesh("SelectedCarGroundRing", out selectionRingVertices);
                 ringFilter.sharedMesh = selectionRingMesh;
+                created = true;
             }
 
             if (selectionPulse == null)
@@ -403,10 +447,73 @@ namespace F1XR.RestAPI.Replay
                 selectionPulseMesh = CreateRingMesh("SelectedCarPulse", out selectionPulseVertices);
                 pulseFilter.sharedMesh = selectionPulseMesh;
                 pulse.SetActive(false);
+                created = true;
             }
 
-            bodyRenderersDirty = true;
+            if (created)
+                bodyRenderersDirty = true;
+
             ApplySelectionColor();
+        }
+
+        private void EnsureLeaderEffect()
+        {
+            bool created = false;
+            leaderRingMaterial ??= CreateSelectionMaterial(WithAlpha(LeaderFxColor, LeaderRingAlpha));
+
+            if (leaderRoot == null)
+            {
+                GameObject root = new GameObject("RaceLeaderFx");
+                root.transform.SetParent(transform, false);
+                leaderRoot = root.transform;
+                created = true;
+            }
+
+            if (leaderRing == null)
+            {
+                GameObject ring = new GameObject("LeaderGroundRing");
+                ring.transform.SetParent(leaderRoot, false);
+                MeshFilter ringFilter = ring.AddComponent<MeshFilter>();
+                leaderRing = ring.AddComponent<MeshRenderer>();
+                leaderRing.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                leaderRing.receiveShadows = false;
+                leaderRing.material = leaderRingMaterial;
+                leaderRingMesh = CreateRingMesh("RaceLeaderGroundRing", out leaderRingVertices);
+                ringFilter.sharedMesh = leaderRingMesh;
+                created = true;
+            }
+
+            if (created)
+                bodyRenderersDirty = true;
+        }
+
+        private void UpdateLeaderEffect()
+        {
+            EnsureLeaderEffect();
+            SetLeaderObjectsActive(true);
+
+            if (!TryGetCarBounds(out Bounds bounds))
+                return;
+
+            leaderAge += Time.deltaTime;
+            float radius = Mathf.Max(bounds.size.x, bounds.size.z) * LeaderRingOuterRatio;
+            float alpha = LeaderRingAlpha + Mathf.Sin(leaderAge * Mathf.PI * 2f) * LeaderRingPulseAlpha;
+            Vector3 worldCenter = new Vector3(
+                bounds.center.x,
+                bounds.min.y + Mathf.Max(radius * LeaderRingHeightRatio, 0.0012f),
+                bounds.center.z
+            );
+            Vector3 localCenter = transform.InverseTransformPoint(worldCenter);
+
+            SetMaterialColor(leaderRingMaterial, WithAlpha(LeaderFxColor, alpha));
+            UpdateRingMesh(
+                leaderRingMesh,
+                leaderRingVertices,
+                localCenter,
+                radius,
+                LeaderRingInnerRatio,
+                leaderAge * LeaderRingRotationSpeed
+            );
         }
 
         private void SetSelectionColor(Color color)
@@ -417,13 +524,37 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplySelectionColor()
         {
-            SetMaterialColor(selectionRingMaterial, WithAlpha(CurrentSelectionFxColor(), 0.48f));
-            SetMaterialColor(selectionPulseMaterial, WithAlpha(CurrentSelectionFxColor(), 0.72f));
+            SetMaterialColor(selectionRingMaterial, WithAlpha(CurrentSelectionFxColor(), SelectionRingAlpha));
+            SetMaterialColor(selectionPulseMaterial, WithAlpha(CurrentSelectionFxColor(), SelectionPulseAlpha));
         }
 
         private void UpdateSelectionEffect()
         {
+            EnsureSelectionEffect();
+            SetSelectionObjectsActive(true);
             ApplyBodyHighlight();
+
+            if (!TryGetCarBounds(out Bounds bounds))
+                return;
+
+            selectionAge += Time.deltaTime;
+            float radius = Mathf.Max(bounds.size.x, bounds.size.z) * SelectionRingOuterRatio;
+            Vector3 worldCenter = new Vector3(
+                bounds.center.x,
+                bounds.min.y + Mathf.Max(radius * SelectionRingHeightRatio, 0.001f),
+                bounds.center.z
+            );
+            Vector3 localCenter = transform.InverseTransformPoint(worldCenter);
+
+            UpdateRingMesh(
+                selectionRingMesh,
+                selectionRingVertices,
+                localCenter,
+                radius,
+                SelectionRingInnerRatio,
+                selectionAge * SelectionRingRotationSpeed
+            );
+            UpdateSelectionPulse(localCenter, radius);
         }
 
         private void UpdateSelectionPulse(Vector3 localCenter, float radius)
@@ -442,11 +573,12 @@ namespace F1XR.RestAPI.Replay
             float t = Mathf.Clamp01(selectionPulseAge / SelectionPulseDuration);
             float eased = 1f - Mathf.Pow(1f - t, 3f);
             float pulseRadius = radius * Mathf.Lerp(0.78f, SelectionPulseOuterRatio, eased);
-            float pulseAlpha = Mathf.Lerp(0.72f, 0f, t);
+            float pulseAlpha = Mathf.Lerp(SelectionPulseAlpha, 0f, t);
             Color color = CurrentSelectionFxColor();
             SetMaterialColor(selectionPulseMaterial, WithAlpha(color, pulseAlpha));
             Vector3 pulseCenter = localCenter + Vector3.up * LocalDistance(Mathf.Max(radius * SelectionPulseHeightRatio, 0.0008f));
-            UpdateRingMesh(selectionPulseMesh, selectionPulseVertices, pulseCenter, pulseRadius, 0.78f, -selectionAge * SelectionRingRotationSpeed * 0.65f);
+            UpdateRingMesh(selectionPulseMesh, selectionPulseVertices, pulseCenter, pulseRadius, SelectionPulseInnerRatio, -selectionAge * SelectionRingRotationSpeed * 0.65f);
+            selectionPulseAge += Time.deltaTime;
         }
 
         private float LocalDistance(float worldDistance)
@@ -456,7 +588,7 @@ namespace F1XR.RestAPI.Replay
 
         private Color CurrentSelectionFxColor()
         {
-            return useDriverColorForSelection ? selectionColor : selectionFxColor;
+            return selectionColor;
         }
 
         private void ApplyBodyHighlight()
@@ -526,7 +658,8 @@ namespace F1XR.RestAPI.Replay
                 labelLine != null && renderer.gameObject == labelLine.gameObject ||
                 labelTopDot != null && renderer.gameObject == labelTopDot.gameObject ||
                 labelBottomDot != null && renderer.gameObject == labelBottomDot.gameObject ||
-                IsSelectionEffectRenderer(renderer);
+                IsSelectionEffectRenderer(renderer) ||
+                IsLeaderEffectRenderer(renderer);
         }
 
         private static Mesh CreateRingMesh(string meshName, out Vector3[] vertices)
@@ -783,6 +916,11 @@ namespace F1XR.RestAPI.Replay
                 labelBottomDot.gameObject.SetActive(active);
         }
 
+        private bool ShouldShowLabel()
+        {
+            return labelVisible || selected || rank == 1;
+        }
+
         private void SetSelectionObjectsActive(bool active)
         {
             if (selectionRoot != null)
@@ -793,6 +931,15 @@ namespace F1XR.RestAPI.Replay
 
             if (selectionPulse != null)
                 selectionPulse.gameObject.SetActive(active && selectionPulseAge < SelectionPulseDuration);
+        }
+
+        private void SetLeaderObjectsActive(bool active)
+        {
+            if (leaderRoot != null)
+                leaderRoot.gameObject.SetActive(active);
+
+            if (leaderRing != null)
+                leaderRing.gameObject.SetActive(active);
         }
 
         private bool TryGetCarBounds(out Bounds bounds)
@@ -825,6 +972,13 @@ namespace F1XR.RestAPI.Replay
             return renderer != null &&
                 selectionRoot != null &&
                 renderer.transform.IsChildOf(selectionRoot);
+        }
+
+        private bool IsLeaderEffectRenderer(Renderer renderer)
+        {
+            return renderer != null &&
+                leaderRoot != null &&
+                renderer.transform.IsChildOf(leaderRoot);
         }
     }
 }
