@@ -19,6 +19,7 @@ namespace F1XR.RestAPI.Replay
         private const float MaxTiltDegrees = 35f;
         private const float PositionSnapLerp = 0.45f;
         private const float RotationSnapLerp = 0.35f;
+        private const float EngineConfigLogInterval = 1f;
 
         private readonly GameObject carPrefab;
         private readonly Dictionary<int, CarAgent> cars = new();
@@ -49,6 +50,8 @@ namespace F1XR.RestAPI.Replay
         private bool loggedNoAudibleCars;
         private bool loggedWaitingForTeams;
         private bool loggedDriverTeams;
+        private int engineConfigLogBurst = 8;
+        private float nextEngineConfigLogTime;
 
         public CarReplayView(GameObject carPrefab)
         {
@@ -138,6 +141,8 @@ namespace F1XR.RestAPI.Replay
             loggedNoAudibleCars = false;
             loggedWaitingForTeams = false;
             loggedDriverTeams = false;
+            engineConfigLogBurst = 8;
+            nextEngineConfigLogTime = 0f;
         }
 
         public void SetSelectedDriver(int driverNumber)
@@ -149,6 +154,9 @@ namespace F1XR.RestAPI.Replay
                 if (pair.Value != null)
                     pair.Value.SetSelected(pair.Key == selectedDriverNumber, SelectionColor(pair.Key));
             }
+
+            RefreshEngineSoundSelection();
+            UpdateSoundAudibility();
         }
 
         private CarAgent CreateCar(int driver)
@@ -244,6 +252,15 @@ namespace F1XR.RestAPI.Replay
                 if (sound != null)
                     sound.SetPlaying(active);
             }
+        }
+
+        private void RefreshEngineSoundSelection()
+        {
+            if (engineSoundSettings == null || !engineSoundSettings.useEngineSound)
+                return;
+
+            foreach (KeyValuePair<int, CarAgent> pair in cars)
+                ConfigureEngineSound(pair.Key, pair.Value);
         }
 
         public void SetCalibration(TrackCalibration source)
@@ -353,6 +370,17 @@ namespace F1XR.RestAPI.Replay
 
             CarEngineSound sound = car.GetComponent<CarEngineSound>();
 
+            if (NeedsDriverTeams())
+            {
+                if (!loggedWaitingForTeams)
+                {
+                    Debug.Log("[EngineSound] waiting for driver team data before applying team filter.");
+                    loggedWaitingForTeams = true;
+                }
+
+                return;
+            }
+
             if (engineSoundSettings.useEngineSound && UsesEngineSound(driver))
             {
                 if (sound == null)
@@ -362,6 +390,7 @@ namespace F1XR.RestAPI.Replay
                 sound.Configure(engineSoundSettings);
                 sound.SetPlaying(soundPlaying && soundPlacementReady);
                 engineSounds[driver] = sound;
+                LogEngineSoundConfig(driver, "enabled");
 
                 if (!loggedEngineSound)
                 {
@@ -374,17 +403,6 @@ namespace F1XR.RestAPI.Replay
             }
             else
             {
-                if (engineSoundSettings.useEngineSound && !HasDriverTeams())
-                {
-                    if (!loggedWaitingForTeams)
-                    {
-                        Debug.Log("[EngineSound] waiting for driver team data before applying team filter.");
-                        loggedWaitingForTeams = true;
-                    }
-
-                    return;
-                }
-
                 if (engineSoundSettings.useEngineSound && !loggedMissingSoundTeam)
                 {
                     string team = driverTeams.TryGetValue(driver, out string value) ? value : "";
@@ -396,7 +414,27 @@ namespace F1XR.RestAPI.Replay
                     Object.Destroy(sound);
 
                 engineSounds.Remove(driver);
+                LogEngineSoundConfig(driver, "removed");
             }
+        }
+
+        private void LogEngineSoundConfig(int driver, string action)
+        {
+            float now = Time.unscaledTime;
+            if (engineConfigLogBurst <= 0 && now < nextEngineConfigLogTime)
+                return;
+
+            if (engineConfigLogBurst > 0)
+                engineConfigLogBurst--;
+
+            nextEngineConfigLogTime = now + EngineConfigLogInterval;
+
+            string team = driverTeams.TryGetValue(driver, out string value) ? value : "";
+            bool redBullOnly = engineSoundSettings != null && engineSoundSettings.redBullOnly;
+            Debug.Log(
+                $"[EngineSound] driver={driver}, team='{team}', redBullOnly={redBullOnly}, " +
+                $"action={action}, cars={cars.Count}, configured={engineSounds.Count}"
+            );
         }
 
         private void EnsureEngineSound(int driver, CarAgent car)
@@ -407,14 +445,32 @@ namespace F1XR.RestAPI.Replay
             if (engineSounds.ContainsKey(driver))
                 return;
 
+            if (NeedsDriverTeams())
+                return;
+
             if (!UsesEngineSound(driver))
                 return;
 
             ConfigureEngineSound(driver, car);
         }
 
+        private bool NeedsDriverTeams()
+        {
+            if (selectedDriverNumber > 0)
+                return false;
+
+            return engineSoundSettings != null &&
+                engineSoundSettings.useEngineSound &&
+                engineSoundSettings.redBullOnly &&
+                !string.IsNullOrWhiteSpace(engineSoundSettings.teamNameFilter) &&
+                !HasDriverTeams();
+        }
+
         private bool UsesEngineSound(int driver)
         {
+            if (selectedDriverNumber > 0)
+                return driver == selectedDriverNumber;
+
             if (engineSoundSettings == null || !engineSoundSettings.redBullOnly)
                 return true;
 
@@ -472,7 +528,26 @@ namespace F1XR.RestAPI.Replay
 
         private void UpdateSoundAudibility()
         {
-            if (engineSoundSettings == null || engineSoundSettings.maxActiveCars <= 0)
+            if (engineSoundSettings == null)
+                return;
+
+            soundOrder.Clear();
+
+            foreach (CarEngineSound sound in engineSounds.Values)
+            {
+                if (sound != null)
+                    soundOrder.Add(sound);
+            }
+
+            if (selectedDriverNumber > 0)
+            {
+                foreach (CarEngineSound sound in soundOrder)
+                    sound.SetAudibility(IsSelectedSound(sound) ? 1f : 0f);
+
+                return;
+            }
+
+            if (engineSoundSettings.maxActiveCars <= 0)
                 return;
 
             Vector3 listenerPosition;
@@ -496,13 +571,6 @@ namespace F1XR.RestAPI.Replay
                 ? engineSoundSettings.maximumAudibleDistance
                 : engineSoundSettings.maxDistance;
             float maxDistanceSqr = maxDistance > 0f ? maxDistance * maxDistance : 0f;
-            soundOrder.Clear();
-
-            foreach (CarEngineSound sound in engineSounds.Values)
-            {
-                if (sound != null)
-                    soundOrder.Add(sound);
-            }
 
             soundOrder.Sort((a, b) =>
             {
@@ -541,6 +609,14 @@ namespace F1XR.RestAPI.Replay
                     loggedNoAudibleCars = true;
                 }
             }
+        }
+
+        private bool IsSelectedSound(CarEngineSound sound)
+        {
+            return sound != null &&
+                cars.TryGetValue(selectedDriverNumber, out CarAgent selectedCar) &&
+                selectedCar != null &&
+                sound.transform == selectedCar.transform;
         }
 
         private static float AudibilityForRank(int rank, int fullCars, int fadeCars, float fadeVolume)
@@ -830,7 +906,7 @@ namespace F1XR.RestAPI.Replay
         
         public void SetDrivers(DriverInfoDto[] drivers)
         {
-            if (drivers == null)
+            if (drivers == null || drivers.Length == 0)
                 return;
 
             driverColors.Clear();
@@ -870,7 +946,18 @@ namespace F1XR.RestAPI.Replay
             }
 
             foreach (KeyValuePair<int, CarAgent> pair in cars)
+            {
+                if (pair.Value != null)
+                {
+                    if (driverLabels.TryGetValue(pair.Key, out string label))
+                        pair.Value.SetLabel(label);
+
+                    if (driverColors.TryGetValue(pair.Key, out Color color))
+                        pair.Value.SetColor(color);
+                }
+
                 ConfigureEngineSound(pair.Key, pair.Value);
+            }
         }
     }
 }
