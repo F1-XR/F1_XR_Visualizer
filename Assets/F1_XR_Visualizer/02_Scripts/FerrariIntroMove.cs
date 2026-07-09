@@ -1,5 +1,6 @@
 using DG.Tweening;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
@@ -13,6 +14,8 @@ namespace F1XR.AR
         [SerializeField] bool playOnEnable = true;
         [SerializeField] float startDelay = 2f;
         [SerializeField] GameObject frontLeftTyre;
+        [SerializeField, Range(0f, 1f)] float frontLeftTyreGhostAlpha = 0.35f;
+        [SerializeField] float frontLeftTyreGhostFadeDuration = 0.4f;
         [SerializeField] ParticleSystem frontLeftTyrePuff;
         [SerializeField] XRSocketInteractor frontLeftTyreSocket;
         [SerializeField] float tiltDelay = 1.5f;
@@ -36,7 +39,9 @@ namespace F1XR.AR
         Tween exitDelayTween;
         Tween exitMoveTween;
         Tween startDelayTween;
+        Tween ghostFadeTween;
         GameObject socketedWheel;
+        Material[] frontLeftTyreGhostMaterials;
 
         void OnEnable()
         {
@@ -44,6 +49,8 @@ namespace F1XR.AR
             {
                 frontLeftTyreSocket.selectEntered.AddListener(OnWheelSocketed);
                 frontLeftTyreSocket.selectExited.AddListener(OnWheelUnsocketed);
+                frontLeftTyreSocket.hoverEntered.AddListener(OnSocketHoverEntered);
+                frontLeftTyreSocket.hoverExited.AddListener(OnSocketHoverExited);
             }
 
             if (playOnEnable)
@@ -59,6 +66,8 @@ namespace F1XR.AR
             {
                 frontLeftTyreSocket.selectEntered.RemoveListener(OnWheelSocketed);
                 frontLeftTyreSocket.selectExited.RemoveListener(OnWheelUnsocketed);
+                frontLeftTyreSocket.hoverEntered.RemoveListener(OnSocketHoverEntered);
+                frontLeftTyreSocket.hoverExited.RemoveListener(OnSocketHoverExited);
             }
 
             startDelayTween?.Kill();
@@ -67,6 +76,7 @@ namespace F1XR.AR
             tiltDelayTween?.Kill();
             exitDelayTween?.Kill();
             exitMoveTween?.Kill();
+            ghostFadeTween?.Kill();
         }
 
         void OnWheelSocketed(SelectEnterEventArgs args)
@@ -76,6 +86,7 @@ namespace F1XR.AR
             if (wheelMountedAudio != null)
                 wheelMountedAudio.Play();
 
+            SetFrontLeftTyreGhostAlpha(0f);
             Tilt(-tiltLocalEuler, riseDuration, riseEase);
 
             exitDelayTween?.Kill();
@@ -112,7 +123,24 @@ namespace F1XR.AR
             if (exitMoveAudio != null)
                 exitMoveAudio.Stop();
 
+            SetFrontLeftTyreGhostAlpha(0f);
             Tilt(tiltLocalEuler, tiltDuration, tiltEase);
+        }
+
+        void OnSocketHoverEntered(HoverEnterEventArgs args)
+        {
+            if (frontLeftTyreSocket != null && frontLeftTyreSocket.hasSelection)
+                return;
+
+            SetFrontLeftTyreGhostAlpha(frontLeftTyreGhostAlpha);
+        }
+
+        void OnSocketHoverExited(HoverExitEventArgs args)
+        {
+            if (frontLeftTyreSocket != null && frontLeftTyreSocket.hasSelection)
+                return;
+
+            SetFrontLeftTyreGhostAlpha(0f);
         }
 
         void Tilt(Vector3 localEulerDelta, float animDuration, Ease ease)
@@ -120,6 +148,79 @@ namespace F1XR.AR
             tiltTween?.Kill();
             tiltTween = transform.DOLocalRotate(localEulerDelta, animDuration, RotateMode.LocalAxisAdd)
                 .SetEase(ease);
+        }
+
+        void EnsureFrontLeftTyreGhostMaterials()
+        {
+            if (frontLeftTyreGhostMaterials != null || frontLeftTyre == null)
+                return;
+
+            var renderers = frontLeftTyre.GetComponentsInChildren<Renderer>(true);
+            var materials = new System.Collections.Generic.List<Material>();
+
+            foreach (var renderer in renderers)
+            {
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+
+                foreach (var material in renderer.materials)
+                {
+                    if (!material.HasProperty("baseColorFactor"))
+                        continue;
+
+                    material.SetFloat("_Surface", 1f);
+                    material.SetFloat("_Blend", 0f);
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+                    material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetInt("_ZWrite", 0);
+                    material.renderQueue = (int)RenderQueue.Transparent;
+                    material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    material.DisableKeyword("_ALPHATEST_ON");
+                    material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                    material.DisableKeyword("_ALPHAMODULATE_ON");
+
+                    var color = material.GetColor("baseColorFactor");
+                    color.a = 0f;
+                    material.SetColor("baseColorFactor", color);
+
+                    materials.Add(material);
+                }
+            }
+
+            frontLeftTyreGhostMaterials = materials.ToArray();
+        }
+
+        void SetFrontLeftTyreGhostAlpha(float targetAlpha)
+        {
+            if (frontLeftTyre == null)
+                return;
+
+            EnsureFrontLeftTyreGhostMaterials();
+
+            ghostFadeTween?.Kill();
+
+            if (frontLeftTyreGhostMaterials == null || frontLeftTyreGhostMaterials.Length == 0)
+            {
+                frontLeftTyre.SetActive(targetAlpha > 0f);
+                return;
+            }
+
+            frontLeftTyre.SetActive(true);
+            var startAlpha = frontLeftTyreGhostMaterials[0].GetColor("baseColorFactor").a;
+
+            ghostFadeTween = DOVirtual.Float(startAlpha, targetAlpha, frontLeftTyreGhostFadeDuration, alpha =>
+            {
+                foreach (var material in frontLeftTyreGhostMaterials)
+                {
+                    var color = material.GetColor("baseColorFactor");
+                    color.a = alpha;
+                    material.SetColor("baseColorFactor", color);
+                }
+            }).OnComplete(() =>
+            {
+                if (targetAlpha <= 0f)
+                    frontLeftTyre.SetActive(false);
+            });
         }
 
         public void Play()
@@ -136,6 +237,8 @@ namespace F1XR.AR
                 {
                     if (introMoveAudio != null)
                         introMoveAudio.Stop();
+
+                    EnsureFrontLeftTyreGhostMaterials();
 
                     if (frontLeftTyre != null)
                         frontLeftTyre.SetActive(false);
