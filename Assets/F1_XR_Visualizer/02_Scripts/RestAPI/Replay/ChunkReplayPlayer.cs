@@ -36,7 +36,8 @@ namespace F1XR.RestAPI.Replay
         private bool _isPlaying;
         private bool _playOnReady;
         private bool _hasStarted;
-        private bool _refreshedEngineSoundAfterCars;
+        private bool _hasDriverMetadata;
+        private bool _wasTrackPlaced;
         private bool _lastRedBullOnly;
         private string _lastTeamNameFilter;
 
@@ -95,7 +96,8 @@ namespace F1XR.RestAPI.Replay
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
             RefreshEngineSound();
-            carView.SetSoundPlacementReady(HasPlacedTrack());
+            _wasTrackPlaced = HasPlacedTrack();
+            carView.SetSoundPlacementReady(_wasTrackPlaced);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -115,7 +117,8 @@ namespace F1XR.RestAPI.Replay
             _isPlaying = false;
             _playOnReady = playOnReady;
             _hasStarted = false;
-            _refreshedEngineSoundAfterCars = false;
+            _hasDriverMetadata = false;
+            _wasTrackPlaced = false;
 
             ClearReplay();
 
@@ -130,7 +133,8 @@ namespace F1XR.RestAPI.Replay
             carView.SetCalibration(trackCalibration);
             carView.SetLabelsVisible(showCarLabels);
             RefreshEngineSound();
-            carView.SetSoundPlacementReady(HasPlacedTrack());
+            _wasTrackPlaced = HasPlacedTrack();
+            carView.SetSoundPlacementReady(_wasTrackPlaced);
             carView.SetSoundPlaying(false);
 
             if (_manifestPollingCoroutine != null)
@@ -265,7 +269,6 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
-            RefreshEngineSoundAfterCarsReady();
 
             _seekCoroutine = null;
         }
@@ -276,7 +279,12 @@ namespace F1XR.RestAPI.Replay
         {
             ApplyEngineSoundFilterChange();
             carView.SetLabelsVisible(showCarLabels);
-            carView.SetSoundPlacementReady(HasPlacedTrack());
+            bool trackPlaced = HasPlacedTrack();
+            carView.SetSoundPlacementReady(trackPlaced);
+            if (!_wasTrackPlaced && trackPlaced)
+                RefreshEngineSound();
+
+            _wasTrackPlaced = trackPlaced;
             carView.SetSoundPlaying(_isPlaying);
 
             if (!_isPlaying || _manifest == null)
@@ -297,7 +305,6 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
-            RefreshEngineSoundAfterCarsReady();
         }
 
         private IEnumerator PollManifestLoop()
@@ -309,9 +316,7 @@ namespace F1XR.RestAPI.Replay
                     manifest =>
                     {
                         _manifest = manifest;
-                        _refreshedEngineSoundAfterCars = false;
-                        carView.SetDrivers(manifest.drivers);
-                        RefreshEngineSoundAfterCarsReady();
+                        ApplyDriverMetadata();
                         LoadNearChunks();
                         TryAutoPlay();
                     },
@@ -574,22 +579,22 @@ namespace F1XR.RestAPI.Replay
             RefreshEngineSound();
         }
 
-        private void RefreshEngineSoundAfterCarsReady()
-        {
-            if (_refreshedEngineSoundAfterCars || carView == null || !carView.HasCars)
-                return;
-
-            RefreshEngineSound();
-            _refreshedEngineSoundAfterCars = true;
-        }
-
         private void RefreshEngineSound()
         {
-            if (_manifest != null)
-                carView.SetDrivers(_manifest.drivers);
-
+            ApplyDriverMetadata();
             carView.SetEngineSound(engineSound);
             RememberEngineSoundFilter();
+        }
+
+        private void ApplyDriverMetadata()
+        {
+            if (_hasDriverMetadata || _manifest == null || _manifest.drivers == null || _manifest.drivers.Length == 0)
+                return;
+
+            if (carView != null)
+                carView.SetDrivers(_manifest.drivers);
+
+            _hasDriverMetadata = true;
         }
 
         private bool HasPlacedTrack()
