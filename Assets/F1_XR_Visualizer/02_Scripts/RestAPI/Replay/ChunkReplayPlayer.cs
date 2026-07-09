@@ -486,6 +486,12 @@ namespace F1XR.RestAPI.Replay
             carView.SetSelectedDriver(driverNumber);
         }
 
+        public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
+        {
+            carTransform = null;
+            return carView != null && carView.TryGetCarTransform(driverNumber, out carTransform);
+        }
+
         public string GetDriverLabel(int driverNumber)
         {
             if (_manifest == null || _manifest.drivers == null)

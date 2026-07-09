@@ -2833,6 +2833,8 @@ MonoBehaviour:
   rankText: {fileID: 555210860}
   standingsSize: {x: 142, y: 470}
   driverDetailSize: {x: 180, y: 150}
+  driverOnboardSize: {x: 260, y: 176}
+  driverOnboardTextureSize: {x: 512, y: 288}
   standingsRowHeight: 19
   positionChangeFlashSeconds: 1.2
   standingsMoveSpeed: 10
@@ -3909,8 +3911,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1742760903}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -4.6566115e-10, y: 0.0018090969, z: -0.017734554}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
