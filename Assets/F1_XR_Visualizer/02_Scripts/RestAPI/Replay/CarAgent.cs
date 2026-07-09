@@ -24,6 +24,7 @@ namespace F1XR.RestAPI.Replay
         private const float SelectionBodyTint = 0.48f;
         private const float SelectionBodyEmission = 0.9f;
         private const int SelectionRingSegments = 96;
+        private static readonly bool TintCarBody = false;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
@@ -460,6 +461,9 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplyBodyHighlight()
         {
+            if (!TintCarBody)
+                return;
+
             RefreshBodyRenderers();
 
             Color fxColor = CurrentSelectionFxColor();
