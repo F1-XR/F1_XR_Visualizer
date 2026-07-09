@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1430503844873136535}
   m_Layer: 0
-  m_Name: TempCarRoot 2
+  m_Name: Ferrari
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -26,8 +26,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 1.5, y: 1.5, z: 1.5}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 8463191166672290068}
   m_Father: {fileID: 0}
@@ -95,6 +95,10 @@ PrefabInstance:
     - target: {fileID: -3320658538573489036, guid: 8785dc4c554457a4584760aca7c54206, type: 3}
       propertyPath: m_ConstrainProportionsScale
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -1834777737404252239, guid: 8785dc4c554457a4584760aca7c54206, type: 3}
+      propertyPath: m_CastShadows
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1883071473318121471, guid: 8785dc4c554457a4584760aca7c54206, type: 3}
       propertyPath: m_Name

@@ -3606,7 +3606,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1518326053}
-  carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  carPrefab: {fileID: 5428868102113635722, guid: d9bde08df69b35b4384e180bac014872, type: 3}
   placement: {fileID: 1240350763}
   trackCalibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   trackVisualizerPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
@@ -3622,7 +3622,7 @@ MonoBehaviour:
     mapFitScaleMultiplier: 1.25
     calibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   playOnReady: 1
-  playbackSpeed: 6
+  playbackSpeed: 4
   preloadChunksAhead: 3
   manifestPollSeconds: 1
   showCarLabels: 1
@@ -3739,7 +3739,7 @@ MonoBehaviour:
     proceduralTone: 0.85
     proceduralRoughness: 0.55
     masterVolume: 0.5
-    maxActiveCars: 1
+    maxActiveCars: 5
     minRpm: 4500
     maxRpm: 12000
     idleRpm: 5000
