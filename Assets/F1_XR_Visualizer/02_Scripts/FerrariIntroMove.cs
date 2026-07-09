@@ -1,6 +1,7 @@
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
@@ -32,6 +33,7 @@ namespace F1XR.AR
         [SerializeField] AudioSource introMoveAudio;
         [SerializeField] AudioSource wheelMountedAudio;
         [SerializeField] AudioSource exitMoveAudio;
+        [SerializeField] string sessionSceneName = "SessionSpace";
 
         Tween moveTween;
         Tween tiltTween;
@@ -109,6 +111,8 @@ namespace F1XR.AR
                             socketedWheel.SetActive(false);
 
                         gameObject.SetActive(false);
+
+                        SceneManager.LoadScene(sessionSceneName);
                     });
             }, false);
         }
