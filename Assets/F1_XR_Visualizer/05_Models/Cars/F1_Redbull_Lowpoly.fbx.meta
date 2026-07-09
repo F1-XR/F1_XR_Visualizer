@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 941cab87c537f93498b7c0e8bd607694
+guid: 99644f97b496fbd44b9a5751babe5457
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
@@ -7,8 +7,33 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
-      name: Material.002
-    second: {fileID: 2100000, guid: e8e6970d267b45d4a90c5f4d2567c5cb, type: 2}
+      name: 2ndColor
+    second: {fileID: 2100000, guid: da3a8ef9210cec7418c7a8d90b5cb063, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: 3rdColor
+    second: {fileID: 2100000, guid: 5f0327f48933e14478487772b77c814b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: BaseColor
+    second: {fileID: 2100000, guid: d1b0112baa1d18b4891b1c35742341da, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Bloody Red
+    second: {fileID: 2100000, guid: b7e05375747e6bd41bba7e036bb748b4, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Dark Black
+    second: {fileID: 2100000, guid: 17a57a07a7a099643a257179dd45f9bf, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mirror
+    second: {fileID: 2100000, guid: 1a3d14f7d4f21fe4f8091cae9b5eab51, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
