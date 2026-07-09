@@ -15,6 +15,9 @@ namespace F1XR.Champagne.Editor
         const string FoilMaterialPath = RootFolder + "/Materials/ChampagneFoil_Gold.mat";
         const string LiquidMaterialPath = RootFolder + "/Materials/ChampagneLiquid_Particle.mat";
         const string FoamMaterialPath = RootFolder + "/Materials/ChampagneFoam_Particle.mat";
+        const string BottleTestName = "ChampagneBottle_Test";
+        const string TableTestName = "ChampagneTempTable";
+        const string SpawnerTestName = "ChampagneCelebrationSpawner_Test";
 
         [MenuItem("Tools/F1 XR/Champagne/Create Champagne Prefab")]
         public static void CreateChampagnePrefab()
@@ -130,42 +133,76 @@ namespace F1XR.Champagne.Editor
             if (AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null)
                 CreateChampagnePrefab();
 
-            CreateTableIfMissing();
+            GameObject table = CreateTableIfMissing();
             CreateFloorIfMissing();
 
-            if (GameObject.Find("ChampagneBottle_Test") == null)
+            GameObject bottleObject = FindSceneObject(BottleTestName);
+            if (bottleObject == null)
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
                 var instance = PrefabUtility.InstantiatePrefab(prefab, scene) as GameObject;
-                instance.name = "ChampagneBottle_Test";
-                instance.transform.position = new Vector3(0f, 0.95f, 0.25f);
+                instance.name = BottleTestName;
+                instance.transform.position = new Vector3(0f, 0.8f, 0.25f);
                 instance.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+                bottleObject = instance;
             }
+
+            bottleObject.SetActive(false);
+            table.SetActive(false);
+            ConfigureSpawner(scene, bottleObject, table);
 
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
             Debug.Log($"[ChampagneBuilder] Placed test setup in active scene: {scene.path}");
         }
 
-        static void CreateTableIfMissing()
+        static GameObject CreateTableIfMissing()
         {
-            if (GameObject.Find("ChampagneTempTable") != null)
-                return;
+            GameObject existing = FindSceneObject(TableTestName);
+            if (existing != null)
+                return existing;
 
             var table = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            table.name = "ChampagneTempTable";
+            table.name = TableTestName;
             table.transform.position = new Vector3(0f, 0.72f, 0.45f);
             table.transform.localScale = new Vector3(0.9f, 0.06f, 0.55f);
+            return table;
         }
 
         static void CreateFloorIfMissing()
         {
-            if (GameObject.Find("ChampagneTempFloor") != null)
+            if (FindSceneObject("ChampagneTempFloor") != null)
                 return;
 
             var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
             floor.name = "ChampagneTempFloor";
             floor.transform.position = new Vector3(0f, -0.03f, 0f);
             floor.transform.localScale = new Vector3(3f, 0.04f, 3f);
+        }
+
+        static void ConfigureSpawner(Scene scene, GameObject bottleObject, GameObject table)
+        {
+            GameObject spawnerObject = FindSceneObject(SpawnerTestName);
+            if (spawnerObject == null)
+            {
+                spawnerObject = new GameObject(SpawnerTestName);
+                SceneManager.MoveGameObjectToScene(spawnerObject, scene);
+            }
+
+            var spawner = spawnerObject.GetComponent<ChampagneCelebrationSpawner>();
+            if (spawner == null)
+                spawner = spawnerObject.AddComponent<ChampagneCelebrationSpawner>();
+
+            var bottle = bottleObject.GetComponent<ChampagneBottleController>();
+            SetObject(spawner, "champagneInstance", bottle);
+            SetObject(spawner, "tableInstance", table);
+            SetFloat(spawner, "spawnDistance", 0.5f);
+            SetFloat(spawner, "spawnHeightOffset", 0.8f);
+            SetVector3(spawner, "tableLocalOffset", new Vector3(0f, -0.08f, 0f));
+            SetBool(spawner, "usePreloadedInstance", true);
+            SetBool(spawner, "spawnTableWithBottle", true);
+
+            if (Camera.main != null)
+                SetObject(spawner, "playerHeadTransform", Camera.main.transform);
         }
 
         static ParticleSystem CreateParticleSystem(string name, Transform parent, Material material)
@@ -237,6 +274,47 @@ namespace F1XR.Champagne.Editor
             var serializedObject = new SerializedObject(target);
             serializedObject.FindProperty(propertyName).objectReferenceValue = value;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetFloat(Object target, string propertyName, float value)
+        {
+            var serializedObject = new SerializedObject(target);
+            serializedObject.FindProperty(propertyName).floatValue = value;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetBool(Object target, string propertyName, bool value)
+        {
+            var serializedObject = new SerializedObject(target);
+            serializedObject.FindProperty(propertyName).boolValue = value;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetVector3(Object target, string propertyName, Vector3 value)
+        {
+            var serializedObject = new SerializedObject(target);
+            serializedObject.FindProperty(propertyName).vector3Value = value;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static GameObject FindSceneObject(string objectName)
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid())
+                return null;
+
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                Transform[] children = roots[i].GetComponentsInChildren<Transform>(includeInactive: true);
+                for (int j = 0; j < children.Length; j++)
+                {
+                    if (children[j].name == objectName)
+                        return children[j].gameObject;
+                }
+            }
+
+            return null;
         }
     }
 }

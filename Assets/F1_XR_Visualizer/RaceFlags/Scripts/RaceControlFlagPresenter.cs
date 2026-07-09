@@ -1,8 +1,10 @@
+using System;
 using F1XR.AR;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.AR;
 using F1XR.RestAPI.Replay;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace F1XR.RaceFlags
 {
@@ -27,6 +29,9 @@ namespace F1XR.RaceFlags
         [SerializeField] private float checkeredDisplayDuration = 5.0f;
         [SerializeField] private float fallbackRaceEndTimeForTesting = 0.0f;
         [SerializeField] private float missingEndFallbackDuration = 5.0f;
+
+        [Header("Celebration Events")]
+        [SerializeField] private UnityEvent checkeredFlagShown;
 
         [Header("Development Test")]
         [SerializeField] private bool enableDevelopmentControls = false;
@@ -54,6 +59,8 @@ namespace F1XR.RaceFlags
         private float raceControlStartGateT;
         private bool warnedMissingPlayer;
         private bool warnedMissingFlag;
+
+        public event Action CheckeredFlagShown;
 
         private void Awake()
         {
@@ -373,6 +380,8 @@ namespace F1XR.RaceFlags
         private void HandleRaceFinished()
         {
             raceFlagAlert.ShowTimed(RaceFlagType.Checkered, checkeredDisplayDuration);
+            CheckeredFlagShown?.Invoke();
+            checkeredFlagShown?.Invoke();
         }
 
         private static void WarnOnce(ref bool warned, string message)
