@@ -10726,8 +10726,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Champagne.BottleShakeDetector
   targetBody: {fileID: 5042897529455780034}
-  shakeAccelerationThreshold: 2
-  shakeAngularVelocityThreshold: 2
+  shakeAccelerationThreshold: 12
+  shakeAngularVelocityThreshold: 5
   minimumVelocityForDirectionChange: 0.25
   directionChangeDotThreshold: -0.35
   requiredShakeDirectionChanges: 2
@@ -10767,7 +10767,7 @@ MonoBehaviour:
   bottleColliders:
   - {fileID: 3545883840255056452}
   - {fileID: 984519063592593342}
-  minimumPopPressure: 0.09
+  minimumPopPressure: 0.11
   allowLowPressurePop: 0
   autoPopAtMaximumPressure: 0
   autoPopDelay: 0.25
