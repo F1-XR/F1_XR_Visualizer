@@ -76,6 +76,8 @@ namespace F1XR.RestAPI.Api
     [System.Serializable]
     public class RaceControlEventDto
     {
+        public float startT;
+        public float endT;
         public float t;
         public string date;
         public string category;

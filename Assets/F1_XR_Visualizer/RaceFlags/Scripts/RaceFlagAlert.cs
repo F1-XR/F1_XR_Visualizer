@@ -51,7 +51,11 @@ namespace F1XR.RaceFlags
         private RaceFlagType currentType;
         private bool initialized;
         private bool isShowing;
+        private bool isPersistent;
+        private bool isExiting;
         private float timer;
+        private float timedDuration;
+        private float exitTimer;
         private float motionPhase;
 
         private Vector3 originalRootLocalPosition;
@@ -95,14 +99,39 @@ namespace F1XR.RaceFlags
             timer += deltaTime;
 
             ApplyPoleMotion();
-            ApplyLifetimeAnimation();
+            ApplyLifetimeAnimation(deltaTime);
             ApplyShaderProperties();
-
-            if (timer >= visibleDuration)
-                gameObject.SetActive(false);
         }
 
         public void Show(RaceFlagType type)
+        {
+            ShowTimed(type, visibleDuration);
+        }
+
+        public void ShowTimed(RaceFlagType type, float duration)
+        {
+            BeginShow(type, false, Mathf.Max(0.05f, duration));
+        }
+
+        public void ShowPersistent(RaceFlagType type)
+        {
+            BeginShow(type, true, 0.0f);
+        }
+
+        public void HideWithExit()
+        {
+            if (!gameObject.activeSelf || !isShowing)
+            {
+                HideImmediately();
+                return;
+            }
+
+            isExiting = true;
+            isPersistent = false;
+            exitTimer = 0.0f;
+        }
+
+        private void BeginShow(RaceFlagType type, bool persistent, float duration)
         {
             if (!gameObject.activeSelf)
                 gameObject.SetActive(true);
@@ -112,6 +141,10 @@ namespace F1XR.RaceFlags
             SetFlagType(type);
 
             timer = 0.0f;
+            timedDuration = duration;
+            isPersistent = persistent;
+            isExiting = false;
+            exitTimer = 0.0f;
             motionPhase = Random.Range(0.0f, Mathf.PI * 2.0f);
             isShowing = true;
             transform.localScale = Vector3.zero;
@@ -168,12 +201,16 @@ namespace F1XR.RaceFlags
             initialized = true;
         }
 
-        private void ApplyLifetimeAnimation()
+        private void ApplyLifetimeAnimation(float deltaTime)
         {
-            float safeVisibleDuration = Mathf.Max(0.05f, visibleDuration);
+            if (isExiting)
+            {
+                ApplyExitAnimation(deltaTime);
+                return;
+            }
+
+            float safeVisibleDuration = Mathf.Max(0.05f, isPersistent ? float.PositiveInfinity : timedDuration);
             float safeEnterDuration = Mathf.Min(Mathf.Max(0.0f, enterDuration), safeVisibleDuration);
-            float safeExitDuration = Mathf.Min(Mathf.Max(0.0f, exitDuration), safeVisibleDuration);
-            float exitStart = safeVisibleDuration - safeExitDuration;
 
             if (safeEnterDuration > 0.0f && timer < safeEnterDuration)
             {
@@ -183,16 +220,44 @@ namespace F1XR.RaceFlags
                 return;
             }
 
-            if (safeExitDuration > 0.0f && timer >= exitStart)
+            if (!isPersistent)
             {
-                float exitT = Mathf.SmoothStep(0.0f, 1.0f, (timer - exitStart) / safeExitDuration);
-                transform.localScale = originalRootLocalScale * (1.0f - exitT);
-                transform.localPosition = originalRootLocalPosition + Vector3.up * (0.05f * exitT);
-                return;
+                float safeExitDuration = Mathf.Min(Mathf.Max(0.0f, exitDuration), safeVisibleDuration);
+                float exitStart = safeVisibleDuration - safeExitDuration;
+
+                if (safeExitDuration > 0.0f && timer >= exitStart)
+                {
+                    float exitT = Mathf.SmoothStep(0.0f, 1.0f, (timer - exitStart) / safeExitDuration);
+                    transform.localScale = originalRootLocalScale * (1.0f - exitT);
+                    transform.localPosition = originalRootLocalPosition + Vector3.up * (0.05f * exitT);
+
+                    if (timer >= safeVisibleDuration)
+                        gameObject.SetActive(false);
+
+                    return;
+                }
+
+                if (timer >= safeVisibleDuration)
+                {
+                    gameObject.SetActive(false);
+                    return;
+                }
             }
 
             transform.localScale = originalRootLocalScale;
             transform.localPosition = originalRootLocalPosition;
+        }
+
+        private void ApplyExitAnimation(float deltaTime)
+        {
+            float safeExitDuration = Mathf.Max(0.01f, exitDuration);
+            exitTimer += deltaTime;
+            float exitT = Mathf.SmoothStep(0.0f, 1.0f, Mathf.Clamp01(exitTimer / safeExitDuration));
+            transform.localScale = originalRootLocalScale * (1.0f - exitT);
+            transform.localPosition = originalRootLocalPosition + Vector3.up * (0.05f * exitT);
+
+            if (exitTimer >= safeExitDuration)
+                gameObject.SetActive(false);
         }
 
         private void ApplyPoleMotion()
@@ -265,7 +330,11 @@ namespace F1XR.RaceFlags
         private void ResetRuntimeState()
         {
             isShowing = false;
+            isPersistent = false;
+            isExiting = false;
             timer = 0.0f;
+            timedDuration = 0.0f;
+            exitTimer = 0.0f;
         }
 
         private void HandleKeyboardTest()
