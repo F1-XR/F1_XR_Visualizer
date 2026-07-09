@@ -14,13 +14,22 @@ namespace F1XR.RestAPI.Replay
     {
         public ApiClient api;
         public GameObject carPrefab;
+        public TeamCarPrefab[] teamCarPrefabs;
         public ARPlanePlacementController placement;
         public TrackCalibration trackCalibration;
         public GameObject trackVisualizerPrefab;
         public ARBuildRevealPlacer buildPlacer;
+        public StartingLightSequence startingLights;
+        public GameObject startingLightsPrefab;
         public TrackAsset[] trackAssets;
 
         public bool playOnReady = true;
+        public bool waitForTrackPlacementBeforeStart = true;
+        public bool playStartingLightsBeforeStart = true;
+        public float startingLightLeadSeconds = 8f;
+        public float startingLightFirstDelay = 1f;
+        public float startingLightInterval = 1f;
+        public float startingLightHideDelay = 2f;
         public float playbackSpeed = 6f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
@@ -40,6 +49,8 @@ namespace F1XR.RestAPI.Replay
         private bool _wasTrackPlaced;
         private bool _lastRedBullOnly;
         private string _lastTeamNameFilter;
+        private bool _hasStartingLightsRotationOffset;
+        private Quaternion _startingLightsRotationOffset = Quaternion.identity;
 
         private Coroutine _manifestPollingCoroutine;
         private Coroutine _seekCoroutine;
@@ -53,6 +64,26 @@ namespace F1XR.RestAPI.Replay
         private CarReplayView carView;
     
         public float CurrentTime => _time;
+        public float TimelineStartTime => _manifest != null && _manifest.chunks != null && _manifest.chunks.Length > 0
+            ? _manifest.chunks[0].startT
+            : 0f;
+
+        public float RaceStartTime
+        {
+            get
+            {
+                if (_manifest == null)
+                    return 0f;
+
+                return _manifest.raceStartT > 0f ? _manifest.raceStartT : _manifest.playbackStartT;
+            }
+        }
+
+        public float RaceEndTime => _manifest != null ? _manifest.raceEndT : 0f;
+
+        public RaceControlEventDto[] YellowFlags => _manifest != null ? _manifest.yellowFlags : null;
+
+        public RaceControlEventDto[] RedFlags => _manifest != null ? _manifest.redFlags : null;
     
         public bool IsPlaying => _isPlaying;
 
@@ -63,9 +94,11 @@ namespace F1XR.RestAPI.Replay
                 if (_manifest == null)
                     return 0f;
 
-                return _manifest.requestedDurationSeconds > 0f
+                float endTime = _manifest.requestedDurationSeconds > 0f
                     ? _manifest.requestedDurationSeconds
                     : _manifest.durationSeconds;
+
+                return Mathf.Max(0f, endTime - TimelineStartTime);
             }
         }
 
@@ -79,6 +112,17 @@ namespace F1XR.RestAPI.Replay
                 return _manifest.readyUntilT;
             }
         }
+
+        public float TimelineToNormalized(float time)
+        {
+            float duration = Duration;
+            return duration > 0f ? Mathf.Clamp01((time - TimelineStartTime) / duration) : 0f;
+        }
+
+        public float NormalizedToTimeline(float normalized)
+        {
+            return TimelineStartTime + Mathf.Clamp01(normalized) * Duration;
+        }
         
         private void Awake()
         {
@@ -88,6 +132,7 @@ namespace F1XR.RestAPI.Replay
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
 
             carView = new CarReplayView(carPrefab);
+            carView.SetTeamPrefabs(teamCarPrefabs);
             carView.SetPlacement(placement);
             if (buildPlacer == null)
                 buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
@@ -119,6 +164,8 @@ namespace F1XR.RestAPI.Replay
             _hasStarted = false;
             _hasDriverMetadata = false;
             _wasTrackPlaced = false;
+            _hasStartingLightsRotationOffset = false;
+            _startingLightsRotationOffset = Quaternion.identity;
 
             ClearReplay();
 
@@ -126,6 +173,7 @@ namespace F1XR.RestAPI.Replay
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
 
             carView.SetPlacement(placement);
+            carView.SetTeamPrefabs(teamCarPrefabs);
             if (buildPlacer == null)
                 buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
 
@@ -215,6 +263,7 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             _isPlaying = true;
+            LoadNearChunks();
             carView.SetSoundPlaying(true);
         }
 
@@ -250,7 +299,7 @@ namespace F1XR.RestAPI.Replay
 
         private IEnumerator SeekRoutine(float targetTime)
         {
-            float seekTime = Mathf.Clamp(targetTime, 0f, ReadyUntilTime);
+            float seekTime = Mathf.Clamp(targetTime, TimelineStartTime, ReadyUntilTime);
             int chunkIndex = FindChunk(seekTime);
 
             if (_manifest.chunks == null || chunkIndex < 0 || chunkIndex >= _manifest.chunks.Length)
@@ -269,6 +318,7 @@ namespace F1XR.RestAPI.Replay
 
             LoadNearChunks();
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            ApplyStartingLightTimeline();
 
             _seekCoroutine = null;
         }
@@ -287,10 +337,16 @@ namespace F1XR.RestAPI.Replay
             _wasTrackPlaced = trackPlaced;
             carView.SetSoundPlaying(_isPlaying);
 
+            if (trackPlaced)
+                TryAutoPlay();
+
+            ApplyStartingLightTimeline();
+
             if (!_isPlaying || _manifest == null)
                 return;
 
             _time += Time.deltaTime * playbackSpeed;
+            ApplyStartingLightTimeline();
 
             float maxTime = _manifest.requestedDurationSeconds > 0f
                 ? _manifest.requestedDurationSeconds
@@ -364,7 +420,16 @@ namespace F1XR.RestAPI.Replay
             if (!_playOnReady || _hasStarted || _manifest == null || _manifest.chunks == null)
                 return;
 
-            int firstIndex = FindReadyStartChunk();
+            if (waitForTrackPlacementBeforeStart && !HasPlacedTrack())
+                return;
+
+            if (_isPlaying)
+            {
+                _hasStarted = true;
+                return;
+            }
+
+            int firstIndex = FindReadyStartChunk(_manifest.playbackStartT);
 
             if (firstIndex < 0)
                 return;
@@ -378,27 +443,135 @@ namespace F1XR.RestAPI.Replay
             }
 
             ChunkInfoDto startChunk = _manifest.chunks[firstIndex];
-            _time = Mathf.Clamp(_manifest.playbackStartT, startChunk.startT, startChunk.endT);
+            float startTime = _manifest.playbackStartT;
+            _time = startTime >= startChunk.startT && startTime <= startChunk.endT
+                ? startTime
+                : Mathf.Clamp(startTime, TimelineStartTime, ReadyUntilTime);
             _hasStarted = true;
             Play();
         }
 
-        private int FindReadyStartChunk()
+        private void ApplyStartingLightTimeline()
+        {
+            if (!playStartingLightsBeforeStart || _manifest == null)
+                return;
+
+            if (!HasPlacedTrack())
+                return;
+
+            float showTime = Mathf.Max(TimelineStartTime, RaceStartTime - Mathf.Max(0f, startingLightLeadSeconds));
+            float hideTime = RaceStartTime + Mathf.Max(0f, startingLightHideDelay);
+            bool inWindow = _time >= showTime && _time < hideTime;
+
+            if (startingLights == null && !inWindow)
+                return;
+
+            StartingLightSequence sequence = ResolveStartingLights();
+            if (sequence == null)
+                return;
+
+            PositionStartingLights(sequence.transform);
+            sequence.ApplyTimeline(
+                _time,
+                RaceStartTime,
+                _isPlaying,
+                playbackSpeed,
+                startingLightLeadSeconds,
+                startingLightFirstDelay,
+                startingLightInterval,
+                startingLightHideDelay);
+        }
+
+        private void PositionStartingLights(Transform target)
+        {
+            if (target == null)
+                return;
+
+            Transform mapTransform = buildPlacer != null && buildPlacer.HasPlacement
+                ? buildPlacer.PlacementTransform
+                : placement != null && placement.HasPlacement
+                    ? placement.PlacementTransform
+                    : null;
+
+            if (mapTransform == null)
+                return;
+
+            Vector3 position = mapTransform.position + Vector3.up * 0.5f;
+            target.position = position;
+
+            Camera camera = Camera.main;
+            if (camera == null)
+                return;
+
+            Vector3 toCamera = camera.transform.position - position;
+            toCamera.y = 0f;
+
+            if (toCamera.sqrMagnitude > 0.0001f)
+            {
+                RememberStartingLightsRotation(target);
+                Quaternion lookRotation = Quaternion.LookRotation(toCamera.normalized, Vector3.up);
+                target.rotation = lookRotation * _startingLightsRotationOffset;
+            }
+        }
+
+        private void RememberStartingLightsRotation(Transform target)
+        {
+            if (_hasStartingLightsRotationOffset || target == null)
+                return;
+
+            _startingLightsRotationOffset = target.rotation;
+            _hasStartingLightsRotationOffset = true;
+        }
+
+        private StartingLightSequence ResolveStartingLights()
+        {
+            if (startingLights != null)
+                return startingLights;
+
+            StartingLightSequence[] candidates = FindObjectsByType<StartingLightSequence>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            if (candidates == null || candidates.Length == 0)
+            {
+                if (startingLightsPrefab == null)
+                    return null;
+
+                GameObject instance = Instantiate(startingLightsPrefab);
+                instance.name = startingLightsPrefab.name;
+                startingLights = instance.GetComponent<StartingLightSequence>();
+                return startingLights;
+            }
+
+            startingLights = candidates[0];
+            return startingLights;
+        }
+
+        private int FindReadyStartChunk(float startTime)
         {
             int fallbackIndex = -1;
-            bool requiresStartChunk = _manifest.playbackStartT > 0.0f;
+            int firstSampleIndex = -1;
+            bool requiresStartChunk = startTime > 0.0f;
 
-            foreach (ChunkInfoDto chunk in _manifest.chunks)
+            for (int i = 0; i < _manifest.chunks.Length; i++)
             {
-                if (chunk.status != "ready" || chunk.sampleCount <= 0)
+                ChunkInfoDto chunk = _manifest.chunks[i];
+
+                if (!CanLoad(chunk))
                     continue;
 
                 if (fallbackIndex < 0)
-                    fallbackIndex = chunk.index;
+                    fallbackIndex = i;
 
-                if (_manifest.playbackStartT >= chunk.startT && _manifest.playbackStartT <= chunk.endT)
-                    return chunk.index;
+                if (firstSampleIndex < 0 && chunk.sampleCount > 0 && chunk.endT >= startTime)
+                    firstSampleIndex = i;
+
+                if (startTime >= chunk.startT && startTime <= chunk.endT)
+                    return i;
             }
+
+            if (firstSampleIndex >= 0)
+                return firstSampleIndex;
 
             return requiresStartChunk ? -1 : fallbackIndex;
         }
@@ -484,6 +657,12 @@ namespace F1XR.RestAPI.Replay
         public void SetSelectedDriver(int driverNumber)
         {
             carView.SetSelectedDriver(driverNumber);
+        }
+
+        public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
+        {
+            carTransform = null;
+            return carView != null && carView.TryGetCarTransform(driverNumber, out carTransform);
         }
 
         public string GetDriverLabel(int driverNumber)
@@ -611,6 +790,13 @@ namespace F1XR.RestAPI.Replay
             if (_seekCoroutine != null)
                 StopCoroutine(_seekCoroutine);
         }
+    }
+
+    [Serializable]
+    public struct TeamCarPrefab
+    {
+        public string teamName;
+        public GameObject prefab;
     }
 
     [Serializable]

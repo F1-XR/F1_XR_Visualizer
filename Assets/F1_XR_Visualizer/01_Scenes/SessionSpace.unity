@@ -3986,6 +3986,35 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1518326053}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  teamCarPrefabs:
+  - teamName: Alfa Romeo
+    prefab: {fileID: 4614466437777478188, guid: f0daaf1c8ae548c68c1f76995c3a015e, type: 3}
+  - teamName: AlphaTauri
+    prefab: {fileID: 4614466437777478188, guid: a582b5228147487f910bf69612d0d258, type: 3}
+  - teamName: Alpine
+    prefab: {fileID: 4614466437777478188, guid: e14bd47a398e46ddb101d629636f69e2, type: 3}
+  - teamName: Aston Martin
+    prefab: {fileID: 4614466437777478188, guid: 7f7f679e47df4279a1031ceca523a232, type: 3}
+  - teamName: Audi
+    prefab: {fileID: 4614466437777478188, guid: 965dd116668747f7b28aedd7f4206926, type: 3}
+  - teamName: Cadillac
+    prefab: {fileID: 4614466437777478188, guid: 0af79912877341cdab5f7fabd27d6bd6, type: 3}
+  - teamName: Ferrari
+    prefab: {fileID: 4614466437777478188, guid: 29c42c9b98c645a0a6943ca12d4e930d, type: 3}
+  - teamName: Haas F1 Team
+    prefab: {fileID: 4614466437777478188, guid: 33b0b165db224de587ae0a9abe6932c6, type: 3}
+  - teamName: Kick Sauber
+    prefab: {fileID: 4614466437777478188, guid: 390904ca9e2e4b9f8316aa4ca19bcb3f, type: 3}
+  - teamName: McLaren
+    prefab: {fileID: 4614466437777478188, guid: 631c40959e27489abd90eeb2cebaf8d7, type: 3}
+  - teamName: Mercedes
+    prefab: {fileID: 4614466437777478188, guid: ce144ebb3f7f4ea290527c3b65117c16, type: 3}
+  - teamName: Racing Bulls
+    prefab: {fileID: 4614466437777478188, guid: e5d9d80f18464a659fc58924aa060c4e, type: 3}
+  - teamName: RB
+    prefab: {fileID: 4614466437777478188, guid: a793da0c647a4b5780cb1d18b846b7f4, type: 3}
+  - teamName: Red Bull Racing
+    prefab: {fileID: 4614466437777478188, guid: b3be2638049c41a7af2c829dd1a1335e, type: 3}
   placement: {fileID: 1240350763}
   trackCalibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
   trackVisualizerPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}

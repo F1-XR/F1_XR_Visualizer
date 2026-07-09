@@ -16,6 +16,10 @@ namespace F1XR.AR
         [SerializeField] float minScaleStartDistance = 0.08f;
         [SerializeField] float minScale = 0.02f;
         [SerializeField] float maxScale = 5f;
+        [SerializeField] bool smoothWorldTransform = true;
+        [SerializeField] float positionLerpSpeed = 18f;
+        [SerializeField] float rotationLerpSpeed = 18f;
+        [SerializeField] float scaleLerpSpeed = 18f;
         [SerializeField] bool keepPivotFixed = true;
         [SerializeField] bool keepPositionWhileScaling;
         [SerializeField] bool keepRotationWhileScaling;
@@ -202,9 +206,9 @@ namespace F1XR.AR
             }
 
             if (keepRotationWhileMoving)
-                target.rotation = moveStartRotation;
+                ApplyWorldRotation(moveStartRotation);
             else if (keepOnlyYRotationWhileMoving)
-                target.rotation = Quaternion.Euler(moveStartEulerAngles.x, target.eulerAngles.y, moveStartEulerAngles.z);
+                ApplyWorldRotation(Quaternion.Euler(moveStartEulerAngles.x, target.eulerAngles.y, moveStartEulerAngles.z));
         }
 
         void StopMoving()
@@ -502,6 +506,27 @@ namespace F1XR.AR
 
         void ApplyScale(float scaleRatio)
         {
+            var currentPosition = target.position;
+            var currentRotation = target.rotation;
+            var currentScale = target.localScale;
+
+            ApplyScaleImmediate(scaleRatio);
+
+            if (!smoothWorldTransform)
+                return;
+
+            var nextPosition = target.position;
+            var nextRotation = target.rotation;
+            var nextScale = target.localScale;
+
+            target.SetPositionAndRotation(currentPosition, currentRotation);
+            target.localScale = currentScale;
+
+            ApplyWorldTransform(nextPosition, nextRotation, nextScale);
+        }
+
+        void ApplyScaleImmediate(float scaleRatio)
+        {
             target.localScale = ClampScale(startScale * scaleRatio);
 
             if (keepRotationWhileScaling)
@@ -513,6 +538,27 @@ namespace F1XR.AR
                 target.position = startPosition;
             else if (keepPivotFixed)
                 target.position += startPivotWorld - target.TransformPoint(startPivotLocal);
+        }
+
+        void ApplyWorldTransform(Vector3 position, Quaternion rotation, Vector3 scale)
+        {
+            var deltaTime = Time.deltaTime;
+            target.SetPositionAndRotation(
+                Vector3.Lerp(target.position, position, GetLerpT(positionLerpSpeed, deltaTime)),
+                Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, deltaTime)));
+            target.localScale = Vector3.Lerp(target.localScale, scale, GetLerpT(scaleLerpSpeed, deltaTime));
+        }
+
+        void ApplyWorldRotation(Quaternion rotation)
+        {
+            target.rotation = smoothWorldTransform
+                ? Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, Time.deltaTime))
+                : rotation;
+        }
+
+        static float GetLerpT(float speed, float deltaTime)
+        {
+            return speed <= 0f ? 1f : 1f - Mathf.Exp(-speed * deltaTime);
         }
     }
 }
