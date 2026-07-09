@@ -157,6 +157,8 @@ namespace F1XR.RestAPI.Replay
         public float offVolumeScale = 0.75f;
         public float response = 10f;
         public float loadThreshold = 0.05f;
+        public float minimumRpmVolume = 0.35f;
+        public float fullVolumeRpm = 12000f;
         public float loadResponse = 12f;
         public bool useSpeedRpmFallback = true;
 
@@ -173,6 +175,13 @@ namespace F1XR.RestAPI.Replay
         public float maxDistance = 12f;
         public float maximumAudibleDistance = 12f;
         public int priority = 128;
+
+        [Header("Custom Doppler")]
+        public bool enableCustomDoppler = true;
+        public float speedOfSound = 343f;
+        public float dopplerStrength = 0.6f;
+        public float minimumDopplerPitch = 0.88f;
+        public float maximumDopplerPitch = 1.15f;
 
         [Header("Audio LOD")]
         public bool enableFullEngineLayers = true;
@@ -221,6 +230,7 @@ namespace F1XR.RestAPI.Replay
     {
         private const int SampleRate = 44100;
         private const string AudioRootName = "Audio";
+        private const float SourceRecoveryLogInterval = 1f;
 
         private static AudioClip fallbackLow;
         private static AudioClip fallbackMid;
@@ -248,6 +258,9 @@ namespace F1XR.RestAPI.Replay
         private AudioSource proceduralSource;
         private AudioClip proceduralClip;
         private GameObject audioObject;
+        private AudioListener dopplerListener;
+        private Vector3 lastListenerPosition;
+        private bool hasLastListenerPosition;
 
         private float targetRpm;
         private float targetThrottle01;
@@ -280,6 +293,8 @@ namespace F1XR.RestAPI.Replay
         private uint noiseState = 22222u;
         private float pitchVariation = 1f;
         private float volumeVariation = 1f;
+        private int sourceRecoveryLogBurst = 8;
+        private float nextSourceRecoveryLogTime;
 
         public void SetVariation(float pitchMultiplier, float volumeMultiplier)
         {
@@ -298,6 +313,8 @@ namespace F1XR.RestAPI.Replay
             }
 
             settings.EnsureDefaults();
+            sourceRecoveryLogBurst = 8;
+            nextSourceRecoveryLogTime = 0f;
             EnsureSources();
             ApplySourceSettings();
             UpdateAudioObjectPosition();
@@ -343,6 +360,14 @@ namespace F1XR.RestAPI.Replay
         public void SetPlaying(bool value)
         {
             playing = value;
+
+            if (playing)
+                EnsureConfiguredSourcesPlaying();
+        }
+
+        private void OnEnable()
+        {
+            EnsureConfiguredSourcesPlaying();
         }
 
         public void SetAudible(bool value)
@@ -365,13 +390,19 @@ namespace F1XR.RestAPI.Replay
             EnsureSources();
             UpdateAudioObjectPosition();
 
+            if (playing)
+                EnsureConfiguredSourcesPlaying();
+
             float responseValue = ExpResponse(settings.response);
             smoothRpm = Mathf.Lerp(smoothRpm, targetRpm, responseValue);
             smoothThrottle01 = Mathf.Lerp(smoothThrottle01, targetThrottle01, responseValue);
             smoothBrake01 = Mathf.Lerp(smoothBrake01, targetBrake01, responseValue);
             smoothSpeedMps = Mathf.Lerp(smoothSpeedMps, targetSpeedMps, responseValue);
 
-            float targetLoad = smoothThrottle01 > Mathf.Clamp01(settings.loadThreshold) && smoothBrake01 <= 0.05f ? 1f : 0f;
+            float loadStart = Mathf.Clamp(settings.loadThreshold, 0f, 0.99f);
+            float targetLoad = smoothBrake01 <= 0.05f
+                ? Mathf.InverseLerp(loadStart, 1f, smoothThrottle01)
+                : 0f;
 
             smoothLoad01 = Mathf.Lerp(smoothLoad01, targetLoad, ExpResponse(settings.loadResponse));
 
@@ -488,6 +519,8 @@ namespace F1XR.RestAPI.Replay
 
             float offLoad = 1f - load01;
             float offScale = Mathf.Clamp01(settings.offVolumeScale);
+            float rpmVolume = RpmVolumeScale(mixRpm);
+            float dopplerPitch = CustomDopplerPitch(smoothSpeedMps);
 
             for (int i = 0; i < loopLayers.Length; i++)
             {
@@ -528,12 +561,14 @@ namespace F1XR.RestAPI.Replay
                         targetVolume = normalized * offLoad * offScale * master * layer.sample.gain;
                     }
 
+                    targetVolume *= rpmVolume;
+
                     float pitch = Mathf.Clamp(
                         mixRpm / Mathf.Max(1f, layer.sample.baseRpm),
                         layer.sample.minimumPitch,
                         layer.sample.maximumPitch
                     );
-                    SetPitch(layer.source, pitch * pitchVariation, responseValue);
+                    SetPitch(layer.source, pitch * pitchVariation * dopplerPitch, responseValue);
                 }
 
                 SetVolume(layer.source, targetVolume, responseValue);
@@ -789,7 +824,7 @@ namespace F1XR.RestAPI.Replay
             source.minDistance = Mathf.Max(0.01f, settings.minDistance);
             source.maxDistance = Mathf.Max(source.minDistance, maxDistance);
             source.rolloffMode = AudioRolloffMode.Custom;
-            source.dopplerLevel = 0.1f;
+            source.dopplerLevel = settings.enableCustomDoppler ? 0f : 0.1f;
             source.priority = Mathf.Clamp(settings.priority, 0, 256);
             source.SetCustomCurve(
                 AudioSourceCurveType.CustomRolloff,
@@ -826,6 +861,70 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             source.Play();
+        }
+
+        private void EnsureConfiguredSourcesPlaying()
+        {
+            if (settings == null || !settings.useEngineSound || !isActiveAndEnabled)
+                return;
+
+            if (!gameObject.activeInHierarchy || audioObject == null || !audioObject.activeInHierarchy)
+                return;
+
+            if (settings.mode == EngineAudioMode.Procedural)
+            {
+                EnsureSourcePlaying("Procedural", proceduralSource);
+                return;
+            }
+
+            EnsureSourcePlaying("EngineIdle", idleSource);
+            EnsureSourcePlaying("LowOn", lowOnSource);
+            EnsureSourcePlaying("LowOff", lowOffSource);
+            EnsureSourcePlaying("MidOn", midOnSource);
+            EnsureSourcePlaying("MidOff", midOffSource);
+            EnsureSourcePlaying("HighOn", highOnSource);
+            EnsureSourcePlaying("HighOff", highOffSource);
+            EnsureSourcePlaying("VeryHighOn", veryHighOnSource);
+            EnsureSourcePlaying("VeryHighOff", veryHighOffSource);
+            EnsureSourcePlaying("Gearbox", gearboxSource);
+        }
+
+        private void EnsureSourcePlaying(string label, AudioSource source)
+        {
+            if (source == null)
+                return;
+
+            bool hadClip = source.clip != null;
+            bool wasPlaying = source.isPlaying;
+            if (hadClip && source.enabled && !wasPlaying)
+            {
+                LogSourceRecovery(label, source, "restart");
+                PlayLoop(source);
+            }
+            else if (hadClip && !source.enabled)
+            {
+                LogSourceRecovery(label, source, "blocked");
+            }
+        }
+
+        private void LogSourceRecovery(string label, AudioSource source, string action)
+        {
+            float now = Time.unscaledTime;
+            if (sourceRecoveryLogBurst <= 0 && now < nextSourceRecoveryLogTime)
+                return;
+
+            if (sourceRecoveryLogBurst > 0)
+                sourceRecoveryLogBurst--;
+
+            nextSourceRecoveryLogTime = now + SourceRecoveryLogInterval;
+
+            bool audioActive = audioObject != null && audioObject.activeInHierarchy;
+            Debug.Log(
+                $"[EngineSound] source {action} name={label}, " +
+                $"gameObjectActive={gameObject.activeInHierarchy}, audioObjectActive={audioActive}, " +
+                $"sourceEnabled={source.enabled}, hasClip={source.clip != null}, isPlaying={source.isPlaying}, " +
+                $"playing={playing}, audible={audible}"
+            );
         }
 
         private void StopAll()
@@ -894,6 +993,67 @@ namespace F1XR.RestAPI.Replay
                 rpm = settings != null ? settings.idleRpm : 5000f;
 
             return Mathf.Clamp(rpm, 0f, RpmCeiling() * 1.15f);
+        }
+
+        private float CustomDopplerPitch(float speedMps)
+        {
+            if (settings == null || !settings.enableCustomDoppler)
+                return 1f;
+
+            Transform listener = DopplerListenerTransform();
+            if (listener == null)
+                return 1f;
+
+            Vector3 sourcePosition = audioObject != null ? audioObject.transform.position : transform.position;
+            Vector3 toListener = listener.position - sourcePosition;
+            if (toListener.sqrMagnitude < 0.0001f)
+                return 1f;
+
+            float deltaTime = Mathf.Max(Time.deltaTime, 0.0001f);
+            Vector3 directionToListener = toListener.normalized;
+            Vector3 sourceVelocity = transform.forward * Mathf.Max(0f, speedMps);
+            float sourceTowardListener = Vector3.Dot(sourceVelocity, directionToListener);
+            float listenerTowardSource = 0f;
+
+            if (hasLastListenerPosition)
+            {
+                Vector3 listenerVelocity = (listener.position - lastListenerPosition) / deltaTime;
+                listenerTowardSource = Vector3.Dot(listenerVelocity, -directionToListener);
+            }
+
+            lastListenerPosition = listener.position;
+            hasLastListenerPosition = true;
+
+            float speedOfSound = Mathf.Max(1f, settings.speedOfSound);
+            float rawPitch = (speedOfSound + listenerTowardSource) / Mathf.Max(1f, speedOfSound - sourceTowardListener);
+            float strength = Mathf.Clamp01(settings.dopplerStrength);
+            float pitch = Mathf.Lerp(1f, rawPitch, strength);
+            float minPitch = Mathf.Max(0.01f, settings.minimumDopplerPitch);
+            float maxPitch = Mathf.Max(minPitch, settings.maximumDopplerPitch);
+
+            return Mathf.Clamp(pitch, minPitch, maxPitch);
+        }
+
+        private Transform DopplerListenerTransform()
+        {
+            if (dopplerListener == null || !dopplerListener.isActiveAndEnabled)
+            {
+                dopplerListener = UnityEngine.Object.FindAnyObjectByType<AudioListener>();
+                hasLastListenerPosition = false;
+            }
+
+            return dopplerListener != null ? dopplerListener.transform : null;
+        }
+
+        private float RpmVolumeScale(float rpm)
+        {
+            if (settings == null)
+                return 1f;
+
+            float minVolume = Mathf.Clamp01(settings.minimumRpmVolume);
+            float fullRpm = Mathf.Max(settings.minRpm + 1f, settings.fullVolumeRpm);
+            float rpm01 = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(settings.minRpm, fullRpm, rpm));
+            return Mathf.Lerp(minVolume, 1f, rpm01);
         }
 
         private float RpmCeiling()
