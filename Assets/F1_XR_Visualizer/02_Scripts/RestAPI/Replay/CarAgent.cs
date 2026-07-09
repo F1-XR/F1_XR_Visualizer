@@ -109,6 +109,20 @@ namespace F1XR.RestAPI.Replay
             SetLabelObjectsActive(visible);
         }
 
+        public void CollectOnboardHiddenRenderers(List<Renderer> renderers)
+        {
+            if (renderers == null)
+                return;
+
+            AddRenderer(renderers, labelRenderer);
+            AddRenderer(renderers, labelLine);
+            AddRenderer(renderers, labelBackground);
+            AddRenderer(renderers, labelTopDot);
+            AddRenderer(renderers, labelBottomDot);
+            AddRenderer(renderers, selectionRing);
+            AddRenderer(renderers, selectionPulse);
+        }
+
         public void SetSelected(bool value)
         {
             SetSelected(value, labelColor);
@@ -733,6 +747,12 @@ namespace F1XR.RestAPI.Replay
 
             if (material.HasProperty("_Color"))
                 material.SetColor("_Color", color);
+        }
+
+        private static void AddRenderer(List<Renderer> renderers, Renderer renderer)
+        {
+            if (renderer != null)
+                renderers.Add(renderer);
         }
 
         private static Color WithAlpha(Color color, float alpha)

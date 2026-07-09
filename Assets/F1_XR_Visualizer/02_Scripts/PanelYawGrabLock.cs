@@ -7,6 +7,7 @@ namespace F1XR.AR
     {
         [SerializeField] XRGrabInteractable grab;
         [SerializeField] Transform target;
+        [SerializeField] float rotationLerpSpeed = 18f;
 
         bool moving;
         Quaternion startRotation;
@@ -48,7 +49,13 @@ namespace F1XR.AR
             }
 
             var yaw = Vector3.SignedAngle(startDirection, direction.normalized, Vector3.up);
-            target.rotation = Quaternion.AngleAxis(yaw, Vector3.up) * startRotation;
+            var rotation = Quaternion.AngleAxis(yaw, Vector3.up) * startRotation;
+            target.rotation = Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, Time.deltaTime));
+        }
+
+        static float GetLerpT(float speed, float deltaTime)
+        {
+            return speed <= 0f ? 1f : 1f - Mathf.Exp(-speed * deltaTime);
         }
     }
 }

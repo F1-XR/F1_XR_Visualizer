@@ -88,6 +88,17 @@ namespace F1XR.RestAPI.Replay
 
         public bool HasCars => cars.Count > 0;
 
+        public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
+        {
+            carTransform = null;
+
+            if (!cars.TryGetValue(driverNumber, out CarAgent car) || car == null)
+                return false;
+
+            carTransform = car.transform;
+            return true;
+        }
+
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
             Dictionary<int, int> indices,
