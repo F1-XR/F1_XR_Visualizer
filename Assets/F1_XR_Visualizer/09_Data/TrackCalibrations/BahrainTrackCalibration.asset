@@ -21,7 +21,7 @@ MonoBehaviour:
   sourceAxisMode: 0
   heightMode: 1
   localY: 0
-  heightOffset: 0.01
+  heightOffset: 0.005
   useFirstSourceHeightAsOrigin: 1
   sourceHeightOrigin: 0
   sourceHeightScale: 0.0001

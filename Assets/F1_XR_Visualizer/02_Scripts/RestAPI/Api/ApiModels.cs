@@ -59,6 +59,7 @@ namespace F1XR.RestAPI.Api
         public int initialChunks = 1;
         public int prefetchChunks = 0;
         public int requestedMinutes = 6;
+        public int preStartSeconds = 0;
         public bool skipWarmupLap = true;
     }
 
@@ -70,6 +71,18 @@ namespace F1XR.RestAPI.Api
         public string fullName;
         public string teamName;
         public string teamColour;
+    }
+
+    [System.Serializable]
+    public class RaceControlEventDto
+    {
+        public float t;
+        public string date;
+        public string category;
+        public string flag;
+        public string scope;
+        public int sector;
+        public string message;
     }
     
     [System.Serializable]
@@ -92,6 +105,10 @@ namespace F1XR.RestAPI.Api
         public float readyUntilT;
         public int playbackStartChunkIndex;
         public float playbackStartT;
+        public float raceStartT;
+        public float raceEndT;
+        public RaceControlEventDto[] yellowFlags;
+        public RaceControlEventDto[] redFlags;
 
         public ChunkInfoDto[] chunks;
         public DriverInfoDto[] drivers;

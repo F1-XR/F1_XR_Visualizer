@@ -15,6 +15,9 @@ namespace F1XR.AR
         [SerializeField] Transform target;
         [SerializeField] bool allowFarGrab = true;
         [SerializeField] bool keepOnlyYRotation = true;
+        [SerializeField] bool smoothWorldTransform = true;
+        [SerializeField] float positionLerpSpeed = 18f;
+        [SerializeField] float rotationLerpSpeed = 18f;
         [SerializeField] float farMoveSpeed = 0.7f;
         [SerializeField] float farRotateSpeed = 90f;
         [SerializeField] float farRotationFollowSpeed = 18f;
@@ -120,10 +123,10 @@ namespace F1XR.AR
             }
 
             var rotation = Quaternion.Euler(startEulerAngles.x, GetYaw(), startEulerAngles.z);
-            target.rotation = rotation;
-
             if (hasNearGrabPivot && TryGetCurrentAttachPosition(out var currentAttachPosition))
-                target.position = currentAttachPosition - rotation * nearGrabPivotLocal;
+                ApplyWorldPose(currentAttachPosition - rotation * nearGrabPivotLocal, rotation);
+            else
+                ApplyWorldRotation(rotation);
         }
 
         void UpdateFarGrab()
@@ -150,8 +153,13 @@ namespace F1XR.AR
 
             var deltaTime = Time.deltaTime;
             farGrabDistance = Mathf.Max(0.1f, farGrabDistance + axis.y * farMoveSpeed * deltaTime);
+            var hasPosition = false;
+            var position = target.position;
             if (TryGetFarRayPose(out var currentRayOrigin, out var currentRayForward))
-                target.position = currentRayOrigin + currentRayForward * farGrabDistance;
+            {
+                position = currentRayOrigin + currentRayForward * farGrabDistance;
+                hasPosition = true;
+            }
 
             if (keepOnlyYRotation)
             {
@@ -163,8 +171,44 @@ namespace F1XR.AR
                 var yawRotation = Quaternion.Euler(startEulerAngles.x, farViewYaw + farYawOffset, startEulerAngles.z);
                 var viewTilt = Quaternion.AngleAxis(farPitchOffset, GetViewRight()) *
                                Quaternion.AngleAxis(farRollOffset, GetViewForward());
-                target.rotation = viewTilt * yawRotation;
+                var rotation = viewTilt * yawRotation;
+                if (hasPosition)
+                    ApplyWorldPose(position, rotation);
+                else
+                    ApplyWorldRotation(rotation);
             }
+            else if (hasPosition)
+            {
+                ApplyWorldPosition(position);
+            }
+        }
+
+        void ApplyWorldPose(Vector3 position, Quaternion rotation)
+        {
+            if (!smoothWorldTransform)
+            {
+                target.SetPositionAndRotation(position, rotation);
+                return;
+            }
+
+            var deltaTime = Time.deltaTime;
+            target.SetPositionAndRotation(
+                Vector3.Lerp(target.position, position, GetLerpT(positionLerpSpeed, deltaTime)),
+                Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, deltaTime)));
+        }
+
+        void ApplyWorldPosition(Vector3 position)
+        {
+            target.position = smoothWorldTransform
+                ? Vector3.Lerp(target.position, position, GetLerpT(positionLerpSpeed, Time.deltaTime))
+                : position;
+        }
+
+        void ApplyWorldRotation(Quaternion rotation)
+        {
+            target.rotation = smoothWorldTransform
+                ? Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, Time.deltaTime))
+                : rotation;
         }
 
         public bool Process(IXRSelectInteractor interactor, IXRSelectInteractable interactable)
@@ -342,6 +386,11 @@ namespace F1XR.AR
 
             var t = 1f - Mathf.Exp(-followSpeed * deltaTime);
             return Mathf.LerpAngle(current, targetAngle, t);
+        }
+
+        static float GetLerpT(float speed, float deltaTime)
+        {
+            return speed <= 0f ? 1f : 1f - Mathf.Exp(-speed * deltaTime);
         }
 
         float GetFaceYaw()

@@ -83,6 +83,7 @@ namespace F1XR.RestAPI.Replay
                 initialChunks = 1,
                 prefetchChunks = 0,
                 requestedMinutes = Mathf.Max(1, replayMinutes),
+                preStartSeconds = 0,
                 skipWarmupLap = skipWarmupLap
             };
 
