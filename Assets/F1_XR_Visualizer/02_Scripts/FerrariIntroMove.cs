@@ -11,6 +11,7 @@ namespace F1XR.AR
         [SerializeField] Vector3 endLocalPosition = new(0f, -0.5f, 9f);
         [SerializeField] float duration = 2f;
         [SerializeField] bool playOnEnable = true;
+        [SerializeField] float startDelay = 2f;
         [SerializeField] GameObject frontLeftTyre;
         [SerializeField] ParticleSystem frontLeftTyrePuff;
         [SerializeField] XRSocketInteractor frontLeftTyreSocket;
@@ -24,12 +25,18 @@ namespace F1XR.AR
         [SerializeField] Vector3 exitStartLocalPosition = new(0f, -0.55f, 9f);
         [SerializeField] Vector3 exitEndLocalPosition = new(0f, -0.55f, -20f);
         [SerializeField] float exitDuration = 2f;
+        [SerializeField] AudioSource frontLeftTyrePuffAudio;
+        [SerializeField] AudioSource introMoveAudio;
+        [SerializeField] AudioSource wheelMountedAudio;
+        [SerializeField] AudioSource exitMoveAudio;
 
         Tween moveTween;
         Tween tiltTween;
         Tween tiltDelayTween;
         Tween exitDelayTween;
         Tween exitMoveTween;
+        Tween startDelayTween;
+        GameObject socketedWheel;
 
         void OnEnable()
         {
@@ -40,7 +47,10 @@ namespace F1XR.AR
             }
 
             if (playOnEnable)
-                Play();
+            {
+                startDelayTween?.Kill();
+                startDelayTween = DOVirtual.DelayedCall(startDelay, Play, false);
+            }
         }
 
         void OnDisable()
@@ -51,6 +61,7 @@ namespace F1XR.AR
                 frontLeftTyreSocket.selectExited.RemoveListener(OnWheelUnsocketed);
             }
 
+            startDelayTween?.Kill();
             moveTween?.Kill();
             tiltTween?.Kill();
             tiltDelayTween?.Kill();
@@ -60,20 +71,49 @@ namespace F1XR.AR
 
         void OnWheelSocketed(SelectEnterEventArgs args)
         {
+            socketedWheel = args.interactableObject?.transform.gameObject;
+
+            if (wheelMountedAudio != null)
+                wheelMountedAudio.Play();
+
             Tilt(-tiltLocalEuler, riseDuration, riseEase);
 
             exitDelayTween?.Kill();
             exitDelayTween = DOVirtual.DelayedCall(exitDelay, () =>
             {
                 transform.localPosition = exitStartLocalPosition;
+
+                if (exitMoveAudio != null)
+                    exitMoveAudio.Play();
+
                 exitMoveTween?.Kill();
                 exitMoveTween = transform.DOLocalMove(exitEndLocalPosition, exitDuration)
                     .SetEase(Ease.InOutQuart)
-                    .OnComplete(() => gameObject.SetActive(false));
-            });
+                    .OnComplete(() =>
+                    {
+                        if (exitMoveAudio != null)
+                            exitMoveAudio.Stop();
+
+                        if (socketedWheel != null)
+                            socketedWheel.SetActive(false);
+
+                        gameObject.SetActive(false);
+                    });
+            }, false);
         }
 
-        void OnWheelUnsocketed(SelectExitEventArgs args) => Tilt(tiltLocalEuler, tiltDuration, tiltEase);
+        void OnWheelUnsocketed(SelectExitEventArgs args)
+        {
+            socketedWheel = null;
+
+            exitDelayTween?.Kill();
+            exitMoveTween?.Kill();
+
+            if (exitMoveAudio != null)
+                exitMoveAudio.Stop();
+
+            Tilt(tiltLocalEuler, tiltDuration, tiltEase);
+        }
 
         void Tilt(Vector3 localEulerDelta, float animDuration, Ease ease)
         {
@@ -86,10 +126,17 @@ namespace F1XR.AR
         {
             moveTween?.Kill();
             transform.localPosition = startLocalPosition;
+
+            if (introMoveAudio != null)
+                introMoveAudio.Play();
+
             moveTween = transform.DOLocalMove(endLocalPosition, duration)
                 .SetEase(Ease.InOutExpo)
                 .OnComplete(() =>
                 {
+                    if (introMoveAudio != null)
+                        introMoveAudio.Stop();
+
                     if (frontLeftTyre != null)
                         frontLeftTyre.SetActive(false);
 
@@ -102,8 +149,11 @@ namespace F1XR.AR
                         frontLeftTyrePuff.Play();
                     }
 
+                    if (frontLeftTyrePuffAudio != null)
+                        frontLeftTyrePuffAudio.Play();
+
                     tiltDelayTween?.Kill();
-                    tiltDelayTween = DOVirtual.DelayedCall(tiltDelay, () => Tilt(tiltLocalEuler, tiltDuration, tiltEase));
+                    tiltDelayTween = DOVirtual.DelayedCall(tiltDelay, () => Tilt(tiltLocalEuler, tiltDuration, tiltEase), false);
                 });
         }
     }
