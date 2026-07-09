@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace F1XR.RestAPI.Replay
@@ -12,38 +13,63 @@ namespace F1XR.RestAPI.Replay
         private const float LabelLineGapRatio = 0.08f;
         private const float LabelLineWidthRatio = 0.014f;
         private const float LabelBackgroundDepthRatio = 0.03f;
-        private const float SelectionRingHeightRatio = 0.01f;
-        private const float SelectionRingWidthRatio = 0.026f;
-        private const float SelectionGlowSizeRatio = 1.15f;
+        private const float SelectionRingHeightRatio = 0.012f;
+        private const float SelectionPulseHeightRatio = 0.018f;
+        private const float SelectionRingOuterRatio = 0.72f;
+        private const float SelectionPulseOuterRatio = 1.55f;
         private const float SelectionMinRadius = 0.012f;
         private const float SelectionMaxRadius = 0.06f;
-        private const float SelectionMaxRingWidth = 0.0025f;
+        private const float SelectionRingRotationSpeed = 32f;
+        private const float SelectionPulseDuration = 0.58f;
+        private const float SelectionBodyTint = 0.48f;
+        private const float SelectionBodyEmission = 0.9f;
+        private const int SelectionRingSegments = 96;
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+        private static readonly int SurfaceId = Shader.PropertyToID("_Surface");
+        private static readonly int SrcBlendId = Shader.PropertyToID("_SrcBlend");
+        private static readonly int DstBlendId = Shader.PropertyToID("_DstBlend");
+        private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
+        private static readonly int CullId = Shader.PropertyToID("_Cull");
         private TextMesh label;
         private LineRenderer labelLine;
-        private LineRenderer selectionRing;
         private MeshRenderer labelBackground;
         private MeshRenderer labelRenderer;
         private MeshRenderer labelTopDot;
         private MeshRenderer labelBottomDot;
-        private MeshRenderer selectionGlow;
-        private Light selectionPointLight;
-        private Light selectionSpotLight;
+        private Transform selectionRoot;
+        private MeshRenderer selectionRing;
+        private MeshRenderer selectionPulse;
         private Material labelTextMaterial;
         private Material labelLineMaterial;
         private Material labelBackgroundMaterial;
         private Material labelDotMaterial;
-        private Material selectionMaterial;
+        private Material selectionRingMaterial;
+        private Material selectionPulseMaterial;
+        private Mesh selectionRingMesh;
+        private Mesh selectionPulseMesh;
+        private Vector3[] selectionRingVertices;
+        private Vector3[] selectionPulseVertices;
+        private readonly List<Renderer> bodyRenderers = new();
+        private readonly Dictionary<Renderer, MaterialPropertyBlock> bodyBlocks = new();
+        [SerializeField] private Color selectionFxColor = new Color(0f, 0.95f, 1f, 1f);
+        [SerializeField] private bool useDriverColorForSelection;
         private Color labelColor = Color.white;
         private Color selectionColor = Color.white;
         private string driverLabel;
         private int rank;
+        private float selectionAge;
+        private float selectionPulseAge = SelectionPulseDuration;
         private bool labelVisible = true;
         private bool selected;
+        private bool bodyRenderersDirty = true;
 
         public void Init(int number)
         {
             driverNumber = number;
             name = $"Car_{number}";
+            bodyRenderersDirty = true;
             SetLabel(number.ToString());
         }
 
@@ -93,6 +119,7 @@ namespace F1XR.RestAPI.Replay
             if (selected == value)
             {
                 SetSelectionColor(color);
+                ApplyBodyHighlight();
                 return;
             }
 
@@ -100,9 +127,10 @@ namespace F1XR.RestAPI.Replay
             selected = value;
 
             if (selected)
-                EnsureSelectionEffect();
+                selectionPulseAge = SelectionPulseDuration;
 
-            SetSelectionObjectsActive(selected);
+            SetSelectionObjectsActive(false);
+            ApplyBodyHighlight();
         }
 
         private void RefreshLabelText()
@@ -124,35 +152,7 @@ namespace F1XR.RestAPI.Replay
             SetMaterialColor(labelTextMaterial, labelColor);
             SetMaterialColor(labelDotMaterial, labelColor);
             SetSelectionColor(color);
-
-            Renderer[] renderers = GetComponentsInChildren<Renderer>();
-
-            foreach (Renderer item in renderers)
-            {
-                if (label != null && item.gameObject == label.gameObject)
-                    continue;
-
-                if (labelBackground != null && item.gameObject == labelBackground.gameObject)
-                    continue;
-
-                if (labelLine != null && item.gameObject == labelLine.gameObject)
-                    continue;
-
-                if (labelTopDot != null && item.gameObject == labelTopDot.gameObject)
-                    continue;
-
-                if (labelBottomDot != null && item.gameObject == labelBottomDot.gameObject)
-                    continue;
-
-                if (IsSelectionEffectRenderer(item))
-                    continue;
-
-                MaterialPropertyBlock block = new();
-                item.GetPropertyBlock(block);
-                block.SetColor("_BaseColor", color);
-                block.SetColor("_Color", color);
-                item.SetPropertyBlock(block);
-            }
+            ApplyBodyHighlight();
         }
 
         private TextMesh CreateLabel()
@@ -262,6 +262,36 @@ namespace F1XR.RestAPI.Replay
             return material;
         }
 
+        private static Material CreateSelectionMaterial(Color color)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Sprites/Default");
+
+            Material material = new Material(shader);
+            material.name = "Runtime_SelectedCarFx";
+            SetMaterialColor(material, color);
+
+            if (material.HasProperty(SurfaceId))
+                material.SetFloat(SurfaceId, 1f);
+
+            if (material.HasProperty(SrcBlendId))
+                material.SetFloat(SrcBlendId, (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+
+            if (material.HasProperty(DstBlendId))
+                material.SetFloat(DstBlendId, (float)UnityEngine.Rendering.BlendMode.One);
+
+            if (material.HasProperty(ZWriteId))
+                material.SetFloat(ZWriteId, 0f);
+
+            if (material.HasProperty(CullId))
+                material.SetFloat(CullId, (float)UnityEngine.Rendering.CullMode.Off);
+
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = 3100;
+            return material;
+        }
+
         private static Material CreateTextMaterial(TextMesh text, Color color)
         {
             Shader shader = Shader.Find("GUI/Text Shader");
@@ -291,8 +321,17 @@ namespace F1XR.RestAPI.Replay
             if (labelDotMaterial != null)
                 Destroy(labelDotMaterial);
 
-            if (selectionMaterial != null)
-                Destroy(selectionMaterial);
+            if (selectionRingMaterial != null)
+                Destroy(selectionRingMaterial);
+
+            if (selectionPulseMaterial != null)
+                Destroy(selectionPulseMaterial);
+
+            if (selectionRingMesh != null)
+                Destroy(selectionRingMesh);
+
+            if (selectionPulseMesh != null)
+                Destroy(selectionPulseMesh);
         }
 
         private void LateUpdate()
@@ -314,61 +353,44 @@ namespace F1XR.RestAPI.Replay
 
         private void EnsureSelectionEffect()
         {
-            selectionMaterial ??= CreateUnlitMaterial(WithAlpha(selectionColor, 0.42f));
+            selectionRingMaterial ??= CreateSelectionMaterial(WithAlpha(CurrentSelectionFxColor(), 0.48f));
+            selectionPulseMaterial ??= CreateSelectionMaterial(WithAlpha(CurrentSelectionFxColor(), 0.72f));
+
+            if (selectionRoot == null)
+            {
+                GameObject root = new GameObject("SelectionFx");
+                root.transform.SetParent(transform, false);
+                selectionRoot = root.transform;
+            }
 
             if (selectionRing == null)
             {
-                GameObject ring = new GameObject("SelectedCarRing");
-                ring.transform.SetParent(transform, false);
-                selectionRing = ring.AddComponent<LineRenderer>();
-                selectionRing.useWorldSpace = false;
-                selectionRing.loop = true;
-                selectionRing.positionCount = 64;
-                selectionRing.numCapVertices = 4;
+                GameObject ring = new GameObject("GroundRing");
+                ring.transform.SetParent(selectionRoot, false);
+                MeshFilter ringFilter = ring.AddComponent<MeshFilter>();
+                selectionRing = ring.AddComponent<MeshRenderer>();
                 selectionRing.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 selectionRing.receiveShadows = false;
-                selectionRing.material = selectionMaterial;
+                selectionRing.material = selectionRingMaterial;
+                selectionRingMesh = CreateRingMesh("SelectedCarGroundRing", out selectionRingVertices);
+                ringFilter.sharedMesh = selectionRingMesh;
             }
 
-            if (selectionGlow == null)
+            if (selectionPulse == null)
             {
-                GameObject glow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                glow.name = "SelectedCarGlow";
-                glow.transform.SetParent(transform, false);
-
-                Collider collider = glow.GetComponent<Collider>();
-                if (collider != null)
-                    Destroy(collider);
-
-                selectionGlow = glow.GetComponent<MeshRenderer>();
-                selectionGlow.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                selectionGlow.receiveShadows = false;
-                selectionGlow.material = selectionMaterial;
+                GameObject pulse = new GameObject("SelectionPulse");
+                pulse.transform.SetParent(selectionRoot, false);
+                MeshFilter pulseFilter = pulse.AddComponent<MeshFilter>();
+                selectionPulse = pulse.AddComponent<MeshRenderer>();
+                selectionPulse.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                selectionPulse.receiveShadows = false;
+                selectionPulse.material = selectionPulseMaterial;
+                selectionPulseMesh = CreateRingMesh("SelectedCarPulse", out selectionPulseVertices);
+                pulseFilter.sharedMesh = selectionPulseMesh;
+                pulse.SetActive(false);
             }
 
-            if (selectionPointLight == null)
-            {
-                GameObject lightObj = new GameObject("SelectedCarPointLight");
-                lightObj.transform.SetParent(transform, false);
-                selectionPointLight = lightObj.AddComponent<Light>();
-                selectionPointLight.type = LightType.Point;
-                selectionPointLight.intensity = 0f;
-                selectionPointLight.shadows = LightShadows.None;
-                selectionPointLight.enabled = false;
-            }
-
-            if (selectionSpotLight == null)
-            {
-                GameObject lightObj = new GameObject("SelectedCarSpotLight");
-                lightObj.transform.SetParent(transform, false);
-                selectionSpotLight = lightObj.AddComponent<Light>();
-                selectionSpotLight.type = LightType.Spot;
-                selectionSpotLight.intensity = 0f;
-                selectionSpotLight.spotAngle = 65f;
-                selectionSpotLight.shadows = LightShadows.None;
-                selectionSpotLight.enabled = false;
-            }
-
+            bodyRenderersDirty = true;
             ApplySelectionColor();
         }
 
@@ -380,59 +402,184 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplySelectionColor()
         {
-            SetMaterialColor(selectionMaterial, WithAlpha(selectionColor, 0.42f));
-
-            if (selectionRing != null)
-            {
-                selectionRing.startColor = WithAlpha(selectionColor, 0.95f);
-                selectionRing.endColor = selectionRing.startColor;
-            }
-
-            if (selectionPointLight != null)
-                selectionPointLight.color = selectionColor;
-
-            if (selectionSpotLight != null)
-                selectionSpotLight.color = selectionColor;
+            SetMaterialColor(selectionRingMaterial, WithAlpha(CurrentSelectionFxColor(), 0.48f));
+            SetMaterialColor(selectionPulseMaterial, WithAlpha(CurrentSelectionFxColor(), 0.72f));
         }
 
         private void UpdateSelectionEffect()
         {
-            EnsureSelectionEffect();
+            ApplyBodyHighlight();
+        }
 
-            if (!TryGetCarBounds(out Bounds bounds))
+        private void UpdateSelectionPulse(Vector3 localCenter, float radius)
+        {
+            if (selectionPulse == null)
                 return;
 
-            float carSize = Mathf.Max(bounds.size.x, bounds.size.z);
-            float radius = Mathf.Clamp(carSize * 0.62f, SelectionMinRadius, SelectionMaxRadius);
-            float ringWidth = Mathf.Clamp(radius * SelectionRingWidthRatio, 0.0007f, SelectionMaxRingWidth);
-            float groundY = bounds.min.y + Mathf.Max(carSize * SelectionRingHeightRatio, 0.002f);
-            Vector3 center = new Vector3(bounds.center.x, groundY, bounds.center.z);
-            Vector3 localCenter = transform.InverseTransformPoint(center);
-
-            selectionRing.startWidth = ringWidth;
-            selectionRing.endWidth = ringWidth;
-            for (int i = 0; i < selectionRing.positionCount; i++)
+            if (selectionPulseAge >= SelectionPulseDuration)
             {
-                float angle = i / (float)selectionRing.positionCount * Mathf.PI * 2f;
-                Vector3 point = center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
-                selectionRing.SetPosition(i, transform.InverseTransformPoint(point));
+                selectionPulse.gameObject.SetActive(false);
+                return;
             }
 
-            selectionGlow.transform.localPosition = localCenter;
-            selectionGlow.transform.localRotation = Quaternion.identity;
-            selectionGlow.transform.localScale = ToLocalScale(
-                selectionGlow.transform,
-                radius * SelectionGlowSizeRatio,
-                Mathf.Max(ringWidth * 0.18f, 0.001f),
-                radius * SelectionGlowSizeRatio
-            );
+            selectionPulse.gameObject.SetActive(true);
 
-            selectionPointLight.transform.localPosition = localCenter + Vector3.up * Mathf.Max(radius * 0.35f, 0.03f);
-            selectionPointLight.range = radius * 1.2f;
+            float t = Mathf.Clamp01(selectionPulseAge / SelectionPulseDuration);
+            float eased = 1f - Mathf.Pow(1f - t, 3f);
+            float pulseRadius = radius * Mathf.Lerp(0.78f, SelectionPulseOuterRatio, eased);
+            float pulseAlpha = Mathf.Lerp(0.72f, 0f, t);
+            Color color = CurrentSelectionFxColor();
+            SetMaterialColor(selectionPulseMaterial, WithAlpha(color, pulseAlpha));
+            Vector3 pulseCenter = localCenter + Vector3.up * LocalDistance(Mathf.Max(radius * SelectionPulseHeightRatio, 0.0008f));
+            UpdateRingMesh(selectionPulseMesh, selectionPulseVertices, pulseCenter, pulseRadius, 0.78f, -selectionAge * SelectionRingRotationSpeed * 0.65f);
+        }
 
-            selectionSpotLight.transform.position = bounds.center + Vector3.up * Mathf.Max(radius * 1.4f, 0.2f);
-            selectionSpotLight.transform.rotation = Quaternion.LookRotation(Vector3.down, transform.forward);
-            selectionSpotLight.range = radius * 1.5f;
+        private float LocalDistance(float worldDistance)
+        {
+            return worldDistance / Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.y));
+        }
+
+        private Color CurrentSelectionFxColor()
+        {
+            return useDriverColorForSelection ? selectionColor : selectionFxColor;
+        }
+
+        private void ApplyBodyHighlight()
+        {
+            RefreshBodyRenderers();
+
+            Color fxColor = CurrentSelectionFxColor();
+            Color bodyColor = selected
+                ? Color.Lerp(labelColor, fxColor, SelectionBodyTint)
+                : labelColor;
+            Color emissionColor = selected
+                ? WithAlpha(fxColor * SelectionBodyEmission, 1f)
+                : Color.black;
+
+            foreach (Renderer item in bodyRenderers)
+            {
+                if (item == null)
+                    continue;
+
+                MaterialPropertyBlock block = BodyBlock(item);
+                item.GetPropertyBlock(block);
+                block.SetColor(BaseColorId, bodyColor);
+                block.SetColor(ColorId, bodyColor);
+                block.SetColor(EmissionColorId, emissionColor);
+                item.SetPropertyBlock(block);
+            }
+        }
+
+        private void RefreshBodyRenderers()
+        {
+            if (!bodyRenderersDirty)
+                return;
+
+            bodyRenderers.Clear();
+            bodyBlocks.Clear();
+
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer item in renderers)
+            {
+                if (item == null || IsIgnoredRenderer(item))
+                    continue;
+
+                bodyRenderers.Add(item);
+            }
+
+            bodyRenderersDirty = false;
+        }
+
+        private MaterialPropertyBlock BodyBlock(Renderer renderer)
+        {
+            if (!bodyBlocks.TryGetValue(renderer, out MaterialPropertyBlock block) || block == null)
+            {
+                block = new MaterialPropertyBlock();
+                bodyBlocks[renderer] = block;
+            }
+
+            return block;
+        }
+
+        private bool IsIgnoredRenderer(Renderer renderer)
+        {
+            return label != null && renderer.gameObject == label.gameObject ||
+                labelBackground != null && renderer.gameObject == labelBackground.gameObject ||
+                labelLine != null && renderer.gameObject == labelLine.gameObject ||
+                labelTopDot != null && renderer.gameObject == labelTopDot.gameObject ||
+                labelBottomDot != null && renderer.gameObject == labelBottomDot.gameObject ||
+                IsSelectionEffectRenderer(renderer);
+        }
+
+        private static Mesh CreateRingMesh(string meshName, out Vector3[] vertices)
+        {
+            Mesh mesh = new Mesh { name = meshName };
+            vertices = new Vector3[SelectionRingSegments * 2];
+            Vector2[] uvs = new Vector2[vertices.Length];
+            Color[] colors = new Color[vertices.Length];
+            int[] triangles = new int[SelectionRingSegments * 6];
+
+            for (int i = 0; i < SelectionRingSegments; i++)
+            {
+                float angle = i / (float)SelectionRingSegments * Mathf.PI * 2f;
+                float cos = Mathf.Cos(angle);
+                float sin = Mathf.Sin(angle);
+                int inner = i * 2;
+                int outer = inner + 1;
+
+                vertices[inner] = new Vector3(cos * 0.72f, 0f, sin * 0.72f);
+                vertices[outer] = new Vector3(cos, 0f, sin);
+                uvs[inner] = new Vector2(0f, i / (float)SelectionRingSegments);
+                uvs[outer] = new Vector2(1f, i / (float)SelectionRingSegments);
+                colors[inner] = new Color(1f, 1f, 1f, 0.24f);
+                colors[outer] = Color.white;
+
+                int nextInner = (i + 1) % SelectionRingSegments * 2;
+                int nextOuter = nextInner + 1;
+                int triangle = i * 6;
+                triangles[triangle] = inner;
+                triangles[triangle + 1] = outer;
+                triangles[triangle + 2] = nextOuter;
+                triangles[triangle + 3] = inner;
+                triangles[triangle + 4] = nextOuter;
+                triangles[triangle + 5] = nextInner;
+            }
+
+            mesh.vertices = vertices;
+            mesh.uv = uvs;
+            mesh.colors = colors;
+            mesh.triangles = triangles;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private void UpdateRingMesh(Mesh mesh, Vector3[] vertices, Vector3 localCenter, float worldOuterRadius, float innerRatio, float yawDegrees)
+        {
+            if (mesh == null || vertices == null)
+                return;
+
+            Vector3 scale = transform.lossyScale;
+            float outerX = worldOuterRadius / Mathf.Max(0.0001f, Mathf.Abs(scale.x));
+            float outerZ = worldOuterRadius / Mathf.Max(0.0001f, Mathf.Abs(scale.z));
+            float innerX = outerX * innerRatio;
+            float innerZ = outerZ * innerRatio;
+            float yaw = yawDegrees * Mathf.Deg2Rad;
+
+            for (int i = 0; i < SelectionRingSegments; i++)
+            {
+                float angle = i / (float)SelectionRingSegments * Mathf.PI * 2f + yaw;
+                float cos = Mathf.Cos(angle);
+                float sin = Mathf.Sin(angle);
+                int inner = i * 2;
+                int outer = inner + 1;
+
+                vertices[inner] = localCenter + new Vector3(cos * innerX, 0f, sin * innerZ);
+                vertices[outer] = localCenter + new Vector3(cos * outerX, 0f, sin * outerZ);
+            }
+
+            mesh.vertices = vertices;
+            mesh.RecalculateBounds();
         }
 
         private void UpdateLabelLayout()
@@ -614,43 +761,25 @@ namespace F1XR.RestAPI.Replay
 
         private void SetSelectionObjectsActive(bool active)
         {
+            if (selectionRoot != null)
+                selectionRoot.gameObject.SetActive(active);
+
             if (selectionRing != null)
                 selectionRing.gameObject.SetActive(active);
 
-            if (selectionGlow != null)
-                selectionGlow.gameObject.SetActive(active);
-
-            if (selectionPointLight != null)
-                selectionPointLight.gameObject.SetActive(active);
-
-            if (selectionSpotLight != null)
-                selectionSpotLight.gameObject.SetActive(active);
+            if (selectionPulse != null)
+                selectionPulse.gameObject.SetActive(active && selectionPulseAge < SelectionPulseDuration);
         }
 
         private bool TryGetCarBounds(out Bounds bounds)
         {
-            Renderer[] renderers = GetComponentsInChildren<Renderer>();
+            RefreshBodyRenderers();
             bounds = default;
             bool hasBounds = false;
 
-            foreach (Renderer item in renderers)
+            foreach (Renderer item in bodyRenderers)
             {
-                if (label != null && item.gameObject == label.gameObject)
-                    continue;
-
-                if (labelBackground != null && item.gameObject == labelBackground.gameObject)
-                    continue;
-
-                if (labelLine != null && item.gameObject == labelLine.gameObject)
-                    continue;
-
-                if (labelTopDot != null && item.gameObject == labelTopDot.gameObject)
-                    continue;
-
-                if (labelBottomDot != null && item.gameObject == labelBottomDot.gameObject)
-                    continue;
-
-                if (IsSelectionEffectRenderer(item))
+                if (item == null)
                     continue;
 
                 if (!hasBounds)
@@ -669,8 +798,9 @@ namespace F1XR.RestAPI.Replay
 
         private bool IsSelectionEffectRenderer(Renderer renderer)
         {
-            return selectionRing != null && renderer.gameObject == selectionRing.gameObject ||
-                selectionGlow != null && renderer.gameObject == selectionGlow.gameObject;
+            return renderer != null &&
+                selectionRoot != null &&
+                renderer.transform.IsChildOf(selectionRoot);
         }
     }
 }
