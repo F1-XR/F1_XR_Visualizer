@@ -39,6 +39,7 @@ namespace F1XR.RestAPI.Replay
         private TrackCalibration calibration;
         private ARBuildRevealPlacer buildPlacer;
         private bool labelsVisible = true;
+        private bool leaderHighlightVisible;
         
         private readonly Dictionary<int, Quaternion> baseRotations = new();
         private readonly Dictionary<int, Color> driverColors = new();
@@ -145,6 +146,7 @@ namespace F1XR.RestAPI.Replay
                     car = CreateCar(driver);
 
                 EnsureEngineSound(driver, car);
+                car.SetLeaderHighlightVisible(leaderHighlightVisible);
 
                 if (ranks.TryGetValue(driver, out int rank))
                     car.SetRank(rank);
@@ -250,6 +252,7 @@ namespace F1XR.RestAPI.Replay
 
             car.Init(driver);
             car.SetLabelVisible(labelsVisible);
+            car.SetLeaderHighlightVisible(leaderHighlightVisible);
 
             if (driverLabels.TryGetValue(driver, out string label))
                 car.SetLabel(label);
@@ -414,6 +417,17 @@ namespace F1XR.RestAPI.Replay
             {
                 if (car != null)
                     car.SetLabelVisible(visible);
+            }
+        }
+
+        public void SetLeaderHighlightVisible(bool visible)
+        {
+            leaderHighlightVisible = visible;
+
+            foreach (CarAgent car in cars.Values)
+            {
+                if (car != null)
+                    car.SetLeaderHighlightVisible(visible);
             }
         }
 
