@@ -3648,7 +3648,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.4
+      gain: 0.6
       perspective: 0
     lowOff:
       clip: {fileID: 8300000, guid: d77107f1b9c054c49bfdda81a0505b0b, type: 3}
@@ -3657,7 +3657,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.3
+      gain: 0.4
       perspective: 0
     midOn:
       clip: {fileID: 8300000, guid: 888f47f78dcd2ee40b290c917357ba39, type: 3}
@@ -3666,7 +3666,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.7
+      gain: 0.8
       perspective: 0
     midOff:
       clip: {fileID: 8300000, guid: 01178c21031cc284b8662cf768efa3b7, type: 3}
@@ -3675,7 +3675,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.5
+      gain: 0.6
       perspective: 0
     highOn:
       clip: {fileID: 8300000, guid: 4ad6921f5771d1349ac05fa344f409fa, type: 3}
@@ -3684,7 +3684,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 1
+      gain: 1.1
       perspective: 0
     highOff:
       clip: {fileID: 8300000, guid: 3c154b4fdb8ae9345a5964e9018a0b0d, type: 3}
@@ -3693,7 +3693,7 @@ MonoBehaviour:
       isLoop: 1
       minimumPitch: 0.82
       maximumPitch: 1.15
-      gain: 0.7
+      gain: 0.8
       perspective: 0
     veryHighOn:
       clip: {fileID: 0}
@@ -3746,6 +3746,8 @@ MonoBehaviour:
     offVolumeScale: 0.55
     response: 8
     loadThreshold: 0.05
+    minimumRpmVolume: 0.35
+    fullVolumeRpm: 12000
     loadResponse: 12
     useSpeedRpmFallback: 1
     shiftMinInterval: 0.12
@@ -3758,6 +3760,11 @@ MonoBehaviour:
     maxDistance: 12
     maximumAudibleDistance: 12
     priority: 128
+    enableCustomDoppler: 1
+    speedOfSound: 343
+    dopplerStrength: 0.6
+    minimumDopplerPitch: 0.88
+    maximumDopplerPitch: 1.15
     enableFullEngineLayers: 1
     selectedCarGetsFullAudio: 0
     fadeOutCars: 2
