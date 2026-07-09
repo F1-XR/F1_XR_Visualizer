@@ -25,6 +25,8 @@ namespace F1XR.RestAPI.UI
         public TMP_Text rankText;
         public Vector2 standingsSize = new Vector2(196f, 470f);
         public Vector2 driverDetailSize = new Vector2(180f, 150f);
+        public Vector2 driverOnboardSize = new Vector2(260f, 176f);
+        public Vector2 driverOnboardTextureSize = new Vector2(512f, 288f);
         public float standingsRowHeight = 19f;
         public float positionChangeFlashSeconds = 1.2f;
         public float standingsMoveSpeed = 10f;
@@ -37,6 +39,10 @@ namespace F1XR.RestAPI.UI
         private TMP_Text driverDetailTeam;
         private TMP_Text driverDetailPosition;
         private TMP_Text driverDetailTire;
+        private RectTransform driverOnboardRoot;
+        private RawImage driverOnboardImage;
+        private TMP_Text driverOnboardTitle;
+        private DriverOnboardView driverOnboardView;
         private TMP_Text lapHeader;
         private TMP_Text tireHeader;
         private readonly List<StandingRow> standingRows = new();
