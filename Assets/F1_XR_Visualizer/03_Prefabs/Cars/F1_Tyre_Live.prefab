@@ -44,6 +44,7 @@ GameObject:
   - component: {fileID: 2444131728294613759}
   - component: {fileID: -8817254586065510693}
   - component: {fileID: -7726355871538274465}
+  - component: {fileID: 918273645912837467}
   m_Layer: 10
   m_Name: F1_Tyre_Live
   m_TagString: Untagged
@@ -76,8 +77,8 @@ Rigidbody:
   m_GameObject: {fileID: 7939260414892024150}
   serializedVersion: 5
   m_Mass: 1
-  m_LinearDamping: 0
-  m_AngularDamping: 0.05
+  m_LinearDamping: 2
+  m_AngularDamping: 2
   m_CenterOfMass: {x: 0, y: 0, z: 0}
   m_InertiaTensor: {x: 1, y: 1, z: 1}
   m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
@@ -194,7 +195,7 @@ MonoBehaviour:
   m_SmoothScale: 0
   m_SmoothScaleAmount: 8
   m_TightenScale: 0.1
-  m_ThrowOnDetach: 1
+  m_ThrowOnDetach: 0
   m_ThrowSmoothingDuration: 0.25
   m_ThrowSmoothingCurve:
     serializedVersion: 2
@@ -342,3 +343,21 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -6863086507406990836, guid: 96af41dced8c10043b6aef99b7c5ae56, type: 3}
   m_PrefabInstance: {fileID: 2496683359816654484}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &918273645912837467
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7939260414892024150}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b7d4690df4d85ff4cb77b77dea95cfca, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  visualRoot: {fileID: 0}
+  riseHeight: 1.5
+  riseDuration: 0.2
+  riseEase: 6
+  lowerDuration: 0.2
+  lowerEase: 6
