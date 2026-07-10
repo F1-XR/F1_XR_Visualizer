@@ -53,12 +53,17 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, float> nextGroundSnapDebugLogTimes = new();
         private readonly Dictionary<int, int> groundSnapMissCounts = new();
         private readonly Dictionary<int, CarEngineSound> engineSounds = new();
+        private readonly Dictionary<int, CarEngineSoundSettings> runtimeEngineSettings = new();
+        private readonly Dictionary<int, EngineAudioProfile> nativeEngineProfiles = new();
+        private readonly Dictionary<int, AudioSource> gridStartSources = new();
         private readonly List<CarEngineSound> soundOrder = new();
+        private readonly List<int> redBullGridStartDrivers = new();
         private CarEngineSoundSettings engineSoundSettings;
         private Transform trackSurfaceRoot;
         private bool soundPlaying = true;
         private bool soundPlacementReady;
         private int selectedDriverNumber;
+        private int lastGridStartSelectedDriver = -1;
         private bool loggedEngineSound;
         private bool loggedMissingSoundTeam;
         private bool loggedNoAudioListener;
@@ -204,7 +209,11 @@ namespace F1XR.RestAPI.Replay
             lastGroundSnapColliders.Clear();
             nextGroundSnapDebugLogTimes.Clear();
             groundSnapMissCounts.Clear();
+            StopGridStartAudio();
+            gridStartSources.Clear();
             engineSounds.Clear();
+            runtimeEngineSettings.Clear();
+            nativeEngineProfiles.Clear();
             hasOrigin = false;
             origin = Vector3.zero;
             loggedEngineSound = false;
@@ -316,6 +325,9 @@ namespace F1XR.RestAPI.Replay
             nextGroundSnapDebugLogTimes.Remove(driver);
             groundSnapMissCounts.Remove(driver);
             engineSounds.Remove(driver);
+            runtimeEngineSettings.Remove(driver);
+            nativeEngineProfiles.Remove(driver);
+            StopGridStartAudio(driver);
 
             CarAgent newCar = CreateCar(driver);
             newCar.rawPosition = rawPosition;
@@ -434,6 +446,8 @@ namespace F1XR.RestAPI.Replay
         public void SetEngineSound(CarEngineSoundSettings settings)
         {
             engineSoundSettings = settings ?? new CarEngineSoundSettings();
+            CacheNativeEngineProfiles();
+            StopGridStartAudio();
 
             foreach (KeyValuePair<int, CarAgent> pair in cars)
                 ConfigureEngineSound(pair.Key, pair.Value);
@@ -460,6 +474,9 @@ namespace F1XR.RestAPI.Replay
                 if (sound != null)
                     sound.SetPlaying(active);
             }
+
+            if (!active)
+                PauseGridStartAudio();
         }
 
         private void RefreshEngineSoundSelection()
@@ -602,15 +619,26 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            if (engineSoundSettings.useEngineSound && UsesEngineSound(driver))
+            bool useEngineSound = engineSoundSettings.useEngineSound && UsesEngineSound(driver);
+            EngineAudioProfile profile = ResolveProfileForDriver(driver);
+            CarEngineSoundSettings runtimeSettings = null;
+
+            if (useEngineSound && engineSoundSettings.useTeamBasedEngineAudio && profile == null)
+                useEngineSound = false;
+
+            if (useEngineSound)
             {
                 if (sound == null)
                     sound = car.gameObject.AddComponent<CarEngineSound>();
 
+                runtimeSettings = engineSoundSettings.useTeamBasedEngineAudio
+                    ? engineSoundSettings.CloneForProfile(profile)
+                    : engineSoundSettings;
                 sound.SetVariation(EnginePitchVariation(driver), EngineVolumeVariation(driver));
-                sound.Configure(engineSoundSettings);
+                sound.Configure(runtimeSettings);
                 sound.SetPlaying(soundPlaying && soundPlacementReady);
                 engineSounds[driver] = sound;
+                runtimeEngineSettings[driver] = runtimeSettings;
                 LogEngineSoundConfig(driver, "enabled");
 
                 if (!loggedEngineSound)
@@ -632,9 +660,13 @@ namespace F1XR.RestAPI.Replay
                 }
 
                 if (sound != null)
+                {
+                    sound.StopAudioNow();
                     Object.Destroy(sound);
+                }
 
                 engineSounds.Remove(driver);
+                runtimeEngineSettings.Remove(driver);
                 LogEngineSoundConfig(driver, "removed");
             }
         }
@@ -652,8 +684,9 @@ namespace F1XR.RestAPI.Replay
 
             string team = driverTeams.TryGetValue(driver, out string value) ? value : "";
             bool redBullOnly = engineSoundSettings != null && engineSoundSettings.redBullOnly;
+            bool teamBased = engineSoundSettings != null && engineSoundSettings.useTeamBasedEngineAudio;
             Debug.Log(
-                $"[EngineSound] driver={driver}, team='{team}', redBullOnly={redBullOnly}, " +
+                $"[EngineSound] driver={driver}, team='{team}', redBullOnly={redBullOnly}, teamBased={teamBased}, " +
                 $"action={action}, cars={cars.Count}, configured={engineSounds.Count}"
             );
         }
@@ -682,8 +715,8 @@ namespace F1XR.RestAPI.Replay
 
             return engineSoundSettings != null &&
                 engineSoundSettings.useEngineSound &&
-                engineSoundSettings.redBullOnly &&
-                !string.IsNullOrWhiteSpace(engineSoundSettings.teamNameFilter) &&
+                ((engineSoundSettings.useTeamBasedEngineAudio) ||
+                (engineSoundSettings.redBullOnly && !string.IsNullOrWhiteSpace(engineSoundSettings.teamNameFilter))) &&
                 !HasDriverTeams();
         }
 
@@ -691,6 +724,9 @@ namespace F1XR.RestAPI.Replay
         {
             if (selectedDriverNumber > 0)
                 return driver == selectedDriverNumber;
+
+            if (engineSoundSettings != null && engineSoundSettings.useTeamBasedEngineAudio)
+                return IsSupportedTeam(driver);
 
             if (engineSoundSettings == null || !engineSoundSettings.redBullOnly)
                 return true;
@@ -701,6 +737,25 @@ namespace F1XR.RestAPI.Replay
             return driverTeams.TryGetValue(driver, out string team)
                 && !string.IsNullOrWhiteSpace(team)
                 && team.IndexOf(engineSoundSettings.teamNameFilter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool IsSupportedTeam(int driver)
+        {
+            return driverTeams.TryGetValue(driver, out string team) &&
+                (EngineAudioTeamMatcher.IsRedBull(team) ||
+                EngineAudioTeamMatcher.IsMercedes(team) ||
+                EngineAudioTeamMatcher.IsFerrari(team));
+        }
+
+        private EngineAudioProfile ResolveProfileForDriver(int driver)
+        {
+            if (engineSoundSettings == null || !engineSoundSettings.useTeamBasedEngineAudio)
+                return null;
+
+            if (nativeEngineProfiles.TryGetValue(driver, out EngineAudioProfile profile) && profile != null)
+                return profile;
+
+            return selectedDriverNumber == driver ? engineSoundSettings.redBullProfile : null;
         }
 
         private bool HasDriverTeams()
@@ -764,6 +819,14 @@ namespace F1XR.RestAPI.Replay
             {
                 foreach (CarEngineSound sound in soundOrder)
                     sound.SetAudibility(IsSelectedSound(sound) ? 1f : 0f);
+
+                return;
+            }
+
+            if (engineSoundSettings.useTeamBasedEngineAudio)
+            {
+                foreach (CarEngineSound sound in soundOrder)
+                    sound.SetAudibility(1f);
 
                 return;
             }
@@ -838,6 +901,264 @@ namespace F1XR.RestAPI.Replay
                 cars.TryGetValue(selectedDriverNumber, out CarAgent selectedCar) &&
                 selectedCar != null &&
                 sound.transform == selectedCar.transform;
+        }
+
+        private void CacheNativeEngineProfiles()
+        {
+            nativeEngineProfiles.Clear();
+            redBullGridStartDrivers.Clear();
+
+            if (engineSoundSettings == null || !engineSoundSettings.useTeamBasedEngineAudio)
+                return;
+
+            foreach (KeyValuePair<int, string> pair in driverTeams)
+            {
+                if (EngineAudioTeamMatcher.IsRedBull(pair.Value))
+                    redBullGridStartDrivers.Add(pair.Key);
+
+                EngineAudioProfile profile = ResolveNativeProfile(pair.Value);
+                if (profile != null)
+                    nativeEngineProfiles[pair.Key] = profile;
+            }
+
+            redBullGridStartDrivers.Sort();
+        }
+
+        private EngineAudioProfile ResolveNativeProfile(string teamName)
+        {
+            if (engineSoundSettings == null)
+                return null;
+
+            if (EngineAudioTeamMatcher.IsRedBull(teamName))
+                return engineSoundSettings.redBullProfile;
+
+            if (EngineAudioTeamMatcher.IsMercedes(teamName))
+                return engineSoundSettings.mercedesProfile;
+
+            if (EngineAudioTeamMatcher.IsFerrari(teamName))
+                return engineSoundSettings.ferrariProfile;
+
+            return null;
+        }
+
+        public void ApplyGridStartTimeline(float currentReplayTime, float raceStartTime, bool isPlaying, float playbackSpeed)
+        {
+            if (engineSoundSettings == null ||
+                !engineSoundSettings.useTeamBasedEngineAudio ||
+                !engineSoundSettings.enableNewGridStartAudio ||
+                engineSoundSettings.redBullGridStartClip == null ||
+                !soundPlacementReady)
+            {
+                StopGridStartAudio();
+                return;
+            }
+
+            AudioClip clip = engineSoundSettings.redBullGridStartClip;
+            float clipStartTime = raceStartTime - Mathf.Max(0f, engineSoundSettings.gridStartLaunchOffsetSeconds);
+            float clipLocalTime = currentReplayTime - clipStartTime;
+
+            if (clipLocalTime < 0f || clipLocalTime >= clip.length)
+            {
+                StopGridStartAudio();
+                return;
+            }
+
+            if (lastGridStartSelectedDriver != selectedDriverNumber)
+            {
+                StopGridStartAudio();
+                lastGridStartSelectedDriver = selectedDriverNumber;
+            }
+
+            if (selectedDriverNumber > 0)
+            {
+                StopGridStartSourcesExcept(selectedDriverNumber, 0);
+
+                if (cars.TryGetValue(selectedDriverNumber, out CarAgent selectedCar) && selectedCar != null)
+                {
+                    AudioSource source = EnsureGridStartSource(selectedDriverNumber, selectedCar);
+                    SyncGridStartSource(
+                        source,
+                        clip,
+                        clipLocalTime,
+                        0f,
+                        Mathf.Clamp01(engineSoundSettings.selectedStartGain),
+                        isPlaying,
+                        playbackSpeed);
+                }
+
+                return;
+            }
+
+            int firstDriver = redBullGridStartDrivers.Count > 0 ? redBullGridStartDrivers[0] : 0;
+            int secondDriver = redBullGridStartDrivers.Count > 1 ? redBullGridStartDrivers[1] : 0;
+            StopGridStartSourcesExcept(firstDriver, secondDriver);
+
+            if (firstDriver > 0 && cars.TryGetValue(firstDriver, out CarAgent firstCar) && firstCar != null)
+            {
+                SyncGridStartSource(
+                    EnsureGridStartSource(firstDriver, firstCar),
+                    clip,
+                    clipLocalTime,
+                    0f,
+                    Mathf.Clamp01(engineSoundSettings.redBullStartGainA),
+                    isPlaying,
+                    playbackSpeed);
+            }
+
+            if (secondDriver > 0 && cars.TryGetValue(secondDriver, out CarAgent secondCar) && secondCar != null)
+            {
+                SyncGridStartSource(
+                    EnsureGridStartSource(secondDriver, secondCar),
+                    clip,
+                    clipLocalTime,
+                    Mathf.Clamp(engineSoundSettings.redBullStartSecondDelay, 0f, 0.1f),
+                    Mathf.Clamp01(engineSoundSettings.redBullStartGainB),
+                    isPlaying,
+                    playbackSpeed);
+            }
+        }
+
+        public void StopGridStartAudio()
+        {
+            foreach (AudioSource source in gridStartSources.Values)
+            {
+                if (source != null)
+                    source.Stop();
+            }
+
+            lastGridStartSelectedDriver = selectedDriverNumber;
+        }
+
+        private void StopGridStartAudio(int driver)
+        {
+            if (!gridStartSources.TryGetValue(driver, out AudioSource source))
+                return;
+
+            if (source != null)
+                source.Stop();
+
+            gridStartSources.Remove(driver);
+        }
+
+        private void PauseGridStartAudio()
+        {
+            foreach (AudioSource source in gridStartSources.Values)
+            {
+                if (source != null && source.isPlaying)
+                    source.Pause();
+            }
+        }
+
+        private void StopGridStartSourcesExcept(int firstDriver, int secondDriver)
+        {
+            foreach (KeyValuePair<int, AudioSource> pair in gridStartSources)
+            {
+                if (pair.Key == firstDriver || pair.Key == secondDriver)
+                    continue;
+
+                if (pair.Value != null)
+                    pair.Value.Stop();
+            }
+        }
+
+        private AudioSource EnsureGridStartSource(int driver, CarAgent car)
+        {
+            if (gridStartSources.TryGetValue(driver, out AudioSource source) && source != null)
+                return source;
+
+            Transform audioRoot = car.transform.Find("Audio");
+            if (audioRoot == null)
+            {
+                GameObject audioObject = new GameObject("Audio");
+                audioObject.transform.SetParent(car.transform, false);
+                audioRoot = audioObject.transform;
+            }
+
+            Transform sourceTransform = audioRoot.Find("GridStart");
+            GameObject sourceObject = sourceTransform != null
+                ? sourceTransform.gameObject
+                : new GameObject("GridStart");
+            sourceObject.transform.SetParent(audioRoot, false);
+
+            source = sourceObject.GetComponent<AudioSource>();
+            if (source == null)
+                source = sourceObject.AddComponent<AudioSource>();
+
+            source.playOnAwake = false;
+            source.loop = false;
+            source.volume = 0f;
+            ApplyGridStartSourceSettings(source);
+            gridStartSources[driver] = source;
+            return source;
+        }
+
+        private void ApplyGridStartSourceSettings(AudioSource source)
+        {
+            if (source == null || engineSoundSettings == null)
+                return;
+
+            float maxDistance = engineSoundSettings.maximumAudibleDistance > 0f
+                ? engineSoundSettings.maximumAudibleDistance
+                : engineSoundSettings.maxDistance;
+
+            source.spatialBlend = Mathf.Clamp01(engineSoundSettings.spatialBlend);
+            source.minDistance = Mathf.Max(0.01f, engineSoundSettings.minDistance);
+            source.maxDistance = Mathf.Max(source.minDistance, maxDistance);
+            source.rolloffMode = AudioRolloffMode.Custom;
+            source.dopplerLevel = 0f;
+            source.priority = Mathf.Clamp(engineSoundSettings.priority, 0, 256);
+            source.SetCustomCurve(
+                AudioSourceCurveType.CustomRolloff,
+                new AnimationCurve(
+                    new Keyframe(0f, 1f),
+                    new Keyframe(source.minDistance, 1f),
+                    new Keyframe(source.maxDistance, 0f)
+                )
+            );
+        }
+
+        private static void SyncGridStartSource(
+            AudioSource source,
+            AudioClip clip,
+            float clipLocalTime,
+            float sourceDelay,
+            float gain,
+            bool isPlaying,
+            float playbackSpeed)
+        {
+            if (source == null || clip == null)
+                return;
+
+            float sourceLocalTime = clipLocalTime - sourceDelay;
+            if (sourceLocalTime < 0f || sourceLocalTime >= clip.length)
+            {
+                source.Stop();
+                return;
+            }
+
+            source.clip = clip;
+            source.volume = gain;
+            source.pitch = Mathf.Clamp(playbackSpeed, 0.1f, 3f);
+
+            int targetSamples = Mathf.Clamp(
+                Mathf.RoundToInt(sourceLocalTime * clip.frequency),
+                0,
+                Mathf.Max(0, clip.samples - 1));
+            int driftSamples = Mathf.Abs(source.timeSamples - targetSamples);
+            int maxDriftSamples = Mathf.Max(1, Mathf.RoundToInt(clip.frequency * 0.08f));
+
+            if (!source.isPlaying || driftSamples > maxDriftSamples)
+                source.timeSamples = targetSamples;
+
+            if (isPlaying)
+            {
+                if (!source.isPlaying)
+                    source.Play();
+            }
+            else if (source.isPlaying)
+            {
+                source.Pause();
+            }
         }
 
         private static float AudibilityForRank(int rank, int fullCars, int fadeCars, float fadeVolume)
@@ -1513,6 +1834,7 @@ namespace F1XR.RestAPI.Replay
                     driverColors[driver.driverNumber] = color;
             }
 
+            CacheNativeEngineProfiles();
             ReplaceCarsWithTeamPrefabs();
 
             if (!loggedDriverTeams)
@@ -1520,7 +1842,12 @@ namespace F1XR.RestAPI.Replay
                 int matched = 0;
                 foreach (KeyValuePair<int, string> pair in driverTeams)
                 {
-                    if (!string.IsNullOrWhiteSpace(pair.Value) &&
+                    if (engineSoundSettings != null && engineSoundSettings.useTeamBasedEngineAudio)
+                    {
+                        if (IsSupportedTeam(pair.Key))
+                            matched++;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(pair.Value) &&
                         engineSoundSettings != null &&
                         !string.IsNullOrWhiteSpace(engineSoundSettings.teamNameFilter) &&
                         pair.Value.IndexOf(engineSoundSettings.teamNameFilter, StringComparison.OrdinalIgnoreCase) >= 0)

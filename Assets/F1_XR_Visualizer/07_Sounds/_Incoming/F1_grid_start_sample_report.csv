@@ -1,0 +1,16 @@
+﻿car,filename,source_start,source_end,duration_seconds,gear,rpm,throttle_state,quality,peak_dbfs,rms_dbfs,recommended_use,notes
+Mercedes,Mercedes_prestart_rev_raw.wav,4.85,7.6,2.75,1,"약 13,000 RPM 고정",클러치 홀드 + 풀 스로틀,Good,-18.73,-32.75,개별 스타트 구성 요소,신호음 종료 후부터 소등 직전까지. 여러 차량 소리가 약간 섞임.
+Mercedes,Mercedes_launch_raw.wav,7.6,11.05,3.45,1,"약 13,300→5,000→11,800 RPM",클러치 릴리즈 + 풀 스로틀,Good,-19.8,-33.07,개별 스타트 구성 요소,출발 직전부터 1단 끝까지. 출발 순간 RPM 드롭 포함.
+Mercedes,Mercedes_initial_upshift_01_raw.wav,10.9,11.25,0.35,1→2,"약 12,000 RPM 부근",On,Good,-20.98,-32.47,개별 스타트 구성 요소,첫 업시프트 컷. 주변 차량 변속음이 일부 섞일 수 있음.
+Mercedes,Mercedes_initial_upshift_02_raw.wav,11.7,12.05,0.35,2→3,"약 12,000 RPM 부근",On,Good,-21.88,-32.77,개별 스타트 구성 요소,두 번째 업시프트 컷.
+Mercedes,Mercedes_grid_start_full_raw.wav,4.85,12.15,7.3,1→3,"약 13,000 RPM 대기 후 출발",Pre-start→Launch,Very Good,-18.73,-32.86,전체 스타트 연출용 one-shot / 트랙 또는 차량 그룹 AudioSource,신호음 제외. 프리스타트부터 3단 진입까지 전체 연출용.
+RedBull,RedBull_prestart_rev_raw.wav,4.45,5.55,1.1,1,"약 13,000 RPM 고정",클러치 홀드 + 풀 스로틀,Fair-Good,-18.97,-31.73,개별 스타트 구성 요소,사용 가능한 깨끗한 대기 구간이 다른 차량보다 짧음.
+RedBull,RedBull_launch_raw.wav,5.55,8.9,3.35,1,"약 13,300→4,600→12,400 RPM",클러치 릴리즈 + 풀 스로틀,Good,-20.58,-32.17,개별 스타트 구성 요소,출발 직전부터 1단 끝까지.
+RedBull,RedBull_initial_upshift_01_raw.wav,8.72,9.08,0.36,1→2,"약 12,000 RPM 부근",On,Good,-20.73,-32.48,개별 스타트 구성 요소,첫 업시프트 컷.
+RedBull,RedBull_initial_upshift_02_raw.wav,9.7,10.08,0.38,2→3,"약 12,000 RPM 부근",On,Good,-21.13,-33.02,개별 스타트 구성 요소,두 번째 업시프트 컷. 영상 끝에 가까움.
+RedBull,RedBull_grid_start_full_raw.wav,4.45,10.15,5.7,1→3,"약 13,000 RPM 대기 후 출발",Pre-start→Launch,Good,-18.8,-32.08,전체 스타트 연출용 one-shot / 트랙 또는 차량 그룹 AudioSource,신호음 제외. 세 차량 중 전체 길이가 가장 짧음.
+Ferrari,Ferrari_prestart_rev_raw.wav,4.82,7.6,2.78,1,"약 13,000 RPM 고정",클러치 홀드 + 풀 스로틀,Good,-20.39,-37.51,개별 스타트 구성 요소,신호음 종료 후부터 소등 직전까지.
+Ferrari,Ferrari_launch_raw.wav,7.6,10.86,3.26,1,"약 13,400→4,900→12,700 RPM",클러치 릴리즈 + 풀 스로틀,Good,-25.01,-38.87,개별 스타트 구성 요소,출발 직전부터 1단 끝까지.
+Ferrari,Ferrari_initial_upshift_01_raw.wav,10.7,11.08,0.38,1→2,"약 12,000 RPM 부근",On,Good,-26.04,-38.01,개별 스타트 구성 요소,첫 업시프트 컷.
+Ferrari,Ferrari_initial_upshift_02_raw.wav,11.48,11.86,0.38,2→3,"약 12,000 RPM 부근",On,Good,-24.78,-38.07,개별 스타트 구성 요소,두 번째 업시프트 컷.
+Ferrari,Ferrari_grid_start_full_raw.wav,4.82,12.1,7.28,1→3,"약 13,000 RPM 대기 후 출발",Pre-start→Launch,Very Good,-20.39,-38.09,전체 스타트 연출용 one-shot / 트랙 또는 차량 그룹 AudioSource,신호음 제외. 프리스타트부터 3단 진입까지 전체 연출용.

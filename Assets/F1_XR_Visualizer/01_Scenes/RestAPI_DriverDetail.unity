@@ -2028,6 +2028,9 @@ MonoBehaviour:
   checkeredDisplayDuration: 5
   fallbackRaceEndTimeForTesting: 0
   missingEndFallbackDuration: 5
+  checkeredFlagShown:
+    m_PersistentCalls:
+      m_Calls: []
   enableDevelopmentControls: 0
   forceRaceFinishedForTesting: 0
   forceYellowForTesting: 0
@@ -3743,6 +3746,17 @@ MonoBehaviour:
   engineSound:
     useEngineSound: 1
     generateFallbackClips: 0
+    useTeamBasedEngineAudio: 1
+    enableNewGridStartAudio: 1
+    redBullProfile: {fileID: 11400000, guid: 60b2d16b4df84259a352087e7c76f631, type: 2}
+    mercedesProfile: {fileID: 11400000, guid: 9d9ee446fbbb4fd8a942ab9363e357ea, type: 2}
+    ferrariProfile: {fileID: 11400000, guid: 941338a46dc44a29af7f6738c05560d6, type: 2}
+    redBullGridStartClip: {fileID: 8300000, guid: a9f90b676d2e27847a06d94c95b444b7, type: 3}
+    gridStartLaunchOffsetSeconds: 1.1
+    redBullStartGainA: 0.22
+    redBullStartGainB: 0.18
+    redBullStartSecondDelay: 0.04
+    selectedStartGain: 0.24
     mode: 1
     redBullOnly: 0
     teamNameFilter: Red Bull
