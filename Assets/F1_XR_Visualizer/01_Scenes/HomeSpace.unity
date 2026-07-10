@@ -7367,6 +7367,10 @@ PrefabInstance:
       propertyPath: riseHeight
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 918273645912837466, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+      propertyPath: visualRoot
+      value: 
+      objectReference: {fileID: 1602313789}
     - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0.88
@@ -7432,6 +7436,11 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1903157518}
   m_SourcePrefab: {fileID: 100100000, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+--- !u!4 &1602313789 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2175595605303497009, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+  m_PrefabInstance: {fileID: 1602313788}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1663654173
 PrefabInstance:
   m_ObjectHideFlags: 0
