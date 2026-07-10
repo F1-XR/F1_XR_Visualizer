@@ -1103,7 +1103,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2233838071848889592, guid: 2b9ad3dc22119c549a4123c76b91f0a4, type: 3}
       propertyPath: player
-      value: 
+      value:
       objectReference: {fileID: 1705380154}
     - target: {fileID: 5624794570507199891, guid: 2b9ad3dc22119c549a4123c76b91f0a4, type: 3}
       propertyPath: m_Pivot.x
@@ -1187,7 +1187,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8548316962599371389, guid: 2b9ad3dc22119c549a4123c76b91f0a4, type: 3}
       propertyPath: player
-      value: 
+      value:
       objectReference: {fileID: 1705380154}
     - target: {fileID: 8548316962599371389, guid: 2b9ad3dc22119c549a4123c76b91f0a4, type: 3}
       propertyPath: rankText
@@ -2566,6 +2566,78 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7254464999794739031, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
       propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 408611774268622349, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 408611774268622349, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.46
+      objectReference: {fileID: 0}
+    - target: {fileID: 408611774268622349, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: m_audioClip
+      value:
+      objectReference: {fileID: 8300000, guid: c8b24192001e46ff9930f9e0cf278a36, type: 3}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: m_PlayOnAwake
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: Loop
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: m_Volume
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: Priority
+      value: 64
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: DopplerLevel
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: MinDistance
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: MaxDistance
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 8649843027834034532, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: Pan2D
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4003557855724430183, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: corkPopClip
+      value:
+      objectReference: {fileID: 8300000, guid: c8b24192001e46ff9930f9e0cf278a36, type: 3}
+    - target: {fileID: 4003557855724430183, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: popSoundDelay
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4003557855724430183, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: popVolume
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4003557855724430183, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: popPitchRange.x
+      value: 0.96
+      objectReference: {fileID: 0}
+    - target: {fileID: 4003557855724430183, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: popPitchRange.y
+      value: 1.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 4003557855724430183, guid: 451d15fdeb6477f4591bf38720b0e8be, type: 3}
+      propertyPath: randomizePopPitch
       value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
