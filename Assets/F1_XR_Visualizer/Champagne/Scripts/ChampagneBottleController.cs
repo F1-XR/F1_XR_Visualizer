@@ -40,8 +40,11 @@ namespace F1XR.Champagne
         [SerializeField] bool shakeHapticEnabled;
 
         [Header("Audio")]
+        [SerializeField] AudioClip corkPopClip;
         [SerializeField] float popSoundDelay;
-        [SerializeField, Range(0f, 1f)] float popVolume = 0.85f;
+        [SerializeField, Range(0f, 1f)] float popVolume = 1f;
+        [SerializeField] Vector2 popPitchRange = new Vector2(0.96f, 1.04f);
+        [SerializeField] bool randomizePopPitch = true;
         [SerializeField] AudioSource shakeAudioSource;
         [SerializeField] bool shakeSoundEnabled;
         [SerializeField] float shakeSoundThreshold = 0.55f;
@@ -64,6 +67,7 @@ namespace F1XR.Champagne
         Coroutine popSoundRoutine;
         float nextSprayHapticTime;
         float nextShakeFeedbackTime;
+        float defaultPopPitch = 1f;
         bool readyFeedbackSent;
         bool interactionEnabled = true;
 
@@ -94,6 +98,9 @@ namespace F1XR.Champagne
                 corkController = GetComponentInChildren<CorkController>(includeInactive: true);
             if (bottleColliders == null || bottleColliders.Length == 0)
                 bottleColliders = GetComponentsInChildren<Collider>(includeInactive: true);
+
+            if (popAudioSource != null)
+                defaultPopPitch = popAudioSource.pitch;
 
             initialPosition = transform.position;
             initialRotation = transform.rotation;
@@ -281,12 +288,9 @@ namespace F1XR.Champagne
 
         void PlayPopSound()
         {
-            if (popAudioSource == null || popAudioSource.clip == null)
-                return;
-
             if (popSoundDelay <= 0f)
             {
-                popAudioSource.PlayOneShot(popAudioSource.clip, popVolume);
+                PlayCorkPopSound();
                 return;
             }
 
@@ -294,11 +298,30 @@ namespace F1XR.Champagne
             popSoundRoutine = StartCoroutine(PlayPopSoundAfterDelay());
         }
 
+        void PlayCorkPopSound()
+        {
+            if (popAudioSource == null)
+                return;
+
+            var clip = corkPopClip != null ? corkPopClip : popAudioSource.clip;
+            if (clip == null)
+                return;
+
+            popAudioSource.pitch = randomizePopPitch
+                ? Random.Range(popPitchRange.x, popPitchRange.y)
+                : defaultPopPitch;
+
+            popAudioSource.PlayOneShot(clip, popVolume);
+        }
+
         IEnumerator PlayPopSoundAfterDelay()
         {
             yield return new WaitForSeconds(popSoundDelay);
-            if (popAudioSource != null && popAudioSource.clip != null)
-                popAudioSource.PlayOneShot(popAudioSource.clip, popVolume);
+
+            if (currentState == ChampagneBottleState.Popped || currentState == ChampagneBottleState.Spraying)
+            {
+                PlayCorkPopSound();
+            }
 
             popSoundRoutine = null;
         }
@@ -440,7 +463,10 @@ namespace F1XR.Champagne
                 corkController.ResetCork();
 
             if (popAudioSource != null)
+            {
                 popAudioSource.Stop();
+                popAudioSource.pitch = defaultPopPitch;
+            }
 
             if (readyAudioSource != null)
                 readyAudioSource.Stop();
