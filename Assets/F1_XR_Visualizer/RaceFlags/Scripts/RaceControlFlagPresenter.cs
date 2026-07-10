@@ -5,6 +5,7 @@ using F1XR.RestAPI.AR;
 using F1XR.RestAPI.Replay;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.SceneManagement;
 
 namespace F1XR.RaceFlags
 {
@@ -61,6 +62,43 @@ namespace F1XR.RaceFlags
         private bool warnedMissingFlag;
 
         public event Action CheckeredFlagShown;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnablePresentersAfterSceneLoad()
+        {
+            EnablePresentersInScene(SceneManager.GetActiveScene());
+
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            EnablePresentersInScene(scene);
+        }
+
+        private static void EnablePresentersInScene(Scene scene)
+        {
+            if (!scene.IsValid())
+                return;
+
+            RaceControlFlagPresenter[] presenters = UnityEngine.Object.FindObjectsByType<RaceControlFlagPresenter>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            for (int i = 0; i < presenters.Length; i++)
+            {
+                RaceControlFlagPresenter presenter = presenters[i];
+                if (presenter == null || presenter.gameObject.scene != scene)
+                    continue;
+
+                if (!presenter.gameObject.activeSelf)
+                    presenter.gameObject.SetActive(true);
+
+                if (!presenter.enabled)
+                    presenter.enabled = true;
+            }
+        }
 
         private void Awake()
         {
