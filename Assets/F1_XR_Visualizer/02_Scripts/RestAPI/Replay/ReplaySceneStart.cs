@@ -6,7 +6,7 @@ namespace F1XR.RestAPI.Replay
     public class ReplaySceneStart : MonoBehaviour
     {
         public ApiClient api;
-        public ChunkReplayPlayer player;
+        public ReplayPlayer player;
 
         private void Awake()
         {
@@ -19,7 +19,7 @@ namespace F1XR.RestAPI.Replay
                 api = FindAnyObjectByType<ApiClient>();
 
             if (player == null)
-                player = FindAnyObjectByType<ChunkReplayPlayer>();
+                player = FindAnyObjectByType<ReplayPlayer>();
 
             Debug.Log($"ReplaySceneStart Start manifest={ReplayLoad.Manifest != null}, api={api != null}, player={player != null}");
 

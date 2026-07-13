@@ -9,7 +9,7 @@ namespace F1XR.RestAPI.UI
 {
     public class ReplayBar : MonoBehaviour, IPointerDownHandler, IDragHandler
     {
-        public ChunkReplayPlayer player;
+        public ReplayPlayer player;
 
         public RectTransform barRect;
         public Image playedFill;

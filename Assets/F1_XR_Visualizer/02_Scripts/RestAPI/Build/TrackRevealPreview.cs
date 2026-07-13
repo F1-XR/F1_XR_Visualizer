@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.AR
 {
-    public sealed partial class ARBuildRevealPlacer
+    public sealed partial class TrackRevealPlacer
     {
         readonly Dictionary<Renderer, Material[]> previewOriginalMaterials = new();
         readonly List<Behaviour> previewDisabledBehaviours = new();
@@ -44,7 +44,7 @@ namespace F1XR.RestAPI.AR
             ApplyPreviewMaterial(previewInstance);
 
             if (previewInstance.GetComponentsInChildren<Renderer>(includeInactive: true).Length == 0)
-                Debug.LogWarning("[ARBuildRevealPlacer] Preview renderer를 찾지 못했습니다.", this);
+                Debug.LogWarning("[TrackRevealPlacer] Preview renderer를 찾지 못했습니다.", this);
 
             previewInstance.SetActive(false);
         }
@@ -74,7 +74,7 @@ namespace F1XR.RestAPI.AR
                 if (!behaviour.enabled)
                     continue;
 
-                if (behaviour is F1XR.AR.TrackMapView || behaviour is BuildRevealController)
+                if (behaviour is F1XR.AR.TrackMapView || behaviour is TrackRevealView)
                     continue;
 
                 previewDisabledBehaviours.Add(behaviour);
@@ -151,7 +151,7 @@ namespace F1XR.RestAPI.AR
 
             if (shader == null)
             {
-                Debug.LogError("[ARBuildRevealPlacer] Shader 'F1XR/PreviewTransparentURP'를 찾지 못했습니다.", this);
+                Debug.LogError("[TrackRevealPlacer] Shader 'F1XR/PreviewTransparentURP'를 찾지 못했습니다.", this);
                 return null;
             }
 

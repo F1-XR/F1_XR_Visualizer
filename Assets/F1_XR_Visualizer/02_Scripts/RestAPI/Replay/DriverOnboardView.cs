@@ -26,7 +26,7 @@ namespace F1XR.RestAPI.Replay
         private bool hasSmoothedPose;
         private float poseScale = 1f;
         private bool hidingOverlayRenderers;
-        private readonly List<CarAgent> onboardCars = new();
+        private readonly List<ReplayCarView> onboardCars = new();
         private readonly List<Renderer> onboardHiddenRenderers = new();
         private readonly List<RendererState> hiddenRendererStates = new();
 
@@ -279,7 +279,7 @@ namespace F1XR.RestAPI.Replay
                     objectName.StartsWith("SelectedCar"))
                     return false;
 
-                if (current == renderer.transform.root || current.GetComponent<CarAgent>() != null)
+                if (current == renderer.transform.root || current.GetComponent<ReplayCarView>() != null)
                     break;
 
                 current = current.parent;
@@ -336,7 +336,7 @@ namespace F1XR.RestAPI.Replay
             onboardCars.Clear();
             root.GetComponentsInChildren(true, onboardCars);
 
-            foreach (CarAgent car in onboardCars)
+            foreach (ReplayCarView car in onboardCars)
                 car.CollectOnboardHiddenRenderers(onboardHiddenRenderers);
 
             foreach (Renderer renderer in onboardHiddenRenderers)

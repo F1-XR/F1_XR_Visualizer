@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Replay
 {
-    public class CarAgent : MonoBehaviour
+    public class ReplayCarView : MonoBehaviour
     {
         public int driverNumber;
         public Vector3 rawPosition;

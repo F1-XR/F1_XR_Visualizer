@@ -10,7 +10,7 @@ using F1XR.RestAPI.AR;
 
 namespace F1XR.RestAPI.Replay
 {
-    public class ChunkReplayPlayer : MonoBehaviour
+    public class ReplayPlayer : MonoBehaviour
     {
         public ApiClient api;
         public GameObject carPrefab;
@@ -18,7 +18,7 @@ namespace F1XR.RestAPI.Replay
         public ARPlanePlacementController placement;
         public TrackCalibration trackCalibration;
         public GameObject trackVisualizerPrefab;
-        public ARBuildRevealPlacer buildPlacer;
+        public TrackRevealPlacer buildPlacer;
         public StartingLightSequence startingLights;
         public GameObject startingLightsPrefab;
         public TrackAsset[] trackAssets;
@@ -66,10 +66,10 @@ namespace F1XR.RestAPI.Replay
         private readonly HashSet<int> _loadedChunks = new();
         private readonly HashSet<int> _loadingChunks = new();
         
-        private readonly ReplaySamples replaySamples = new();
-        private readonly ReplayPositions replayPositions = new();
-        private readonly ReplayTires replayTires = new();
-        private CarReplayView carView;
+        private readonly LocationReplaySamples locationReplaySamples = new();
+        private readonly PositionReplaySamples positionReplaySamples = new();
+        private readonly TireReplaySamples tireReplaySamples = new();
+        private ReplayCarSet replayCars;
     
         public float CurrentTime => _time;
         public float TimelineStartTime => _manifest != null && _manifest.chunks != null && _manifest.chunks.Length > 0
@@ -139,19 +139,19 @@ namespace F1XR.RestAPI.Replay
             if (placement == null)
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
 
-            carView = new CarReplayView(carPrefab);
-            carView.SetTeamPrefabs(teamCarPrefabs);
-            carView.SetPlacement(placement);
+            replayCars = new ReplayCarSet(carPrefab);
+            replayCars.SetTeamPrefabs(teamCarPrefabs);
+            replayCars.SetPlacement(placement);
             if (buildPlacer == null)
-                buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+                buildPlacer = FindAnyObjectByType<TrackRevealPlacer>();
 
-            carView.SetBuildPlacer(buildPlacer);
-            carView.SetCalibration(trackCalibration);
-            carView.SetLabelsVisible(showCarLabels);
-            carView.SetLeaderHighlightVisible(false);
+            replayCars.SetBuildPlacer(buildPlacer);
+            replayCars.SetCalibration(trackCalibration);
+            replayCars.SetLabelsVisible(showCarLabels);
+            replayCars.SetLeaderHighlightVisible(false);
             RefreshEngineSound();
             _wasTrackPlaced = HasPlacedTrack();
-            carView.SetSoundPlacementReady(_wasTrackPlaced);
+            replayCars.SetSoundPlacementReady(_wasTrackPlaced);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -181,19 +181,19 @@ namespace F1XR.RestAPI.Replay
             if (placement == null)
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
 
-            carView.SetPlacement(placement);
-            carView.SetTeamPrefabs(teamCarPrefabs);
+            replayCars.SetPlacement(placement);
+            replayCars.SetTeamPrefabs(teamCarPrefabs);
             if (buildPlacer == null)
-                buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+                buildPlacer = FindAnyObjectByType<TrackRevealPlacer>();
 
-            carView.SetBuildPlacer(buildPlacer);
-            carView.SetCalibration(trackCalibration);
-            carView.SetLabelsVisible(showCarLabels);
-            carView.SetLeaderHighlightVisible(false);
+            replayCars.SetBuildPlacer(buildPlacer);
+            replayCars.SetCalibration(trackCalibration);
+            replayCars.SetLabelsVisible(showCarLabels);
+            replayCars.SetLeaderHighlightVisible(false);
             RefreshEngineSound();
             _wasTrackPlaced = HasPlacedTrack();
-            carView.SetSoundPlacementReady(_wasTrackPlaced);
-            carView.SetSoundPlaying(false);
+            replayCars.SetSoundPlacementReady(_wasTrackPlaced);
+            replayCars.SetSoundPlaying(false);
 
             if (_manifestPollingCoroutine != null)
                 StopCoroutine(_manifestPollingCoroutine);
@@ -253,7 +253,7 @@ namespace F1XR.RestAPI.Replay
                 }
 
                 if (buildPlacer == null)
-                    buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+                    buildPlacer = FindAnyObjectByType<TrackRevealPlacer>();
 
                 if (buildPlacer != null)
                 {
@@ -274,15 +274,15 @@ namespace F1XR.RestAPI.Replay
 
             _isPlaying = true;
             LoadNearChunks();
-            carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
-            carView.SetSoundPlaying(true);
+            replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
+            replayCars.SetSoundPlaying(true);
             ApplyGridStartTimeline();
         }
 
         public void Pause()
         {
             _isPlaying = false;
-            carView.SetSoundPlaying(false);
+            replayCars.SetSoundPlaying(false);
             ApplyGridStartTimeline();
         }
     
@@ -324,14 +324,14 @@ namespace F1XR.RestAPI.Replay
                 yield break;
 
             _time = seekTime;
-            replaySamples.ResetIndices();
+            locationReplaySamples.ResetIndices();
 
             if (!_loadedChunks.Contains(chunkIndex))
                 yield return LoadChunk(chunkIndex);
 
             LoadNearChunks();
-            carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
-            carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
+            replayCars.Show(locationReplaySamples.ByDriver, locationReplaySamples.Indices, _time, positionReplaySamples.Get(_time));
             ApplyStartingLightTimeline();
             ApplyGridStartTimeline();
 
@@ -343,14 +343,14 @@ namespace F1XR.RestAPI.Replay
         private void Update()
         {
             ApplyEngineSoundFilterChange();
-            carView.SetLabelsVisible(showCarLabels);
+            replayCars.SetLabelsVisible(showCarLabels);
             bool trackPlaced = HasPlacedTrack();
-            carView.SetSoundPlacementReady(trackPlaced);
+            replayCars.SetSoundPlacementReady(trackPlaced);
             if (!_wasTrackPlaced && trackPlaced)
                 RefreshEngineSound();
 
             _wasTrackPlaced = trackPlaced;
-            carView.SetSoundPlaying(_isPlaying);
+            replayCars.SetSoundPlaying(_isPlaying);
 
             if (trackPlaced)
                 TryAutoPlay();
@@ -373,13 +373,13 @@ namespace F1XR.RestAPI.Replay
             {
                 _time = maxTime;
                 _isPlaying = false;
-                carView.SetSoundPlaying(false);
+                replayCars.SetSoundPlaying(false);
                 ApplyGridStartTimeline();
             }
 
             LoadNearChunks();
-            carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
-            carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
+            replayCars.Show(locationReplaySamples.ByDriver, locationReplaySamples.Indices, _time, positionReplaySamples.Get(_time));
             ApplyGridStartTimeline();
         }
 
@@ -641,9 +641,9 @@ namespace F1XR.RestAPI.Replay
 
             if (loadedChunk.samples != null && loadedChunk.samples.Length > 0)
             {
-                replaySamples.Add(loadedChunk);
-                replayPositions.Add(loadedChunk);
-                replayTires.Add(loadedChunk);
+                locationReplaySamples.Add(loadedChunk);
+                positionReplaySamples.Add(loadedChunk);
+                tireReplaySamples.Add(loadedChunk);
                 Debug.Log($"Loaded chunk {loadedChunk.chunkIndex}, samples={loadedChunk.samples.Length}");
             }
 
@@ -678,23 +678,23 @@ namespace F1XR.RestAPI.Replay
         
         public List<PositionSampleDto> GetPositions()
         {
-            return replayPositions.Get(_time);
+            return positionReplaySamples.Get(_time);
         }
 
         public TireSampleDto GetTire(int driverNumber)
         {
-            return replayTires.Get(driverNumber, _time);
+            return tireReplaySamples.Get(driverNumber, _time);
         }
 
         public void SetSelectedDriver(int driverNumber)
         {
-            carView.SetSelectedDriver(driverNumber);
+            replayCars.SetSelectedDriver(driverNumber);
         }
 
         public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
         {
             carTransform = null;
-            return carView != null && carView.TryGetCarTransform(driverNumber, out carTransform);
+            return replayCars != null && replayCars.TryGetCarTransform(driverNumber, out carTransform);
         }
 
         public string GetDriverLabel(int driverNumber)
@@ -757,15 +757,15 @@ namespace F1XR.RestAPI.Replay
                 _seekCoroutine = null;
             }
 
-            replaySamples.Clear();
+            locationReplaySamples.Clear();
             _loadedChunks.Clear();
             _loadingChunks.Clear();
-            carView.Clear();
-            replayPositions.Clear();
-            replayTires.Clear();
-            carView.SetLeaderHighlightVisible(false);
-            carView.SetSoundPlaying(false);
-            carView.StopGridStartAudio();
+            replayCars.Clear();
+            positionReplaySamples.Clear();
+            tireReplaySamples.Clear();
+            replayCars.SetLeaderHighlightVisible(false);
+            replayCars.SetSoundPlaying(false);
+            replayCars.StopGridStartAudio();
         }
 
         private void EnsureEngineSound()
@@ -805,23 +805,23 @@ namespace F1XR.RestAPI.Replay
             if (modeChanged)
                 Debug.Log(engineSound.useTeamBasedEngineAudio ? "[EngineAudio] Mode changed: TeamBased" : "[EngineAudio] Mode changed: Legacy");
 
-            carView.StopGridStartAudio();
+            replayCars.StopGridStartAudio();
             RefreshEngineSound();
         }
 
         private void RefreshEngineSound()
         {
             ApplyDriverMetadata();
-            carView.SetEngineSound(engineSound);
+            replayCars.SetEngineSound(engineSound);
             RememberEngineSoundFilter();
         }
 
         private void ApplyGridStartTimeline()
         {
-            if (carView == null || _manifest == null)
+            if (replayCars == null || _manifest == null)
                 return;
 
-            carView.ApplyGridStartTimeline(_time, RaceStartTime, _isPlaying, playbackSpeed);
+            replayCars.ApplyGridStartTimeline(_time, RaceStartTime, _isPlaying, playbackSpeed);
         }
 
         private void ApplyDriverMetadata()
@@ -829,8 +829,8 @@ namespace F1XR.RestAPI.Replay
             if (_hasDriverMetadata || _manifest == null || _manifest.drivers == null || _manifest.drivers.Length == 0)
                 return;
 
-            if (carView != null)
-                carView.SetDrivers(_manifest.drivers);
+            if (replayCars != null)
+                replayCars.SetDrivers(_manifest.drivers);
 
             _hasDriverMetadata = true;
         }

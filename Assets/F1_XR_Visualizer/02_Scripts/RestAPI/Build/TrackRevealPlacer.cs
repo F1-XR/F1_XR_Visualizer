@@ -6,7 +6,7 @@ using UnityEngine.XR.ARFoundation;
 
 namespace F1XR.RestAPI.AR
 {
-    public sealed partial class ARBuildRevealPlacer : MonoBehaviour
+    public sealed partial class TrackRevealPlacer : MonoBehaviour
     {
         [Header("References")]
         [SerializeField] ARPlanePlacementController placementController;
