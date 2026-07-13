@@ -31,7 +31,7 @@ public static class RestApiSceneRuntimeInstaller
         GameObject runtime = new GameObject(RuntimeObjectName);
 
         ApiClient api = runtime.AddComponent<ApiClient>();
-        ChunkReplayPlayer player = runtime.AddComponent<ChunkReplayPlayer>();
+        ReplayPlayer player = runtime.AddComponent<ReplayPlayer>();
         AutoReplayStarter controller = runtime.AddComponent<AutoReplayStarter>();
 
         player.api = api;

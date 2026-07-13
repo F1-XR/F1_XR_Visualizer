@@ -3,7 +3,7 @@ using UnityEngine.XR.ARFoundation;
 
 namespace F1XR.RestAPI.AR
 {
-    public sealed partial class ARBuildRevealPlacer
+    public sealed partial class TrackRevealPlacer
     {
         void ConfirmPlacement()
         {
@@ -56,21 +56,21 @@ namespace F1XR.RestAPI.AR
             if (carsRoot != null)
                 carsRoot.gameObject.SetActive(false);
 
-            BuildRevealController revealController =
-                spawnedInstance.GetComponent<BuildRevealController>();
+            TrackRevealView revealView =
+                spawnedInstance.GetComponent<TrackRevealView>();
 
-            if (revealController == null)
-                revealController = spawnedInstance.AddComponent<BuildRevealController>();
+            if (revealView == null)
+                revealView = spawnedInstance.AddComponent<TrackRevealView>();
 
-            revealController.Configure(
+            revealView.Configure(
                 buildDuration,
                 buildEdgeWidth,
                 buildEdgeColor,
                 restoreMaterialsAfterBuild);
 
-            revealController.Completed -= ShowCarsAfterReveal;
-            revealController.Completed += ShowCarsAfterReveal;
-            revealController.Play();
+            revealView.Completed -= ShowCarsAfterReveal;
+            revealView.Completed += ShowCarsAfterReveal;
+            revealView.Play();
         }
 
         void ShowCarsAfterReveal()

@@ -10,7 +10,7 @@ namespace F1XR.RestAPI.UI
 {
     public partial class ReplayUI : MonoBehaviour
     {
-        public ChunkReplayPlayer player;
+        public ReplayPlayer player;
         [FormerlySerializedAs("progressBar")]
         [FormerlySerializedAs("_bar")]
         public ReplayBar bar;

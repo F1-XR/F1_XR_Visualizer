@@ -15,8 +15,8 @@ namespace F1XR.RaceFlags
         private const string AnchorName = "RaceFlagAnchor";
 
         [Header("References")]
-        [SerializeField] private ChunkReplayPlayer replayPlayer;
-        [SerializeField] private ARBuildRevealPlacer buildPlacer;
+        [SerializeField] private ReplayPlayer replayPlayer;
+        [SerializeField] private TrackRevealPlacer buildPlacer;
         [SerializeField] private ARPlanePlacementController placement;
         [SerializeField] private Transform mapRootOverride;
         [SerializeField] private Transform raceFlagAnchor;
@@ -183,7 +183,7 @@ namespace F1XR.RaceFlags
         private void ResolveInitialReferences()
         {
             if (replayPlayer == null)
-                replayPlayer = FindAnyObjectByType<ChunkReplayPlayer>();
+                replayPlayer = FindAnyObjectByType<ReplayPlayer>();
 
             if (replayPlayer != null)
             {
@@ -195,7 +195,7 @@ namespace F1XR.RaceFlags
             }
 
             if (buildPlacer == null)
-                buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+                buildPlacer = FindAnyObjectByType<TrackRevealPlacer>();
 
             if (placement == null)
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
@@ -292,7 +292,7 @@ namespace F1XR.RaceFlags
         {
             if (replayPlayer == null)
             {
-                WarnOnce(ref warnedMissingPlayer, "RaceControlFlagPresenter needs a ChunkReplayPlayer reference.");
+                WarnOnce(ref warnedMissingPlayer, "RaceControlFlagPresenter needs a ApiClient reference.");
                 return;
             }
 

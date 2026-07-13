@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Replay
 {
-    public class ReplaySamples
+    public class LocationReplaySamples
     {
         private readonly Dictionary<int, List<LocationSample>> samples = new();
         private readonly Dictionary<int, int> indices = new();

@@ -9,7 +9,7 @@ using Object = UnityEngine.Object;
 
 namespace F1XR.RestAPI.Replay
 {
-    public class CarReplayView
+    public class ReplayCarSet
     {
         private const bool SnapCarsToTrackSurface = false;
         private const bool DebugGroundSnap = false;
@@ -30,14 +30,14 @@ namespace F1XR.RestAPI.Replay
 
         private readonly GameObject carPrefab;
         private readonly Dictionary<string, GameObject> teamPrefabs = new();
-        private readonly Dictionary<int, CarAgent> cars = new();
+        private readonly Dictionary<int, ReplayCarView> cars = new();
         private readonly Dictionary<int, GameObject> carPrefabsByDriver = new();
         
         private bool hasOrigin;
         private Vector3 origin;
         private ARPlanePlacementController placement;
         private TrackCalibration calibration;
-        private ARBuildRevealPlacer buildPlacer;
+        private TrackRevealPlacer buildPlacer;
         private bool labelsVisible = true;
         private bool leaderHighlightVisible;
         
@@ -89,7 +89,7 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
-        public CarReplayView(GameObject carPrefab)
+        public ReplayCarSet(GameObject carPrefab)
         {
             this.carPrefab = carPrefab;
         }
@@ -124,7 +124,7 @@ namespace F1XR.RestAPI.Replay
         {
             carTransform = null;
 
-            if (!cars.TryGetValue(driverNumber, out CarAgent car) || car == null)
+            if (!cars.TryGetValue(driverNumber, out ReplayCarView car) || car == null)
                 return false;
 
             carTransform = car.transform;
@@ -147,7 +147,7 @@ namespace F1XR.RestAPI.Replay
                 if (list.Count < 2)
                     continue;
 
-                if (!cars.TryGetValue(driver, out CarAgent car) || car == null)
+                if (!cars.TryGetValue(driver, out ReplayCarView car) || car == null)
                     car = CreateCar(driver);
 
                 EnsureEngineSound(driver, car);
@@ -194,7 +194,7 @@ namespace F1XR.RestAPI.Replay
 
         public void Clear()
         {
-            foreach (CarAgent car in cars.Values)
+            foreach (ReplayCarView car in cars.Values)
             {
                 if (car != null)
                     Object.Destroy(car.gameObject);
@@ -230,7 +230,7 @@ namespace F1XR.RestAPI.Replay
         {
             selectedDriverNumber = driverNumber;
 
-            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            foreach (KeyValuePair<int, ReplayCarView> pair in cars)
             {
                 if (pair.Value != null)
                     pair.Value.SetSelected(pair.Key == selectedDriverNumber, SelectionColor(pair.Key));
@@ -240,7 +240,7 @@ namespace F1XR.RestAPI.Replay
             UpdateSoundAudibility();
         }
 
-        private CarAgent CreateCar(int driver)
+        private ReplayCarView CreateCar(int driver)
         {
             GameObject prefab = FindPrefabForDriver(driver);
             GameObject obj;
@@ -255,9 +255,9 @@ namespace F1XR.RestAPI.Replay
                 obj.transform.localScale = new Vector3(0.6f, 0.3f, 1.0f);
             }
 
-            CarAgent car = obj.GetComponent<CarAgent>();
+            ReplayCarView car = obj.GetComponent<ReplayCarView>();
             if (car == null)
-                car = obj.AddComponent<CarAgent>();
+                car = obj.AddComponent<ReplayCarView>();
 
             car.Init(driver);
             car.SetLabelVisible(labelsVisible);
@@ -286,7 +286,7 @@ namespace F1XR.RestAPI.Replay
 
             List<int> driversToReplace = null;
 
-            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            foreach (KeyValuePair<int, ReplayCarView> pair in cars)
             {
                 GameObject expectedPrefab = FindPrefabForDriver(pair.Key);
                 carPrefabsByDriver.TryGetValue(pair.Key, out GameObject currentPrefab);
@@ -307,7 +307,7 @@ namespace F1XR.RestAPI.Replay
 
         private void ReplaceCar(int driver)
         {
-            if (!cars.TryGetValue(driver, out CarAgent oldCar) || oldCar == null)
+            if (!cars.TryGetValue(driver, out ReplayCarView oldCar) || oldCar == null)
                 return;
 
             Transform oldTransform = oldCar.transform;
@@ -329,7 +329,7 @@ namespace F1XR.RestAPI.Replay
             nativeEngineProfiles.Remove(driver);
             StopGridStartAudio(driver);
 
-            CarAgent newCar = CreateCar(driver);
+            ReplayCarView newCar = CreateCar(driver);
             newCar.rawPosition = rawPosition;
             newCar.transform.SetParent(parent, worldPositionStays: false);
             newCar.transform.position = position;
@@ -413,7 +413,7 @@ namespace F1XR.RestAPI.Replay
             placement = source;
         }
 
-        public void SetBuildPlacer(ARBuildRevealPlacer source)
+        public void SetBuildPlacer(TrackRevealPlacer source)
         {
             if (buildPlacer != source)
                 ClearTrackSurfaceColliderCache();
@@ -425,7 +425,7 @@ namespace F1XR.RestAPI.Replay
         {
             labelsVisible = visible;
 
-            foreach (CarAgent car in cars.Values)
+            foreach (ReplayCarView car in cars.Values)
             {
                 if (car != null)
                     car.SetLabelVisible(visible);
@@ -436,7 +436,7 @@ namespace F1XR.RestAPI.Replay
         {
             leaderHighlightVisible = visible;
 
-            foreach (CarAgent car in cars.Values)
+            foreach (ReplayCarView car in cars.Values)
             {
                 if (car != null)
                     car.SetLeaderHighlightVisible(visible);
@@ -449,7 +449,7 @@ namespace F1XR.RestAPI.Replay
             CacheNativeEngineProfiles();
             StopGridStartAudio();
 
-            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            foreach (KeyValuePair<int, ReplayCarView> pair in cars)
                 ConfigureEngineSound(pair.Key, pair.Value);
         }
 
@@ -484,7 +484,7 @@ namespace F1XR.RestAPI.Replay
             if (engineSoundSettings == null || !engineSoundSettings.useEngineSound)
                 return;
 
-            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            foreach (KeyValuePair<int, ReplayCarView> pair in cars)
                 ConfigureEngineSound(pair.Key, pair.Value);
         }
 
@@ -502,7 +502,7 @@ namespace F1XR.RestAPI.Replay
             groundSnapMissCounts.Clear();
         }
 
-        private void MoveCar(CarAgent car, LocationSample a, LocationSample b, float time)
+        private void MoveCar(ReplayCarView car, LocationSample a, LocationSample b, float time)
         {
             float duration = Mathf.Max(0.001f, b.t - a.t);
             float u = Mathf.Clamp01((time - a.t) / duration);
@@ -601,7 +601,7 @@ namespace F1XR.RestAPI.Replay
             UpdateEngineSound(car, a, b, u, duration);
         }
 
-        private void ConfigureEngineSound(int driver, CarAgent car)
+        private void ConfigureEngineSound(int driver, ReplayCarView car)
         {
             if (car == null || engineSoundSettings == null)
                 return;
@@ -691,7 +691,7 @@ namespace F1XR.RestAPI.Replay
             );
         }
 
-        private void EnsureEngineSound(int driver, CarAgent car)
+        private void EnsureEngineSound(int driver, ReplayCarView car)
         {
             if (car == null || engineSoundSettings == null || !engineSoundSettings.useEngineSound)
                 return;
@@ -784,7 +784,7 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
-        private void UpdateEngineSound(CarAgent car, LocationSample a, LocationSample b, float u, float duration)
+        private void UpdateEngineSound(ReplayCarView car, LocationSample a, LocationSample b, float u, float duration)
         {
             if (!engineSounds.TryGetValue(car.driverNumber, out CarEngineSound sound) || sound == null)
                 return;
@@ -898,7 +898,7 @@ namespace F1XR.RestAPI.Replay
         private bool IsSelectedSound(CarEngineSound sound)
         {
             return sound != null &&
-                cars.TryGetValue(selectedDriverNumber, out CarAgent selectedCar) &&
+                cars.TryGetValue(selectedDriverNumber, out ReplayCarView selectedCar) &&
                 selectedCar != null &&
                 sound.transform == selectedCar.transform;
         }
@@ -973,7 +973,7 @@ namespace F1XR.RestAPI.Replay
             {
                 StopGridStartSourcesExcept(selectedDriverNumber, 0);
 
-                if (cars.TryGetValue(selectedDriverNumber, out CarAgent selectedCar) && selectedCar != null)
+                if (cars.TryGetValue(selectedDriverNumber, out ReplayCarView selectedCar) && selectedCar != null)
                 {
                     AudioSource source = EnsureGridStartSource(selectedDriverNumber, selectedCar);
                     SyncGridStartSource(
@@ -993,7 +993,7 @@ namespace F1XR.RestAPI.Replay
             int secondDriver = redBullGridStartDrivers.Count > 1 ? redBullGridStartDrivers[1] : 0;
             StopGridStartSourcesExcept(firstDriver, secondDriver);
 
-            if (firstDriver > 0 && cars.TryGetValue(firstDriver, out CarAgent firstCar) && firstCar != null)
+            if (firstDriver > 0 && cars.TryGetValue(firstDriver, out ReplayCarView firstCar) && firstCar != null)
             {
                 SyncGridStartSource(
                     EnsureGridStartSource(firstDriver, firstCar),
@@ -1005,7 +1005,7 @@ namespace F1XR.RestAPI.Replay
                     playbackSpeed);
             }
 
-            if (secondDriver > 0 && cars.TryGetValue(secondDriver, out CarAgent secondCar) && secondCar != null)
+            if (secondDriver > 0 && cars.TryGetValue(secondDriver, out ReplayCarView secondCar) && secondCar != null)
             {
                 SyncGridStartSource(
                     EnsureGridStartSource(secondDriver, secondCar),
@@ -1061,7 +1061,7 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
-        private AudioSource EnsureGridStartSource(int driver, CarAgent car)
+        private AudioSource EnsureGridStartSource(int driver, ReplayCarView car)
         {
             if (gridStartSources.TryGetValue(driver, out AudioSource source) && source != null)
                 return source;
@@ -1272,7 +1272,7 @@ namespace F1XR.RestAPI.Replay
         }
 
         private bool TrySnapToTrackSurface(
-            CarAgent car,
+            ReplayCarView car,
             Vector3 worldPosition,
             Quaternion trackRotation,
             Quaternion baseRotation,
@@ -1337,7 +1337,7 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
-        private bool TryRaycastTrack(CarAgent car, int driverNumber, Vector3 origin, Vector3 up, float maxSurfaceOffset, out GroundHit groundHit)
+        private bool TryRaycastTrack(ReplayCarView car, int driverNumber, Vector3 origin, Vector3 up, float maxSurfaceOffset, out GroundHit groundHit)
         {
             groundHit = default;
 
@@ -1546,16 +1546,16 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
-        private static bool IsIgnoredGroundHit(CarAgent car, Collider collider)
+        private static bool IsIgnoredGroundHit(ReplayCarView car, Collider collider)
         {
             if (collider.transform.IsChildOf(car.transform))
                 return true;
 
-            CarAgent hitCar = collider.GetComponentInParent<CarAgent>();
+            ReplayCarView hitCar = collider.GetComponentInParent<ReplayCarView>();
             return hitCar != null;
         }
 
-        private void GetCarFootprint(CarAgent car, Vector3 forward, Vector3 right, out float halfLength, out float halfWidth, out float groundOffset, out float bodyHeight)
+        private void GetCarFootprint(ReplayCarView car, Vector3 forward, Vector3 right, out float halfLength, out float halfWidth, out float groundOffset, out float bodyHeight)
         {
             halfLength = 0.02f;
             halfWidth = 0.01f;
@@ -1660,7 +1660,7 @@ namespace F1XR.RestAPI.Replay
                     return false;
                 }
 
-                if (current.GetComponent<CarAgent>() != null)
+                if (current.GetComponent<ReplayCarView>() != null)
                     break;
 
                 current = current.parent;
@@ -1694,7 +1694,7 @@ namespace F1XR.RestAPI.Replay
                 if (meshFilter.sharedMesh == null)
                     continue;
 
-                if (meshFilter.GetComponentInParent<CarAgent>() != null)
+                if (meshFilter.GetComponentInParent<ReplayCarView>() != null)
                     continue;
 
                 MeshRenderer renderer = meshFilter.GetComponent<MeshRenderer>();
@@ -1803,7 +1803,7 @@ namespace F1XR.RestAPI.Replay
             return collider != null ? collider.name : "<none>";
         }
 
-        private static void SetCarParent(CarAgent car, Transform parent)
+        private static void SetCarParent(ReplayCarView car, Transform parent)
         {
             if (car.transform.parent == parent)
                 return;
@@ -1860,7 +1860,7 @@ namespace F1XR.RestAPI.Replay
                 loggedDriverTeams = true;
             }
 
-            foreach (KeyValuePair<int, CarAgent> pair in cars)
+            foreach (KeyValuePair<int, ReplayCarView> pair in cars)
             {
                 if (pair.Value != null)
                 {

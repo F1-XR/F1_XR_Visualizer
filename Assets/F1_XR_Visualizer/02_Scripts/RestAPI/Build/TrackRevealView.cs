@@ -6,7 +6,7 @@ using UnityEngine.Serialization;
 
 namespace F1XR.RestAPI.AR
 {
-    public sealed class BuildRevealController : MonoBehaviour
+    public sealed class TrackRevealView : MonoBehaviour
     {
         static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
@@ -130,7 +130,7 @@ namespace F1XR.RestAPI.AR
 
                 if (renderers == null || renderers.Length == 0)
                 {
-                    Debug.LogWarning("[BuildRevealController] Renderer를 찾지 못했습니다.", this);
+                    Debug.LogWarning("[TrackRevealView] Renderer를 찾지 못했습니다.", this);
                     return false;
                 }
             }
@@ -138,7 +138,7 @@ namespace F1XR.RestAPI.AR
             Shader revealShader = Shader.Find("F1XR/BuildRevealURP");
             if (revealShader == null)
             {
-                Debug.LogError("[BuildRevealController] Shader 'F1XR/BuildRevealURP'를 찾지 못했습니다.", this);
+                Debug.LogError("[TrackRevealView] Shader 'F1XR/BuildRevealURP'를 찾지 못했습니다.", this);
                 return false;
             }
 
@@ -220,7 +220,7 @@ namespace F1XR.RestAPI.AR
             bool hasBounds = false;
 
             if (logBoundsDetails)
-                Debug.Log("========== [BuildReveal] Renderer Bounds Check ==========", this);
+                Debug.Log("========== [TrackReveal] Renderer Bounds Check ==========", this);
 
             foreach (Renderer renderer in renderers)
             {
@@ -232,7 +232,7 @@ namespace F1XR.RestAPI.AR
                 if (logBoundsDetails)
                 {
                     Debug.Log(
-                        $"[BuildReveal] Renderer: {GetTransformPath(renderer.transform)} / " +
+                        $"[TrackReveal] Renderer: {GetTransformPath(renderer.transform)} / " +
                         $"minY={rb.min.y:F3}, maxY={rb.max.y:F3}, sizeY={rb.size.y:F3}",
                         renderer
                     );
@@ -251,14 +251,14 @@ namespace F1XR.RestAPI.AR
 
             if (!hasBounds)
             {
-                Debug.LogWarning("[BuildRevealController] Bounds 계산 실패.", this);
+                Debug.LogWarning("[TrackRevealView] Bounds 계산 실패.", this);
                 return false;
             }
 
             if (logBoundsDetails)
             {
                 Debug.Log(
-                    $"[BuildReveal] FINAL BOUNDS / " +
+                    $"[TrackReveal] FINAL BOUNDS / " +
                     $"minY={bounds.min.y:F3}, maxY={bounds.max.y:F3}, sizeY={bounds.size.y:F3}",
                     this
                 );

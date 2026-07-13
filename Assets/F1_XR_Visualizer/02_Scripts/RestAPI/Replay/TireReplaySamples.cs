@@ -3,7 +3,7 @@ using F1XR.RestAPI.Api;
 
 namespace F1XR.RestAPI.Replay
 {
-    public class ReplayTires
+    public class TireReplaySamples
     {
         private readonly Dictionary<int, List<TireSampleDto>> byDriver = new();
 

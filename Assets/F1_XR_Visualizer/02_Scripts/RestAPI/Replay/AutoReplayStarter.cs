@@ -7,7 +7,7 @@ namespace F1XR.RestAPI.Replay
     public class AutoReplayStarter : MonoBehaviour
     {
         public ApiClient api;
-        public ChunkReplayPlayer player;
+        public ReplayPlayer player;
 
         public bool autoStart = true;
         public int preferredYear = 2024;
@@ -24,7 +24,7 @@ namespace F1XR.RestAPI.Replay
                 api = GetComponent<ApiClient>();
 
             if (player == null)
-                player = GetComponent<ChunkReplayPlayer>();
+                player = GetComponent<ReplayPlayer>();
 
             if (player != null && api != null)
                 player.api = api;
@@ -46,7 +46,7 @@ namespace F1XR.RestAPI.Replay
         {
             if (api == null || player == null)
             {
-                Debug.LogError("AutoReplayStarter requires ApiClient and ChunkReplayPlayer.");
+                Debug.LogError("ReplayAutoLoader requires ApiClient and ReplayPlayer.");
                 yield break;
             }
 

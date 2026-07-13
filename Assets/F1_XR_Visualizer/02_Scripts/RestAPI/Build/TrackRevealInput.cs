@@ -8,7 +8,7 @@ using XRInputDeviceCharacteristics = UnityEngine.XR.InputDeviceCharacteristics;
 
 namespace F1XR.RestAPI.AR
 {
-    public sealed partial class ARBuildRevealPlacer
+    public sealed partial class TrackRevealPlacer
     {
         static readonly List<XRInputDevice> s_InputDevices = new();
 
