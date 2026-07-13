@@ -100,6 +100,23 @@ namespace F1XR.RestAPI.Replay
         public bool useEngineSound = true;
         public bool generateFallbackClips;
 
+        [Header("Team-Based Mode")]
+        [SerializeField]
+        public bool useTeamBasedEngineAudio = true;
+        [SerializeField]
+        public bool enableNewGridStartAudio = true;
+        public EngineAudioProfile redBullProfile;
+        public EngineAudioProfile mercedesProfile;
+        public EngineAudioProfile ferrariProfile;
+
+        [Header("Grid Start")]
+        public AudioClip redBullGridStartClip;
+        public float gridStartLaunchOffsetSeconds = 1.1f;
+        public float redBullStartGainA = 0.22f;
+        public float redBullStartGainB = 0.18f;
+        public float redBullStartSecondDelay = 0.04f;
+        public float selectedStartGain = 0.24f;
+
         [Header("Mode")]
         public EngineAudioMode mode = EngineAudioMode.SampleLoop;
 
@@ -224,6 +241,41 @@ namespace F1XR.RestAPI.Replay
 
             return sample;
         }
+
+        public CarEngineSoundSettings CloneForProfile(EngineAudioProfile profile)
+        {
+            CarEngineSoundSettings copy = (CarEngineSoundSettings)MemberwiseClone();
+            copy.idle = CloneSample(idle);
+            copy.lowOn = CloneSample(lowOn);
+            copy.lowOff = CloneSample(lowOff);
+            copy.midOn = CloneSample(midOn);
+            copy.midOff = CloneSample(midOff);
+            copy.highOn = CloneSample(highOn);
+            copy.highOff = CloneSample(highOff);
+            copy.veryHighOn = CloneSample(veryHighOn);
+            copy.veryHighOff = CloneSample(veryHighOff);
+            copy.EnsureDefaults();
+            profile?.ApplyTo(copy);
+            return copy;
+        }
+
+        private static EngineLoopSample CloneSample(EngineLoopSample source)
+        {
+            if (source == null)
+                return null;
+
+            return new EngineLoopSample
+            {
+                clip = source.clip,
+                baseRpm = source.baseRpm,
+                loadType = source.loadType,
+                isLoop = source.isLoop,
+                minimumPitch = source.minimumPitch,
+                maximumPitch = source.maximumPitch,
+                gain = source.gain,
+                perspective = source.perspective
+            };
+        }
     }
 
     public class CarEngineSound : MonoBehaviour
@@ -331,6 +383,11 @@ namespace F1XR.RestAPI.Replay
             targetBrake01 = 0f;
             smoothBrake01 = 0f;
             smoothLoad01 = 0f;
+        }
+
+        public void StopAudioNow()
+        {
+            StopAll();
         }
 
         public void UpdateTelemetry(float rpm, float throttle, float speed, int gear, int brake, int drs)

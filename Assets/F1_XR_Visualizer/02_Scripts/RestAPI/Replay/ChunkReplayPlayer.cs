@@ -50,7 +50,13 @@ namespace F1XR.RestAPI.Replay
         private bool _hasDriverMetadata;
         private bool _wasTrackPlaced;
         private bool _lastRedBullOnly;
+        private bool _lastUseTeamBasedEngineAudio;
+        private bool _lastEnableNewGridStartAudio;
         private string _lastTeamNameFilter;
+        private EngineAudioProfile _lastRedBullProfile;
+        private EngineAudioProfile _lastMercedesProfile;
+        private EngineAudioProfile _lastFerrariProfile;
+        private AudioClip _lastRedBullGridStartClip;
         private bool _hasStartingLightsRotationOffset;
         private Quaternion _startingLightsRotationOffset = Quaternion.identity;
 
@@ -270,12 +276,14 @@ namespace F1XR.RestAPI.Replay
             LoadNearChunks();
             carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             carView.SetSoundPlaying(true);
+            ApplyGridStartTimeline();
         }
 
         public void Pause()
         {
             _isPlaying = false;
             carView.SetSoundPlaying(false);
+            ApplyGridStartTimeline();
         }
     
         public void TogglePlay()
@@ -325,6 +333,7 @@ namespace F1XR.RestAPI.Replay
             carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
             ApplyStartingLightTimeline();
+            ApplyGridStartTimeline();
 
             _seekCoroutine = null;
         }
@@ -347,12 +356,14 @@ namespace F1XR.RestAPI.Replay
                 TryAutoPlay();
 
             ApplyStartingLightTimeline();
+            ApplyGridStartTimeline();
 
             if (!_isPlaying || _manifest == null)
                 return;
 
             _time += Time.deltaTime * playbackSpeed;
             ApplyStartingLightTimeline();
+            ApplyGridStartTimeline();
 
             float maxTime = _manifest.requestedDurationSeconds > 0f
                 ? _manifest.requestedDurationSeconds
@@ -363,11 +374,13 @@ namespace F1XR.RestAPI.Replay
                 _time = maxTime;
                 _isPlaying = false;
                 carView.SetSoundPlaying(false);
+                ApplyGridStartTimeline();
             }
 
             LoadNearChunks();
             carView.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             carView.Show(replaySamples.ByDriver, replaySamples.Indices, _time, replayPositions.Get(_time));
+            ApplyGridStartTimeline();
         }
 
         private bool ShouldShowLeaderHighlight()
@@ -752,6 +765,7 @@ namespace F1XR.RestAPI.Replay
             replayTires.Clear();
             carView.SetLeaderHighlightVisible(false);
             carView.SetSoundPlaying(false);
+            carView.StopGridStartAudio();
         }
 
         private void EnsureEngineSound()
@@ -762,19 +776,36 @@ namespace F1XR.RestAPI.Replay
         private void RememberEngineSoundFilter()
         {
             _lastRedBullOnly = engineSound != null && engineSound.redBullOnly;
+            _lastUseTeamBasedEngineAudio = engineSound != null && engineSound.useTeamBasedEngineAudio;
+            _lastEnableNewGridStartAudio = engineSound != null && engineSound.enableNewGridStartAudio;
             _lastTeamNameFilter = engineSound != null ? engineSound.teamNameFilter : null;
+            _lastRedBullProfile = engineSound != null ? engineSound.redBullProfile : null;
+            _lastMercedesProfile = engineSound != null ? engineSound.mercedesProfile : null;
+            _lastFerrariProfile = engineSound != null ? engineSound.ferrariProfile : null;
+            _lastRedBullGridStartClip = engineSound != null ? engineSound.redBullGridStartClip : null;
         }
 
         private void ApplyEngineSoundFilterChange()
         {
             EnsureEngineSound();
 
+            bool modeChanged = _lastUseTeamBasedEngineAudio != engineSound.useTeamBasedEngineAudio;
             if (_lastRedBullOnly == engineSound.redBullOnly &&
+                _lastUseTeamBasedEngineAudio == engineSound.useTeamBasedEngineAudio &&
+                _lastEnableNewGridStartAudio == engineSound.enableNewGridStartAudio &&
+                _lastRedBullProfile == engineSound.redBullProfile &&
+                _lastMercedesProfile == engineSound.mercedesProfile &&
+                _lastFerrariProfile == engineSound.ferrariProfile &&
+                _lastRedBullGridStartClip == engineSound.redBullGridStartClip &&
                 string.Equals(_lastTeamNameFilter, engineSound.teamNameFilter, StringComparison.Ordinal))
             {
                 return;
             }
 
+            if (modeChanged)
+                Debug.Log(engineSound.useTeamBasedEngineAudio ? "[EngineAudio] Mode changed: TeamBased" : "[EngineAudio] Mode changed: Legacy");
+
+            carView.StopGridStartAudio();
             RefreshEngineSound();
         }
 
@@ -783,6 +814,14 @@ namespace F1XR.RestAPI.Replay
             ApplyDriverMetadata();
             carView.SetEngineSound(engineSound);
             RememberEngineSoundFilter();
+        }
+
+        private void ApplyGridStartTimeline()
+        {
+            if (carView == null || _manifest == null)
+                return;
+
+            carView.ApplyGridStartTimeline(_time, RaceStartTime, _isPlaying, playbackSpeed);
         }
 
         private void ApplyDriverMetadata()
