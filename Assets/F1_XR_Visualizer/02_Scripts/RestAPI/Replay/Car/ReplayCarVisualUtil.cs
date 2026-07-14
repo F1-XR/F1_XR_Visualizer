@@ -189,6 +189,50 @@ namespace F1XR.RestAPI.Replay
             mesh.RecalculateBounds();
         }
 
+        public static float MaxAbsComponent(Vector3 value)
+        {
+            return Mathf.Max(
+                0.0001f,
+                Mathf.Max(
+                    Mathf.Abs(value.x),
+                    Mathf.Max(Mathf.Abs(value.y), Mathf.Abs(value.z))
+                )
+            );
+        }
+
+        public static void GetTextBackgroundTransform(
+            TextMesh text,
+            MeshRenderer textRenderer,
+            float depthRatio,
+            out Vector3 localPosition,
+            out Vector3 localScale)
+        {
+            Bounds textBounds = textRenderer != null ? textRenderer.localBounds : default;
+            float fallbackHeight = text != null
+                ? Mathf.Max(0.0001f, text.characterSize * text.fontSize)
+                : 0.0001f;
+            string content = text != null ? text.text : string.Empty;
+            float textWidth = textBounds.size.x > 0f
+                ? textBounds.size.x
+                : fallbackHeight * Mathf.Max(1.2f, content.Length * 0.42f);
+            float textLocalHeight = textBounds.size.y > 0f
+                ? textBounds.size.y
+                : fallbackHeight * 0.82f;
+            float horizontalPadding = textLocalHeight * 0.16f;
+            float verticalPadding = textLocalHeight * 0.12f;
+
+            localPosition = new Vector3(
+                textBounds.center.x,
+                textBounds.center.y,
+                -textLocalHeight * depthRatio
+            );
+            localScale = new Vector3(
+                textWidth + horizontalPadding * 2f,
+                textLocalHeight + verticalPadding * 2f,
+                1f
+            );
+        }
+
         public static Vector3 ToLocalScale(Transform target, float worldSize)
         {
             Transform parent = target.parent;
@@ -200,34 +244,6 @@ namespace F1XR.RestAPI.Replay
                 worldSize / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
                 worldSize / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
                 worldSize / Mathf.Max(0.0001f, Mathf.Abs(scale.z))
-            );
-        }
-
-        public static Vector3 ToLocalScale(Transform target, float worldWidth, float worldHeight)
-        {
-            Transform parent = target.parent;
-            if (parent == null)
-                return new Vector3(worldWidth, worldHeight, 1f);
-
-            Vector3 scale = parent.lossyScale;
-            return new Vector3(
-                worldWidth / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
-                worldHeight / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
-                1f
-            );
-        }
-
-        public static Vector3 ToLocalScale(Transform target, float worldWidth, float worldHeight, float worldDepth)
-        {
-            Transform parent = target.parent;
-            if (parent == null)
-                return new Vector3(worldWidth, worldHeight, worldDepth);
-
-            Vector3 scale = parent.lossyScale;
-            return new Vector3(
-                worldWidth / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
-                worldHeight / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
-                worldDepth / Mathf.Max(0.0001f, Mathf.Abs(scale.z))
             );
         }
     }

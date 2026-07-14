@@ -591,13 +591,7 @@ namespace F1XR.RestAPI.Replay
 
             float carSize = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
             float textHeight = carSize * LabelSizeRatio;
-            float inheritedScale = Mathf.Max(
-                0.0001f,
-                Mathf.Max(
-                    Mathf.Abs(transform.lossyScale.x),
-                    Mathf.Max(Mathf.Abs(transform.lossyScale.y), Mathf.Abs(transform.lossyScale.z))
-                )
-            );
+            float inheritedScale = MaxAbsComponent(transform.lossyScale);
 
             label.characterSize = textHeight / (label.fontSize * inheritedScale);
             float lineStartWidth = textHeight * LabelLineWidthRatio;
@@ -632,25 +626,14 @@ namespace F1XR.RestAPI.Replay
 
             label.transform.rotation = Camera.main.transform.rotation;
 
-            Bounds textBounds = labelRenderer != null ? labelRenderer.localBounds : default;
-            float fallbackHeight = Mathf.Max(0.0001f, label.characterSize * label.fontSize);
-            float textWidth = textBounds.size.x > 0f
-                ? textBounds.size.x
-                : fallbackHeight * Mathf.Max(1.2f, label.text.Length * 0.42f);
-            float textLocalHeight = textBounds.size.y > 0f
-                ? textBounds.size.y
-                : fallbackHeight * 0.82f;
-            float horizontalPadding = textLocalHeight * 0.16f;
-            float verticalPadding = textLocalHeight * 0.12f;
-            float labelWidth = textWidth + horizontalPadding * 2f;
-            float labelHeight = textLocalHeight + verticalPadding * 2f;
-
-            labelBackground.transform.localPosition = new Vector3(
-                textBounds.center.x,
-                textBounds.center.y,
-                -textLocalHeight * LabelBackgroundDepthRatio
-            );
-            labelBackground.transform.localScale = new Vector3(labelWidth, labelHeight, 1f);
+            GetTextBackgroundTransform(
+                label,
+                labelRenderer,
+                LabelBackgroundDepthRatio,
+                out Vector3 backgroundPosition,
+                out Vector3 backgroundScale);
+            labelBackground.transform.localPosition = backgroundPosition;
+            labelBackground.transform.localScale = backgroundScale;
         }
 
         private MeshRenderer CreateLabelDot(string objectName)
