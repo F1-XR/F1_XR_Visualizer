@@ -11,7 +11,7 @@ namespace F1XR
         [SerializeField] Renderer floorRenderer;
         [SerializeField] Transform reflectionPlane;
         [SerializeField] LayerMask reflectionMask = ~0;
-        [SerializeField] int textureSize = 512;
+        [SerializeField] int textureSize = 2048;
         [SerializeField] int updateEveryFrames = 1;
         [SerializeField] float clipPlaneOffset = 0.04f;
         [SerializeField] bool useObliqueClipPlane;
@@ -153,7 +153,7 @@ namespace F1XR
 
         void EnsureResources(Camera sourceCamera)
         {
-            int size = Mathf.Clamp(textureSize, 128, 1024);
+            int size = Mathf.Clamp(textureSize, 128, 2048);
 
             if (reflectionTexture == null || reflectionTexture.width != size || reflectionTexture.height != size)
             {

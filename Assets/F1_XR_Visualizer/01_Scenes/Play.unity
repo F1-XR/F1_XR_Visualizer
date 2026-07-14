@@ -2082,6 +2082,10 @@ MonoBehaviour:
   anchorManager: {fileID: 1240350764}
   rayOrigin: {fileID: 1742760904}
   cubePrefab: {fileID: 5460963645228481172, guid: 1968288085a84f647926f8364845d9b5, type: 3}
+  trackMapPrefab: {fileID: 0}
+  trackMapScale: 1
+  fitTrackMapToBounds: 0
+  trackMapTargetXZSize: {x: 0, y: 0}
   allowReplaceExistingCube: 0
   requireHorizontalUpPlane: 1
   rejectFloorPlanes: 1
@@ -2104,6 +2108,7 @@ MonoBehaviour:
   inputSourcePriority: 1
   useControllerTriggerPlacement: 1
   useHandPinchPlacement: 1
+  handlePlacementInput: 1
   inputArmDelay: 0.5
   pinchPressThreshold: 0.8
   pinchReleaseThreshold: 0.55
@@ -2192,6 +2197,10 @@ MonoBehaviour:
   pointerSize: 0.01
   surfaceOffset: 0.005
   pointerColor: {r: 1, g: 0, b: 0, a: 1}
+  previewLineWidth: 0.01
+  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.9}
+  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.9}
+  prefabPreviewAlpha: 0.4
 --- !u!114 &1240350769
 MonoBehaviour:
   m_ObjectHideFlags: 0
