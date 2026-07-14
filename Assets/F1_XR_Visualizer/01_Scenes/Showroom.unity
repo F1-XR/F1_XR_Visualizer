@@ -7368,16 +7368,24 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.6999999
+      objectReference: {fileID: 0}
+    - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.70000005
+      objectReference: {fileID: 0}
+    - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.88
+      value: 0.8799999
       objectReference: {fileID: 0}
     - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.020082857
+      value: 0.020082772
       objectReference: {fileID: 0}
     - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 3.94
+      value: 3.9400024
       objectReference: {fileID: 0}
     - target: {fileID: 1212095604410789946, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_LocalRotation.w
@@ -8728,7 +8736,20 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -7154180502015374807, guid: 6cdc96379963ead45858668fd5307b6a, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1892675505}
+    - targetCorrespondingSourceObject: {fileID: -7154180502015374807, guid: 6cdc96379963ead45858668fd5307b6a, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1892675506}
   m_SourcePrefab: {fileID: -4161369568681901532, guid: 6cdc96379963ead45858668fd5307b6a, type: 3}
+--- !u!4 &1714014969 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7646017525915040655, guid: 6cdc96379963ead45858668fd5307b6a, type: 3}
+  m_PrefabInstance: {fileID: 1714014968}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1714014970 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3707993690957479409, guid: 6cdc96379963ead45858668fd5307b6a, type: 3}
+  m_PrefabInstance: {fileID: 1714014968}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1742760903
 GameObject:
   m_ObjectHideFlags: 0
@@ -9792,6 +9813,24 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 0}
+--- !u!114 &1892675506
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1892675497}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 343275fdac34a1c45a1cc89ae8ed97b7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.CarWheelSpin
+  wheels:
+  - {fileID: 1714014970}
+  - {fileID: 1714014969}
+  wheelRadius: 0.35
+  rotationAxis: {x: 1, y: 0, z: 0}
+  movementThreshold: 0.0005
 --- !u!1 &1903157513 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6426553084217060426, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
@@ -9987,7 +10026,7 @@ SceneRoots:
   - {fileID: 1910462318}
   - {fileID: 373148041}
   - {fileID: 1714014968}
-  - {fileID: 1602313788}
   - {fileID: 620104085}
   - {fileID: 696109020}
   - {fileID: 1582476765}
+  - {fileID: 1602313788}
