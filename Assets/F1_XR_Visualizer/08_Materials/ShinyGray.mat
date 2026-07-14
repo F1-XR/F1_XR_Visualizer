@@ -110,15 +110,15 @@ Material:
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _ReflectionBlur: 1.6
-    - _ReflectionStrength: 0.62
+    - _ReflectionBlur: 0
+    - _ReflectionStrength: 0.562
     - _Smoothness: 0.92
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
-    - _WetSheen: 0.12
+    - _WetSheen: 0
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1
