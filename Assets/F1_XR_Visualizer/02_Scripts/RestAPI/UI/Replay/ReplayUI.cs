@@ -47,9 +47,7 @@ namespace F1XR.RestAPI.UI
         private TMP_Text tireHeader;
         private readonly List<StandingRow> standingRows = new();
         private readonly Dictionary<int, StandingRow> rowsByDriver = new();
-        private readonly Dictionary<int, int> lastPositions = new();
-        private readonly Dictionary<int, PositionChange> positionChanges = new();
-        private float lastStandingsTime = -1f;
+        private readonly PositionChangeTracker positionChangeTracker = new();
         private int selectedDriverNumber;
         private bool controlsStyled;
 
