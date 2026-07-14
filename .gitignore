@@ -50,6 +50,10 @@ Tools/UnityMcpServer/
 
 # Visual Studio cache directory
 .vs/
+.vsconfig
+
+# VS Code workspace settings
+.vscode/
 
 # Gradle cache directory
 .gradle/
