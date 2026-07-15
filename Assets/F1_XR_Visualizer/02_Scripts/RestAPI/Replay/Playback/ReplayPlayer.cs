@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
-using F1XR.AR;
-using F1XR.RestAPI.AR;
+using F1XR.RestAPI.Replay.Playback;
+using F1XR.RestAPI.Replay.Track.Placement;
+using F1XR.RestAPI.Replay.Track.Build;
 
 namespace F1XR.RestAPI.Replay
 {

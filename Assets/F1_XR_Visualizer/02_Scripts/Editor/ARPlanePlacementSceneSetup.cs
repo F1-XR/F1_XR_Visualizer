@@ -1,4 +1,4 @@
-using F1XR.AR;
+using F1XR.RestAPI.Replay.Track.Placement;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -34,7 +34,7 @@ namespace F1XR.Editor
             if (controller == null)
                 controller = xrOrigin.AddComponent<ARPlanePlacementController>();
 
-            var redPointerType = System.Type.GetType("F1XR.AR.RedPointer, Assembly-CSharp");
+            var redPointerType = System.Type.GetType("F1XR.RestAPI.Replay.Track.Placement.RedPointer, Assembly-CSharp");
             Component redPointer = null;
             if (redPointerType != null)
             {
@@ -62,7 +62,7 @@ namespace F1XR.Editor
                 PlaneDetectionMode.NotAxisAligned;
             planeManager.planePrefab = EnsurePlanePrefab();
 
-            var permissionRequesterType = System.Type.GetType("F1XR.AR.QuestScenePermissionRequester, Assembly-CSharp");
+            var permissionRequesterType = System.Type.GetType("F1XR.RestAPI.Replay.Track.Placement.QuestScenePermissionRequester, Assembly-CSharp");
             if (permissionRequesterType != null && xrOrigin.GetComponent(permissionRequesterType) == null)
                 xrOrigin.AddComponent(permissionRequesterType);
 
