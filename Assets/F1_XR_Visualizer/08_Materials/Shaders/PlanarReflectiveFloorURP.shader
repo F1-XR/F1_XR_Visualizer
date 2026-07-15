@@ -8,6 +8,9 @@ Shader "F1XR/PlanarReflectiveFloorURP"
         _ReflectionStrength ("Reflection Strength", Range(0, 1)) = 0.72
         _ReflectionBlur ("Reflection Blur", Range(0, 6)) = 1.15
         _WetSheen ("Wet Sheen", Range(0, 2)) = 0.18
+        _ProbeIntensity ("Probe Reflection Intensity", Range(0, 2)) = 1.0
+        _ProbeRoughness ("Probe Perceptual Roughness", Range(0, 1)) = 0.02
+        _PlanarBlend ("Planar Blend (1 = planar, 0 = probe only)", Range(0, 1)) = 1.0
     }
 
     SubShader
@@ -42,6 +45,9 @@ Shader "F1XR/PlanarReflectiveFloorURP"
                 half _ReflectionStrength;
                 half _ReflectionBlur;
                 half _WetSheen;
+                half _ProbeIntensity;
+                half _ProbeRoughness;
+                half _PlanarBlend;
             CBUFFER_END
 
             struct Attributes
@@ -99,7 +105,6 @@ Shader "F1XR/PlanarReflectiveFloorURP"
 
                 half2 edge = saturate((0.5h - abs((half2)uv - 0.5h)) * 16.0h);
                 half edgeFade = edge.x * edge.y;
-                half3 reflected = SampleBlurredReflection(uv) * _ReflectionTint.rgb * edgeFade;
 
                 half3 normalWS = normalize(input.normalWS);
                 Light mainLight = GetMainLight();
@@ -107,6 +112,16 @@ Shader "F1XR/PlanarReflectiveFloorURP"
                 half3 baseFloor = _BaseColor.rgb + directLight * mainLight.color;
 
                 half3 viewDirection = normalize(GetWorldSpaceViewDir(input.positionWS));
+
+                // Nearby, on-screen reflection comes from the planar camera; anywhere that
+                // data is invalid (screen edges, oblique angles) falls back to the reflection
+                // probe instead of fading to black, and _PlanarBlend lets a platform (mobile)
+                // force probe-only reflection without touching the planar render path.
+                half3 reflectVector = reflect(-viewDirection, normalWS);
+                half3 probeReflection = GlossyEnvironmentReflection(reflectVector, input.positionWS, _ProbeRoughness, 1.0h) * _ProbeIntensity;
+                half3 planarColor = SampleBlurredReflection(uv);
+                half3 reflected = lerp(probeReflection, planarColor, edgeFade * _PlanarBlend) * _ReflectionTint.rgb;
+
                 half fresnel = pow(1.0h - saturate(dot(normalWS, viewDirection)), 3.0h);
                 half sheen = fresnel * 0.1h * _WetSheen;
 
