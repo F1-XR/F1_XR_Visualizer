@@ -18,10 +18,12 @@ namespace F1XR
         [SerializeField, Range(0f, 1f)] float reflectionStrength = 0.68f;
         [SerializeField] string textureProperty = "_PlanarReflectionTex";
         [SerializeField] bool logDiagnostics;
+        [SerializeField] bool disableOnMobile = true;
 
         static readonly int ReflectionTexId = Shader.PropertyToID("_PlanarReflectionTex");
         static readonly int ReflectionViewProjectionId = Shader.PropertyToID("_ReflectionViewProjection");
         static readonly int ReflectionStrengthId = Shader.PropertyToID("_ReflectionStrength");
+        static readonly int PlanarBlendId = Shader.PropertyToID("_PlanarBlend");
 
         Camera reflectionCamera;
         RenderTexture reflectionTexture;
@@ -37,6 +39,16 @@ namespace F1XR
             if (reflectionPlane == null && floorRenderer != null)
                 reflectionPlane = floorRenderer.transform;
 
+            if (disableOnMobile && Application.isMobilePlatform)
+            {
+                // Skip the per-frame planar re-render entirely on mobile/standalone XR and let
+                // the floor shader fall back to the reflection probe (see _PlanarBlend in
+                // PlanarReflectiveFloorURP.shader) instead of paying for a second scene render.
+                ForcePlanarBlend(0f);
+                LogDiagnostic("Mobile platform detected — planar camera render disabled, using reflection probe only.");
+                return;
+            }
+
             RenderPipelineManager.beginCameraRendering += RenderBeforeCamera;
         }
 
@@ -44,6 +56,13 @@ namespace F1XR
         {
             RenderPipelineManager.beginCameraRendering -= RenderBeforeCamera;
             ReleaseResources();
+        }
+
+        void ForcePlanarBlend(float blend)
+        {
+            Material material = floorRenderer != null ? floorRenderer.sharedMaterial : null;
+            if (material != null && material.HasProperty(PlanarBlendId))
+                material.SetFloat(PlanarBlendId, blend);
         }
 
         void RenderBeforeCamera(ScriptableRenderContext context, Camera sourceCamera)
