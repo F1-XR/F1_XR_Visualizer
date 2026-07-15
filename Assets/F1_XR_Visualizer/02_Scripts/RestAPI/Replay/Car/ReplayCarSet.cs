@@ -14,10 +14,12 @@ namespace F1XR.RestAPI.Replay
         private readonly DriverRoster driverRoster = new();
         private readonly CarPresentation carPresentation;
         private readonly CarAudio carAudio;
+        private readonly ReplayPlayer player;
         private int selectedDriverNumber;
 
-        public ReplayCarSet(GameObject carPrefab)
+        public ReplayCarSet(GameObject carPrefab, ReplayPlayer player)
         {
+            this.player = player;
             TeamCarPrefabs teamCarPrefabs = new TeamCarPrefabs(carPrefab);
             carInstances = new CarInstances(teamCarPrefabs, driverRoster);
             carMotion = new ReplayCarMotion(carInstances);
@@ -56,7 +58,10 @@ namespace F1XR.RestAPI.Replay
                 if (list.Count < 2)
                     continue;
 
-                ReplayCarView car = carInstances.GetOrCreate(driver, SetupCar);
+                ReplayCarView car = carInstances.GetOrCreate(
+                    driver,
+                    RemoveCarState,
+                    SetupCar);
 
                 carAudio.EnsureCar(driver, car);
                 if (ranks.TryGetValue(driver, out int rank))
@@ -112,6 +117,13 @@ namespace F1XR.RestAPI.Replay
 
         public void Clear()
         {
+            selectedDriverNumber = 0;
+            carPresentation.SetSelectedDriver(0);
+            ResetPlacement();
+        }
+
+        public void ResetPlacement()
+        {
             carInstances.Clear();
             carMotion.Clear();
             gridStartAudio.Clear(selectedDriverNumber);
@@ -130,6 +142,12 @@ namespace F1XR.RestAPI.Replay
         {
             carPresentation.SetupCar(driver, car);
             carAudio.ConfigureCar(driver, car);
+
+            ReplayCarInteractable interaction = car.GetComponent<ReplayCarInteractable>();
+            if (interaction == null)
+                interaction = car.gameObject.AddComponent<ReplayCarInteractable>();
+            interaction.Configure(car, player);
+            interaction.enabled = player == null || !player.IsTrackEditMode;
         }
 
         private void RemoveCarState(int driver)

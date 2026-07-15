@@ -8,6 +8,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
         readonly Dictionary<Renderer, Material[]> previewOriginalMaterials = new();
         readonly List<Behaviour> previewDisabledBehaviours = new();
         readonly List<Collider> previewDisabledColliders = new();
+        Vector3 previewVelocity;
+        float previewSurfaceYOffset;
+        bool previewPoseInitialized;
 
         void UpdatePreview()
         {
@@ -23,10 +26,41 @@ namespace F1XR.RestAPI.Replay.Track.Build
             if (previewInstance == null)
                 return;
 
-            Vector3 position = currentPose.position + Vector3.up * verticalOffset;
-            Quaternion rotation = useHitRotation ? currentPose.rotation : Quaternion.identity;
+            Quaternion rotation = CalculatePlacementRotation(previewInstance);
+            Vector3 scale = CalculatePlacementScale(previewInstance);
 
-            previewInstance.transform.SetPositionAndRotation(position, rotation);
+            if (!previewPoseInitialized || previewPositionSmoothTime <= 0f)
+            {
+                previewInstance.transform.localScale = scale;
+                previewSurfaceYOffset = CalculateSurfaceYOffset(previewInstance);
+                Vector3 position = CalculatePlacementCenter() + Vector3.up * previewSurfaceYOffset;
+                previewInstance.transform.SetPositionAndRotation(position, rotation);
+                previewPoseInitialized = true;
+            }
+            else
+            {
+                float scaleT = previewScaleSpeed <= 0f
+                    ? 1f
+                    : 1f - Mathf.Exp(-previewScaleSpeed * Time.deltaTime);
+                previewInstance.transform.localScale = Vector3.Lerp(
+                    previewInstance.transform.localScale,
+                    scale,
+                    scaleT);
+                previewSurfaceYOffset = CalculateSurfaceYOffset(previewInstance);
+                Vector3 position = CalculatePlacementCenter() + Vector3.up * previewSurfaceYOffset;
+                previewInstance.transform.position = Vector3.SmoothDamp(
+                    previewInstance.transform.position,
+                    position,
+                    ref previewVelocity,
+                    previewPositionSmoothTime);
+                float t = previewRotationSpeed <= 0f
+                    ? 1f
+                    : 1f - Mathf.Exp(-previewRotationSpeed * Time.deltaTime);
+                previewInstance.transform.rotation = Quaternion.Slerp(
+                    previewInstance.transform.rotation,
+                    rotation,
+                    t);
+            }
 
             if (!previewInstance.activeSelf)
                 previewInstance.SetActive(true);
@@ -47,6 +81,37 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 Debug.LogWarning("[TrackRevealPlacer] Preview renderer를 찾지 못했습니다.", this);
 
             previewInstance.SetActive(false);
+        }
+
+        float CalculateSurfaceYOffset(GameObject target)
+        {
+            if (target == null)
+                return surfaceOffset;
+
+            Vector3 position = target.transform.position;
+            Quaternion rotation = target.transform.rotation;
+            target.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+
+            bool hasBounds = false;
+            Bounds bounds = default;
+            foreach (Renderer renderer in target.GetComponentsInChildren<Renderer>(includeInactive: true))
+            {
+                if (renderer == null || !renderer.enabled)
+                    continue;
+
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            target.transform.SetPositionAndRotation(position, rotation);
+            return hasBounds ? surfaceOffset - bounds.min.y : surfaceOffset;
         }
 
         void DisablePreviewBehaviours(GameObject target)
@@ -176,6 +241,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 previewInstance = null;
             }
 
+            previewPoseInitialized = false;
+            previewVelocity = Vector3.zero;
+            ResetPlacementRotation();
             ClearPreviewCaches();
         }
 

@@ -78,7 +78,7 @@ namespace F1XR.RestAPI.Replay
 
         private void LateUpdate()
         {
-            if (selected)
+            if (selected || hovered)
                 UpdateSelectionEffect();
 
             if (leaderHighlightVisible && rank == 1)

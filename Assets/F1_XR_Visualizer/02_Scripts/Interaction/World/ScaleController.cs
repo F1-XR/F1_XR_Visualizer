@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR;
@@ -60,6 +61,7 @@ namespace F1XR.Interaction.World
         RigidbodyConstraints startConstraints;
 
         public bool IsScaling => scaling;
+        public event Action ScaleStarted;
 
         void Awake()
         {
@@ -144,6 +146,7 @@ namespace F1XR.Interaction.World
                     return;
 
                 scaling = true;
+                ScaleStarted?.Invoke();
                 startHandDistance = handDistance;
                 startHandVector = handVector;
                 startPivotWorld = Vector3.Lerp(leftGrabPoint, rightGrabPoint, 0.5f);
@@ -292,6 +295,7 @@ namespace F1XR.Interaction.World
                     return true;
 
                 scaling = true;
+                ScaleStarted?.Invoke();
                 startHandDistance = controllerDistance;
                 startHandVector = controllerVector;
                 startPivotWorld = Vector3.Lerp(leftPoint, rightPoint, 0.5f);

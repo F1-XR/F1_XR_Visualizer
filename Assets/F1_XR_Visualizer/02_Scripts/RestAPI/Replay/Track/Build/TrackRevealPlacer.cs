@@ -6,6 +6,12 @@ using UnityEngine.XR.ARFoundation;
 
 namespace F1XR.RestAPI.Replay.Track.Build
 {
+    public enum TrackPlacementMode
+    {
+        TableAutomatic,
+        Free
+    }
+
     public sealed partial class TrackRevealPlacer : MonoBehaviour
     {
         [Header("References")]
@@ -23,10 +29,33 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField] float inputArmDelay = 0.5f;
 
         [Header("Preview")]
+        [SerializeField] TrackPlacementMode placementMode = TrackPlacementMode.TableAutomatic;
         [SerializeField] Material previewMaterial;
         [SerializeField] Color previewColor = new Color(0.2f, 1f, 0.35f, 0.35f);
-        [SerializeField] float verticalOffset = 0.04f;
+        [FormerlySerializedAs("verticalOffset")]
+        [SerializeField, Tooltip("Final gap in metres between the lowest rendered track point and the detected surface.")]
+        float surfaceOffset = 0.005f;
         [SerializeField] bool useHitRotation = true;
+        [SerializeField] bool alignLongAxisToSurface = true;
+        [SerializeField, Min(1f)] float minimumSurfaceAspectRatio = 1.15f;
+        [SerializeField, Min(0f)] float surfaceRotationLockDelay = 0.3f;
+        [SerializeField, Range(0f, 45f)] float surfaceRotationStabilityAngle = 12f;
+        [SerializeField, Min(0f)] float surfaceRotationUnlockDelay = 0.5f;
+        [SerializeField, Min(0f)] float surfaceSwitchDistance = 0.75f;
+        [SerializeField, Min(0f)] float surfaceSwitchHeight = 0.2f;
+        [SerializeField] bool centerOnSurface = true;
+        [SerializeField] bool fitToSurfaceBounds = true;
+        [SerializeField, Range(0.1f, 1f)] float surfaceFit = 1f;
+        [SerializeField, Min(0f)] float previewPositionSmoothTime = 0.06f;
+        [SerializeField, Min(0f)] float previewRotationSpeed = 18f;
+        [SerializeField, Min(0f)] float previewScaleSpeed = 10f;
+
+        [Header("Anchor Stabilization")]
+        [SerializeField] bool stabilizeAnchor = true;
+        [SerializeField, Min(0f)] float anchorPositionSpeed = 12f;
+        [SerializeField, Min(0f)] float anchorRotationSpeed = 10f;
+        [SerializeField, Min(0f)] float anchorPositionDeadZone = 0.002f;
+        [SerializeField, Min(0f)] float anchorRotationDeadZone = 0.2f;
 
         [Header("Build Animation")]
         [SerializeField] float buildDuration = 2.0f;
@@ -37,7 +66,18 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField] bool restoreMaterialsAfterBuild = true;
         [SerializeField] bool allowReplaceExisting = false;
 
+        [Header("Placement Persistence")]
+        [SerializeField] bool restoreSavedPlacement = true;
+        [SerializeField] string persistenceKey = "F1XR.TrackPlacement.v1";
+        [SerializeField, Min(0f)] float persistenceSaveDelay = 0.4f;
+
         public bool HasPlacement => spawnedInstance != null;
+        public bool IsPlacementActive => placementActive;
+        public bool HasValidSurface => hasCurrentHit;
+        public bool IsEditMode => editState != null && editState.IsEditMode;
+        public bool CanUndo => editState != null && editState.CanUndo;
+        public TrackPlacementMode PlacementMode => placementMode;
+        public bool HasSavedPlacement => PlayerPrefs.GetInt(PersistenceName("Valid"), 0) == 1;
         public Transform PlacementTransform => spawnedInstance != null ? spawnedInstance.transform : null;
         public Transform CarsTransform => spawnedInstance != null ? EnsureCarsRoot(spawnedInstance.transform) : null;
 
@@ -48,13 +88,33 @@ namespace F1XR.RestAPI.Replay.Track.Build
         Pose currentPose;
         ARPlane currentPlane;
         bool hasCurrentHit;
+        ARPlane rotationCandidatePlane;
+        Quaternion rotationCandidate;
+        float rotationCandidateSince;
+        bool hasRotationCandidate;
+        ARPlane lockedRotationPlane;
+        Quaternion lockedPlacementRotation;
+        bool hasLockedPlacementRotation;
+        Vector3 lockedSurfaceCenter;
+        Quaternion placementFallbackRotation;
+        bool hasPlacementFallbackRotation;
+        bool surfaceHitMissing;
+        bool rotationResetWhileMissing;
+        float surfaceHitMissingSince;
 
         bool inputsArmed;
         float enableTime;
         bool wasLeftTriggerPressed;
         bool wasRightTriggerPressed;
+        bool placementActive = true;
 
         Material runtimePreviewMaterial;
+        TrackEditState editState;
+        Vector3 observedPosition;
+        Quaternion observedRotation;
+        Vector3 observedScale;
+        float persistenceSaveTime;
+        bool persistenceDirty;
 
         static Transform EnsureCarsRoot(Transform placementRoot)
         {
@@ -84,6 +144,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             fitTrackMapToBounds = fitMapToBounds;
             trackMapTargetXZSize = mapTargetXZSize;
             ClearPreview();
+            TryRestoreSavedPlacement();
         }
 
         void Reset()
@@ -110,12 +171,18 @@ namespace F1XR.RestAPI.Replay.Track.Build
             inputsArmed = false;
             wasLeftTriggerPressed = false;
             wasRightTriggerPressed = false;
+
+            if (placementController != null)
+                placementController.PlacementRequested += ConfirmPlacement;
         }
 
         void OnDisable()
         {
             if (placeAction.action != null)
                 placeAction.action.Disable();
+
+            if (placementController != null)
+                placementController.PlacementRequested -= ConfirmPlacement;
 
             HidePreview();
         }
@@ -143,6 +210,14 @@ namespace F1XR.RestAPI.Replay.Track.Build
                     HidePreview();
                     return;
                 }
+            }
+
+            UpdatePlacementPersistence();
+
+            if (!placementActive)
+            {
+                HidePreview();
+                return;
             }
 
             if (spawnedInstance != null && !allowReplaceExisting)
@@ -175,10 +250,204 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 ConfirmPlacement();
         }
 
+        public void BeginPlacement()
+        {
+            if (spawnedInstance != null)
+                return;
+
+            placementActive = true;
+            enableTime = Time.time;
+            inputsArmed = false;
+        }
+
+        public void SetPlacementMode(TrackPlacementMode mode)
+        {
+            if (placementMode == mode || spawnedInstance != null)
+                return;
+
+            placementMode = mode;
+            ClearPreview();
+        }
+
+        public void CancelPlacement()
+        {
+            if (spawnedInstance != null)
+                return;
+
+            placementActive = false;
+            hasCurrentHit = false;
+            HidePreview();
+        }
+
+        public void ToggleEditMode()
+        {
+            if (editState != null)
+                editState.SetEditMode(!editState.IsEditMode);
+        }
+
+        public void UndoManipulation()
+        {
+            editState?.Undo();
+        }
+
+        public void ResetPlacement()
+        {
+            ClearSavedPlacement();
+            ClearSpawned();
+            BeginPlacement();
+        }
+
+        void TryRestoreSavedPlacement()
+        {
+            if (!restoreSavedPlacement || spawnedInstance != null || placementPrefab == null || !HasSavedPlacement)
+                return;
+
+            GameObject target = Instantiate(placementPrefab);
+            target.name = placementPrefab.name;
+            ApplyTrackMap(target);
+            ConfigurePhysics(target);
+
+            Vector3 position = ReadVector3("Position", Vector3.zero);
+            Quaternion rotation = ReadQuaternion("Rotation", Quaternion.identity);
+            Vector3 scale = ReadVector3("Scale", Vector3.one);
+            if (scale.x <= 0f || scale.y <= 0f || scale.z <= 0f)
+                scale = Vector3.one;
+
+            target.transform.SetPositionAndRotation(position, rotation);
+            target.transform.localScale = scale;
+            spawnedInstance = target;
+            placementActive = false;
+            ConfigureEditState(target);
+            ObserveCurrentTransform();
+        }
+
+        void UpdatePlacementPersistence()
+        {
+            if (spawnedInstance == null)
+                return;
+
+            Transform placement = spawnedInstance.transform;
+            bool changed = placement.position != observedPosition ||
+                placement.rotation != observedRotation ||
+                placement.localScale != observedScale;
+            if (changed)
+            {
+                ObserveCurrentTransform();
+                persistenceDirty = true;
+                persistenceSaveTime = Time.unscaledTime + persistenceSaveDelay;
+            }
+
+            if (persistenceDirty && Time.unscaledTime >= persistenceSaveTime)
+                SavePlacement();
+        }
+
+        void ObserveCurrentTransform()
+        {
+            if (spawnedInstance == null)
+                return;
+
+            Transform placement = spawnedInstance.transform;
+            observedPosition = placement.position;
+            observedRotation = placement.rotation;
+            observedScale = placement.localScale;
+        }
+
+        void SavePlacement()
+        {
+            if (!restoreSavedPlacement || spawnedInstance == null)
+                return;
+
+            Transform placement = spawnedInstance.transform;
+            WriteVector3("Position", placement.position);
+            WriteQuaternion("Rotation", placement.rotation);
+            WriteVector3("Scale", placement.localScale);
+            PlayerPrefs.SetInt(PersistenceName("Valid"), 1);
+            PlayerPrefs.Save();
+            persistenceDirty = false;
+        }
+
+        void ClearSavedPlacement()
+        {
+            PlayerPrefs.DeleteKey(PersistenceName("Valid"));
+            PlayerPrefs.Save();
+            persistenceDirty = false;
+        }
+
+        string PersistenceName(string suffix)
+        {
+            return $"{persistenceKey}.{suffix}";
+        }
+
+        void WriteVector3(string name, Vector3 value)
+        {
+            PlayerPrefs.SetFloat(PersistenceName(name + ".x"), value.x);
+            PlayerPrefs.SetFloat(PersistenceName(name + ".y"), value.y);
+            PlayerPrefs.SetFloat(PersistenceName(name + ".z"), value.z);
+        }
+
+        Vector3 ReadVector3(string name, Vector3 fallback)
+        {
+            return new Vector3(
+                PlayerPrefs.GetFloat(PersistenceName(name + ".x"), fallback.x),
+                PlayerPrefs.GetFloat(PersistenceName(name + ".y"), fallback.y),
+                PlayerPrefs.GetFloat(PersistenceName(name + ".z"), fallback.z));
+        }
+
+        void WriteQuaternion(string name, Quaternion value)
+        {
+            PlayerPrefs.SetFloat(PersistenceName(name + ".x"), value.x);
+            PlayerPrefs.SetFloat(PersistenceName(name + ".y"), value.y);
+            PlayerPrefs.SetFloat(PersistenceName(name + ".z"), value.z);
+            PlayerPrefs.SetFloat(PersistenceName(name + ".w"), value.w);
+        }
+
+        Quaternion ReadQuaternion(string name, Quaternion fallback)
+        {
+            Quaternion value = new(
+                PlayerPrefs.GetFloat(PersistenceName(name + ".x"), fallback.x),
+                PlayerPrefs.GetFloat(PersistenceName(name + ".y"), fallback.y),
+                PlayerPrefs.GetFloat(PersistenceName(name + ".z"), fallback.z),
+                PlayerPrefs.GetFloat(PersistenceName(name + ".w"), fallback.w));
+            float magnitudeSquared = value.x * value.x + value.y * value.y +
+                value.z * value.z + value.w * value.w;
+            return magnitudeSquared > 0.001f ? Quaternion.Normalize(value) : fallback;
+        }
+
         void UpdatePlacementHit()
         {
             hasCurrentHit = placementController != null &&
                 placementController.TryGetPlacementHit(out currentPose, out currentPlane);
+
+            if (hasCurrentHit)
+            {
+                surfaceHitMissing = false;
+                rotationResetWhileMissing = false;
+                return;
+            }
+
+            if (!surfaceHitMissing)
+            {
+                surfaceHitMissing = true;
+                rotationResetWhileMissing = false;
+                surfaceHitMissingSince = Time.unscaledTime;
+                return;
+            }
+
+            if (!rotationResetWhileMissing &&
+                Time.unscaledTime - surfaceHitMissingSince >= surfaceRotationUnlockDelay)
+            {
+                ResetPlacementRotation();
+                rotationResetWhileMissing = true;
+            }
+        }
+
+        void ResetPlacementRotation()
+        {
+            rotationCandidatePlane = null;
+            hasRotationCandidate = false;
+            lockedRotationPlane = null;
+            hasLockedPlacementRotation = false;
+            hasPlacementFallbackRotation = false;
         }
 
         static bool HasEnabledRenderer(GameObject target)

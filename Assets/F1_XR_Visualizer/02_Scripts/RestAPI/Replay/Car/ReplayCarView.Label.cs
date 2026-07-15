@@ -254,7 +254,7 @@ namespace F1XR.RestAPI.Replay
 
         private bool ShouldShowLabel()
         {
-            return labelVisible || selected || rank == 1;
+            return labelVisible || hovered || selected || rank == 1;
         }
     }
 }

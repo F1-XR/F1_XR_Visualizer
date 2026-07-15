@@ -250,7 +250,7 @@ namespace F1XR.RestAPI.Replay
 
             if (isPlaying)
             {
-                if (!source.isPlaying)
+                if (source.isActiveAndEnabled && !source.isPlaying)
                     source.Play();
             }
             else if (source.isPlaying)

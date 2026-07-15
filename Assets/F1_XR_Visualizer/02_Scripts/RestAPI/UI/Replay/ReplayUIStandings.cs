@@ -21,7 +21,7 @@ namespace F1XR.RestAPI.UI
 
             positionChangeTracker.BeginFrame(player.CurrentTime);
 
-            HashSet<int> visibleDrivers = new();
+            visibleDrivers.Clear();
 
             if (positions != null)
             {
