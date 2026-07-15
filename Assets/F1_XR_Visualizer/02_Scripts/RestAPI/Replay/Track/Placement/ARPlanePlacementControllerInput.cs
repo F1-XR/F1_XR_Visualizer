@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.XR;
@@ -7,6 +8,20 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 {
     public sealed partial class ARPlanePlacementController
     {
+        private static readonly List<UnityEngine.XR.InputDevice> s_InputDevices = new();
+
+        private bool wasLeftTriggerPressed;
+        private bool wasRightTriggerPressed;
+        private bool placementInputsArmed;
+        private float enableTime;
+        private InputDeviceCharacteristics lastTriggerHand;
+        private InputAction leftPointerPos;
+        private InputAction leftPointerRot;
+        private InputAction leftTrackingState;
+        private InputAction rightPointerPos;
+        private InputAction rightPointerRot;
+        private InputAction rightTrackingState;
+
         bool IsAnyPlacementInputHeld()
         {
             return wasLeftTriggerPressed ||
