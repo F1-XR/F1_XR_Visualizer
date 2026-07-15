@@ -956,9 +956,17 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: -8817254586065510693, guid: 06f7ca9482c3f50428badfc7a03d8843, type: 3}
+      propertyPath: m_FarAttachMode
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8817254586065510693, guid: 06f7ca9482c3f50428badfc7a03d8843, type: 3}
       propertyPath: m_AttachTransform
       value: 
       objectReference: {fileID: 1125427761}
+    - target: {fileID: -8817254586065510693, guid: 06f7ca9482c3f50428badfc7a03d8843, type: 3}
+      propertyPath: m_AttachEaseInTime
+      value: 0.15
+      objectReference: {fileID: 0}
     - target: {fileID: -8817254586065510693, guid: 06f7ca9482c3f50428badfc7a03d8843, type: 3}
       propertyPath: m_UseDynamicAttach
       value: 0
@@ -1059,9 +1067,17 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1106106710}
     - target: {fileID: -2340074986314893399, guid: ba777380f8679924989895475d221c37, type: 3}
+      propertyPath: m_FarAttachMode
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -2340074986314893399, guid: ba777380f8679924989895475d221c37, type: 3}
       propertyPath: m_AttachTransform
       value: 
       objectReference: {fileID: 267365525}
+    - target: {fileID: -2340074986314893399, guid: ba777380f8679924989895475d221c37, type: 3}
+      propertyPath: m_AttachEaseInTime
+      value: 0.15
+      objectReference: {fileID: 0}
     - target: {fileID: -2340074986314893399, guid: ba777380f8679924989895475d221c37, type: 3}
       propertyPath: m_UseDynamicAttach
       value: 0
@@ -1261,7 +1277,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &949741819
 Transform:
   m_ObjectHideFlags: 0
@@ -7196,9 +7212,17 @@ PrefabInstance:
       value: F1_Tyre_Settings
       objectReference: {fileID: 0}
     - target: {fileID: 4421240540223620916, guid: a5811b14c178237409fd78d43bc1dabf, type: 3}
+      propertyPath: m_FarAttachMode
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4421240540223620916, guid: a5811b14c178237409fd78d43bc1dabf, type: 3}
       propertyPath: m_AttachTransform
       value: 
       objectReference: {fileID: 1320829099}
+    - target: {fileID: 4421240540223620916, guid: a5811b14c178237409fd78d43bc1dabf, type: 3}
+      propertyPath: m_AttachEaseInTime
+      value: 0.15
+      objectReference: {fileID: 0}
     - target: {fileID: 4421240540223620916, guid: a5811b14c178237409fd78d43bc1dabf, type: 3}
       propertyPath: m_UseDynamicAttach
       value: 0
@@ -7271,9 +7295,17 @@ PrefabInstance:
       value: -3.76
       objectReference: {fileID: 0}
     - target: {fileID: 5672187815894290391, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+      propertyPath: m_FarAttachMode
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5672187815894290391, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_AttachTransform
       value: 
       objectReference: {fileID: 1854592217}
+    - target: {fileID: 5672187815894290391, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
+      propertyPath: m_AttachEaseInTime
+      value: 0.15
+      objectReference: {fileID: 0}
     - target: {fileID: 5672187815894290391, guid: 3eb9d5139a3746e48895c46d9221a0d8, type: 3}
       propertyPath: m_UseDynamicAttach
       value: 0
@@ -9147,7 +9179,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1873976511
 Transform:
   m_ObjectHideFlags: 0
@@ -9896,7 +9928,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &2147431193
 Transform:
   m_ObjectHideFlags: 0
