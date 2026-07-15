@@ -12,6 +12,7 @@ namespace F1XR.RestAPI.Replay
         private const float SelectionRingInnerRatio = 0.56f;
         private const float SelectionPulseInnerRatio = 0.72f;
         private const float SelectionRingAlpha = 0.88f;
+        private const float HoverRingAlpha = 0.34f;
         private const float SelectionPulseAlpha = 0.82f;
         private const float SelectionRingRotationSpeed = 32f;
         private const float SelectionPulseDuration = 0.58f;
@@ -44,6 +45,20 @@ namespace F1XR.RestAPI.Replay
         private float selectionAge;
         private float selectionPulseAge = SelectionPulseDuration;
         private bool selected;
+        private bool hovered;
+
+        public void SetHovered(bool value)
+        {
+            if (hovered == value)
+                return;
+
+            hovered = value;
+            if (!selected && !hovered)
+                SetSelectionObjectsActive(false);
+
+            SetLabelObjectsActive(ShouldShowLabel());
+            ApplySelectionColor();
+        }
 
         public void SetSelected(bool value)
         {
@@ -190,7 +205,8 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplySelectionColor()
         {
-            SetMaterialColor(selectionRingMaterial, WithAlpha(CurrentSelectionFxColor(), SelectionRingAlpha));
+            float ringAlpha = selected ? SelectionRingAlpha : HoverRingAlpha;
+            SetMaterialColor(selectionRingMaterial, WithAlpha(CurrentSelectionFxColor(), ringAlpha));
             SetMaterialColor(selectionPulseMaterial, WithAlpha(CurrentSelectionFxColor(), SelectionPulseAlpha));
         }
 
@@ -198,6 +214,8 @@ namespace F1XR.RestAPI.Replay
         {
             EnsureSelectionEffect();
             SetSelectionObjectsActive(true);
+            if (!selected && selectionPulse != null)
+                selectionPulse.gameObject.SetActive(false);
             ApplyBodyHighlight();
 
             if (!TryGetCarBounds(out Bounds bounds))

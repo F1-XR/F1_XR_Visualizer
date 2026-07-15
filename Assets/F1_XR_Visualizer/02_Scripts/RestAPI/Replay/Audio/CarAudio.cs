@@ -175,7 +175,6 @@ namespace F1XR.RestAPI.Replay
         {
             engineSounds.Remove(driver);
             runtimeSettings.Remove(driver);
-            nativeProfiles.Remove(driver);
         }
 
         public void UpdateTelemetry(

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -39,6 +40,11 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField] private float verticalOffset = 0.04f;
         [SerializeField] private float defaultCubeSize = 0.08f;
 
+        [Header("No Room Data Fallback")]
+        [SerializeField] private bool allowWorldFloorFallback;
+        [SerializeField] private float fallbackFloorHeight;
+        [SerializeField] private float fallbackMaximumDistance = 8f;
+
         [Header("Optional Input")]
         [SerializeField] private InputActionProperty placeAction;
         [SerializeField] private InputSourcePriority inputSourcePriority = InputSourcePriority.HandFirst;
@@ -55,6 +61,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         public Transform PlacementTransform => spawnedCube != null ? spawnedCube.transform : null;
         public Vector3 PlacementPosition => spawnedCube != null ? spawnedCube.transform.position : Vector3.zero;
         public GameObject PlacementPrefab => cubePrefab;
+        public event Action PlacementRequested;
 
         public void SetPlacementPrefab(
             GameObject prefab,
@@ -129,16 +136,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private void Update()
         {
-            if (!handlePlacementInput)
-            {
-                if (useHandPinchPlacement && handSubsystem == null)
-                    TrySubscribeHandSubsystem();
-
-                return;
-            }
-
-            var triggerPressedThisFrame = CanUseControllers() &&
-                WasTriggerPressedThisFrame();
+            if (useHandPinchPlacement && handSubsystem == null)
+                TrySubscribeHandSubsystem();
 
             if (!placementInputsArmed)
             {
@@ -148,20 +147,23 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 return;
             }
 
+            if (!handlePlacementInput)
+                return;
+
+            var triggerPressedThisFrame = CanUseControllers() &&
+                WasTriggerPressedThisFrame();
+
             if (placeAction.action != null && placeAction.action.WasPressedThisFrame())
             {
-                TryPlaceCube();
+                RequestPlacement();
                 return;
             }
 
             if (triggerPressedThisFrame)
             {
-                TryPlaceCube();
+                RequestPlacement();
                 return;
             }
-
-            if (useHandPinchPlacement && handSubsystem == null)
-                TrySubscribeHandSubsystem();
         }
 
         private static readonly List<XRHandSubsystem> s_HandSubsystems = new();
@@ -223,6 +225,14 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 lastPinchHandedness = Handedness.Left;
 
             if (placementInputsArmed && (leftPinchStarted || rightPinchStarted))
+                RequestPlacement();
+        }
+
+        private void RequestPlacement()
+        {
+            if (PlacementRequested != null)
+                PlacementRequested.Invoke();
+            else if (handlePlacementInput)
                 TryPlaceCube();
         }
 
@@ -321,13 +331,14 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         }
 
         private static readonly List<ARRaycastHit> s_Hits = new();
+        private ARPlane preferredPlacementPlane;
 
         public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
             pose = default;
             plane = null;
 
-            if (raycastManager == null || !TryGetPlacementRay(out var ray))
+            if (!TryGetPlacementRay(out var ray))
                 return false;
 
             return TryGetPlacementHit(ray, out pose, out plane);
@@ -365,24 +376,59 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             pose = default;
             plane = null;
 
-            if (raycastManager == null)
-                return false;
-
-            if (!raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
-                return false;
-
-            foreach (var hit in s_Hits)
+            if (raycastManager != null && raycastManager.enabled &&
+                raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
             {
-                var hitPlane = planeManager != null ? planeManager.GetPlane(hit.trackableId) : null;
-                if (!ShouldAcceptPlane(hit.pose, hitPlane))
-                    continue;
+                if (preferredPlacementPlane != null)
+                {
+                    foreach (var hit in s_Hits)
+                    {
+                        var hitPlane = planeManager != null ? planeManager.GetPlane(hit.trackableId) : null;
+                        if (hitPlane == null ||
+                            hitPlane.trackableId != preferredPlacementPlane.trackableId ||
+                            !ShouldAcceptPlane(hit.pose, hitPlane))
+                        {
+                            continue;
+                        }
 
-                pose = hit.pose;
-                plane = hitPlane;
-                return true;
+                        pose = hit.pose;
+                        plane = hitPlane;
+                        return true;
+                    }
+                }
+
+                foreach (var hit in s_Hits)
+                {
+                    var hitPlane = planeManager != null ? planeManager.GetPlane(hit.trackableId) : null;
+                    if (!ShouldAcceptPlane(hit.pose, hitPlane))
+                        continue;
+
+                    pose = hit.pose;
+                    plane = hitPlane;
+                    preferredPlacementPlane = hitPlane;
+                    return true;
+                }
             }
 
-            return false;
+            return TryGetWorldFloorFallback(ray, out pose);
+        }
+
+        private bool TryGetWorldFloorFallback(Ray ray, out Pose pose)
+        {
+            pose = default;
+            if (!allowWorldFloorFallback)
+                return false;
+
+            var floor = new Plane(Vector3.up, new Vector3(0f, fallbackFloorHeight, 0f));
+            if (!floor.Raycast(ray, out var distance) ||
+                distance <= 0f ||
+                distance > fallbackMaximumDistance)
+            {
+                return false;
+            }
+
+            pose = new Pose(ray.GetPoint(distance), Quaternion.identity);
+            return true;
         }
 
         private bool TryGetPlacementRay(out Ray ray)
@@ -423,11 +469,11 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 return false;
 
             var classifications = plane.classifications;
-            if (preferTableClassifiedPlanes && HasClassification(classifications, PlaneClassifications.Table))
-                return true;
-
             if (rejectFloorPlanes && HasClassification(classifications, PlaneClassifications.Floor))
                 return false;
+
+            if (preferTableClassifiedPlanes && HasClassification(classifications, PlaneClassifications.Table))
+                return true;
 
             return hitPose.position.y >= minimumPlacementHeight;
         }

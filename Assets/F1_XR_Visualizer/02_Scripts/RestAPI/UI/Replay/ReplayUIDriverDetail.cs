@@ -198,12 +198,17 @@ namespace F1XR.RestAPI.UI
 
         private void ShowDriverDetail(int driverNumber)
         {
+            ShowDriverDetail(driverNumber, true);
+        }
+
+        private void ShowDriverDetail(int driverNumber, bool notifyPlayer)
+        {
             if (driverNumber <= 0)
                 return;
 
             selectedDriverNumber = driverNumber;
 
-            if (player != null)
+            if (notifyPlayer && player != null && player.SelectedDriverNumber != driverNumber)
                 player.SetSelectedDriver(driverNumber);
 
             EnsureDriverDetailPanel();
@@ -221,9 +226,14 @@ namespace F1XR.RestAPI.UI
 
         private void HideDriverDetail()
         {
+            HideDriverDetail(true);
+        }
+
+        private void HideDriverDetail(bool notifyPlayer)
+        {
             selectedDriverNumber = 0;
 
-            if (player != null)
+            if (notifyPlayer && player != null && player.SelectedDriverNumber != 0)
                 player.SetSelectedDriver(0);
 
             if (driverDetailRoot != null)

@@ -32,7 +32,9 @@ namespace F1XR.RestAPI.Replay
 
         private void Start()
         {
-            if (autoStart)
+            bool selectedReplayPending = ReplayLoad.Manifest != null;
+            bool replayAlreadyLoaded = player != null && player.HasDataset;
+            if (autoStart && !selectedReplayPending && !replayAlreadyLoaded)
                 StartCoroutine(LoadDefaultReplay());
         }
 

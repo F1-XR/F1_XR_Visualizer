@@ -5151,6 +5151,7 @@ GameObject:
   - component: {fileID: 2086967211}
   - component: {fileID: 2086967210}
   - component: {fileID: 2086967204}
+  - component: {fileID: 2086967214}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5191,15 +5192,37 @@ MonoBehaviour:
     m_Reference: {fileID: 0}
   useControllerTriggerFallback: 1
   inputArmDelay: 0.5
+  placementMode: 0
   previewMaterial: {fileID: 0}
   previewColor: {r: 0.2, g: 1, b: 0.35, a: 0.35}
-  verticalOffset: 0.01
+  surfaceOffset: 0.005
   useHitRotation: 1
+  alignLongAxisToSurface: 1
+  minimumSurfaceAspectRatio: 1.15
+  surfaceRotationLockDelay: 0.3
+  surfaceRotationStabilityAngle: 12
+  surfaceRotationUnlockDelay: 0.5
+  surfaceSwitchDistance: 0.75
+  surfaceSwitchHeight: 0.2
+  centerOnSurface: 1
+  fitToSurfaceBounds: 1
+  surfaceFit: 1
+  previewPositionSmoothTime: 0.06
+  previewRotationSpeed: 18
+  previewScaleSpeed: 10
+  stabilizeAnchor: 1
+  anchorPositionSpeed: 12
+  anchorRotationSpeed: 10
+  anchorPositionDeadZone: 0.002
+  anchorRotationDeadZone: 0.2
   buildDuration: 3
   buildEdgeWidth: 0.01
   buildEdgeColor: {r: 1, g: 0.55, b: 0.05, a: 1}
   restoreMaterialsAfterBuild: 1
   allowReplaceExisting: 0
+  restoreSavedPlacement: 0
+  persistenceKey: F1XR.TrackPlacement.v1
+  persistenceSaveDelay: 0.4
 --- !u!114 &2086967205
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5244,6 +5267,9 @@ MonoBehaviour:
   minimumPlacementHeight: 0.35
   verticalOffset: 0.04
   defaultCubeSize: 0.08
+  allowWorldFloorFallback: 0
+  fallbackFloorHeight: 0
+  fallbackMaximumDistance: 8
   placeAction:
     m_UseReference: 0
     m_Action:
@@ -5383,6 +5409,24 @@ MonoBehaviour:
   m_CameraFloorOffsetObject: {fileID: 510795420}
   m_RequestedTrackingOriginMode: 0
   m_CameraYOffset: 1.1176
+--- !u!114 &2086967214
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6d28f00fbefa9e64a9b7926435e89e6b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.HandInputModeSwitcher
+  leftHandTrackingEvents: {fileID: 0}
+  rightHandTrackingEvents: {fileID: 0}
+  leftHandInteractor: {fileID: 0}
+  leftController: {fileID: 0}
+  rightHandInteractor: {fileID: 0}
+  rightController: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

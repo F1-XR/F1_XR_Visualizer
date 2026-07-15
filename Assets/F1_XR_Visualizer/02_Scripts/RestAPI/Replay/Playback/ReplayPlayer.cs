@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -51,6 +52,7 @@ namespace F1XR.RestAPI.Replay
         private ReplayManifestPoller manifestPoller;
         private ReplayCarSet replayCars;
         private ReplayAudio replayAudio;
+        private int selectedDriverNumber;
         private readonly ReplayTimeline timeline = new();
         private readonly ReplayReadyStart readyStart = new();
     
@@ -66,6 +68,16 @@ namespace F1XR.RestAPI.Replay
         public bool IsPlaying => timeline.IsPlaying;
         public float Duration => timeline.Duration;
         public float ReadyUntilTime => timeline.ReadyUntilTime;
+        public bool HasDataset => _manifest != null;
+        public int SelectedDriverNumber => selectedDriverNumber;
+        public bool IsTrackPlaced => HasPlacedTrack();
+        public bool IsTrackPlacementActive => buildPlacer != null && buildPlacer.IsPlacementActive;
+        public bool HasValidTrackSurface => buildPlacer != null && buildPlacer.HasValidSurface;
+        public bool IsAutomaticTrackPlacement => buildPlacer == null ||
+            buildPlacer.PlacementMode == TrackPlacementMode.TableAutomatic;
+        public bool IsTrackEditMode => buildPlacer != null && buildPlacer.IsEditMode;
+        public bool CanUndoTrackManipulation => buildPlacer != null && buildPlacer.CanUndo;
+        public event Action<int> SelectedDriverChanged;
 
         public float TimelineToNormalized(float time)
         {
@@ -86,7 +98,7 @@ namespace F1XR.RestAPI.Replay
             if (placement == null)
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
 
-            replayCars = new ReplayCarSet(carPrefab);
+            replayCars = new ReplayCarSet(carPrefab, this);
             replayCars.SetTeamPrefabs(teamCarPrefabs);
             replayCars.SetPlacement(placement);
             if (buildPlacer == null)
@@ -99,7 +111,7 @@ namespace F1XR.RestAPI.Replay
             replayAudio = new ReplayAudio(replayCars);
             replayAudio.Reset(
                 engineSound,
-                HasPlacedTrack(),
+                AreReplayCarsReady(),
                 ApplyDriverMetadata);
         }
     
@@ -150,7 +162,7 @@ namespace F1XR.RestAPI.Replay
             replayAudio ??= new ReplayAudio(replayCars);
             replayAudio.Reset(
                 engineSound,
-                HasPlacedTrack(),
+                AreReplayCarsReady(),
                 ApplyDriverMetadata);
 
             manifestPoller ??= new ReplayManifestPoller(this);
@@ -218,12 +230,8 @@ namespace F1XR.RestAPI.Replay
                 yield return replayChunks.Load(chunkIndex, TryAutoPlay);
 
             LoadNearChunks();
-            replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
-            replayCars.Show(
-                replayChunks.LocationsByDriver,
-                replayChunks.LocationIndices,
-                timeline.CurrentTime,
-                replayChunks.GetPositions(timeline.CurrentTime));
+            if (AreReplayCarsReady())
+                ShowReplayCars();
             ApplyStartingLightTimeline();
             ApplyGridStartTimeline();
 
@@ -237,9 +245,10 @@ namespace F1XR.RestAPI.Replay
             EnsureEngineSound();
             replayCars.SetLabelsVisible(showCarLabels);
             bool trackPlaced = HasPlacedTrack();
+            bool replayCarsReady = AreReplayCarsReady();
             replayAudio.Update(
                 engineSound,
-                trackPlaced,
+                replayCarsReady,
                 timeline.IsPlaying,
                 ApplyDriverMetadata);
 
@@ -249,8 +258,16 @@ namespace F1XR.RestAPI.Replay
             ApplyStartingLightTimeline();
             ApplyGridStartTimeline();
 
-            if (!timeline.IsPlaying || _manifest == null)
+            if (_manifest == null)
                 return;
+
+            if (!timeline.IsPlaying)
+            {
+                if (replayCarsReady && !replayCars.HasCars)
+                    ShowReplayCars();
+
+                return;
+            }
 
             timeline.Advance(Time.deltaTime, playbackSpeed);
             ApplyStartingLightTimeline();
@@ -263,6 +280,12 @@ namespace F1XR.RestAPI.Replay
             }
 
             LoadNearChunks();
+            if (replayCarsReady)
+                ShowReplayCars();
+        }
+
+        private void ShowReplayCars()
+        {
             replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             replayCars.Show(
                 replayChunks.LocationsByDriver,
@@ -347,7 +370,55 @@ namespace F1XR.RestAPI.Replay
 
         public void SetSelectedDriver(int driverNumber)
         {
+            driverNumber = Mathf.Max(0, driverNumber);
+            if (selectedDriverNumber == driverNumber)
+                return;
+
+            selectedDriverNumber = driverNumber;
             replayCars.SetSelectedDriver(driverNumber);
+            SelectedDriverChanged?.Invoke(driverNumber);
+        }
+
+        public void ConfirmTrackPlacement()
+        {
+            buildPlacer?.ConfirmPlacement();
+        }
+
+        public void CancelTrackPlacement()
+        {
+            buildPlacer?.CancelPlacement();
+        }
+
+        public void BeginTrackPlacement()
+        {
+            buildPlacer?.BeginPlacement();
+        }
+
+        public void SetAutomaticTrackPlacement(bool automatic)
+        {
+            buildPlacer?.SetPlacementMode(automatic
+                ? TrackPlacementMode.TableAutomatic
+                : TrackPlacementMode.Free);
+        }
+
+        public void ToggleTrackEditMode()
+        {
+            buildPlacer?.ToggleEditMode();
+        }
+
+        public void UndoTrackManipulation()
+        {
+            buildPlacer?.UndoManipulation();
+        }
+
+        public void ResetTrackPlacement()
+        {
+            if (buildPlacer == null)
+                return;
+
+            SetSelectedDriver(0);
+            replayAudio?.ResetPlacement();
+            buildPlacer.ResetPlacement();
         }
 
         public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
@@ -379,6 +450,7 @@ namespace F1XR.RestAPI.Replay
                 _seekCoroutine = null;
             }
 
+            SetSelectedDriver(0);
             replayCars.Clear();
             replayCars.SetLeaderHighlightVisible(false);
             replayAudio.Clear();
@@ -416,6 +488,17 @@ namespace F1XR.RestAPI.Replay
         {
             return buildPlacer != null && buildPlacer.HasPlacement ||
                 placement != null && placement.HasPlacement;
+        }
+
+        private bool AreReplayCarsReady()
+        {
+            if (buildPlacer != null && buildPlacer.HasPlacement)
+            {
+                Transform carsTransform = buildPlacer.CarsTransform;
+                return carsTransform != null && carsTransform.gameObject.activeInHierarchy;
+            }
+
+            return placement != null && placement.HasPlacement;
         }
 
         private void OnDestroy()

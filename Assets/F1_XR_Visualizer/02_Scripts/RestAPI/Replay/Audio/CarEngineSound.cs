@@ -147,7 +147,8 @@ namespace F1XR.RestAPI.Replay
 
         private void OnEnable()
         {
-            EnsureConfiguredSourcesPlaying();
+            if (playing)
+                EnsureConfiguredSourcesPlaying();
         }
 
         public void SetAudible(bool value)

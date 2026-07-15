@@ -55,6 +55,14 @@ namespace F1XR.RestAPI.Replay
             cars.SetSoundPlaying(isPlaying);
         }
 
+        public void ResetPlacement()
+        {
+            wasPlacementReady = false;
+            cars.SetSoundPlacementReady(false);
+            cars.SetSoundPlaying(false);
+            cars.ResetPlacement();
+        }
+
         public void ApplyGridStart(
             float currentTime,
             float raceStartTime,

@@ -47,9 +47,11 @@ namespace F1XR.RestAPI.UI
         private TMP_Text tireHeader;
         private readonly List<StandingRow> standingRows = new();
         private readonly Dictionary<int, StandingRow> rowsByDriver = new();
+        private readonly HashSet<int> visibleDrivers = new();
         private readonly PositionChangeTracker positionChangeTracker = new();
         private int selectedDriverNumber;
         private bool controlsStyled;
+        private float lastPlayPauseTime = float.NegativeInfinity;
 
         private void Awake()
         {
@@ -75,6 +77,7 @@ namespace F1XR.RestAPI.UI
             }
 
             StyleControls();
+            EnsurePlacementControls();
         }
 
         private void OnEnable()
@@ -84,6 +87,13 @@ namespace F1XR.RestAPI.UI
 
             if (speedDropdown != null)
                 speedDropdown.onValueChanged.AddListener(SetSpeedIndex);
+
+            if (player != null)
+            {
+                player.SelectedDriverChanged -= OnSelectedDriverChanged;
+                player.SelectedDriverChanged += OnSelectedDriverChanged;
+                OnSelectedDriverChanged(player.SelectedDriverNumber);
+            }
         }
 
         private void OnDisable()
@@ -93,6 +103,17 @@ namespace F1XR.RestAPI.UI
 
             if (speedDropdown != null)
                 speedDropdown.onValueChanged.RemoveListener(SetSpeedIndex);
+
+            if (player != null)
+                player.SelectedDriverChanged -= OnSelectedDriverChanged;
+        }
+
+        private void OnSelectedDriverChanged(int driverNumber)
+        {
+            if (driverNumber > 0)
+                ShowDriverDetail(driverNumber, false);
+            else
+                HideDriverDetail(false);
         }
 
         private void Update()
@@ -104,6 +125,11 @@ namespace F1XR.RestAPI.UI
         {
             if (player == null)
                 return;
+
+            if (Time.unscaledTime - lastPlayPauseTime < 0.15f)
+                return;
+
+            lastPlayPauseTime = Time.unscaledTime;
 
             player.TogglePlay();
             Refresh();
@@ -183,6 +209,7 @@ namespace F1XR.RestAPI.UI
                 bar.Refresh();
 
             StyleControls();
+            RefreshPlacementControls();
             RefreshStandings(player.GetPositions());
         }
 

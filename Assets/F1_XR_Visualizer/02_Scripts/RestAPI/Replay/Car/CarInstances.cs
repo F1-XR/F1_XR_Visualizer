@@ -26,10 +26,19 @@ namespace F1XR.RestAPI.Replay
 
         public ReplayCarView GetOrCreate(
             int driver,
+            Action<int> onRemoving,
             Action<int, ReplayCarView> onCreated)
         {
-            if (cars.TryGetValue(driver, out ReplayCarView car) && car != null)
-                return car;
+            if (cars.TryGetValue(driver, out ReplayCarView car))
+            {
+                if (car != null)
+                    return car;
+
+                onRemoving?.Invoke(driver);
+                cars.Remove(driver);
+                prefabsByDriver.Remove(driver);
+                baseRotations.Remove(driver);
+            }
 
             return Create(driver, onCreated);
         }
