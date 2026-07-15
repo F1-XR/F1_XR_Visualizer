@@ -43,7 +43,14 @@ namespace F1XR.AR
         Tween startDelayTween;
         Tween ghostFadeTween;
         GameObject socketedWheel;
+        Transform socketedWheelVisualRoot;
+        CarWheelSpin wheelSpin;
         Material[] frontLeftTyreGhostMaterials;
+
+        void Awake()
+        {
+            wheelSpin = GetComponent<CarWheelSpin>();
+        }
 
         void OnEnable()
         {
@@ -85,6 +92,16 @@ namespace F1XR.AR
         {
             socketedWheel = args.interactableObject?.transform.gameObject;
 
+            if (socketedWheel != null)
+            {
+                // XRI drives the socketed interactable's root position/rotation every frame to track
+                // the socket, so it already follows this car as it moves without re-parenting (which
+                // previously fought XRI's tracking and caused a visible scale glitch). Spin the child
+                // VisualRoot instead, since XRI never touches it.
+                socketedWheelVisualRoot = socketedWheel.transform.Find("VisualRoot");
+                wheelSpin?.RegisterWheel(socketedWheelVisualRoot != null ? socketedWheelVisualRoot : socketedWheel.transform);
+            }
+
             if (wheelMountedAudio != null)
                 wheelMountedAudio.Play();
 
@@ -119,7 +136,11 @@ namespace F1XR.AR
 
         void OnWheelUnsocketed(SelectExitEventArgs args)
         {
+            if (socketedWheelVisualRoot != null)
+                wheelSpin?.UnregisterWheel(socketedWheelVisualRoot);
+
             socketedWheel = null;
+            socketedWheelVisualRoot = null;
 
             exitDelayTween?.Kill();
             exitMoveTween?.Kill();
