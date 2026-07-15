@@ -10732,7 +10732,7 @@ MonoBehaviour:
   directionChangeDotThreshold: -0.35
   requiredShakeDirectionChanges: 2
   directionChangeTimeWindow: 0.35
-  pressureGainRate: 2
+  pressureGainRate: 0.7
   pressureDecayRate: 0.12
   smoothingFactor: 0.35
   maximumAccelerationSample: 60
@@ -10767,7 +10767,7 @@ MonoBehaviour:
   bottleColliders:
   - {fileID: 3545883840255056452}
   - {fileID: 984519063592593342}
-  minimumPopPressure: 0.11
+  minimumPopPressure: 0.65
   allowLowPressurePop: 0
   autoPopAtMaximumPressure: 0
   autoPopDelay: 0.25
@@ -10781,8 +10781,11 @@ MonoBehaviour:
   sprayHapticAmplitude: 0.15
   sprayHapticInterval: 0.25
   shakeHapticEnabled: 0
+  corkPopClip: {fileID: 0}
   popSoundDelay: 0
-  popVolume: 0.85
+  popVolume: 1
+  popPitchRange: {x: 0.96, y: 1.04}
+  randomizePopPitch: 1
   shakeAudioSource: {fileID: 0}
   shakeSoundEnabled: 0
   shakeSoundThreshold: 0.55
