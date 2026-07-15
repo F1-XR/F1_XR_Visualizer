@@ -1,10 +1,11 @@
 using System;
-using F1XR.AR;
+using F1XR.RestAPI.Replay.Track.Placement;
 using F1XR.RestAPI.Api;
-using F1XR.RestAPI.AR;
+using F1XR.RestAPI.Replay.Track.Build;
 using F1XR.RestAPI.Replay;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.SceneManagement;
 
 namespace F1XR.RaceFlags
 {
@@ -14,8 +15,8 @@ namespace F1XR.RaceFlags
         private const string AnchorName = "RaceFlagAnchor";
 
         [Header("References")]
-        [SerializeField] private ChunkReplayPlayer replayPlayer;
-        [SerializeField] private ARBuildRevealPlacer buildPlacer;
+        [SerializeField] private ReplayPlayer replayPlayer;
+        [SerializeField] private TrackRevealPlacer buildPlacer;
         [SerializeField] private ARPlanePlacementController placement;
         [SerializeField] private Transform mapRootOverride;
         [SerializeField] private Transform raceFlagAnchor;
@@ -61,6 +62,43 @@ namespace F1XR.RaceFlags
         private bool warnedMissingFlag;
 
         public event Action CheckeredFlagShown;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnablePresentersAfterSceneLoad()
+        {
+            EnablePresentersInScene(SceneManager.GetActiveScene());
+
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            EnablePresentersInScene(scene);
+        }
+
+        private static void EnablePresentersInScene(Scene scene)
+        {
+            if (!scene.IsValid())
+                return;
+
+            RaceControlFlagPresenter[] presenters = UnityEngine.Object.FindObjectsByType<RaceControlFlagPresenter>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            for (int i = 0; i < presenters.Length; i++)
+            {
+                RaceControlFlagPresenter presenter = presenters[i];
+                if (presenter == null || presenter.gameObject.scene != scene)
+                    continue;
+
+                if (!presenter.gameObject.activeSelf)
+                    presenter.gameObject.SetActive(true);
+
+                if (!presenter.enabled)
+                    presenter.enabled = true;
+            }
+        }
 
         private void Awake()
         {
@@ -145,7 +183,7 @@ namespace F1XR.RaceFlags
         private void ResolveInitialReferences()
         {
             if (replayPlayer == null)
-                replayPlayer = FindAnyObjectByType<ChunkReplayPlayer>();
+                replayPlayer = FindAnyObjectByType<ReplayPlayer>();
 
             if (replayPlayer != null)
             {
@@ -157,7 +195,7 @@ namespace F1XR.RaceFlags
             }
 
             if (buildPlacer == null)
-                buildPlacer = FindAnyObjectByType<ARBuildRevealPlacer>();
+                buildPlacer = FindAnyObjectByType<TrackRevealPlacer>();
 
             if (placement == null)
                 placement = FindAnyObjectByType<ARPlanePlacementController>();
@@ -254,7 +292,7 @@ namespace F1XR.RaceFlags
         {
             if (replayPlayer == null)
             {
-                WarnOnce(ref warnedMissingPlayer, "RaceControlFlagPresenter needs a ChunkReplayPlayer reference.");
+                WarnOnce(ref warnedMissingPlayer, "RaceControlFlagPresenter needs a ApiClient reference.");
                 return;
             }
 

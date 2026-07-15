@@ -130,7 +130,7 @@ namespace F1XR.RaceFlags.Editor
             presenter.enabled = true;
 
             SerializedObject serializedPresenter = new SerializedObject(presenter);
-            serializedPresenter.FindProperty("replayPlayer").objectReferenceValue = Object.FindAnyObjectByType<ChunkReplayPlayer>();
+            serializedPresenter.FindProperty("replayPlayer").objectReferenceValue = Object.FindAnyObjectByType<ReplayPlayer>();
             serializedPresenter.FindProperty("mapRootOverride").objectReferenceValue = null;
             serializedPresenter.FindProperty("raceFlagPrefab").objectReferenceValue = flagPrefab;
             serializedPresenter.FindProperty("missingEndFallbackDuration").floatValue = 5.0f;
