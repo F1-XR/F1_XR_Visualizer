@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Hands;
+using F1XR.Interaction.Input;
 
 namespace F1XR.Interaction.Deformation
 {
@@ -23,12 +24,12 @@ namespace F1XR.Interaction.Deformation
         [SerializeField] float cameraDistance = 0.6f;
         [SerializeField] float cameraHeightOffset = -0.05f;
 
-        static readonly List<XRHandSubsystem> HandSubsystems = new();
         static readonly List<SquishContact> Contacts = new();
 
         XRHandSubsystem handSubsystem;
         bool leftPinching;
         bool rightPinching;
+        Mesh sourceMesh;
         Mesh mesh;
         Vector3[] baseVertices;
         Vector3[] currentVertices;
@@ -57,7 +58,7 @@ namespace F1XR.Interaction.Deformation
 
         void OnEnable()
         {
-            FindHandSubsystem();
+            handSubsystem = XRHandInput.FindRunningSubsystem();
         }
 
         void Start()
@@ -66,10 +67,19 @@ namespace F1XR.Interaction.Deformation
                 PlaceInFrontOfCamera();
         }
 
+        void OnDestroy()
+        {
+            if (meshFilter != null && meshFilter.sharedMesh == mesh)
+                meshFilter.sharedMesh = sourceMesh;
+
+            if (mesh != null)
+                Destroy(mesh);
+        }
+
         void Update()
         {
             if (handSubsystem == null || !handSubsystem.running)
-                FindHandSubsystem();
+                handSubsystem = XRHandInput.FindRunningSubsystem();
 
             if (handSubsystem == null)
             {
@@ -94,11 +104,12 @@ namespace F1XR.Interaction.Deformation
 
         void AddHandContact(XRHand hand, int handIndex, bool wasPinching, out bool isPinching)
         {
-            isPinching = TryGetPinchPoint(hand, out var pinchPoint) && IsPinching(hand, wasPinching);
+            isPinching = XRHandInput.TryGetPinchPoint(hand, out var pinchPoint) &&
+                XRHandInput.IsPinching(hand, wasPinching, pinchStartDistance, pinchEndDistance);
             if (isPinching)
                 TryAddContact(pinchPoint, handIndex, true);
 
-            if (TryGetHandPoint(hand, out var palmPoint) && IsNearSphere(palmPoint))
+            if (XRHandInput.TryGetPalmOrWristPoint(hand, out var palmPoint) && IsNearSphere(palmPoint))
                 TryAddContact(palmPoint, handIndex, false);
 
             AddJointContact(hand, handIndex, XRHandJointID.ThumbTip);
@@ -199,52 +210,9 @@ namespace F1XR.Interaction.Deformation
             return Vector3.Distance(sphere.position, point) <= SurfaceRadius() + contactSkin;
         }
 
-        bool IsPinching(XRHand hand, bool wasPinching)
-        {
-            if (!TryGetJointPose(hand, XRHandJointID.ThumbTip, out var thumbPose) ||
-                !TryGetJointPose(hand, XRHandJointID.IndexTip, out var indexPose))
-                return false;
-
-            var distance = Vector3.Distance(thumbPose.position, indexPose.position);
-            return wasPinching
-                ? distance <= pinchEndDistance
-                : distance <= pinchStartDistance;
-        }
-
-        static bool TryGetPinchPoint(XRHand hand, out Vector3 point)
-        {
-            if (!TryGetJointPose(hand, XRHandJointID.ThumbTip, out var thumbPose) ||
-                !TryGetJointPose(hand, XRHandJointID.IndexTip, out var indexPose))
-            {
-                point = default;
-                return false;
-            }
-
-            point = Vector3.Lerp(thumbPose.position, indexPose.position, 0.5f);
-            return true;
-        }
-
-        static bool TryGetHandPoint(XRHand hand, out Vector3 point)
-        {
-            if (TryGetJointPose(hand, XRHandJointID.Palm, out var palmPose))
-            {
-                point = palmPose.position;
-                return true;
-            }
-
-            if (TryGetJointPose(hand, XRHandJointID.Wrist, out var wristPose))
-            {
-                point = wristPose.position;
-                return true;
-            }
-
-            point = default;
-            return false;
-        }
-
         void AddJointContact(XRHand hand, int handIndex, XRHandJointID jointId)
         {
-            if (TryGetJointPose(hand, jointId, out var pose))
+            if (XRHandInput.TryGetJointPose(hand, jointId, out var pose))
                 TryAddContact(pose.position, handIndex, false);
         }
 
@@ -327,27 +295,6 @@ namespace F1XR.Interaction.Deformation
             return value * value * (3f - 2f * value);
         }
 
-        static bool TryGetJointPose(XRHand hand, XRHandJointID jointId, out Pose pose)
-        {
-            var joint = hand.GetJoint(jointId);
-            return joint.TryGetPose(out pose);
-        }
-
-        void FindHandSubsystem()
-        {
-            HandSubsystems.Clear();
-            SubsystemManager.GetSubsystems(HandSubsystems);
-
-            foreach (var subsystem in HandSubsystems)
-            {
-                if (subsystem.running)
-                {
-                    handSubsystem = subsystem;
-                    return;
-                }
-            }
-        }
-
         void PlaceInFrontOfCamera()
         {
             var cameraTransform = Camera.main != null ? Camera.main.transform : null;
@@ -367,7 +314,8 @@ namespace F1XR.Interaction.Deformation
             if (meshFilter == null || meshFilter.sharedMesh == null)
                 return;
 
-            mesh = Instantiate(meshFilter.sharedMesh);
+            sourceMesh = meshFilter.sharedMesh;
+            mesh = Instantiate(sourceMesh);
             mesh.name = "StretchySphereMesh";
             meshFilter.sharedMesh = mesh;
 

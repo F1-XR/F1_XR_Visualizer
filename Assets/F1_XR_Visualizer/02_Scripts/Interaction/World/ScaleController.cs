@@ -4,6 +4,7 @@ using UnityEngine.XR;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using F1XR.Interaction.Input;
 
 namespace F1XR.Interaction.World
 {
@@ -34,9 +35,9 @@ namespace F1XR.Interaction.World
         [SerializeField] Rigidbody body;
         [SerializeField] WorldGrabPolicy worldGrabPolicy;
 
-        static readonly List<XRHandSubsystem> HandSubsystems = new();
         static readonly List<InputDevice> InputDevices = new();
 
+        readonly List<Collider> targetColliders = new();
         XRHandSubsystem handSubsystem;
         bool scaling;
         bool leftPinching;
@@ -73,11 +74,13 @@ namespace F1XR.Interaction.World
 
             if (worldGrabPolicy == null)
                 worldGrabPolicy = GetComponent<WorldGrabPolicy>();
+
+            RefreshTargetColliders();
         }
 
         void OnEnable()
         {
-            FindHandSubsystem();
+            handSubsystem = XRHandInput.FindRunningSubsystem();
             Application.onBeforeRender += UpdateMoveRotationLock;
         }
 
@@ -94,18 +97,26 @@ namespace F1XR.Interaction.World
                 return;
 
             if (handSubsystem == null || !handSubsystem.running)
-                FindHandSubsystem();
+                handSubsystem = XRHandInput.FindRunningSubsystem();
 
             if (handSubsystem == null)
                 return;
 
-            var hasLeft = TryGetHandPoint(handSubsystem.leftHand, out var leftPoint);
-            var hasRight = TryGetHandPoint(handSubsystem.rightHand, out var rightPoint);
-            var hasLeftGrab = TryGetPinchPoint(handSubsystem.leftHand, out var leftGrabPoint);
-            var hasRightGrab = TryGetPinchPoint(handSubsystem.rightHand, out var rightGrabPoint);
+            var hasLeft = XRHandInput.TryGetPalmOrWristPoint(handSubsystem.leftHand, out var leftPoint);
+            var hasRight = XRHandInput.TryGetPalmOrWristPoint(handSubsystem.rightHand, out var rightPoint);
+            var hasLeftGrab = XRHandInput.TryGetPinchPoint(handSubsystem.leftHand, out var leftGrabPoint);
+            var hasRightGrab = XRHandInput.TryGetPinchPoint(handSubsystem.rightHand, out var rightGrabPoint);
 
-            leftPinching = hasLeftGrab && IsPinching(handSubsystem.leftHand, leftPinching);
-            rightPinching = hasRightGrab && IsPinching(handSubsystem.rightHand, rightPinching);
+            leftPinching = hasLeftGrab && XRHandInput.IsPinching(
+                handSubsystem.leftHand,
+                leftPinching,
+                pinchStartDistance,
+                pinchEndDistance);
+            rightPinching = hasRightGrab && XRHandInput.IsPinching(
+                handSubsystem.rightHand,
+                rightPinching,
+                pinchStartDistance,
+                pinchEndDistance);
 
             if (!leftPinching || !rightPinching)
             {
@@ -117,11 +128,13 @@ namespace F1XR.Interaction.World
             if (waitForPinchRelease)
                 return;
 
-            var handDistance = Vector3.Distance(leftPoint, rightPoint);
+            var leftScalePoint = hasLeft ? leftPoint : leftGrabPoint;
+            var rightScalePoint = hasRight ? rightPoint : rightGrabPoint;
+            var handDistance = Vector3.Distance(leftScalePoint, rightScalePoint);
             if (handDistance <= Mathf.Epsilon)
                 return;
 
-            var handVector = rightPoint - leftPoint;
+            var handVector = rightScalePoint - leftScalePoint;
             if (!scaling)
             {
                 if (handDistance < minScaleStartDistance)
@@ -425,73 +438,45 @@ namespace F1XR.Interaction.World
             return hitTransform == target || hitTransform.IsChildOf(target);
         }
 
-        void FindHandSubsystem()
-        {
-            HandSubsystems.Clear();
-            SubsystemManager.GetSubsystems(HandSubsystems);
-
-            foreach (var subsystem in HandSubsystems)
-            {
-                if (subsystem.running)
-                {
-                    handSubsystem = subsystem;
-                    return;
-                }
-            }
-        }
-
         bool IsNearTarget(Vector3 point)
         {
-            return Vector3.Distance(target.position, point) <= grabRadius;
-        }
+            if (targetColliders.Count == 0)
+                RefreshTargetColliders();
 
-        bool IsPinching(XRHand hand, bool wasPinching)
-        {
-            if (!TryGetJointPose(hand, XRHandJointID.ThumbTip, out var thumbPose) ||
-                !TryGetJointPose(hand, XRHandJointID.IndexTip, out var indexPose))
-                return false;
+            var maxDistanceSqr = grabRadius * grabRadius;
+            var hasCollider = false;
 
-            var distance = Vector3.Distance(thumbPose.position, indexPose.position);
-            return wasPinching
-                ? distance <= pinchEndDistance
-                : distance <= pinchStartDistance;
-        }
-
-        static bool TryGetHandPoint(XRHand hand, out Vector3 point)
-        {
-            if (TryGetJointPose(hand, XRHandJointID.Palm, out var palmPose))
+            foreach (var targetCollider in targetColliders)
             {
-                point = palmPose.position;
-                return true;
+                if (targetCollider == null || !targetCollider.enabled)
+                    continue;
+
+                hasCollider = true;
+                var closestPoint = targetCollider.ClosestPoint(point);
+                if ((closestPoint - point).sqrMagnitude <= maxDistanceSqr)
+                    return true;
             }
 
-            if (TryGetJointPose(hand, XRHandJointID.Wrist, out var wristPose))
-            {
-                point = wristPose.position;
-                return true;
-            }
-
-            point = default;
-            return false;
+            return !hasCollider && (target.position - point).sqrMagnitude <= maxDistanceSqr;
         }
 
-        static bool TryGetPinchPoint(XRHand hand, out Vector3 point)
+        void RefreshTargetColliders()
         {
-            if (!TryGetJointPose(hand, XRHandJointID.ThumbTip, out var thumbPose) ||
-                !TryGetJointPose(hand, XRHandJointID.IndexTip, out var indexPose))
+            targetColliders.Clear();
+
+            if (grab != null && grab.colliders.Count > 0)
             {
-                point = default;
-                return false;
+                foreach (var grabCollider in grab.colliders)
+                {
+                    if (grabCollider != null)
+                        targetColliders.Add(grabCollider);
+                }
+
+                return;
             }
 
-            point = Vector3.Lerp(thumbPose.position, indexPose.position, 0.5f);
-            return true;
-        }
-
-        static bool TryGetJointPose(XRHand hand, XRHandJointID jointId, out Pose pose)
-        {
-            var joint = hand.GetJoint(jointId);
-            return joint.TryGetPose(out pose);
+            if (target != null)
+                targetColliders.AddRange(target.GetComponentsInChildren<Collider>(true));
         }
 
         Vector3 ClampScale(Vector3 scale)

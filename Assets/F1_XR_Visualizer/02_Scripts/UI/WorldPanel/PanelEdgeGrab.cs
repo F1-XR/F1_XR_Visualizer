@@ -5,6 +5,7 @@ using UnityEngine.XR;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using F1XR.Interaction.Input;
 using F1XR.Interaction.World;
 
 namespace F1XR.UI.WorldPanel
@@ -34,7 +35,6 @@ namespace F1XR.UI.WorldPanel
         [SerializeField, Min(0.01f)] float visualFadeTime = 0.08f;
 
         static readonly List<XRBaseInputInteractor> Interactors = new();
-        static readonly List<XRHandSubsystem> HandSubsystems = new();
 
         enum EdgeSide
         {
@@ -86,7 +86,19 @@ namespace F1XR.UI.WorldPanel
 
         void OnEnable()
         {
-            FindHandSubsystem();
+            handSubsystem = XRHandInput.FindRunningSubsystem();
+        }
+
+        void OnDestroy()
+        {
+            if (edgeImage != null)
+                edgeImage.sprite = null;
+
+            if (edgeSprite != null)
+                Destroy(edgeSprite);
+
+            if (edgeTexture != null)
+                Destroy(edgeTexture);
         }
 
         void OnValidate()
@@ -381,7 +393,7 @@ namespace F1XR.UI.WorldPanel
         bool TryGetHandEdgePoint(out Vector2 localPoint, out EdgeSide side)
         {
             if (handSubsystem == null || !handSubsystem.running)
-                FindHandSubsystem();
+                handSubsystem = XRHandInput.FindRunningSubsystem();
 
             if (handSubsystem != null &&
                 (TryHandEdgePoint(handSubsystem.leftHand, out localPoint, out side) ||
@@ -395,7 +407,7 @@ namespace F1XR.UI.WorldPanel
 
         bool TryHandEdgePoint(XRHand hand, out Vector2 localPoint, out EdgeSide side)
         {
-            if (TryGetJointPoint(hand, XRHandJointID.IndexTip, out var point) &&
+            if (XRHandInput.TryGetJointPoint(hand, XRHandJointID.IndexTip, out var point) &&
                 TryClosestEdgePoint(point, handNearDistance, out localPoint, out side))
                 return true;
 
@@ -528,32 +540,6 @@ namespace F1XR.UI.WorldPanel
             return true;
         }
 
-        void FindHandSubsystem()
-        {
-            HandSubsystems.Clear();
-            SubsystemManager.GetSubsystems(HandSubsystems);
-
-            foreach (var subsystem in HandSubsystems)
-            {
-                if (!subsystem.running)
-                    continue;
-
-                handSubsystem = subsystem;
-                return;
-            }
-        }
-
-        static bool TryGetJointPoint(XRHand hand, XRHandJointID jointId, out Vector3 point)
-        {
-            if (hand.GetJoint(jointId).TryGetPose(out var pose))
-            {
-                point = pose.position;
-                return true;
-            }
-
-            point = default;
-            return false;
-        }
     }
 
 }

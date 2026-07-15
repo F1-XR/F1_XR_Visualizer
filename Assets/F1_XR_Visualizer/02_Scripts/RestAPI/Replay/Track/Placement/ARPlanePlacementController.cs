@@ -11,7 +11,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 {
     public sealed partial class ARPlanePlacementController : MonoBehaviour
     {
-        enum InputSourcePriority
+        private enum InputSourcePriority
         {
             ControllerFirst,
             HandFirst,
@@ -20,44 +20,37 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         }
 
         [Header("AR Managers")]
-        [SerializeField] ARRaycastManager raycastManager;
-        [SerializeField] ARPlaneManager planeManager;
-        [SerializeField] ARAnchorManager anchorManager;
+        [SerializeField] private ARRaycastManager raycastManager;
+        [SerializeField] private ARPlaneManager planeManager;
+        [SerializeField] private ARAnchorManager anchorManager;
 
         [Header("Placement")]
-        [SerializeField] Transform rayOrigin;
-        [SerializeField] GameObject cubePrefab;
-        [SerializeField] GameObject trackMapPrefab;
-        [SerializeField] float trackMapScale = 1f;
-        [SerializeField] bool fitTrackMapToBounds;
-        [SerializeField] Vector2 trackMapTargetXZSize;
-        [SerializeField] bool allowReplaceExistingCube = false;
-        [SerializeField] bool requireHorizontalUpPlane = true;
-        [SerializeField] bool rejectFloorPlanes = true;
-        [SerializeField] bool preferTableClassifiedPlanes = true;
-        [SerializeField] float minimumPlacementHeight = 0.35f;
-        [SerializeField] float verticalOffset = 0.04f;
-        [SerializeField] float defaultCubeSize = 0.08f;
+        [SerializeField] private Transform rayOrigin;
+        [SerializeField] private GameObject cubePrefab;
+        [SerializeField] private GameObject trackMapPrefab;
+        [SerializeField] private float trackMapScale = 1f;
+        [SerializeField] private bool fitTrackMapToBounds;
+        [SerializeField] private Vector2 trackMapTargetXZSize;
+        [SerializeField] private bool allowReplaceExistingCube = false;
+        [SerializeField] private bool requireHorizontalUpPlane = true;
+        [SerializeField] private bool rejectFloorPlanes = true;
+        [SerializeField] private bool preferTableClassifiedPlanes = true;
+        [SerializeField] private float minimumPlacementHeight = 0.35f;
+        [SerializeField] private float verticalOffset = 0.04f;
+        [SerializeField] private float defaultCubeSize = 0.08f;
 
         [Header("Optional Input")]
-        [SerializeField] InputActionProperty placeAction;
-        [SerializeField] InputSourcePriority inputSourcePriority = InputSourcePriority.HandFirst;
-        [SerializeField] bool useControllerTriggerPlacement = true;
-        [SerializeField] bool useHandPinchPlacement = true;
-        [SerializeField] bool handlePlacementInput = true;
-        [SerializeField] float inputArmDelay = 0.5f;
-        [SerializeField, Range(0f, 1f)] float pinchPressThreshold = 0.8f;
-        [SerializeField, Range(0f, 1f)] float pinchReleaseThreshold = 0.55f;
-        [SerializeField] float pinchDistancePressThreshold = 0.025f;
-        [SerializeField] float pinchDistanceReleaseThreshold = 0.04f;
+        [SerializeField] private InputActionProperty placeAction;
+        [SerializeField] private InputSourcePriority inputSourcePriority = InputSourcePriority.HandFirst;
+        [SerializeField] private bool useControllerTriggerPlacement = true;
+        [SerializeField] private bool useHandPinchPlacement = true;
+        [SerializeField] private bool handlePlacementInput = true;
+        [SerializeField] private float inputArmDelay = 0.5f;
+        [SerializeField, Range(0f, 1f)] private float pinchPressThreshold = 0.8f;
+        [SerializeField, Range(0f, 1f)] private float pinchReleaseThreshold = 0.55f;
+        [SerializeField] private float pinchDistancePressThreshold = 0.025f;
+        [SerializeField] private float pinchDistanceReleaseThreshold = 0.04f;
 
-        static readonly List<ARRaycastHit> s_Hits = new();
-        static readonly List<UnityEngine.XR.InputDevice> s_InputDevices = new();
-        static readonly List<XRHandSubsystem> s_HandSubsystems = new();
-
-        ARAnchor currentAnchor;
-        GameObject spawnedCube;
-        
         public bool HasPlacement => spawnedCube != null;
         public Transform PlacementTransform => spawnedCube != null ? spawnedCube.transform : null;
         public Vector3 PlacementPosition => spawnedCube != null ? spawnedCube.transform.position : Vector3.zero;
@@ -76,24 +69,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             fitTrackMapToBounds = fitMapToBounds;
             trackMapTargetXZSize = mapTargetXZSize;
         }
-        
-        bool wasLeftTriggerPressed;
-        bool wasRightTriggerPressed;
-        XRHandSubsystem handSubsystem;
-        bool wasLeftPinching;
-        bool wasRightPinching;
-        bool placementInputsArmed;
-        float enableTime;
-        InputDeviceCharacteristics lastTriggerHand;
-        Handedness lastPinchHandedness = Handedness.Invalid;
-        InputAction leftPointerPos;
-        InputAction leftPointerRot;
-        InputAction leftTrackingState;
-        InputAction rightPointerPos;
-        InputAction rightPointerRot;
-        InputAction rightTrackingState;
 
-        void Reset()
+        private void Reset()
         {
             raycastManager = GetComponent<ARRaycastManager>();
             planeManager = GetComponent<ARPlaneManager>();
@@ -103,7 +80,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 rayOrigin = Camera.main.transform;
         }
 
-        void Awake()
+        private void Awake()
         {
             if (raycastManager == null)
                 raycastManager = GetComponent<ARRaycastManager>();
@@ -120,7 +97,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             CreateControllerPointerActions();
         }
 
-        void OnEnable()
+        private void OnEnable()
         {
             if (placeAction.action != null)
                 placeAction.action.Enable();
@@ -136,7 +113,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             TrySubscribeHandSubsystem();
         }
 
-        void OnDisable()
+        private void OnDisable()
         {
             if (placeAction.action != null)
                 placeAction.action.Disable();
@@ -145,12 +122,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             UnsubscribeHandSubsystem();
         }
 
-        void OnDestroy()
+        private void OnDestroy()
         {
             DisposeControllerPointerActions();
         }
 
-        void Update()
+        private void Update()
         {
             if (!handlePlacementInput)
             {
@@ -161,7 +138,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             }
 
             var triggerPressedThisFrame = CanUseControllers() &&
-                                          WasTriggerPressedThisFrame();
+                WasTriggerPressedThisFrame();
 
             if (!placementInputsArmed)
             {
@@ -187,7 +164,14 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 TrySubscribeHandSubsystem();
         }
 
-        void TrySubscribeHandSubsystem()
+        private static readonly List<XRHandSubsystem> s_HandSubsystems = new();
+
+        private XRHandSubsystem handSubsystem;
+        private bool wasLeftPinching;
+        private bool wasRightPinching;
+        private Handedness lastPinchHandedness = Handedness.Invalid;
+
+        private void TrySubscribeHandSubsystem()
         {
             if (!useHandPinchPlacement || handSubsystem != null)
                 return;
@@ -205,7 +189,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             }
         }
 
-        void UnsubscribeHandSubsystem()
+        private void UnsubscribeHandSubsystem()
         {
             if (handSubsystem == null)
                 return;
@@ -216,7 +200,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             wasRightPinching = false;
         }
 
-        void OnUpdatedHands(
+        private void OnUpdatedHands(
             XRHandSubsystem subsystem,
             XRHandSubsystem.UpdateSuccessFlags updateSuccessFlags,
             XRHandSubsystem.UpdateType updateType)
@@ -242,7 +226,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 TryPlaceCube();
         }
 
-        bool UpdatePinchState(XRHand hand, bool hasJointUpdate, ref bool wasPinching)
+        private bool UpdatePinchState(XRHand hand, bool hasJointUpdate, ref bool wasPinching)
         {
             if (!hasJointUpdate)
                 return false;
@@ -253,7 +237,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return startedPinching;
         }
 
-        bool IsHandPinching(XRHand hand, bool wasPinching)
+        private bool IsHandPinching(XRHand hand, bool wasPinching)
         {
             var commonHandGestures = hand.handedness == Handedness.Left
                 ? handSubsystem.leftHandCommonGestures
@@ -276,7 +260,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 : pinchDistance <= pinchDistancePressThreshold;
         }
 
-        static bool TryGetPinchDistance(XRHand hand, out float distance)
+        private static bool TryGetPinchDistance(XRHand hand, out float distance)
         {
             var thumbTip = hand.GetJoint(XRHandJointID.ThumbTip);
             var indexTip = hand.GetJoint(XRHandJointID.IndexTip);
@@ -291,24 +275,52 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return false;
         }
 
-        static bool HasUpdateSuccessFlag(
+        private static bool HasUpdateSuccessFlag(
             XRHandSubsystem.UpdateSuccessFlags successFlags,
             XRHandSubsystem.UpdateSuccessFlags successFlag)
         {
             return (successFlags & successFlag) == successFlag;
         }
 
-        public bool TryPlaceCube()
+        private bool TryGetHandAimRay(Handedness handedness, out Ray ray)
         {
-            if (spawnedCube != null && !allowReplaceExistingCube)
+            if (handSubsystem == null)
+            {
+                ray = default;
                 return false;
+            }
 
-            if (!TryGetPlacementHit(out var pose, out var plane))
-                return false;
+            var commonHandGestures = handedness == Handedness.Left
+                ? handSubsystem.leftHandCommonGestures
+                : handedness == Handedness.Right
+                    ? handSubsystem.rightHandCommonGestures
+                    : null;
 
-            PlaceAt(pose, plane);
-            return true;
+            if (commonHandGestures != null && commonHandGestures.TryGetAimPose(out var aimPose))
+            {
+                ray = new Ray(aimPose.position, aimPose.rotation * Vector3.forward);
+                return true;
+            }
+
+            ray = default;
+            return false;
         }
+
+        private bool IsHandTracked(Handedness handedness)
+        {
+            if (handSubsystem == null)
+                return false;
+
+            var hand = handedness == Handedness.Left
+                ? handSubsystem.leftHand
+                : handedness == Handedness.Right
+                    ? handSubsystem.rightHand
+                    : default;
+
+            return hand.isTracked;
+        }
+
+        private static readonly List<ARRaycastHit> s_Hits = new();
 
         public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
@@ -373,7 +385,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return false;
         }
 
-        bool TryGetPlacementRay(out Ray ray)
+        private bool TryGetPlacementRay(out Ray ray)
         {
             if (CanUseHands() && lastPinchHandedness == Handedness.Right && TryGetHandAimRay(Handedness.Right, out ray))
                 return true;
@@ -402,45 +414,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return false;
         }
 
-        bool TryGetHandAimRay(Handedness handedness, out Ray ray)
-        {
-            if (handSubsystem == null)
-            {
-                ray = default;
-                return false;
-            }
-
-            var commonHandGestures = handedness == Handedness.Left
-                ? handSubsystem.leftHandCommonGestures
-                : handedness == Handedness.Right
-                    ? handSubsystem.rightHandCommonGestures
-                    : null;
-
-            if (commonHandGestures != null && commonHandGestures.TryGetAimPose(out var aimPose))
-            {
-                ray = new Ray(aimPose.position, aimPose.rotation * Vector3.forward);
-                return true;
-            }
-
-            ray = default;
-            return false;
-        }
-
-        bool IsHandTracked(Handedness handedness)
-        {
-            if (handSubsystem == null)
-                return false;
-
-            var hand = handedness == Handedness.Left
-                ? handSubsystem.leftHand
-                : handedness == Handedness.Right
-                    ? handSubsystem.rightHand
-                    : default;
-
-            return hand.isTracked;
-        }
-
-        bool ShouldAcceptPlane(Pose hitPose, ARPlane plane)
+        private bool ShouldAcceptPlane(Pose hitPose, ARPlane plane)
         {
             if (plane == null)
                 return hitPose.position.y >= minimumPlacementHeight;
@@ -458,12 +432,27 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return hitPose.position.y >= minimumPlacementHeight;
         }
 
-        static bool HasClassification(PlaneClassifications classifications, PlaneClassifications classification)
+        private static bool HasClassification(PlaneClassifications classifications, PlaneClassifications classification)
         {
             return (classifications & classification) == classification;
         }
 
-        void PlaceAt(Pose pose, ARPlane plane)
+        private ARAnchor currentAnchor;
+        private GameObject spawnedCube;
+
+        public bool TryPlaceCube()
+        {
+            if (spawnedCube != null && !allowReplaceExistingCube)
+                return false;
+
+            if (!TryGetPlacementHit(out var pose, out var plane))
+                return false;
+
+            PlaceAt(pose, plane);
+            return true;
+        }
+
+        private void PlaceAt(Pose pose, ARPlane plane)
         {
             if (spawnedCube != null)
                 ClearPlacement();
@@ -480,7 +469,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             }
         }
 
-        ARAnchor CreateAnchor(Pose pose, ARPlane plane)
+        private ARAnchor CreateAnchor(Pose pose, ARPlane plane)
         {
             if (anchorManager == null)
                 return null;
@@ -497,7 +486,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return anchorObject.AddComponent<ARAnchor>();
         }
 
-        GameObject CreateCube(Vector3 position, Quaternion rotation)
+        private GameObject CreateCube(Vector3 position, Quaternion rotation)
         {
             GameObject cube;
             if (cubePrefab != null)
@@ -517,7 +506,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return cube;
         }
 
-        void ApplyTrackMap(GameObject target)
+        private void ApplyTrackMap(GameObject target)
         {
             if (trackMapPrefab == null || target == null)
                 return;
@@ -527,7 +516,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 mapView.Show(trackMapPrefab, trackMapScale, fitTrackMapToBounds, trackMapTargetXZSize);
         }
 
-        static void ConfigureCubePhysics(GameObject cube)
+        private static void ConfigureCubePhysics(GameObject cube)
         {
             foreach (var rigidbody in cube.GetComponentsInChildren<Rigidbody>(includeInactive: true))
             {
@@ -536,7 +525,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             }
         }
 
-        GameObject CreateCube(Transform parent)
+        private GameObject CreateCube(Transform parent)
         {
             var cube = CreateCube(parent.position, parent.rotation);
             cube.transform.SetParent(parent, worldPositionStays: false);

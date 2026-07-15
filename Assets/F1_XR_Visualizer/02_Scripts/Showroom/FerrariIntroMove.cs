@@ -46,6 +46,7 @@ namespace F1XR.Showroom
         Transform socketedWheelVisualRoot;
         CarWheelSpin wheelSpin;
         Material[] frontLeftTyreGhostMaterials;
+        Material[] frontLeftTyreRuntimeMaterials;
 
         void Awake()
         {
@@ -86,6 +87,18 @@ namespace F1XR.Showroom
             exitDelayTween?.Kill();
             exitMoveTween?.Kill();
             ghostFadeTween?.Kill();
+        }
+
+        void OnDestroy()
+        {
+            if (frontLeftTyreRuntimeMaterials == null)
+                return;
+
+            foreach (var material in frontLeftTyreRuntimeMaterials)
+            {
+                if (material != null)
+                    Destroy(material);
+            }
         }
 
         void OnWheelSocketed(SelectEnterEventArgs args)
@@ -182,6 +195,7 @@ namespace F1XR.Showroom
 
             var renderers = frontLeftTyre.GetComponentsInChildren<Renderer>(true);
             var materials = new System.Collections.Generic.List<Material>();
+            var runtimeMaterials = new System.Collections.Generic.List<Material>();
 
             foreach (var renderer in renderers)
             {
@@ -189,6 +203,9 @@ namespace F1XR.Showroom
 
                 foreach (var material in renderer.materials)
                 {
+                    if (!runtimeMaterials.Contains(material))
+                        runtimeMaterials.Add(material);
+
                     if (!material.HasProperty("baseColorFactor"))
                         continue;
 
@@ -213,6 +230,7 @@ namespace F1XR.Showroom
             }
 
             frontLeftTyreGhostMaterials = materials.ToArray();
+            frontLeftTyreRuntimeMaterials = runtimeMaterials.ToArray();
         }
 
         void SetFrontLeftTyreGhostAlpha(float targetAlpha)
