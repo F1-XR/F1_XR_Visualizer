@@ -5641,6 +5641,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6d28f00fbefa9e64a9b7926435e89e6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.HandInputModeSwitcher
+  showInputVisualMeshes: 0
   handVisualizerRoot: {fileID: 850124220}
   leftHandRoot: {fileID: 827969226}
   leftHandRay: {fileID: 1467188975}

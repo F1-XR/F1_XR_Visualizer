@@ -2,11 +2,13 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR;
 using UnityEngine.XR.Hands;
+using UnityEngine.XR.Hands.Samples.VisualizerSample;
 
 namespace F1XR.Interaction.Input
 {
     public sealed class HandInputModeSwitcher : MonoBehaviour
     {
+        [SerializeField] bool showInputVisualMeshes;
         [SerializeField] GameObject handVisualizerRoot;
         [SerializeField] GameObject leftHandRoot;
         [SerializeField] GameObject leftHandRay;
@@ -19,6 +21,10 @@ namespace F1XR.Interaction.Input
         readonly List<InputDevice> controllerDevices = new List<InputDevice>();
 
         XRHandSubsystem handSubsystem;
+        HandVisualizer handVisualizer;
+        MeshRenderer[] leftControllerRenderers = System.Array.Empty<MeshRenderer>();
+        MeshRenderer[] rightControllerRenderers = System.Array.Empty<MeshRenderer>();
+        bool? appliedShowInputVisualMeshes;
         float nextResolveTime;
 
         void Awake()
@@ -27,6 +33,7 @@ namespace F1XR.Interaction.Input
             SetActive(leftHandRay, false);
             SetActive(rightHandRay, false);
             SetActive(handVisualizerRoot, true);
+            ApplyInputVisualMeshes();
             ResolveHandSubsystem();
             ApplyModes();
         }
@@ -37,12 +44,14 @@ namespace F1XR.Interaction.Input
             {
                 ResolveSceneObjects();
                 SetActive(handVisualizerRoot, true);
+                ApplyInputVisualMeshes();
                 nextResolveTime = Time.unscaledTime + 1f;
             }
 
             if (handSubsystem == null || !handSubsystem.running)
                 ResolveHandSubsystem();
 
+            ApplyInputVisualMeshes();
             ApplyModes();
         }
 
@@ -75,6 +84,42 @@ namespace F1XR.Interaction.Input
                     leftController = item.gameObject;
                 else if (rightController == null && item.name == "Right Controller")
                     rightController = item.gameObject;
+            }
+
+            handVisualizer = handVisualizerRoot != null
+                ? handVisualizerRoot.GetComponent<HandVisualizer>()
+                : null;
+            leftControllerRenderers = GetControllerRenderers(leftController);
+            rightControllerRenderers = GetControllerRenderers(rightController);
+            appliedShowInputVisualMeshes = null;
+        }
+
+        static MeshRenderer[] GetControllerRenderers(GameObject controller)
+        {
+            return controller != null
+                ? controller.GetComponentsInChildren<MeshRenderer>(true)
+                : System.Array.Empty<MeshRenderer>();
+        }
+
+        void ApplyInputVisualMeshes()
+        {
+            if (appliedShowInputVisualMeshes == showInputVisualMeshes)
+                return;
+
+            if (handVisualizer != null)
+                handVisualizer.drawMeshes = showInputVisualMeshes;
+
+            SetRenderersVisible(leftControllerRenderers, showInputVisualMeshes);
+            SetRenderersVisible(rightControllerRenderers, showInputVisualMeshes);
+            appliedShowInputVisualMeshes = showInputVisualMeshes;
+        }
+
+        static void SetRenderersVisible(MeshRenderer[] renderers, bool visible)
+        {
+            foreach (MeshRenderer item in renderers)
+            {
+                if (item != null)
+                    item.enabled = visible;
             }
         }
 
