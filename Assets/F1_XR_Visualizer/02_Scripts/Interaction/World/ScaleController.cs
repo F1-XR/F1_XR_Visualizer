@@ -95,11 +95,14 @@ namespace F1XR.Interaction.World
 
         void Update()
         {
-            if (TryUpdateControllerScale())
-                return;
-
             if (handSubsystem == null || !handSubsystem.running)
                 handSubsystem = XRHandInput.FindRunningSubsystem();
+
+            bool bothHandsTracked = handSubsystem != null &&
+                handSubsystem.leftHand.isTracked &&
+                handSubsystem.rightHand.isTracked;
+            if (!bothHandsTracked && TryUpdateControllerScale())
+                return;
 
             if (handSubsystem == null)
                 return;
@@ -142,7 +145,9 @@ namespace F1XR.Interaction.World
                 if (handDistance < minScaleStartDistance)
                     return;
 
-                if (!IsNearTarget(leftGrabPoint) || !IsNearTarget(rightGrabPoint))
+                bool alreadySelected = grab != null && grab.isSelected;
+                if (!alreadySelected &&
+                    (!IsNearTarget(leftGrabPoint) || !IsNearTarget(rightGrabPoint)))
                     return;
 
                 scaling = true;

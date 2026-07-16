@@ -29,7 +29,7 @@ namespace F1XR.RestAPI.UI
             placementControls.anchorMin = new Vector2(0.5f, 1f);
             placementControls.anchorMax = new Vector2(0.5f, 1f);
             placementControls.pivot = new Vector2(0.5f, 1f);
-            placementControls.anchoredPosition = new Vector2(0f, 96f);
+            placementControls.anchoredPosition = new Vector2(0f, 224f);
             placementControls.sizeDelta = new Vector2(300f, 136f);
             placementControls.GetComponent<Image>().color = new Color(0.015f, 0.018f, 0.026f, 0.92f);
 
