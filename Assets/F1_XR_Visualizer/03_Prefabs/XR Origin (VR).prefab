@@ -344,6 +344,7 @@ GameObject:
   - component: {fileID: 4104917067994936181}
   - component: {fileID: 3416252152838388730}
   - component: {fileID: 2713799799325825105}
+  - component: {fileID: 7774318946425536081}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -620,6 +621,42 @@ MonoBehaviour:
   rightHandRoot: {fileID: 6393571801743313195}
   rightHandRay: {fileID: 8911723853133913048}
   rightController: {fileID: 3306124228781898365}
+--- !u!114 &7774318946425536081
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3494979625393617182}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e85a8d9d4ca54ce983634dfc17645282, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.ContextualInputFeedback
+  mode: 0
+  enterDistance: 0.11
+  exitDistance: 0.17
+  targetLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  leftHandRoot: {fileID: 7182445629687837298}
+  rightHandRoot: {fileID: 6393571801743313195}
+  leftHandRay: {fileID: 3218022297858878498}
+  rightHandRay: {fileID: 8911723853133913048}
+  leftController: {fileID: 5829972554189839919}
+  rightController: {fileID: 3306124228781898365}
+  controllerEnterDistance: 0.2
+  controllerExitDistance: 0.26
+  controllerViewOffset: 0.04
+  nearbyColor: {r: 0.2, g: 0.85, b: 1, a: 0.8}
+  pinchAttemptColor: {r: 0.71, g: 0.42, b: 1, a: 1}
+  pinchColor: {r: 1, g: 0.75, b: 0.2, a: 1}
+  markerRadius: 0.012
+  pinchedRadius: 0.024
+  lineWidth: 0.002
+  fadeSpeed: 8
+  pinchStartDistance: 0.025
+  pinchEndDistance: 0.04
 --- !u!1 &4913892970057843589
 GameObject:
   m_ObjectHideFlags: 0
