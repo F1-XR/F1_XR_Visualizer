@@ -345,6 +345,7 @@ GameObject:
   - component: {fileID: 3416252152838388730}
   - component: {fileID: 2713799799325825105}
   - component: {fileID: 7774318946425536081}
+  - component: {fileID: 8884318946425536081}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -634,8 +635,10 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.ContextualInputFeedback
   mode: 0
-  enterDistance: 0.11
-  exitDistance: 0.17
+  enterDistance: 0.035
+  exitDistance: 0.055
+  handRayHideDistance: 0.07
+  handRayShowDistance: 0.09
   targetLayers:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -645,18 +648,44 @@ MonoBehaviour:
   rightHandRay: {fileID: 8911723853133913048}
   leftController: {fileID: 5829972554189839919}
   rightController: {fileID: 3306124228781898365}
-  controllerEnterDistance: 0.2
-  controllerExitDistance: 0.26
-  controllerViewOffset: 0.04
+  controllerEnterDistance: 0.05
+  controllerExitDistance: 0.08
+  controllerRayHideDistance: 0.12
+  controllerRayShowDistance: 0.16
   nearbyColor: {r: 0.2, g: 0.85, b: 1, a: 0.8}
   pinchAttemptColor: {r: 0.71, g: 0.42, b: 1, a: 1}
   pinchColor: {r: 1, g: 0.75, b: 0.2, a: 1}
   markerRadius: 0.012
   pinchedRadius: 0.024
+  approachRadiusScale: 1.35
+  surfaceOffset: 0.002
+  contactDistance: 0.015
+  selectionPulseDuration: 0.12
   lineWidth: 0.002
   fadeSpeed: 8
   pinchStartDistance: 0.025
   pinchEndDistance: 0.04
+--- !u!114 &8884318946425536081
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3494979625393617182}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 318ec3ba2f0d4049956f3e90c2651161, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.LocalDepthOccluderPrototype
+  mode: 1
+  contextualFeedback: {fileID: 7774318946425536081}
+  depthOnlyMaterial: {fileID: 2100000, guid: fc9bf7fcea07461b99bc82591a904cf7, type: 2}
+  testHand: 1
+  fingertipRadius: 0.012
+  expansion: 0
+  showValidationCube: 1
+  validationDistance: 0.65
+  validationCubeSize: 0.22
 --- !u!1 &4913892970057843589
 GameObject:
   m_ObjectHideFlags: 0
