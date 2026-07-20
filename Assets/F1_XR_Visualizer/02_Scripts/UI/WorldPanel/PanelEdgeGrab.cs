@@ -60,7 +60,6 @@ namespace F1XR.UI.WorldPanel
         EdgeSide targetLineSide;
         float lineAlpha;
         bool hasLineTarget;
-        bool hasLastEdgePoint;
         bool wasSelected;
         bool hasLockedEdge;
         EdgeSide lockedEdge;
@@ -122,9 +121,9 @@ namespace F1XR.UI.WorldPanel
 
             if (selected && !wasSelected)
             {
-                hasLockedEdge = hasPoint || hasLastEdgePoint;
+                hasLockedEdge = hasPoint;
                 if (hasLockedEdge)
-                    lockedEdge = hasPoint ? side : lastSide;
+                    lockedEdge = side;
             }
             else if (!selected && wasSelected)
             {
@@ -140,10 +139,9 @@ namespace F1XR.UI.WorldPanel
             {
                 lastLocalPoint = localPoint;
                 lastSide = side;
-                hasLastEdgePoint = true;
             }
 
-            var visible = hasPoint || (selected && hasLockedEdge);
+            var visible = selected && hasLockedEdge;
 
             if (scaleController != null && scaleController.IsScaling)
                 visible = false;
@@ -178,15 +176,22 @@ namespace F1XR.UI.WorldPanel
 
         void AddEdgeCollider(Transform parent, string objectName, EdgeSide side, Vector3 center, Vector3 size, System.Collections.Generic.List<Collider> colliders)
         {
-            var edge = new GameObject(objectName);
+            var existing = parent.Find(objectName);
+            var edge = existing != null ? existing.gameObject : new GameObject(objectName);
             edge.transform.SetParent(parent, false);
             edge.transform.localPosition = center;
             edge.transform.localRotation = Quaternion.identity;
             edge.transform.localScale = Vector3.one;
 
-            var collider = edge.AddComponent<BoxCollider>();
+            var collider = edge.GetComponent<BoxCollider>();
+            if (collider == null)
+                collider = edge.AddComponent<BoxCollider>();
+
             collider.size = size;
             collider.center = Vector3.zero;
+            if (edge.GetComponent<ContextIndicatorIgnore>() == null)
+                edge.AddComponent<ContextIndicatorIgnore>();
+
             colliders.Add(collider);
             edgeColliders.Add(collider);
             edgeSides.Add(side);
