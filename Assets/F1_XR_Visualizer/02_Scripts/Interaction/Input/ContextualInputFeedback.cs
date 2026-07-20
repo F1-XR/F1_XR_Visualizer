@@ -20,6 +20,11 @@ namespace F1XR.Interaction.Input
     }
 
     [DisallowMultipleComponent]
+    public sealed class OccludedInputVisualMarker : MonoBehaviour
+    {
+    }
+
+    [DisallowMultipleComponent]
     public sealed class ContextualInputFeedback : MonoBehaviour
     {
         const int RingPointCount = 24;
