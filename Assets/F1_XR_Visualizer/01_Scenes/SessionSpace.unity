@@ -5374,6 +5374,7 @@ GameObject:
   - component: {fileID: 2086967214}
   - component: {fileID: 2086967215}
   - component: {fileID: 2086967216}
+  - component: {fileID: 2086967217}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5701,7 +5702,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2086967203}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 318ec3ba2f0d4049956f3e90c2651161, type: 3}
   m_Name: 
@@ -5715,6 +5716,38 @@ MonoBehaviour:
   showValidationCube: 1
   validationDistance: 0.65
   validationCubeSize: 0.22
+--- !u!114 &2086967217
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 91b26d9356c74a6cb286dd4eb5127193, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.OccludedInputVisualController
+  mode: 3
+  contextualFeedback: {fileID: 2086967215}
+  occludedMaterial: {fileID: 2100000, guid: b58c80ce13004df58ec6292d601b8dd1, type: 2}
+  leftHandRoot: {fileID: 827969226}
+  rightHandRoot: {fileID: 1245672794}
+  leftHandRay: {fileID: 1467188975}
+  rightHandRay: {fileID: 1487915384}
+  leftController: {fileID: 1434304034}
+  rightController: {fileID: 1941916964}
+  leftHandSource: {fileID: 0}
+  rightHandSource: {fileID: 0}
+  leftControllerSources: []
+  rightControllerSources: []
+  idleOpacity: 0.18
+  hoverOpacity: 0.24
+  activeOpacity: 0.36
+  opacitySpeed: 8
+  softRimStrength: 0.2
+  softRimPower: 2
+  outlineRimPower: 5
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

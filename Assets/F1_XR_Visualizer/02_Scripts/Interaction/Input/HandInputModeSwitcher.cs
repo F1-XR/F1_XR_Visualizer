@@ -96,9 +96,17 @@ namespace F1XR.Interaction.Input
 
         static MeshRenderer[] GetControllerRenderers(GameObject controller)
         {
-            return controller != null
-                ? controller.GetComponentsInChildren<MeshRenderer>(true)
-                : System.Array.Empty<MeshRenderer>();
+            if (controller == null)
+                return System.Array.Empty<MeshRenderer>();
+
+            var renderers = new List<MeshRenderer>();
+            foreach (MeshRenderer renderer in controller.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (renderer.GetComponentInParent<OccludedInputVisualMarker>() == null)
+                    renderers.Add(renderer);
+            }
+
+            return renderers.ToArray();
         }
 
         void ApplyInputVisualMeshes()
@@ -143,11 +151,11 @@ namespace F1XR.Interaction.Input
         {
             bool leftControllerTracked = IsControllerTracked(InputDeviceCharacteristics.Left);
             bool rightControllerTracked = IsControllerTracked(InputDeviceCharacteristics.Right);
-            bool leftHandTracked = !leftControllerTracked && handSubsystem != null && handSubsystem.leftHand.isTracked;
-            bool rightHandTracked = !rightControllerTracked && handSubsystem != null && handSubsystem.rightHand.isTracked;
+            bool leftHandTracked = handSubsystem != null && handSubsystem.leftHand.isTracked;
+            bool rightHandTracked = handSubsystem != null && handSubsystem.rightHand.isTracked;
 
-            Apply(leftHandRoot, leftHandRay, leftController, leftHandTracked, leftControllerTracked);
-            Apply(rightHandRoot, rightHandRay, rightController, rightHandTracked, rightControllerTracked);
+            Apply(leftHandRoot, leftHandRay, leftController, leftHandTracked, !leftHandTracked && leftControllerTracked);
+            Apply(rightHandRoot, rightHandRay, rightController, rightHandTracked, !rightHandTracked && rightControllerTracked);
         }
 
         bool IsControllerTracked(InputDeviceCharacteristics handedness)
