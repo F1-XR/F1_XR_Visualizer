@@ -311,6 +311,8 @@ namespace F1XR.RestAPI.Replay
             eventCars.SetLabelsVisible(true);
             eventCars.SetLeaderHighlightVisible(false);
             eventCars.SetDrivers(player.Manifest != null ? player.Manifest.drivers : null);
+            eventCars.SetOvertakeSettings(player.overtakeMotion);
+            eventCars.SetReplayEvents(new[] { definition });
 
             List<LocationSample> referenceSamples = FindReferenceSamples();
             if (!BuildMappedPath(
@@ -442,6 +444,7 @@ namespace F1XR.RestAPI.Replay
         {
             stageRoot = new GameObject("EventReplayStage");
             ResolveStagePose(out Vector3 position, out Quaternion rotation);
+            rotation = Quaternion.Euler(0f, rotation.eulerAngles.y, 0f);
             stageRoot.transform.SetPositionAndRotation(position, rotation);
             stageRoot.transform.localScale = Vector3.one * Mathf.Max(0.1f, stageScale);
         }
@@ -607,6 +610,7 @@ namespace F1XR.RestAPI.Replay
             grab.useDynamicAttach = true;
             grab.matchAttachPosition = true;
             grab.matchAttachRotation = false;
+            grab.trackRotation = false;
             grab.snapToColliderVolume = false;
             grab.attachEaseInTime = 0f;
 
@@ -779,6 +783,10 @@ namespace F1XR.RestAPI.Replay
                 progressStart = -1f,
                 progressEnd = -1f,
                 confidence = -1f,
+                passingSide = "Unknown",
+                sideSource = "DeterministicFallback",
+                sideConfidence = 0f,
+                motionProfile = "Default",
                 displayTitle = "Development Close Battle Test",
                 displayDescription = "Development fixture using nearby cars in the current replay window; not an automatically detected overtake."
             };

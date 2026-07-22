@@ -11,6 +11,12 @@
       "progressStart": -1.0,
       "progressEnd": -1.0,
       "confidence": 0.9,
+      "passingSide": "Left",
+      "sideSource": "Manual",
+      "sideConfidence": 1.0,
+      "motionProfile": "Braking",
+      "overtakerShare": 0.5,
+      "defenderShare": 0.5,
       "displayTitle": "RUS passes LEC",
       "displayDescription": "Position data changes: RUS P3 to P2, LEC P2 to P3."
     }
