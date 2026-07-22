@@ -14,6 +14,8 @@ namespace F1XR.Showroom
         [SerializeField] Ease riseEase = Ease.OutQuad;
         [SerializeField] float lowerDuration = 0.2f;
         [SerializeField] Ease lowerEase = Ease.OutQuad;
+        [SerializeField] TireGlowRing glowRing;
+
 
         XRBaseInteractable interactable;
         Tween liftTween;
@@ -51,26 +53,29 @@ namespace F1XR.Showroom
             liftTween?.Kill();
         }
 
-        void OnFirstHoverEntered(HoverEnterEventArgs args)
+void OnFirstHoverEntered(HoverEnterEventArgs args)
         {
             if (liftDisabled)
                 return;
 
             AnimateTo(baseLocalY + riseHeight, riseDuration, riseEase);
+            glowRing?.SetGlow(true);
         }
 
-        void OnLastHoverExited(HoverExitEventArgs args)
+void OnLastHoverExited(HoverExitEventArgs args)
         {
             if (liftDisabled)
                 return;
 
             AnimateTo(baseLocalY, lowerDuration, lowerEase);
+            glowRing?.SetGlow(false);
         }
 
-        void OnSelectEntered(SelectEnterEventArgs args)
+void OnSelectEntered(SelectEnterEventArgs args)
         {
             liftDisabled = true;
             AnimateTo(baseLocalY, lowerDuration, lowerEase);
+            glowRing?.SetGlow(false);
         }
 
         void AnimateTo(float targetY, float animDuration, Ease ease)
