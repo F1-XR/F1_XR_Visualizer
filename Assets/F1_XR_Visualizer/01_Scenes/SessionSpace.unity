@@ -3944,6 +3944,7 @@ MonoBehaviour:
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
+  useEventReplayTestSession: 1
 --- !u!4 &1705380157
 Transform:
   m_ObjectHideFlags: 0

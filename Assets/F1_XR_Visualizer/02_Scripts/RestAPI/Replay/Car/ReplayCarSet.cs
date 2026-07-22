@@ -15,11 +15,16 @@ namespace F1XR.RestAPI.Replay
         private readonly CarPresentation carPresentation;
         private readonly CarAudio carAudio;
         private readonly ReplayPlayer player;
+        private readonly bool allowInteraction;
         private int selectedDriverNumber;
 
-        public ReplayCarSet(GameObject carPrefab, ReplayPlayer player)
+        public ReplayCarSet(
+            GameObject carPrefab,
+            ReplayPlayer player,
+            bool allowInteraction = true)
         {
             this.player = player;
+            this.allowInteraction = allowInteraction;
             TeamCarPrefabs teamCarPrefabs = new TeamCarPrefabs(carPrefab);
             carInstances = new CarInstances(teamCarPrefabs, driverRoster);
             carMotion = new ReplayCarMotion(carInstances);
@@ -46,13 +51,19 @@ namespace F1XR.RestAPI.Replay
             Dictionary<int, List<LocationSample>> samples,
             Dictionary<int, int> indices,
             float time,
-            List<PositionSampleDto> positions = null)
+            List<PositionSampleDto> positions = null,
+            HashSet<int> driverFilter = null)
         {
-            Dictionary<int, int> ranks = GetRanksByDriver(positions);
+            Dictionary<int, int> ranks = positions != null
+                ? GetRanksByDriver(positions)
+                : null;
 
             foreach (KeyValuePair<int, List<LocationSample>> pair in samples)
             {
                 int driver = pair.Key;
+                if (driverFilter != null && !driverFilter.Contains(driver))
+                    continue;
+
                 List<LocationSample> list = pair.Value;
 
                 if (list.Count < 2)
@@ -64,7 +75,7 @@ namespace F1XR.RestAPI.Replay
                     SetupCar);
 
                 carAudio.EnsureCar(driver, car);
-                if (ranks.TryGetValue(driver, out int rank))
+                if (ranks != null && ranks.TryGetValue(driver, out int rank))
                     carPresentation.SetRank(car, rank);
 
                 int index = indices[driver];
@@ -144,10 +155,18 @@ namespace F1XR.RestAPI.Replay
             carAudio.ConfigureCar(driver, car);
 
             ReplayCarInteractable interaction = car.GetComponent<ReplayCarInteractable>();
-            if (interaction == null)
+            if (interaction == null && allowInteraction)
                 interaction = car.gameObject.AddComponent<ReplayCarInteractable>();
-            interaction.Configure(car, player);
-            interaction.enabled = player == null || !player.IsTrackEditMode;
+
+            if (interaction != null)
+            {
+                interaction.enabled = allowInteraction;
+                if (allowInteraction)
+                {
+                    interaction.Configure(car, player);
+                    interaction.enabled = player == null || !player.IsTrackEditMode;
+                }
+            }
         }
 
         private void RemoveCarState(int driver)
@@ -203,9 +222,29 @@ namespace F1XR.RestAPI.Replay
                 gridStartAudio.Pause();
         }
 
-        public void SetCalibration(TrackCalibration source)
+        public void SetCalibration(
+            TrackCalibration source,
+            bool resetRuntimeHeightOrigin = true)
         {
-            carMotion.SetCalibration(source);
+            carMotion.SetCalibration(source, resetRuntimeHeightOrigin);
+        }
+
+        public void SetCustomSpace(
+            Transform parent,
+            Vector3 sourceOrigin,
+            Quaternion sourceToLocalRotation)
+        {
+            carMotion.SetCustomSpace(
+                parent,
+                sourceOrigin,
+                sourceToLocalRotation);
+        }
+
+        public bool TryGetMappedPosition(
+            LocationSample sample,
+            out Vector3 position)
+        {
+            return carMotion.TryGetMappedPosition(sample, out position);
         }
 
         private void UpdateEngineSound(ReplayCarView car, LocationSample a, LocationSample b, float u, float duration)

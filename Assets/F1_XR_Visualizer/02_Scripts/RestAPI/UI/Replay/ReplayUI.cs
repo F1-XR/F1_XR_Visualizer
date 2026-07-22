@@ -78,6 +78,7 @@ namespace F1XR.RestAPI.UI
 
             StyleControls();
             EnsurePlacementControls();
+            EnsureEventControls();
         }
 
         private void OnEnable()
@@ -210,6 +211,7 @@ namespace F1XR.RestAPI.UI
 
             StyleControls();
             RefreshPlacementControls();
+            RefreshEventControls();
             RefreshStandings(player.GetPositions());
         }
 

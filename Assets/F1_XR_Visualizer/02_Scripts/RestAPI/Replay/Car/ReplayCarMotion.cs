@@ -18,6 +18,9 @@ namespace F1XR.RestAPI.Replay
         private ARPlanePlacementController placement;
         private TrackCalibration calibration;
         private TrackRevealPlacer buildPlacer;
+        private Transform customParent;
+        private Vector3 customOrigin;
+        private Quaternion customRotation = Quaternion.identity;
 
         public ReplayCarMotion(CarInstances carInstances)
         {
@@ -40,16 +43,50 @@ namespace F1XR.RestAPI.Replay
             buildPlacer = source;
         }
 
-        public void SetCalibration(TrackCalibration source)
+        public void SetCalibration(
+            TrackCalibration source,
+            bool resetRuntimeHeightOrigin = true)
         {
             calibration = source;
 
-            if (calibration != null)
+            if (calibration != null && resetRuntimeHeightOrigin)
                 calibration.ResetRuntimeHeightOrigin();
 
             hasOrigin = false;
             origin = Vector3.zero;
             groundSnap.ResetForCalibration();
+        }
+
+        public void SetCustomSpace(
+            Transform parent,
+            Vector3 sourceOrigin,
+            Quaternion sourceToLocalRotation)
+        {
+            customParent = parent;
+            customOrigin = sourceOrigin;
+            customRotation = sourceToLocalRotation;
+            groundSnap.ClearSurfaceCache();
+        }
+
+        public bool TryGetMappedPosition(
+            LocationSample sample,
+            out Vector3 position)
+        {
+            if (calibration != null)
+            {
+                if (calibration.TryMap(sample, out position))
+                    return true;
+            }
+
+            position = ReplayCoordinate.ToUnity(sample);
+            if (!hasOrigin)
+            {
+                origin = position;
+                hasOrigin = true;
+            }
+
+            position -= origin;
+            return true;
         }
 
         public void Move(
@@ -63,30 +100,13 @@ namespace F1XR.RestAPI.Replay
             duration = Mathf.Max(0.001f, b.t - a.t);
             interpolation = Mathf.Clamp01((time - a.t) / duration);
 
-            Vector3 positionA = default;
-            Vector3 positionB = default;
-            bool useCalibration = false;
+            TryGetMappedPosition(a, out Vector3 positionA);
+            TryGetMappedPosition(b, out Vector3 positionB);
 
-            if (calibration != null)
+            if (customParent != null)
             {
-                bool mappedA = calibration.TryMap(a, out positionA);
-                bool mappedB = calibration.TryMap(b, out positionB);
-                useCalibration = mappedA && mappedB;
-            }
-
-            if (!useCalibration)
-            {
-                positionA = ReplayCoordinate.ToUnity(a);
-                positionB = ReplayCoordinate.ToUnity(b);
-
-                if (!hasOrigin)
-                {
-                    origin = positionA;
-                    hasOrigin = true;
-                }
-
-                positionA -= origin;
-                positionB -= origin;
+                positionA = customRotation * (positionA - customOrigin);
+                positionB = customRotation * (positionB - customOrigin);
             }
 
             Vector3 rawPosition = Vector3.Lerp(
@@ -154,6 +174,9 @@ namespace F1XR.RestAPI.Replay
 
         private Transform ResolvePlacementTransform()
         {
+            if (customParent != null)
+                return customParent;
+
             if (HasBuildPlacement())
                 return buildPlacer.PlacementTransform;
 
@@ -164,6 +187,9 @@ namespace F1XR.RestAPI.Replay
 
         private Transform ResolveCarParent(Transform placementTransform)
         {
+            if (customParent != null)
+                return customParent;
+
             return HasBuildPlacement()
                 ? buildPlacer.CarsTransform
                 : placementTransform;
