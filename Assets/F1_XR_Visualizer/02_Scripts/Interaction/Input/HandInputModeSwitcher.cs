@@ -1,102 +1,205 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
 using UnityEngine.XR.Hands;
-using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Hands.Samples.VisualizerSample;
 
 namespace F1XR.Interaction.Input
 {
-    // The XR rig has both a hand-tracking interactor and a controller interactor
-    // active on each hand at the same time, which lets them fight over the same
-    // grabbable objects. This enables only the one matching the input currently
-    // in use, based on XRHandTrackingEvents.handIsTracked.
     public sealed class HandInputModeSwitcher : MonoBehaviour
     {
-        [SerializeField] XRHandTrackingEvents leftHandTrackingEvents;
-        [SerializeField] XRHandTrackingEvents rightHandTrackingEvents;
-        [SerializeField] GameObject leftHandInteractor;
+        [SerializeField] bool showInputVisualMeshes;
+        [SerializeField] GameObject handVisualizerRoot;
+        [SerializeField] GameObject leftHandRoot;
+        [SerializeField] GameObject leftHandRay;
         [SerializeField] GameObject leftController;
-        [SerializeField] GameObject rightHandInteractor;
+        [SerializeField] GameObject rightHandRoot;
+        [SerializeField] GameObject rightHandRay;
         [SerializeField] GameObject rightController;
 
+        readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
+        readonly List<InputDevice> controllerDevices = new List<InputDevice>();
+
+        XRHandSubsystem handSubsystem;
+        HandVisualizer handVisualizer;
+        MeshRenderer[] leftControllerRenderers = System.Array.Empty<MeshRenderer>();
+        MeshRenderer[] rightControllerRenderers = System.Array.Empty<MeshRenderer>();
+        bool? appliedShowInputVisualMeshes;
         float nextResolveTime;
 
         void Awake()
         {
-            ResolveMissingReferences();
+            ResolveSceneObjects();
+            SetActive(leftHandRay, false);
+            SetActive(rightHandRay, false);
+            SetActive(handVisualizerRoot, true);
+            ApplyInputVisualMeshes();
+            ResolveHandSubsystem();
+            ApplyModes();
         }
 
         void Update()
         {
-            if (!HasRequiredReferences() && Time.unscaledTime >= nextResolveTime)
+            if (!HasSceneReferences() && Time.unscaledTime >= nextResolveTime)
             {
-                ResolveMissingReferences();
+                ResolveSceneObjects();
+                SetActive(handVisualizerRoot, true);
+                ApplyInputVisualMeshes();
                 nextResolveTime = Time.unscaledTime + 1f;
             }
 
-            Apply(leftHandTrackingEvents, leftHandInteractor, leftController);
-            Apply(rightHandTrackingEvents, rightHandInteractor, rightController);
+            if (handSubsystem == null || !handSubsystem.running)
+                ResolveHandSubsystem();
+
+            ApplyInputVisualMeshes();
+            ApplyModes();
         }
 
-        bool HasRequiredReferences()
+        bool HasSceneReferences()
         {
-            return leftHandTrackingEvents != null &&
-                rightHandTrackingEvents != null &&
-                leftHandInteractor != null &&
-                rightHandInteractor != null &&
+            return handVisualizerRoot != null &&
+                leftHandRoot != null &&
+                rightHandRoot != null &&
+                leftHandRay != null &&
+                rightHandRay != null &&
                 leftController != null &&
                 rightController != null;
         }
 
-        void ResolveMissingReferences()
+        void ResolveSceneObjects()
         {
-            foreach (XRHandTrackingEvents trackingEvents in GetComponentsInChildren<XRHandTrackingEvents>(true))
-            {
-                string side = HierarchyName(trackingEvents.transform);
-                if (leftHandTrackingEvents == null && side.Contains("Left"))
-                    leftHandTrackingEvents = trackingEvents;
-                else if (rightHandTrackingEvents == null && side.Contains("Right"))
-                    rightHandTrackingEvents = trackingEvents;
-            }
-
-            foreach (XRDirectInteractor interactor in GetComponentsInChildren<XRDirectInteractor>(true))
-            {
-                string side = HierarchyName(interactor.transform);
-                if (leftHandInteractor == null && side.Contains("Left"))
-                    leftHandInteractor = interactor.gameObject;
-                else if (rightHandInteractor == null && side.Contains("Right"))
-                    rightHandInteractor = interactor.gameObject;
-            }
-
             foreach (Transform item in GetComponentsInChildren<Transform>(true))
             {
-                if (leftController == null && item.name == "Left Controller")
+                if (handVisualizerRoot == null && item.name == "HandVisualizer")
+                    handVisualizerRoot = item.gameObject;
+                else if (leftHandRoot == null && item.name == "Left Hand Tracking")
+                    leftHandRoot = item.gameObject;
+                else if (rightHandRoot == null && item.name == "Right Hand Tracking")
+                    rightHandRoot = item.gameObject;
+                else if (leftHandRay == null && item.name == "LeftHand")
+                    leftHandRay = item.gameObject;
+                else if (rightHandRay == null && item.name == "RightHand")
+                    rightHandRay = item.gameObject;
+                else if (leftController == null && item.name == "Left Controller")
                     leftController = item.gameObject;
                 else if (rightController == null && item.name == "Right Controller")
                     rightController = item.gameObject;
             }
+
+            handVisualizer = handVisualizerRoot != null
+                ? handVisualizerRoot.GetComponent<HandVisualizer>()
+                : null;
+            leftControllerRenderers = GetControllerRenderers(leftController);
+            rightControllerRenderers = GetControllerRenderers(rightController);
+            appliedShowInputVisualMeshes = null;
         }
 
-        static string HierarchyName(Transform item)
+        static MeshRenderer[] GetControllerRenderers(GameObject controller)
         {
-            string result = item != null ? item.name : string.Empty;
-            for (Transform parent = item != null ? item.parent : null; parent != null; parent = parent.parent)
-                result += "/" + parent.name;
-            return result;
+            if (controller == null)
+                return System.Array.Empty<MeshRenderer>();
+
+            var renderers = new List<MeshRenderer>();
+            foreach (MeshRenderer renderer in controller.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (renderer.GetComponentInParent<OccludedInputVisualMarker>() == null)
+                    renderers.Add(renderer);
+            }
+
+            return renderers.ToArray();
         }
 
-        static void Apply(XRHandTrackingEvents trackingEvents, GameObject handInteractor, GameObject controller)
+        void ApplyInputVisualMeshes()
         {
-            if (trackingEvents == null)
+            if (appliedShowInputVisualMeshes == showInputVisualMeshes)
                 return;
 
-            bool handTracked = trackingEvents.handIsTracked;
-            if (handInteractor == null || controller == null)
-                return;
+            if (handVisualizer != null)
+                handVisualizer.drawMeshes = showInputVisualMeshes;
 
-            if (handInteractor.activeSelf != handTracked)
-                handInteractor.SetActive(handTracked);
+            SetRenderersVisible(leftControllerRenderers, showInputVisualMeshes);
+            SetRenderersVisible(rightControllerRenderers, showInputVisualMeshes);
+            appliedShowInputVisualMeshes = showInputVisualMeshes;
+        }
 
-            if (controller.activeSelf == handTracked)
-                controller.SetActive(!handTracked);
+        static void SetRenderersVisible(MeshRenderer[] renderers, bool visible)
+        {
+            foreach (MeshRenderer item in renderers)
+            {
+                if (item != null)
+                    item.enabled = visible;
+            }
+        }
+
+        void ResolveHandSubsystem()
+        {
+            handSubsystems.Clear();
+            SubsystemManager.GetSubsystems(handSubsystems);
+
+            handSubsystem = null;
+            foreach (XRHandSubsystem subsystem in handSubsystems)
+            {
+                if (!subsystem.running)
+                    continue;
+
+                handSubsystem = subsystem;
+                break;
+            }
+        }
+
+        void ApplyModes()
+        {
+            bool leftControllerTracked = IsControllerTracked(InputDeviceCharacteristics.Left);
+            bool rightControllerTracked = IsControllerTracked(InputDeviceCharacteristics.Right);
+            bool leftHandTracked = handSubsystem != null && handSubsystem.leftHand.isTracked;
+            bool rightHandTracked = handSubsystem != null && handSubsystem.rightHand.isTracked;
+
+            Apply(leftHandRoot, leftHandRay, leftController, leftHandTracked, !leftHandTracked && leftControllerTracked);
+            Apply(rightHandRoot, rightHandRay, rightController, rightHandTracked, !rightHandTracked && rightControllerTracked);
+        }
+
+        bool IsControllerTracked(InputDeviceCharacteristics handedness)
+        {
+            controllerDevices.Clear();
+            InputDevices.GetDevicesWithCharacteristics(
+                InputDeviceCharacteristics.Controller | handedness,
+                controllerDevices);
+
+            foreach (InputDevice device in controllerDevices)
+            {
+                if (!device.isValid || (device.characteristics & InputDeviceCharacteristics.HandTracking) != 0)
+                    continue;
+
+                if (device.TryGetFeatureValue(CommonUsages.isTracked, out bool isTracked) && isTracked)
+                    return true;
+
+                if (!device.TryGetFeatureValue(CommonUsages.trackingState, out InputTrackingState trackingState))
+                    continue;
+
+                const InputTrackingState positionAndRotation = InputTrackingState.Position | InputTrackingState.Rotation;
+                if ((trackingState & positionAndRotation) == positionAndRotation)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static void Apply(
+            GameObject handRoot,
+            GameObject handRay,
+            GameObject controller,
+            bool handTracked,
+            bool controllerTracked)
+        {
+            SetActive(handRoot, handTracked);
+            SetActive(handRay, handTracked);
+            SetActive(controller, controllerTracked);
+        }
+
+        static void SetActive(GameObject target, bool active)
+        {
+            if (target != null && target.activeSelf != active)
+                target.SetActive(active);
         }
     }
 }

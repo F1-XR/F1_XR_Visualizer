@@ -1570,7 +1570,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &850124221
 Transform:
   m_ObjectHideFlags: 0
@@ -1608,7 +1608,7 @@ MonoBehaviour:
   m_AndroidXRLeftHandMesh: {fileID: 0}
   m_AndroidXRRightHandMesh: {fileID: 0}
   m_HandMeshMaterial: {fileID: 2100000, guid: 613690cd962241049a0ec289a6ff835e, type: 2}
-  m_DrawMeshes: 1
+  m_DrawMeshes: 0
   m_DebugDrawPrefab: {fileID: 6507399986997092475, guid: 254b742d65a15d14b9df756ae77de868, type: 3}
   m_DebugDrawJoints: 0
   m_VelocityPrefab: {fileID: 8538602047018081646, guid: 629fd7882ec6bfc499a5fcf20035282b, type: 3}
@@ -2679,6 +2679,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1467188976}
     m_Modifications:
+    - target: {fileID: 1255647619390271626, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
+      propertyPath: m_CastOrigin
+      value: 
+      objectReference: {fileID: 1800000105}
+    - target: {fileID: 1722882099693224055, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
+      propertyPath: m_TransformToFollow
+      value: 
+      objectReference: {fileID: 1800000102}
+    - target: {fileID: 3755238779732181253, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
+      propertyPath: m_LineOriginTransform
+      value: 
+      objectReference: {fileID: 1800000105}
     - target: {fileID: 4804964734930210078, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
       propertyPath: m_Name
       value: Left_NearFarInteractor
@@ -2723,6 +2735,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7104419533170684624, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
+      propertyPath: m_CastOrigin
+      value: 
+      objectReference: {fileID: 1800000102}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -3299,7 +3315,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1467188976
 Transform:
   m_ObjectHideFlags: 0
@@ -3314,6 +3330,8 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1280577436}
+  - {fileID: 1800000102}
+  - {fileID: 1800000105}
   m_Father: {fileID: 850124221}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1487915384
@@ -3331,7 +3349,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1487915385
 Transform:
   m_ObjectHideFlags: 0
@@ -4049,6 +4067,208 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+--- !u!1 &1800000101
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1800000102}
+  - component: {fileID: 1800000103}
+  m_Layer: 0
+  m_Name: Pinch
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1800000102
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1800000101}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1467188976}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1800000103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1800000101}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2fadf230d1919748a9aa21d40f74619, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.InputSystem::UnityEngine.InputSystem.XR.TrackedPoseDriver
+  m_TrackingType: 0
+  m_UpdateType: 0
+  m_IgnoreTrackingState: 0
+  m_PositionInput:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Position
+      m_Type: 0
+      m_ExpectedControlType: Vector3
+      m_Id: 584e8f76-5821-42c2-ab6a-b65e7f84adb0
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -2706128282752906596, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  m_RotationInput:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Rotation
+      m_Type: 0
+      m_ExpectedControlType: Quaternion
+      m_Id: 0004f6e4-ad8f-43c9-8b80-5dbdf9866344
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 8248158260566104461, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  m_TrackingStateInput:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Tracking State
+      m_Type: 0
+      m_ExpectedControlType: Integer
+      m_Id: 778e7235-546c-43e6-9579-058f8cacd9d3
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 684395432459739428, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  m_PositionAction:
+    m_Name: 
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 12fdde70-a363-4ea1-9181-84bd6e322cfe
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
+  m_RotationAction:
+    m_Name: 
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 3b7324c1-614d-4d08-ade1-8317681e6576
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
+--- !u!1 &1800000104
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1800000105}
+  - component: {fileID: 1800000106}
+  m_Layer: 0
+  m_Name: Aim
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1800000105
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1800000104}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1467188976}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1800000106
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1800000104}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2fadf230d1919748a9aa21d40f74619, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.InputSystem::UnityEngine.InputSystem.XR.TrackedPoseDriver
+  m_TrackingType: 0
+  m_UpdateType: 0
+  m_IgnoreTrackingState: 0
+  m_PositionInput:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Position
+      m_Type: 0
+      m_ExpectedControlType: Vector3
+      m_Id: be4ca513-1d42-4120-815f-38d2531ace2f
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -2496076053284925795, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  m_RotationInput:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Rotation
+      m_Type: 0
+      m_ExpectedControlType: Quaternion
+      m_Id: 576f45a7-a425-4bd3-ab2f-72e50df1dc20
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 7149951272733842039, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  m_TrackingStateInput:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Tracking State
+      m_Type: 0
+      m_ExpectedControlType: Integer
+      m_Id: e67d47e2-4150-4c00-8917-31819a5f96c1
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 684395432459739428, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  m_PositionAction:
+    m_Name: 
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 804c1df9-ea2c-4e6f-a7f6-81ee12e60a55
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
+  m_RotationAction:
+    m_Name: 
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 312e5917-8f7e-4ed6-bcf5-c34629d068db
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
 --- !u!1 &1918400211
 GameObject:
   m_ObjectHideFlags: 0
@@ -5152,6 +5372,9 @@ GameObject:
   - component: {fileID: 2086967210}
   - component: {fileID: 2086967204}
   - component: {fileID: 2086967214}
+  - component: {fileID: 2086967215}
+  - component: {fileID: 2086967216}
+  - component: {fileID: 2086967217}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5421,12 +5644,110 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6d28f00fbefa9e64a9b7926435e89e6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.HandInputModeSwitcher
-  leftHandTrackingEvents: {fileID: 0}
-  rightHandTrackingEvents: {fileID: 0}
-  leftHandInteractor: {fileID: 0}
-  leftController: {fileID: 0}
-  rightHandInteractor: {fileID: 0}
-  rightController: {fileID: 0}
+  showInputVisualMeshes: 0
+  handVisualizerRoot: {fileID: 850124220}
+  leftHandRoot: {fileID: 827969226}
+  leftHandRay: {fileID: 1467188975}
+  leftController: {fileID: 1434304034}
+  rightHandRoot: {fileID: 1245672794}
+  rightHandRay: {fileID: 1487915384}
+  rightController: {fileID: 1941916964}
+--- !u!114 &2086967215
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e85a8d9d4ca54ce983634dfc17645282, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.ContextualInputFeedback
+  mode: 1
+  enterDistance: 0.035
+  exitDistance: 0.055
+  handRayHideDistance: 0.07
+  handRayShowDistance: 0.09
+  targetLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  leftHandRoot: {fileID: 827969226}
+  rightHandRoot: {fileID: 1245672794}
+  leftHandRay: {fileID: 1467188975}
+  rightHandRay: {fileID: 1487915384}
+  leftController: {fileID: 1434304034}
+  rightController: {fileID: 1941916964}
+  controllerEnterDistance: 0.05
+  controllerExitDistance: 0.08
+  controllerRayHideDistance: 0.12
+  controllerRayShowDistance: 0.16
+  nearbyColor: {r: 0.2, g: 0.85, b: 1, a: 0.8}
+  pinchAttemptColor: {r: 0.71, g: 0.42, b: 1, a: 1}
+  pinchColor: {r: 1, g: 0.75, b: 0.2, a: 1}
+  markerRadius: 0.012
+  pinchedRadius: 0.024
+  approachRadiusScale: 1.35
+  surfaceOffset: 0.002
+  contactDistance: 0.015
+  selectionPulseDuration: 0.12
+  lineWidth: 0.002
+  fadeSpeed: 8
+  pinchStartDistance: 0.025
+  pinchEndDistance: 0.04
+--- !u!114 &2086967216
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 318ec3ba2f0d4049956f3e90c2651161, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.LocalDepthOccluderPrototype
+  mode: 1
+  contextualFeedback: {fileID: 2086967215}
+  depthOnlyMaterial: {fileID: 2100000, guid: fc9bf7fcea07461b99bc82591a904cf7, type: 2}
+  testHand: 1
+  fingertipRadius: 0.012
+  expansion: 0
+  showValidationCube: 1
+  validationDistance: 0.65
+  validationCubeSize: 0.22
+--- !u!114 &2086967217
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 91b26d9356c74a6cb286dd4eb5127193, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.OccludedInputVisualController
+  mode: 3
+  contextualFeedback: {fileID: 2086967215}
+  occludedMaterial: {fileID: 2100000, guid: b58c80ce13004df58ec6292d601b8dd1, type: 2}
+  leftHandRoot: {fileID: 827969226}
+  rightHandRoot: {fileID: 1245672794}
+  leftHandRay: {fileID: 1467188975}
+  rightHandRay: {fileID: 1487915384}
+  leftController: {fileID: 1434304034}
+  rightController: {fileID: 1941916964}
+  leftHandSource: {fileID: 0}
+  rightHandSource: {fileID: 0}
+  leftControllerSources: []
+  rightControllerSources: []
+  idleOpacity: 0.18
+  hoverOpacity: 0.24
+  activeOpacity: 0.36
+  opacitySpeed: 8
+  softRimStrength: 0.2
+  softRimPower: 2
+  outlineRimPower: 5
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
