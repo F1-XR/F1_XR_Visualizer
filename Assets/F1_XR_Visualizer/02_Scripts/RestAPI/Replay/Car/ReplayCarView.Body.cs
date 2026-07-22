@@ -17,6 +17,7 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Renderer> bodyRenderers = new();
         private readonly Dictionary<Renderer, MaterialPropertyBlock> bodyBlocks = new();
         private bool bodyRenderersDirty = true;
+        private float visualWidth;
 
         private void ApplyBodyHighlight()
         {
@@ -112,6 +113,44 @@ namespace F1XR.RestAPI.Replay
             }
 
             return hasBounds;
+        }
+
+        public float GetVisualWidth()
+        {
+            if (visualWidth > 0f)
+                return visualWidth;
+
+            RefreshBodyRenderers();
+            float minimum = float.PositiveInfinity;
+            float maximum = float.NegativeInfinity;
+
+            foreach (Renderer item in bodyRenderers)
+            {
+                if (item == null)
+                    continue;
+
+                Bounds bounds = item.localBounds;
+                Matrix4x4 rendererToCar =
+                    LogicalRoot.worldToLocalMatrix * item.transform.localToWorldMatrix;
+                Vector3 min = bounds.min;
+                Vector3 max = bounds.max;
+
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    Vector3 point = new(
+                        (corner & 1) == 0 ? min.x : max.x,
+                        (corner & 2) == 0 ? min.y : max.y,
+                        (corner & 4) == 0 ? min.z : max.z);
+                    float x = rendererToCar.MultiplyPoint3x4(point).x;
+                    minimum = Mathf.Min(minimum, x);
+                    maximum = Mathf.Max(maximum, x);
+                }
+            }
+
+            visualWidth = minimum <= maximum
+                ? Mathf.Max(0.001f, maximum - minimum)
+                : 0f;
+            return visualWidth;
         }
 
         private bool IsSelectionEffectRenderer(Renderer renderer)

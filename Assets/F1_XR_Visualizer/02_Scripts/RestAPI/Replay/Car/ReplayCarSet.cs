@@ -14,8 +14,14 @@ namespace F1XR.RestAPI.Replay
         private readonly DriverRoster driverRoster = new();
         private readonly CarPresentation carPresentation;
         private readonly CarAudio carAudio;
+        private readonly OvertakeMotion overtakeMotion = new();
+        private readonly List<CarFrame> frames = new();
+        private readonly Dictionary<int, ReplayCarPose> poses = new();
+        private readonly Dictionary<int, float> visualWidths = new();
+        private readonly Dictionary<int, string> debugEventByDriver = new();
         private readonly ReplayPlayer player;
         private readonly bool allowInteraction;
+        private OvertakeMotionSettings overtakeSettings = new();
         private int selectedDriverNumber;
 
         public ReplayCarSet(
@@ -47,6 +53,22 @@ namespace F1XR.RestAPI.Replay
             return carInstances.TryGetTransform(driverNumber, out carTransform);
         }
 
+        public bool TryGetVisualTransform(int driverNumber, out Transform carTransform)
+        {
+            return carInstances.TryGetVisualTransform(driverNumber, out carTransform);
+        }
+
+        public void SetReplayEvents(ReplayEventDto[] events)
+        {
+            overtakeMotion.SetEvents(events);
+        }
+
+        public void SetOvertakeSettings(OvertakeMotionSettings settings)
+        {
+            overtakeSettings = settings ?? new OvertakeMotionSettings();
+            overtakeMotion.SetSettings(overtakeSettings);
+        }
+
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
             Dictionary<int, int> indices,
@@ -57,6 +79,9 @@ namespace F1XR.RestAPI.Replay
             Dictionary<int, int> ranks = positions != null
                 ? GetRanksByDriver(positions)
                 : null;
+            frames.Clear();
+            poses.Clear();
+            visualWidths.Clear();
 
             foreach (KeyValuePair<int, List<LocationSample>> pair in samples)
             {
@@ -89,20 +114,49 @@ namespace F1XR.RestAPI.Replay
 
                 indices[driver] = index;
 
-                carMotion.Move(
+                carMotion.ResolvePose(
                     car,
+                    list[Mathf.Max(0, index - 1)],
                     list[index],
                     list[index + 1],
+                    list[Mathf.Min(list.Count - 1, index + 2)],
                     time,
+                    out ReplayCarPose pose,
                     out float interpolation,
                     out float duration);
-                UpdateEngineSound(
+                frames.Add(new CarFrame(
+                    driver,
                     car,
                     list[index],
                     list[index + 1],
+                    pose,
                     interpolation,
-                    duration);
-                carPresentation.UpdateCar(driver, car);
+                    duration));
+                poses[driver] = pose;
+                visualWidths[driver] = car.GetVisualWidth();
+            }
+
+            foreach (CarFrame frame in frames)
+                carMotion.ApplyLogicalPose(frame.car, frame.pose);
+
+            foreach (CarFrame frame in frames)
+            {
+                VisualMotionPose visualPose = overtakeMotion.Resolve(
+                    frame.driver,
+                    time,
+                    poses,
+                    visualWidths);
+                carMotion.ApplyVisualPose(frame.car, frame.pose, visualPose);
+
+                DrawOvertakeDebug(frame, visualPose);
+
+                UpdateEngineSound(
+                    frame.car,
+                    frame.a,
+                    frame.b,
+                    frame.interpolation,
+                    frame.duration);
+                carPresentation.UpdateCar(frame.driver, frame.car);
             }
 
             carAudio.UpdateAudibility();
@@ -129,6 +183,7 @@ namespace F1XR.RestAPI.Replay
         public void Clear()
         {
             selectedDriverNumber = 0;
+            debugEventByDriver.Clear();
             carPresentation.SetSelectedDriver(0);
             ResetPlacement();
         }
@@ -331,6 +386,66 @@ namespace F1XR.RestAPI.Replay
         public Color GetDriverColor(int driverNumber)
         {
             return driverRoster.GetColor(driverNumber);
+        }
+
+        private void DrawOvertakeDebug(
+            CarFrame frame,
+            VisualMotionPose visualPose)
+        {
+            if (!overtakeSettings.debugOvertakeVisuals)
+                return;
+
+            if (!visualPose.active)
+            {
+                debugEventByDriver.Remove(frame.driver);
+                return;
+            }
+
+            Debug.DrawLine(
+                frame.pose.worldPosition,
+                frame.car.VisualMotionRoot.position,
+                visualPose.lateralOffset >= 0f ? Color.cyan : Color.magenta);
+
+            if (debugEventByDriver.TryGetValue(frame.driver, out string previous) &&
+                previous == visualPose.sourceEventId)
+                return;
+
+            debugEventByDriver[frame.driver] = visualPose.sourceEventId;
+            Debug.Log(
+                $"[OvertakeMotion] driver={frame.driver}, role={visualPose.role}, " +
+                $"event={visualPose.sourceEventId}, side={visualPose.passingSide}, " +
+                $"source={visualPose.sideSource}, confidence={visualPose.confidence:0.00}, " +
+                $"offset={visualPose.lateralOffset:0.000}, yaw={visualPose.localYaw:0.0}, " +
+                $"logical={frame.pose.worldPosition}, visual={frame.car.VisualMotionRoot.position}");
+        }
+
+        private readonly struct CarFrame
+        {
+            public readonly int driver;
+            public readonly ReplayCarView car;
+            public readonly LocationSample a;
+            public readonly LocationSample b;
+            public readonly ReplayCarPose pose;
+            public readonly float interpolation;
+            public readonly float duration;
+
+            public CarFrame(
+                int driver,
+                ReplayCarView car,
+                LocationSample a,
+                LocationSample b,
+                ReplayCarPose pose,
+                float interpolation,
+                float duration)
+            {
+                this.driver = driver;
+                this.car = car;
+                this.a = a;
+                this.b = b;
+                this.pose = pose;
+                this.interpolation = interpolation;
+                this.duration = duration;
+            }
         }
     }
 }

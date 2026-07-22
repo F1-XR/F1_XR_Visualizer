@@ -37,11 +37,13 @@ namespace F1XR.RestAPI.Replay
         public bool hideLeaderHighlightAfterRaceStart = true;
         public float leaderHighlightDelaySeconds = 10f;
         public CarEngineSoundSettings engineSound = new();
+        public OvertakeMotionSettings overtakeMotion = new();
         
         public float positionScale = 0.01f;
 
         private string _datasetId;
         private DatasetManifestDto _manifest;
+        private ReplayEventDto[] replayEvents;
 
         private bool _hasDriverMetadata;
         private ReplayStartingLights _replayStartingLights;
@@ -66,7 +68,7 @@ namespace F1XR.RestAPI.Replay
 
         public RaceControlEventDto[] RedFlags => _manifest != null ? _manifest.redFlags : null;
 
-        public ReplayEventDto[] Events => _manifest != null ? _manifest.events : null;
+        public ReplayEventDto[] Events => replayEvents;
     
         public bool IsPlaying => timeline.IsPlaying;
         public float Duration => timeline.Duration;
@@ -99,6 +101,7 @@ namespace F1XR.RestAPI.Replay
         private void Awake()
         {
             EnsureEngineSound();
+            EnsureOvertakeMotion();
             replayChunks = new ReplayChunkLoader(this);
             manifestPoller = new ReplayManifestPoller(this);
 
@@ -115,6 +118,7 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetCalibration(trackCalibration);
             replayCars.SetLabelsVisible(showCarLabels);
             replayCars.SetLeaderHighlightVisible(false);
+            replayCars.SetOvertakeSettings(overtakeMotion);
             replayAudio = new ReplayAudio(replayCars);
             replayAudio.Reset(
                 engineSound,
@@ -135,6 +139,7 @@ namespace F1XR.RestAPI.Replay
         public void LoadDataset(DatasetManifestDto manifest, TrackOption track, bool playOnReady = true)
         {
             EnsureEngineSound();
+            EnsureOvertakeMotion();
             ReplayCoordinate.scale = positionScale;
             
             _manifest = manifest;
@@ -171,6 +176,9 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetCalibration(trackCalibration);
             replayCars.SetLabelsVisible(showCarLabels);
             replayCars.SetLeaderHighlightVisible(false);
+            replayEvents = ResolveReplayEvents(manifest);
+            replayCars.SetOvertakeSettings(overtakeMotion);
+            replayCars.SetReplayEvents(replayEvents);
             replayAudio ??= new ReplayAudio(replayCars);
             replayAudio.Reset(
                 engineSound,
@@ -262,8 +270,18 @@ namespace F1XR.RestAPI.Replay
             timeline.SetTime(seekTime);
             replayChunks.ResetLocationIndices();
 
-            if (!replayChunks.IsLoaded(chunkIndex))
-                yield return replayChunks.Load(chunkIndex, TryAutoPlay);
+            ChunkInfoDto chunk = _manifest.chunks[chunkIndex];
+            bool loadedSeekRange = false;
+            yield return replayChunks.LoadRange(
+                chunk.startT - 0.001f,
+                chunk.endT + 0.001f,
+                loaded => loadedSeekRange = loaded);
+
+            if (!loadedSeekRange)
+            {
+                _seekCoroutine = null;
+                yield break;
+            }
 
             LoadNearChunks();
             if (AreReplayCarsReady())
@@ -346,8 +364,10 @@ namespace F1XR.RestAPI.Replay
         private void ApplyManifest(DatasetManifestDto manifest)
         {
             _manifest = manifest;
+            replayEvents = ResolveReplayEvents(manifest);
             timeline.SetManifest(manifest);
             replayChunks.SetManifest(manifest);
+            replayCars.SetReplayEvents(replayEvents);
             ApplyDriverMetadata();
             LoadNearChunks();
             TryAutoPlay();
@@ -463,6 +483,12 @@ namespace F1XR.RestAPI.Replay
             return replayCars != null && replayCars.TryGetCarTransform(driverNumber, out carTransform);
         }
 
+        public bool TryGetVisualCarTransform(int driverNumber, out Transform carTransform)
+        {
+            carTransform = null;
+            return replayCars != null && replayCars.TryGetVisualTransform(driverNumber, out carTransform);
+        }
+
         public string GetDriverLabel(int driverNumber)
         {
             return replayCars.GetDriverLabel(driverNumber);
@@ -495,6 +521,22 @@ namespace F1XR.RestAPI.Replay
         private void EnsureEngineSound()
         {
             engineSound ??= new CarEngineSoundSettings();
+        }
+
+        private void EnsureOvertakeMotion()
+        {
+            overtakeMotion ??= new OvertakeMotionSettings();
+        }
+
+        private static ReplayEventDto[] ResolveReplayEvents(DatasetManifestDto manifest)
+        {
+            if (manifest == null)
+                return null;
+
+            if (manifest.events != null && manifest.events.Length > 0)
+                return manifest.events;
+
+            return ReplayEventFixtures.Load(manifest);
         }
 
         private void ApplyGridStartTimeline()

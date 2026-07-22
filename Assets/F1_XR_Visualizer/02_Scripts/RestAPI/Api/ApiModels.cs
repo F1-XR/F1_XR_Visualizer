@@ -101,6 +101,12 @@ namespace F1XR.RestAPI.Api
         public float confidence = -1f;
         public string displayTitle;
         public string displayDescription;
+        public string passingSide;
+        public string sideSource;
+        public float sideConfidence = -1f;
+        public string motionProfile;
+        public float overtakerShare = -1f;
+        public float defenderShare = -1f;
     }
     
     [System.Serializable]
