@@ -86,6 +86,22 @@ namespace F1XR.RestAPI.Api
         public int sector;
         public string message;
     }
+
+    [System.Serializable]
+    public class ReplayEventDto
+    {
+        public string eventId;
+        public string eventType;
+        public float anchorTime;
+        public float startTime;
+        public float endTime;
+        public int[] driverNumbers;
+        public float progressStart = -1f;
+        public float progressEnd = -1f;
+        public float confidence = -1f;
+        public string displayTitle;
+        public string displayDescription;
+    }
     
     [System.Serializable]
     public class DatasetManifestDto
@@ -111,6 +127,7 @@ namespace F1XR.RestAPI.Api
         public float raceEndT;
         public RaceControlEventDto[] yellowFlags;
         public RaceControlEventDto[] redFlags;
+        public ReplayEventDto[] events;
 
         public ChunkInfoDto[] chunks;
         public DriverInfoDto[] drivers;

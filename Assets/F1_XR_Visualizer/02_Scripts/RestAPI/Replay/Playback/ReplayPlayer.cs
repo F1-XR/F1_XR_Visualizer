@@ -52,6 +52,7 @@ namespace F1XR.RestAPI.Replay
         private ReplayManifestPoller manifestPoller;
         private ReplayCarSet replayCars;
         private ReplayAudio replayAudio;
+        private EventPopoutReplay eventReplay;
         private int selectedDriverNumber;
         private readonly ReplayTimeline timeline = new();
         private readonly ReplayReadyStart readyStart = new();
@@ -64,11 +65,17 @@ namespace F1XR.RestAPI.Replay
         public RaceControlEventDto[] YellowFlags => _manifest != null ? _manifest.yellowFlags : null;
 
         public RaceControlEventDto[] RedFlags => _manifest != null ? _manifest.redFlags : null;
+
+        public ReplayEventDto[] Events => _manifest != null ? _manifest.events : null;
     
         public bool IsPlaying => timeline.IsPlaying;
         public float Duration => timeline.Duration;
         public float ReadyUntilTime => timeline.ReadyUntilTime;
         public bool HasDataset => _manifest != null;
+        public EventPopoutReplay EventReplay => eventReplay;
+        internal DatasetManifestDto Manifest => _manifest;
+        internal Dictionary<int, List<LocationSample>> LocationsByDriver =>
+            replayChunks != null ? replayChunks.LocationsByDriver : null;
         public int SelectedDriverNumber => selectedDriverNumber;
         public bool IsTrackPlaced => HasPlacedTrack();
         public bool IsTrackPlacementActive => buildPlacer != null && buildPlacer.IsPlacementActive;
@@ -113,6 +120,11 @@ namespace F1XR.RestAPI.Replay
                 engineSound,
                 AreReplayCarsReady(),
                 ApplyDriverMetadata);
+
+            eventReplay = GetComponent<EventPopoutReplay>();
+            if (eventReplay == null)
+                eventReplay = gameObject.AddComponent<EventPopoutReplay>();
+            eventReplay.Configure(this);
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -210,6 +222,30 @@ namespace F1XR.RestAPI.Replay
                 StopCoroutine(_seekCoroutine);
 
             _seekCoroutine = StartCoroutine(SeekRoutine(targetTime));
+        }
+
+        internal IEnumerator LoadEventRange(
+            float startTime,
+            float endTime,
+            Action<bool> onComplete)
+        {
+            if (_manifest == null || replayChunks == null)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            yield return replayChunks.LoadRange(startTime, endTime, onComplete);
+        }
+
+        internal Transform GetTrackPlacementTransform()
+        {
+            if (buildPlacer != null && buildPlacer.HasPlacement)
+                return buildPlacer.PlacementTransform;
+
+            return placement != null && placement.HasPlacement
+                ? placement.PlacementTransform
+                : null;
         }
 
         private IEnumerator SeekRoutine(float targetTime)
