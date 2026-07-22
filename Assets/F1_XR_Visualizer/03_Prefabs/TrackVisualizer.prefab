@@ -46,7 +46,6 @@ GameObject:
   - component: {fileID: 1122334455667788990}
   - component: {fileID: 8623215418091420220}
   - component: {fileID: 7142912082451956104}
-  - component: {fileID: 6139150784932440184}
   m_Layer: 0
   m_Name: TrackVisualizer
   m_TagString: Untagged
@@ -314,19 +313,6 @@ MonoBehaviour:
   thumbstickDeadzone: 0.15
   centerAttachOnFarGrabTarget: 1
   preferMoveOnDiagonalThumbstick: 1
---- !u!114 &6139150784932440184
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6741167992287166459}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7bc6eb5f06774e24aa7d0131e454f442, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.RealWorldOcclusionTarget
-  renderQueue: 3001
 --- !u!1 &8335670326271928987
 GameObject:
   m_ObjectHideFlags: 0
