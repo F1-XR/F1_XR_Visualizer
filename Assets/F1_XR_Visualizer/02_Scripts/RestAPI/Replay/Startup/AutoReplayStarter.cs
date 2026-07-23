@@ -18,8 +18,24 @@ namespace F1XR.RestAPI.Replay
         public int overlapSeconds = 2;
         public bool skipWarmupLap = true;
 
+        [Header("Development Event Replay")]
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        public bool useEventReplayTestSession = true;
+#else
+        public bool useEventReplayTestSession;
+#endif
+
         private void Awake()
         {
+            if (useEventReplayTestSession)
+            {
+                preferredYear = 2024;
+                preferredCircuitShortName = "Sakhir";
+                preferredSessionName = "Race";
+                replayMinutes = 10;
+                skipWarmupLap = true;
+            }
+
             if (api == null)
                 api = GetComponent<ApiClient>();
 

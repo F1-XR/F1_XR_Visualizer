@@ -13,6 +13,7 @@ namespace F1XR.Interaction.World
     {
         [SerializeField] XRGrabInteractable grab;
         [SerializeField] Transform target;
+        [SerializeField] bool preserveGrabPoint;
         [SerializeField] bool allowFarGrab = true;
         [SerializeField] bool keepOnlyYRotation = true;
         [SerializeField] bool smoothWorldTransform = true;
@@ -31,10 +32,12 @@ namespace F1XR.Interaction.World
 
         bool moving;
         bool hasStartInteractorYaw;
-        bool hasNearGrabPivot;
+        bool hasGrabPivot;
         float startInteractorYaw;
         Vector3 startEulerAngles;
-        Vector3 nearGrabPivotLocal;
+        Vector3 grabPivotLocal;
+        Vector3 targetOffsetFromGrab;
+        Vector3 farPivotRayLocal;
         bool farMoving;
         float farGrabDistance;
         float farYawOffset;
@@ -49,6 +52,7 @@ namespace F1XR.Interaction.World
         bool hadAttachSettings;
         bool startUseDynamicAttach;
         bool startMatchAttachPosition;
+        bool filterAdded;
         IXRSelectInteractor farGrabInteractor;
 
         static readonly System.Collections.Generic.List<UnityEngine.XR.InputDevice> InputDevices = new();
@@ -56,6 +60,27 @@ namespace F1XR.Interaction.World
 
         public bool canProcess => isActiveAndEnabled;
         public bool IsFarGrabMoving => farMoving;
+
+        public void UseGrabPoint(
+            XRGrabInteractable value,
+            Transform valueTarget = null)
+        {
+            if (grab != value && filterAdded && grab != null)
+            {
+                grab.selectFilters.Remove(this);
+                filterAdded = false;
+            }
+
+            grab = value;
+            target = valueTarget != null ? valueTarget : transform;
+            preserveGrabPoint = true;
+
+            if (isActiveAndEnabled && grab != null && !filterAdded)
+            {
+                grab.selectFilters.Add(this);
+                filterAdded = true;
+            }
+        }
 
         void Awake()
         {
@@ -68,14 +93,18 @@ namespace F1XR.Interaction.World
 
         void OnEnable()
         {
-            if (grab != null)
+            if (grab != null && !filterAdded)
+            {
                 grab.selectFilters.Add(this);
+                filterAdded = true;
+            }
         }
 
         void OnDisable()
         {
             if (grab != null)
                 grab.selectFilters.Remove(this);
+            filterAdded = false;
 
             StopMoving();
         }
@@ -88,11 +117,98 @@ namespace F1XR.Interaction.World
                 return;
             }
 
+            if (preserveGrabPoint)
+            {
+                UpdatePreservedGrab();
+                return;
+            }
+
             var farGrab = farMoving || IsFarSelectingInteractor();
             if (farGrab)
                 UpdateFarGrab();
             else
                 UpdateNearGrab();
+        }
+
+        void UpdatePreservedGrab()
+        {
+            var isFarGrab = IsFarSelectingInteractor();
+            ApplyManualGrabSettings(isFarGrab);
+
+            if (!moving || farMoving != isFarGrab)
+            {
+                moving = true;
+                farMoving = isFarGrab;
+                farGrabInteractor = isFarGrab ? GetSelectingInteractor() : null;
+                startEulerAngles = target.eulerAngles;
+                hasStartInteractorYaw = TryGetSelectingInteractorTransform(out var interactorTransform);
+                if (hasStartInteractorYaw)
+                    startInteractorYaw = interactorTransform.eulerAngles.y;
+
+                hasGrabPivot = TryGetGrabPivotWorld(out var initialPivotWorld);
+                farYawOffset = 0f;
+
+                if (hasGrabPivot)
+                {
+                    targetOffsetFromGrab = Quaternion.Inverse(target.rotation) *
+                        (target.position - initialPivotWorld);
+
+                    if (isFarGrab &&
+                        TryGetFarRayFrame(out var rayOrigin, out var rayRotation))
+                    {
+                        farPivotRayLocal = Quaternion.Inverse(rayRotation) *
+                            (initialPivotWorld - rayOrigin);
+                        farGrabDistance = Mathf.Max(0.1f, farPivotRayLocal.z);
+                        farPivotRayLocal.z = farGrabDistance;
+                    }
+                }
+            }
+
+            farMoving = isFarGrab;
+            if (!hasGrabPivot)
+                return;
+
+            var farAxis = isFarGrab
+                ? ApplyThumbstickDeadzone(GetRightThumbstick())
+                : Vector2.zero;
+            var rotation = Quaternion.Euler(
+                startEulerAngles.x,
+                GetPreservedYaw(isFarGrab, farAxis),
+                startEulerAngles.z);
+            if (!TryGetPreservedPivot(isFarGrab, farAxis, out var pivotWorld))
+                return;
+
+            ApplyWorldPose(pivotWorld + rotation * targetOffsetFromGrab, rotation);
+        }
+
+        float GetPreservedYaw(bool isFarGrab, Vector2 farAxis)
+        {
+            if (!isFarGrab)
+                return GetYaw();
+
+            farYawOffset += farAxis.x * farRotateSpeed * Time.deltaTime;
+            return startEulerAngles.y + farYawOffset;
+        }
+
+        bool TryGetPreservedPivot(
+            bool isFarGrab,
+            Vector2 farAxis,
+            out Vector3 pivotWorld)
+        {
+            if (!isFarGrab)
+                return TryGetCurrentAttachPosition(out pivotWorld);
+
+            pivotWorld = default;
+            farGrabDistance = Mathf.Max(
+                0.1f,
+                farGrabDistance + farAxis.y * farMoveSpeed * Time.deltaTime);
+
+            if (!TryGetFarRayFrame(out var rayOrigin, out var rayRotation))
+                return false;
+
+            farPivotRayLocal.z = farGrabDistance;
+            pivotWorld = rayOrigin + rayRotation * farPivotRayLocal;
+            return true;
         }
 
         void UpdateNearGrab()
@@ -114,17 +230,17 @@ namespace F1XR.Interaction.World
                 if (hasStartInteractorYaw)
                 {
                     startInteractorYaw = interactorTransform.eulerAngles.y;
-                    hasNearGrabPivot = TryGetNearGrabPivotLocal(out nearGrabPivotLocal);
+                    hasGrabPivot = TryGetGrabPivotLocal(out grabPivotLocal);
                 }
                 else
                 {
-                    hasNearGrabPivot = false;
+                    hasGrabPivot = false;
                 }
             }
 
             var rotation = Quaternion.Euler(startEulerAngles.x, GetYaw(), startEulerAngles.z);
-            if (hasNearGrabPivot && TryGetCurrentAttachPosition(out var currentAttachPosition))
-                ApplyWorldPose(currentAttachPosition - rotation * nearGrabPivotLocal, rotation);
+            if (hasGrabPivot && TryGetCurrentAttachPosition(out var currentAttachPosition))
+                ApplyWorldPose(currentAttachPosition - rotation * grabPivotLocal, rotation);
             else
                 ApplyWorldRotation(rotation);
         }
@@ -294,7 +410,7 @@ namespace F1XR.Interaction.World
         {
             moving = false;
             farMoving = false;
-            hasNearGrabPivot = false;
+            hasGrabPivot = false;
             farGrabInteractor = null;
             RestoreGrabSettings();
         }
@@ -445,6 +561,18 @@ namespace F1XR.Interaction.World
             origin = Vector3.zero;
             forward = Vector3.forward;
 
+            if (!TryGetFarRayFrame(out origin, out var rotation))
+                return false;
+
+            forward = rotation * Vector3.forward;
+            return true;
+        }
+
+        bool TryGetFarRayFrame(out Vector3 origin, out Quaternion rotation)
+        {
+            origin = Vector3.zero;
+            rotation = Quaternion.identity;
+
             var interactor = farGrabInteractor ?? GetSelectingInteractor();
             if (interactor == null)
                 return false;
@@ -465,9 +593,7 @@ namespace F1XR.Interaction.World
                 return false;
 
             origin = rayTransform.position;
-            forward = rayTransform.forward.sqrMagnitude > 0.0001f
-                ? rayTransform.forward.normalized
-                : Vector3.forward;
+            rotation = rayTransform.rotation;
             return true;
         }
 
@@ -495,7 +621,7 @@ namespace F1XR.Interaction.World
             return false;
         }
 
-        bool TryGetNearGrabPivotLocal(out Vector3 pivotLocal)
+        bool TryGetGrabPivotLocal(out Vector3 pivotLocal)
         {
             pivotLocal = Vector3.zero;
 
@@ -509,6 +635,20 @@ namespace F1XR.Interaction.World
                 pivotWorld = closestPoint;
 
             pivotLocal = target.InverseTransformPoint(pivotWorld);
+            return true;
+        }
+
+        bool TryGetGrabPivotWorld(out Vector3 pivotWorld)
+        {
+            pivotWorld = default;
+            if (grab == null || grab.interactorsSelecting.Count == 0)
+                return false;
+
+            var attach = grab.GetAttachTransform(grab.interactorsSelecting[0]);
+            if (attach == null)
+                return false;
+
+            pivotWorld = attach.position;
             return true;
         }
 

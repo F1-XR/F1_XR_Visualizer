@@ -27,7 +27,7 @@ namespace F1XR.RestAPI.Replay
             float minUp = 0f;
             float maxUp = 0f;
             Vector3 up = Vector3.Cross(forward, right).normalized;
-            float originUp = Vector3.Dot(car.transform.position, up);
+            float originUp = Vector3.Dot(car.LogicalRoot.position, up);
 
             foreach (Renderer item in renderers)
             {
@@ -38,7 +38,7 @@ namespace F1XR.RestAPI.Replay
                 Vector3[] corners = GetBoundsCorners(bounds);
                 foreach (Vector3 corner in corners)
                 {
-                    Vector3 offset = corner - car.transform.position;
+                    Vector3 offset = corner - car.LogicalRoot.position;
                     float forwardValue = Vector3.Dot(offset, forward);
                     float rightValue = Vector3.Dot(offset, right);
                     float upValue = Vector3.Dot(corner, up) - originUp;

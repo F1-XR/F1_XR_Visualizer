@@ -172,6 +172,42 @@ namespace F1XR.RestAPI.Replay
             coroutineHost.StartCoroutine(Load(chunkIndex, onLoaded));
         }
 
+        public IEnumerator LoadRange(float startTime, float endTime, Action<bool> onComplete)
+        {
+            if (manifest == null || manifest.chunks == null || endTime <= startTime)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            bool foundRange = false;
+
+            for (int i = 0; i < manifest.chunks.Length; i++)
+            {
+                ChunkInfoDto chunk = manifest.chunks[i];
+                if (chunk.endT < startTime || chunk.startT > endTime || !CanLoad(i))
+                    continue;
+
+                foundRange = true;
+
+                while (IsLoading(i))
+                    yield return null;
+
+                if (!IsLoaded(i))
+                {
+                    if (api == null)
+                    {
+                        onComplete?.Invoke(false);
+                        yield break;
+                    }
+
+                    yield return Load(i, null);
+                }
+            }
+
+            onComplete?.Invoke(foundRange);
+        }
+
         public IEnumerator Load(int chunkIndex, Action onLoaded)
         {
             if (string.IsNullOrEmpty(datasetId))
