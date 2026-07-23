@@ -144,6 +144,8 @@ namespace F1XR.RestAPI.Replay.Track.Build
             fitTrackMapToBounds = fitMapToBounds;
             trackMapTargetXZSize = mapTargetXZSize;
             ClearPreview();
+            if (HasSavedPlacement && !SavedGeometryMatches())
+                ClearSavedPlacement();
             TryRestoreSavedPlacement();
         }
 
@@ -361,6 +363,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             WriteVector3("Position", placement.position);
             WriteQuaternion("Rotation", placement.rotation);
             WriteVector3("Scale", placement.localScale);
+            WriteGeometrySignature();
             PlayerPrefs.SetInt(PersistenceName("Valid"), 1);
             PlayerPrefs.Save();
             persistenceDirty = false;
@@ -369,8 +372,58 @@ namespace F1XR.RestAPI.Replay.Track.Build
         void ClearSavedPlacement()
         {
             PlayerPrefs.DeleteKey(PersistenceName("Valid"));
+            PlayerPrefs.DeleteKey(PersistenceName("Geometry.Valid"));
             PlayerPrefs.Save();
             persistenceDirty = false;
+        }
+
+        bool SavedGeometryMatches()
+        {
+            if (PlayerPrefs.GetInt(PersistenceName("Geometry.Valid"), 0) != 1)
+                return false;
+
+            bool savedFit =
+                PlayerPrefs.GetInt(PersistenceName("Geometry.FitMap"), 0) == 1;
+            int savedMode =
+                PlayerPrefs.GetInt(PersistenceName("Geometry.Mode"), -1);
+            float savedMapScale =
+                PlayerPrefs.GetFloat(PersistenceName("Geometry.MapScale"), -1f);
+            Vector2 savedTarget = new(
+                PlayerPrefs.GetFloat(PersistenceName("Geometry.Target.x"), -1f),
+                PlayerPrefs.GetFloat(PersistenceName("Geometry.Target.y"), -1f));
+            string savedMap =
+                PlayerPrefs.GetString(PersistenceName("Geometry.Map"), string.Empty);
+            string currentMap =
+                trackMapPrefab != null ? trackMapPrefab.name : string.Empty;
+
+            return savedFit == fitTrackMapToBounds &&
+                savedMode == (int)placementMode &&
+                Mathf.Approximately(savedMapScale, trackMapScale) &&
+                Vector2.Distance(savedTarget, trackMapTargetXZSize) <= 0.0001f &&
+                savedMap == currentMap;
+        }
+
+        void WriteGeometrySignature()
+        {
+            PlayerPrefs.SetInt(PersistenceName("Geometry.Valid"), 1);
+            PlayerPrefs.SetInt(
+                PersistenceName("Geometry.FitMap"),
+                fitTrackMapToBounds ? 1 : 0);
+            PlayerPrefs.SetInt(
+                PersistenceName("Geometry.Mode"),
+                (int)placementMode);
+            PlayerPrefs.SetFloat(
+                PersistenceName("Geometry.MapScale"),
+                trackMapScale);
+            PlayerPrefs.SetFloat(
+                PersistenceName("Geometry.Target.x"),
+                trackMapTargetXZSize.x);
+            PlayerPrefs.SetFloat(
+                PersistenceName("Geometry.Target.y"),
+                trackMapTargetXZSize.y);
+            PlayerPrefs.SetString(
+                PersistenceName("Geometry.Map"),
+                trackMapPrefab != null ? trackMapPrefab.name : string.Empty);
         }
 
         string PersistenceName(string suffix)

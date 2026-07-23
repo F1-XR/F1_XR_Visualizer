@@ -6,11 +6,39 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Replay
 {
+    public readonly struct ReplayCarPose
+    {
+        public readonly Transform parent;
+        public readonly Vector3 rawPosition;
+        public readonly Vector3 localForward;
+        public readonly Vector3 worldPosition;
+        public readonly Quaternion worldRotation;
+        public readonly float localSpeed;
+        public readonly bool hasDirection;
+
+        public ReplayCarPose(
+            Transform parent,
+            Vector3 rawPosition,
+            Vector3 localForward,
+            Vector3 worldPosition,
+            Quaternion worldRotation,
+            float localSpeed,
+            bool hasDirection)
+        {
+            this.parent = parent;
+            this.rawPosition = rawPosition;
+            this.localForward = localForward;
+            this.worldPosition = worldPosition;
+            this.worldRotation = worldRotation;
+            this.localSpeed = localSpeed;
+            this.hasDirection = hasDirection;
+        }
+    }
+
     public class ReplayCarMotion
     {
         private static readonly bool SnapCarsToTrackSurface = false;
 
-        private readonly CarInstances carInstances;
         private readonly CarGroundSnap groundSnap = new();
 
         private bool hasOrigin;
@@ -18,10 +46,12 @@ namespace F1XR.RestAPI.Replay
         private ARPlanePlacementController placement;
         private TrackCalibration calibration;
         private TrackRevealPlacer buildPlacer;
+        private Transform customParent;
+        private Vector3 customOrigin;
+        private Quaternion customRotation = Quaternion.identity;
 
-        public ReplayCarMotion(CarInstances carInstances)
+        public ReplayCarMotion(CarInstances _)
         {
-            this.carInstances = carInstances;
         }
 
         public void SetPlacement(ARPlanePlacementController source)
@@ -40,16 +70,50 @@ namespace F1XR.RestAPI.Replay
             buildPlacer = source;
         }
 
-        public void SetCalibration(TrackCalibration source)
+        public void SetCalibration(
+            TrackCalibration source,
+            bool resetRuntimeHeightOrigin = true)
         {
             calibration = source;
 
-            if (calibration != null)
+            if (calibration != null && resetRuntimeHeightOrigin)
                 calibration.ResetRuntimeHeightOrigin();
 
             hasOrigin = false;
             origin = Vector3.zero;
             groundSnap.ResetForCalibration();
+        }
+
+        public void SetCustomSpace(
+            Transform parent,
+            Vector3 sourceOrigin,
+            Quaternion sourceToLocalRotation)
+        {
+            customParent = parent;
+            customOrigin = sourceOrigin;
+            customRotation = sourceToLocalRotation;
+            groundSnap.ClearSurfaceCache();
+        }
+
+        public bool TryGetMappedPosition(
+            LocationSample sample,
+            out Vector3 position)
+        {
+            if (calibration != null)
+            {
+                if (calibration.TryMap(sample, out position))
+                    return true;
+            }
+
+            position = ReplayCoordinate.ToUnity(sample);
+            if (!hasOrigin)
+            {
+                origin = position;
+                hasOrigin = true;
+            }
+
+            position -= origin;
+            return true;
         }
 
         public void Move(
@@ -60,33 +124,64 @@ namespace F1XR.RestAPI.Replay
             out float interpolation,
             out float duration)
         {
+            ResolvePose(
+                car,
+                a,
+                b,
+                time,
+                out ReplayCarPose pose,
+                out interpolation,
+                out duration);
+            ApplyLogicalPose(car, pose);
+            car.ResetVisualMotion();
+        }
+
+        public void ResolvePose(
+            ReplayCarView car,
+            LocationSample a,
+            LocationSample b,
+            float time,
+            out ReplayCarPose pose,
+            out float interpolation,
+            out float duration)
+        {
+            ResolvePose(
+                car,
+                a,
+                a,
+                b,
+                b,
+                time,
+                out pose,
+                out interpolation,
+                out duration);
+        }
+
+        public void ResolvePose(
+            ReplayCarView car,
+            LocationSample previous,
+            LocationSample a,
+            LocationSample b,
+            LocationSample next,
+            float time,
+            out ReplayCarPose pose,
+            out float interpolation,
+            out float duration)
+        {
             duration = Mathf.Max(0.001f, b.t - a.t);
             interpolation = Mathf.Clamp01((time - a.t) / duration);
 
-            Vector3 positionA = default;
-            Vector3 positionB = default;
-            bool useCalibration = false;
+            TryGetMappedPosition(a, out Vector3 positionA);
+            TryGetMappedPosition(b, out Vector3 positionB);
+            TryGetMappedPosition(previous, out Vector3 previousPosition);
+            TryGetMappedPosition(next, out Vector3 nextPosition);
 
-            if (calibration != null)
+            if (customParent != null)
             {
-                bool mappedA = calibration.TryMap(a, out positionA);
-                bool mappedB = calibration.TryMap(b, out positionB);
-                useCalibration = mappedA && mappedB;
-            }
-
-            if (!useCalibration)
-            {
-                positionA = ReplayCoordinate.ToUnity(a);
-                positionB = ReplayCoordinate.ToUnity(b);
-
-                if (!hasOrigin)
-                {
-                    origin = positionA;
-                    hasOrigin = true;
-                }
-
-                positionA -= origin;
-                positionB -= origin;
+                positionA = customRotation * (positionA - customOrigin);
+                positionB = customRotation * (positionB - customOrigin);
+                previousPosition = customRotation * (previousPosition - customOrigin);
+                nextPosition = customRotation * (nextPosition - customOrigin);
             }
 
             Vector3 rawPosition = Vector3.Lerp(
@@ -96,22 +191,22 @@ namespace F1XR.RestAPI.Replay
             Transform placementTransform = ResolvePlacementTransform();
             Transform carParent = ResolveCarParent(placementTransform);
 
-            SetCarParent(car, carParent);
-
-            Vector3 direction = positionB - positionA;
-            direction.y = 0f;
+            Vector3 segmentDirection = FlatDirection(positionA, positionB);
+            Vector3 entryDirection = FlatDirection(previousPosition, positionB);
+            Vector3 exitDirection = FlatDirection(positionA, nextPosition);
+            Vector3 direction = SmoothDirection(
+                entryDirection,
+                exitDirection,
+                segmentDirection,
+                interpolation);
             bool hasDirection = direction.sqrMagnitude > 0.000001f;
-            Quaternion baseRotation =
-                carInstances.GetBaseRotation(car.driverNumber);
             Quaternion trackRotation = hasDirection
                 ? Quaternion.LookRotation(direction.normalized, Vector3.up)
                 : Quaternion.identity;
             Quaternion worldTrackRotation = placementTransform != null
                 ? placementTransform.rotation * trackRotation
                 : trackRotation;
-            Quaternion worldRotation = placementTransform != null
-                ? worldTrackRotation * baseRotation
-                : trackRotation * baseRotation;
+            Quaternion worldRotation = worldTrackRotation;
             Vector3 worldPosition = placementTransform != null
                 ? placementTransform.TransformPoint(rawPosition)
                 : rawPosition;
@@ -123,7 +218,7 @@ namespace F1XR.RestAPI.Replay
                     placementTransform,
                     hasDirection,
                     worldTrackRotation,
-                    baseRotation,
+                    Quaternion.identity,
                     ref worldPosition,
                     ref worldRotation);
             }
@@ -132,12 +227,70 @@ namespace F1XR.RestAPI.Replay
                 groundSnap.ClearPose(car.driverNumber);
             }
 
-            ApplyPose(
-                car,
+            pose = new ReplayCarPose(
+                carParent,
                 rawPosition,
+                hasDirection ? direction.normalized : Vector3.forward,
                 worldPosition,
                 worldRotation,
+                segmentDirection.magnitude / duration,
                 hasDirection);
+        }
+
+        private static Vector3 FlatDirection(Vector3 from, Vector3 to)
+        {
+            Vector3 direction = to - from;
+            direction.y = 0f;
+            return direction;
+        }
+
+        private static Vector3 SmoothDirection(
+            Vector3 entry,
+            Vector3 exit,
+            Vector3 fallback,
+            float interpolation)
+        {
+            if (entry.sqrMagnitude <= 0.000001f)
+                entry = fallback;
+            if (exit.sqrMagnitude <= 0.000001f)
+                exit = fallback;
+            if (entry.sqrMagnitude <= 0.000001f || exit.sqrMagnitude <= 0.000001f)
+                return fallback;
+
+            return Vector3.Slerp(
+                entry.normalized,
+                exit.normalized,
+                interpolation).normalized;
+        }
+
+        public void ApplyLogicalPose(
+            ReplayCarView car,
+            ReplayCarPose pose)
+        {
+            SetCarParent(car, pose.parent);
+            ApplyPose(car, pose);
+        }
+
+        public void ApplyVisualPose(
+            ReplayCarView car,
+            ReplayCarPose basePose,
+            VisualMotionPose visualPose)
+        {
+            if (!visualPose.active || Mathf.Abs(visualPose.lateralOffset) <= Mathf.Epsilon)
+            {
+                car.ResetVisualMotion();
+                return;
+            }
+
+            Vector3 localRight = Vector3.Cross(
+                Vector3.up,
+                basePose.localForward).normalized;
+            Vector3 localOffset = localRight * visualPose.lateralOffset;
+            Vector3 worldOffset = basePose.parent != null
+                ? basePose.parent.TransformVector(localOffset)
+                : localOffset;
+
+            car.ApplyVisualMotion(worldOffset, visualPose.localYaw);
         }
 
         public void RemoveCar(int driver)
@@ -154,6 +307,9 @@ namespace F1XR.RestAPI.Replay
 
         private Transform ResolvePlacementTransform()
         {
+            if (customParent != null)
+                return customParent;
+
             if (HasBuildPlacement())
                 return buildPlacer.PlacementTransform;
 
@@ -164,6 +320,9 @@ namespace F1XR.RestAPI.Replay
 
         private Transform ResolveCarParent(Transform placementTransform)
         {
+            if (customParent != null)
+                return customParent;
+
             return HasBuildPlacement()
                 ? buildPlacer.CarsTransform
                 : placementTransform;
@@ -176,26 +335,24 @@ namespace F1XR.RestAPI.Replay
 
         private static void ApplyPose(
             ReplayCarView car,
-            Vector3 rawPosition,
-            Vector3 worldPosition,
-            Quaternion worldRotation,
-            bool hasDirection)
+            ReplayCarPose pose)
         {
-            car.rawPosition = rawPosition;
-            car.transform.position = worldPosition;
+            car.rawPosition = pose.rawPosition;
+            car.LogicalRoot.position = pose.worldPosition;
 
-            if (hasDirection)
-                car.transform.rotation = worldRotation;
+            if (pose.hasDirection)
+                car.LogicalRoot.rotation = pose.worldRotation;
         }
 
         private static void SetCarParent(
             ReplayCarView car,
             Transform parent)
         {
-            if (car.transform.parent == parent)
+            Transform root = car.LogicalRoot;
+            if (root.parent == parent)
                 return;
 
-            car.transform.SetParent(parent, worldPositionStays: false);
+            root.SetParent(parent, worldPositionStays: false);
         }
     }
 }

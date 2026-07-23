@@ -3908,6 +3908,19 @@ MonoBehaviour:
     selectedCarGetsFullAudio: 0
     fadeOutCars: 2
     fadeOutVolume: 0.35
+  overtakeMotion:
+    enableOvertakeVisuals: 1
+    targetSeparationInVehicleWidths: 1.05
+    maximumCorrectionInVehicleWidths: 2
+    maximumOffsetInVehicleWidths: 1
+    overtakerShare: 0.9
+    defenderShare: 0.1
+    approachPortion: 0.3
+    parallelPortion: 0.4
+    returnPortion: 0.3
+    maximumVisualYawDegrees: 14
+    overlapBlendMode: 0
+    debugOvertakeVisuals: 0
   positionScale: 0.0001
 --- !u!114 &1705380155
 MonoBehaviour:
@@ -3944,6 +3957,7 @@ MonoBehaviour:
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
+  useEventReplayTestSession: 1
 --- !u!4 &1705380157
 Transform:
   m_ObjectHideFlags: 0
