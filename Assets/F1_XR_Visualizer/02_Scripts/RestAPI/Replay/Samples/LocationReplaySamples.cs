@@ -10,8 +10,6 @@ namespace F1XR.RestAPI.Replay
         private const float MinimumReversedDistance = 5f;
         private const float OppositeDirectionDot = -0.8660254f;
         private const float MatchingDirectionDot = 0.8660254f;
-        private const float ProgressRepairDirectionDot = 0.94f;
-        private const float ProgressRepairFractionError = 0.38f;
 
         private readonly Dictionary<int, List<LocationSample>> samples = new();
         private readonly Dictionary<int, List<LocationSample>> sourceSamples = new();
@@ -47,7 +45,7 @@ namespace F1XR.RestAPI.Replay
                     list.Add(Copy(sample));
 
                 RemoveDirectionGlitches(list);
-                RepairProgressSpikes(list);
+                LocationMotionStabilizer.Apply(list);
             }
         }
 
@@ -183,73 +181,6 @@ namespace F1XR.RestAPI.Replay
         {
             float duration = b.t - a.t;
             return duration > 0f && duration <= MaximumGlitchSampleGap;
-        }
-
-        private static void RepairProgressSpikes(List<LocationSample> list)
-        {
-            if (list.Count < 3)
-                return;
-
-            List<int> repairIndices = new();
-            List<Vector3> replacements = new();
-            int lastRepair = -2;
-
-            for (int index = 1; index < list.Count - 1; index++)
-            {
-                if (index <= lastRepair + 1)
-                    continue;
-
-                LocationSample a = list[index - 1];
-                LocationSample b = list[index];
-                LocationSample c = list[index + 1];
-                if (!HasShortPositiveGap(a, b) ||
-                    !HasShortPositiveGap(b, c))
-                    continue;
-
-                Vector2 first = Position(b) - Position(a);
-                Vector2 second = Position(c) - Position(b);
-                if (first.sqrMagnitude <= MinimumReversedDistance * MinimumReversedDistance ||
-                    second.sqrMagnitude <= MinimumReversedDistance * MinimumReversedDistance)
-                    continue;
-
-                Vector2 firstDirection = first.normalized;
-                Vector2 secondDirection = second.normalized;
-                if (Vector2.Dot(firstDirection, secondDirection) < ProgressRepairDirectionDot)
-                    continue;
-
-                float firstExpected =
-                    Mathf.Max(0f, (a.speed + b.speed) * 0.5f) *
-                    (b.t - a.t);
-                float secondExpected =
-                    Mathf.Max(0f, (b.speed + c.speed) * 0.5f) *
-                    (c.t - b.t);
-                float expectedTotal = firstExpected + secondExpected;
-                float actualTotal = first.magnitude + second.magnitude;
-                if (expectedTotal <= 0.001f || actualTotal <= 0.001f)
-                    continue;
-
-                float expectedFraction = firstExpected / expectedTotal;
-                float actualFraction = first.magnitude / actualTotal;
-                if (Mathf.Abs(actualFraction - expectedFraction) <
-                    ProgressRepairFractionError)
-                    continue;
-
-                repairIndices.Add(index);
-                replacements.Add(Vector3.Lerp(
-                    new Vector3(a.x, a.y, a.z),
-                    new Vector3(c.x, c.y, c.z),
-                    expectedFraction));
-                lastRepair = index;
-            }
-
-            for (int repair = 0; repair < repairIndices.Count; repair++)
-            {
-                int index = repairIndices[repair];
-                Vector3 position = replacements[repair];
-                list[index].x = position.x;
-                list[index].y = position.y;
-                list[index].z = position.z;
-            }
         }
 
         private static Vector2 Position(LocationSample sample)

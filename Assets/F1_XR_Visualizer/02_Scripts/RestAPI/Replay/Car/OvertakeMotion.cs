@@ -96,14 +96,25 @@ namespace F1XR.RestAPI.Replay
                     continue;
 
                 int side = PassingSide(replayEvent);
-                EvaluateEnvelope(replayEvent, time, out float weight, out float velocity);
-                weight = Mathf.Max(
-                    weight,
-                    CollisionGuardWeight(
+                EvaluateEnvelope(
+                    replayEvent,
+                    time,
+                    out float weight,
+                    out float velocity,
+                    out bool returning);
+                if (!returning)
+                {
+                    float guardWeight = CollisionGuardWeight(
                         replayEvent,
                         poses,
                         visualWidths,
-                        visualLengths));
+                        visualLengths);
+                    float guardActivation = SmoothStep(
+                        Mathf.Clamp01(weight * 2f));
+                    weight = Mathf.Max(
+                        weight,
+                        guardWeight * guardActivation);
+                }
                 if (weight <= 0f && Mathf.Abs(velocity) <= Mathf.Epsilon)
                     continue;
 
@@ -307,10 +318,12 @@ namespace F1XR.RestAPI.Replay
             ReplayEventDto replayEvent,
             float time,
             out float weight,
-            out float velocity)
+            out float velocity,
+            out bool returning)
         {
             weight = 0f;
             velocity = 0f;
+            returning = false;
 
             float duration = replayEvent.endTime - replayEvent.startTime;
             if (duration <= 0f || time < replayEvent.startTime || time > replayEvent.endTime)
@@ -346,6 +359,7 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
+            returning = true;
             float returnT = (normalized - returnStart) / (1f - returnStart);
             weight = 1f - SmoothStep(returnT);
             velocity = -SmoothStepDerivative(returnT) / ((1f - returnStart) * duration);

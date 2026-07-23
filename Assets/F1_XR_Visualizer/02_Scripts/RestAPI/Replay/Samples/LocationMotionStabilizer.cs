@@ -7,10 +7,8 @@ namespace F1XR.RestAPI.Replay
     public static class LocationMotionStabilizer
     {
         private const float ContinuityGap = 1f;
-        private const float SmoothingWindow = 1f;
+        private const float SmoothingWindow = 0.75f;
         private const float LocationUnitsPerMeter = 10f;
-        private const float MinimumProgressRate = 0.8f;
-        private const float MaximumProgressRate = 1.35f;
         private const float MinimumGlitchDistance = 5f;
         private const float OppositeDirectionDot = -0.8660254f;
         private const float MatchingDirectionDot = 0.8660254f;
@@ -88,7 +86,6 @@ namespace F1XR.RestAPI.Replay
 
             targets[0] = 0f;
             targets[count - 1] = maximum;
-            LimitProgressRate(targets, expected, maximum);
             ApplyProgress(
                 samples,
                 start,
@@ -285,35 +282,6 @@ namespace F1XR.RestAPI.Replay
             }
 
             return result;
-        }
-
-        private static void LimitProgressRate(
-            float[] targets,
-            float[] expected,
-            float maximum)
-        {
-            for (int pass = 0; pass < 3; pass++)
-            {
-                targets[0] = 0f;
-                for (int i = 1; i < targets.Length; i++)
-                {
-                    float step = Mathf.Max(0f, expected[i] - expected[i - 1]);
-                    targets[i] = Mathf.Clamp(
-                        targets[i],
-                        targets[i - 1] + step * MinimumProgressRate,
-                        targets[i - 1] + step * MaximumProgressRate);
-                }
-
-                targets[targets.Length - 1] = maximum;
-                for (int i = targets.Length - 2; i >= 0; i--)
-                {
-                    float step = Mathf.Max(0f, expected[i + 1] - expected[i]);
-                    targets[i] = Mathf.Clamp(
-                        targets[i],
-                        targets[i + 1] - step * MaximumProgressRate,
-                        targets[i + 1] - step * MinimumProgressRate);
-                }
-            }
         }
 
         private static void ApplyProgress(
