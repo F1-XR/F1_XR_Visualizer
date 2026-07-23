@@ -164,7 +164,10 @@ namespace F1XR.RestAPI.Replay
             if (!found)
                 return false;
 
-            size = (max - min) * MapFitScaleMultiplier;
+            size =
+                (max - min) *
+                calibration.OutputScale *
+                MapFitScaleMultiplier;
 
             return size.x > 0.0001f &&
                 size.y > 0.0001f;

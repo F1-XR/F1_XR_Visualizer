@@ -32,13 +32,20 @@ namespace F1XR.RestAPI.Replay
             this.player = player;
             this.allowInteraction = allowInteraction;
             TeamCarPrefabs teamCarPrefabs = new TeamCarPrefabs(carPrefab);
-            carInstances = new CarInstances(teamCarPrefabs, driverRoster);
+            carInstances = new CarInstances(
+                teamCarPrefabs,
+                driverRoster);
             carMotion = new ReplayCarMotion(carInstances);
             carPresentation = new CarPresentation(carInstances.Cars, driverRoster);
             carAudio = new CarAudio(carInstances.Cars, driverRoster.Teams);
         }
 
         public bool HasCars => carInstances.HasCars;
+
+        public void SetMapScaleRatio(float ratio)
+        {
+            carInstances.SetMapScaleRatio(ratio);
+        }
 
         public void SetTeamPrefabs(TeamCarPrefab[] prefabs)
         {

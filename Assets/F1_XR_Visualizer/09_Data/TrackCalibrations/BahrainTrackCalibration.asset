@@ -15,62 +15,504 @@ MonoBehaviour:
   circuitKey: 63
   circuitName: Bahrain
   active: 1
-  mappingMode: 1
-  segmentBlend: 0.85
+  mappingMode: 2
+  segmentBlend: 1
   loopMappingSegments: 1
   sourceAxisMode: 0
-  heightMode: 1
+  heightMode: 0
   localY: 0
-  heightOffset: 0.005
-  useFirstSourceHeightAsOrigin: 1
+  heightOffset: 0
+  outputScale: 0.4
+  useFirstSourceHeightAsOrigin: 0
   sourceHeightOrigin: 0
   sourceHeightScale: 0.0001
   useNearestPointHeight: 1
   pointHeightBlend: 1
   loopPointHeightSegments: 1
   points:
-  - name: Turn 1
-    sourcePosition: {x: 42.405937, y: 8329.202}
-    targetLocalPosition: {x: -0.34794754, y: 7.170923, z: 0.60139847}
-  - name: Turn 2
-    sourcePosition: {x: 820.7816, y: 7879.044}
-    targetLocalPosition: {x: -0.2666404, y: 5.6609287, z: 0.54403174}
-  - name: Turn 3
-    sourcePosition: {x: 1912.97, y: 8065.4424}
-    targetLocalPosition: {x: -0.15824308, y: 0.004838655, z: 0.572521}
-  - name: Turn 4
-    sourcePosition: {x: 7487.745, y: 6790.711}
-    targetLocalPosition: {x: 0.4136361, y: 20.830103, z: 0.44558424}
-  - name: Turn 5
-    sourcePosition: {x: 5820.2285, y: 4860.7407}
-    targetLocalPosition: {x: 0.23056999, y: 17.43056, z: 0.2523139}
-  - name: Turn 6
-    sourcePosition: {x: 5180.4043, y: 4214.5986}
-    targetLocalPosition: {x: 0.17437762, y: 16.20216, z: 0.17831004}
-  - name: Turn 7
-    sourcePosition: {x: 4276.203, y: 4156.2407}
-    targetLocalPosition: {x: 0.079229824, y: 13.945103, z: 0.18256174}
-  - name: Turn 8
-    sourcePosition: {x: 2490.099, y: 2458.6003}
-    targetLocalPosition: {x: -0.09957457, y: 4.722007, z: 0.0022634557}
-  - name: Turn 9
-    sourcePosition: {x: 2711.1553, y: 5950.242}
-    targetLocalPosition: {x: -0.07383422, y: 8.483611, z: 0.3599869}
-  - name: Turn 10
-    sourcePosition: {x: 2100.1328, y: 6614}
-    targetLocalPosition: {x: -0.13715136, y: 6.141588, z: 0.42789987}
-  - name: Turn 11
-    sourcePosition: {x: 2120.985, y: -663.99506}
-    targetLocalPosition: {x: -0.13393414, y: 7.0582404, z: -0.30133757}
-  - name: Turn 12
-    sourcePosition: {x: 4981.251, y: 1603.7477}
-    targetLocalPosition: {x: 0.15171048, y: 0.018742688, z: -0.07706417}
-  - name: Turn 13
-    sourcePosition: {x: 6665.934, y: 449.27563}
-    targetLocalPosition: {x: 0.3224995, y: 18.674143, z: -0.19251512}
-  - name: Turn 14
-    sourcePosition: {x: -145.41246, y: -3472.8086}
-    targetLocalPosition: {x: -0.36203605, y: 8.454741, z: -0.5929878}
-  - name: Turn 15
-    sourcePosition: {x: -552.8126, y: -2803.6663}
-    targetLocalPosition: {x: -0.39708513, y: 6.7782106, z: -0.5217401}
+  - name: Route 000
+    sourcePosition: {x: -369.000000, y: 1514.000000}
+    targetLocalPosition: {x: -0.382992082, y: 0.004120208, z: -0.087550096}
+  - name: Route 001
+    sourcePosition: {x: -354.397168, y: 1843.262299}
+    targetLocalPosition: {x: -0.381000469, y: 0.004129019, z: -0.054461573}
+  - name: Route 002
+    sourcePosition: {x: -340.638823, y: 2172.559375}
+    targetLocalPosition: {x: -0.379996339, y: 0.004122586, z: -0.021309657}
+  - name: Route 003
+    sourcePosition: {x: -327.571215, y: 2501.886054}
+    targetLocalPosition: {x: -0.378026363, y: 0.004130694, z: 0.011779120}
+  - name: Route 004
+    sourcePosition: {x: -311.807916, y: 2831.092871}
+    targetLocalPosition: {x: -0.377000000, y: 0.004054944, z: 0.044930763}
+  - name: Route 005
+    sourcePosition: {x: -296.496759, y: 3160.322913}
+    targetLocalPosition: {x: -0.375244108, y: 0.004129907, z: 0.078029732}
+  - name: Route 006
+    sourcePosition: {x: -282.704484, y: 3489.618583}
+    targetLocalPosition: {x: -0.374000000, y: 0.004052463, z: 0.111171221}
+  - name: Route 007
+    sourcePosition: {x: -270.038511, y: 3818.960211}
+    targetLocalPosition: {x: -0.372702196, y: 0.004015183, z: 0.144308523}
+  - name: Route 008
+    sourcePosition: {x: -258.017141, y: 4148.326903}
+    targetLocalPosition: {x: -0.371000571, y: 0.004023970, z: 0.177411763}
+  - name: Route 009
+    sourcePosition: {x: -246.361167, y: 4477.706727}
+    targetLocalPosition: {x: -0.369996845, y: 0.004047834, z: 0.210563844}
+  - name: Route 010
+    sourcePosition: {x: -234.445159, y: 4807.076788}
+    targetLocalPosition: {x: -0.368009627, y: 0.004143029, z: 0.243652390}
+  - name: Route 011
+    sourcePosition: {x: -223.464256, y: 5136.479394}
+    targetLocalPosition: {x: -0.367000000, y: 0.004374061, z: 0.276804393}
+  - name: Route 012
+    sourcePosition: {x: -212.984729, y: 5465.897840}
+    targetLocalPosition: {x: -0.365263169, y: 0.004693584, z: 0.309904747}
+  - name: Route 013
+    sourcePosition: {x: -201.515319, y: 5795.282756}
+    targetLocalPosition: {x: -0.360000000, y: 0.005043082, z: 0.342018090}
+  - name: Route 014
+    sourcePosition: {x: -191.296014, y: 6124.710070}
+    targetLocalPosition: {x: -0.360000000, y: 0.005323459, z: 0.375233693}
+  - name: Route 015
+    sourcePosition: {x: -181.797218, y: 6454.158974}
+    targetLocalPosition: {x: -0.360000000, y: 0.005598558, z: 0.408449299}
+  - name: Route 016
+    sourcePosition: {x: -174.019946, y: 6783.651859}
+    targetLocalPosition: {x: -0.359996441, y: 0.005872430, z: 0.441664783}
+  - name: Route 017
+    sourcePosition: {x: -164.693552, y: 7113.104737}
+    targetLocalPosition: {x: -0.358027276, y: 0.006164177, z: 0.474753478}
+  - name: Route 018
+    sourcePosition: {x: -152.713976, y: 7442.472466}
+    targetLocalPosition: {x: -0.357000000, y: 0.006432725, z: 0.507905258}
+  - name: Route 019
+    sourcePosition: {x: -139.052548, y: 7771.773877}
+    targetLocalPosition: {x: -0.355000105, y: 0.006746394, z: 0.540993671}
+  - name: Route 020
+    sourcePosition: {x: -106.584305, y: 8099.442022}
+    targetLocalPosition: {x: -0.353000859, y: 0.006970205, z: 0.574050658}
+  - name: Route 021
+    sourcePosition: {x: 86.186180, y: 8343.927363}
+    targetLocalPosition: {x: -0.343732926, y: 0.006933390, z: 0.600980540}
+  - name: Route 022
+    sourcePosition: {x: 367.784544, y: 8197.914708}
+    targetLocalPosition: {x: -0.314254382, y: 0.006229798, z: 0.584623171}
+  - name: Route 023
+    sourcePosition: {x: 606.822945, y: 7972.342609}
+    targetLocalPosition: {x: -0.287584016, y: 0.005605378, z: 0.559487400}
+  - name: Route 024
+    sourcePosition: {x: 913.949746, y: 7865.617962}
+    targetLocalPosition: {x: -0.257630607, y: 0.005599413, z: 0.544181483}
+  - name: Route 025
+    sourcePosition: {x: 1241.079317, y: 7897.130886}
+    targetLocalPosition: {x: -0.225763687, y: 0.006115318, z: 0.554078763}
+  - name: Route 026
+    sourcePosition: {x: 1560.255736, y: 7978.236410}
+    targetLocalPosition: {x: -0.193833884, y: 0.007124939, z: 0.564037896}
+  - name: Route 027
+    sourcePosition: {x: 1878.867534, y: 8058.667943}
+    targetLocalPosition: {x: -0.161414477, y: 0.008172826, z: 0.571400170}
+  - name: Route 028
+    sourcePosition: {x: 2207.662927, y: 8065.489138}
+    targetLocalPosition: {x: -0.128354706, y: 0.009262675, z: 0.568978781}
+  - name: Route 029
+    sourcePosition: {x: 2535.718270, y: 8035.728514}
+    targetLocalPosition: {x: -0.095550566, y: 0.010351305, z: 0.562716952}
+  - name: Route 030
+    sourcePosition: {x: 2860.170527, y: 7978.535083}
+    targetLocalPosition: {x: -0.062726825, y: 0.011371975, z: 0.556535975}
+  - name: Route 031
+    sourcePosition: {x: 3183.161759, y: 7912.940769}
+    targetLocalPosition: {x: -0.029914058, y: 0.012245615, z: 0.550216590}
+  - name: Route 032
+    sourcePosition: {x: 3506.173529, y: 7847.456600}
+    targetLocalPosition: {x: 0.002919202, y: 0.012905645, z: 0.544015715}
+  - name: Route 033
+    sourcePosition: {x: 3829.174383, y: 7781.904165}
+    targetLocalPosition: {x: 0.035759974, y: 0.013527392, z: 0.537852161}
+  - name: Route 034
+    sourcePosition: {x: 4152.215153, y: 7716.546709}
+    targetLocalPosition: {x: 0.068565752, y: 0.014179640, z: 0.531495821}
+  - name: Route 035
+    sourcePosition: {x: 4475.397869, y: 7651.896229}
+    targetLocalPosition: {x: 0.101403091, y: 0.014839484, z: 0.525315076}
+  - name: Route 036
+    sourcePosition: {x: 4798.643878, y: 7587.561465}
+    targetLocalPosition: {x: 0.134242936, y: 0.015459847, z: 0.519146619}
+  - name: Route 037
+    sourcePosition: {x: 5122.112396, y: 7524.358649}
+    targetLocalPosition: {x: 0.167083783, y: 0.016084629, z: 0.512983613}
+  - name: Route 038
+    sourcePosition: {x: 5445.839227, y: 7462.506946}
+    targetLocalPosition: {x: 0.199889635, y: 0.016733333, z: 0.506629441}
+  - name: Route 039
+    sourcePosition: {x: 5769.718615, y: 7401.451043}
+    targetLocalPosition: {x: 0.232726372, y: 0.017354117, z: 0.500446514}
+  - name: Route 040
+    sourcePosition: {x: 6093.947266, y: 7342.272400}
+    targetLocalPosition: {x: 0.265532214, y: 0.018012964, z: 0.494090984}
+  - name: Route 041
+    sourcePosition: {x: 6418.118069, y: 7282.776516}
+    targetLocalPosition: {x: 0.298362230, y: 0.018633638, z: 0.487870157}
+  - name: Route 042
+    sourcePosition: {x: 6742.321336, y: 7223.455145}
+    targetLocalPosition: {x: 0.331175522, y: 0.019257129, z: 0.481555252}
+  - name: Route 043
+    sourcePosition: {x: 7064.788688, y: 7156.175385}
+    targetLocalPosition: {x: 0.363923292, y: 0.019884313, z: 0.475015219}
+  - name: Route 044
+    sourcePosition: {x: 7360.367139, y: 7014.878897}
+    targetLocalPosition: {x: 0.395003131, y: 0.020568878, z: 0.464977414}
+  - name: Route 045
+    sourcePosition: {x: 7494.983033, y: 6728.892899}
+    targetLocalPosition: {x: 0.412409094, y: 0.020787340, z: 0.440000486}
+  - name: Route 046
+    sourcePosition: {x: 7416.791737, y: 6412.759302}
+    targetLocalPosition: {x: 0.394049007, y: 0.020178192, z: 0.413049007}
+  - name: Route 047
+    sourcePosition: {x: 7203.126931, y: 6163.927804}
+    targetLocalPosition: {x: 0.370135353, y: 0.019806701, z: 0.389253191}
+  - name: Route 048
+    sourcePosition: {x: 6940.188194, y: 5965.721540}
+    targetLocalPosition: {x: 0.343467970, y: 0.019570723, z: 0.368380450}
+  - name: Route 049
+    sourcePosition: {x: 6671.806387, y: 5774.465591}
+    targetLocalPosition: {x: 0.317145100, y: 0.019118116, z: 0.347143620}
+  - name: Route 050
+    sourcePosition: {x: 6412.701780, y: 5570.899813}
+    targetLocalPosition: {x: 0.293177710, y: 0.018489876, z: 0.323177710}
+  - name: Route 051
+    sourcePosition: {x: 6176.508197, y: 5341.559284}
+    targetLocalPosition: {x: 0.269232011, y: 0.018064152, z: 0.299232011}
+  - name: Route 052
+    sourcePosition: {x: 5969.500204, y: 5085.377643}
+    targetLocalPosition: {x: 0.245684653, y: 0.017640625, z: 0.274897869}
+  - name: Route 053
+    sourcePosition: {x: 5789.078044, y: 4809.651685}
+    targetLocalPosition: {x: 0.227117376, y: 0.017211520, z: 0.246638105}
+  - name: Route 054
+    sourcePosition: {x: 5609.777395, y: 4533.372026}
+    targetLocalPosition: {x: 0.214519861, y: 0.016780539, z: 0.214837771}
+  - name: Route 055
+    sourcePosition: {x: 5372.239569, y: 4307.399731}
+    targetLocalPosition: {x: 0.192900440, y: 0.016280126, z: 0.188901748}
+  - name: Route 056
+    sourcePosition: {x: 5066.883532, y: 4192.775465}
+    targetLocalPosition: {x: 0.162099843, y: 0.015956862, z: 0.177000010}
+  - name: Route 057
+    sourcePosition: {x: 4737.564684, y: 4187.022007}
+    targetLocalPosition: {x: 0.127539548, y: 0.015234852, z: 0.180084563}
+  - name: Route 058
+    sourcePosition: {x: 4408.529963, y: 4177.855879}
+    targetLocalPosition: {x: 0.093094628, y: 0.014289757, z: 0.184000000}
+  - name: Route 059
+    sourcePosition: {x: 4090.556242, y: 4096.170217}
+    targetLocalPosition: {x: 0.060209946, y: 0.013171873, z: 0.177336871}
+  - name: Route 060
+    sourcePosition: {x: 3804.186162, y: 3934.726524}
+    targetLocalPosition: {x: 0.035612931, y: 0.011646004, z: 0.154612931}
+  - name: Route 061
+    sourcePosition: {x: 3572.894194, y: 3701.413594}
+    targetLocalPosition: {x: 0.013870165, y: 0.010043696, z: 0.129080918}
+  - name: Route 062
+    sourcePosition: {x: 3384.793772, y: 3430.932100}
+    targetLocalPosition: {x: -0.006923604, y: 0.008236490, z: 0.102596337}
+  - name: Route 063
+    sourcePosition: {x: 3213.464107, y: 3149.382946}
+    targetLocalPosition: {x: -0.027925169, y: 0.006771047, z: 0.076258224}
+  - name: Route 064
+    sourcePosition: {x: 3041.742552, y: 2868.124112}
+    targetLocalPosition: {x: -0.048643364, y: 0.005705060, z: 0.049704129}
+  - name: Route 065
+    sourcePosition: {x: 2837.568880, y: 2609.717970}
+    targetLocalPosition: {x: -0.071219687, y: 0.004913206, z: 0.024780313}
+  - name: Route 066
+    sourcePosition: {x: 2556.831779, y: 2459.593509}
+    targetLocalPosition: {x: -0.095184548, y: 0.004574435, z: 0.003191295}
+  - name: Route 067
+    sourcePosition: {x: 2333.297719, y: 2666.592122}
+    targetLocalPosition: {x: -0.113969914, y: 0.004626167, z: 0.024684457}
+  - name: Route 068
+    sourcePosition: {x: 2290.951099, y: 2990.672351}
+    targetLocalPosition: {x: -0.113877984, y: 0.005052442, z: 0.057932914}
+  - name: Route 069
+    sourcePosition: {x: 2334.408827, y: 3317.158714}
+    targetLocalPosition: {x: -0.108750750, y: 0.005899815, z: 0.091037979}
+  - name: Route 070
+    sourcePosition: {x: 2402.254361, y: 3639.664249}
+    targetLocalPosition: {x: -0.103564774, y: 0.007034358, z: 0.124155088}
+  - name: Route 071
+    sourcePosition: {x: 2471.106207, y: 3961.977930}
+    targetLocalPosition: {x: -0.098209324, y: 0.008081850, z: 0.157249637}
+  - name: Route 072
+    sourcePosition: {x: 2544.840918, y: 4283.203893}
+    targetLocalPosition: {x: -0.093855474, y: 0.008793126, z: 0.190458314}
+  - name: Route 073
+    sourcePosition: {x: 2617.529864, y: 4604.654575}
+    targetLocalPosition: {x: -0.088668959, y: 0.009297344, z: 0.223575461}
+  - name: Route 074
+    sourcePosition: {x: 2679.660522, y: 4928.297510}
+    targetLocalPosition: {x: -0.083464678, y: 0.009491757, z: 0.256688085}
+  - name: Route 075
+    sourcePosition: {x: 2730.182217, y: 5253.913278}
+    targetLocalPosition: {x: -0.077860388, y: 0.009426321, z: 0.289720766}
+  - name: Route 076
+    sourcePosition: {x: 2751.620302, y: 5582.367132}
+    targetLocalPosition: {x: -0.072290564, y: 0.009048068, z: 0.322737968}
+  - name: Route 077
+    sourcePosition: {x: 2717.034121, y: 5908.994434}
+    targetLocalPosition: {x: -0.073220695, y: 0.008437958, z: 0.356036240}
+  - name: Route 078
+    sourcePosition: {x: 2595.482005, y: 6214.313541}
+    targetLocalPosition: {x: -0.087946733, y: 0.007504647, z: 0.384940881}
+  - name: Route 079
+    sourcePosition: {x: 2398.175046, y: 6475.442458}
+    targetLocalPosition: {x: -0.111067234, y: 0.006572774, z: 0.407932206}
+  - name: Route 080
+    sourcePosition: {x: 2107.370943, y: 6613.526610}
+    targetLocalPosition: {x: -0.136551055, y: 0.005971088, z: 0.427225606}
+  - name: Route 081
+    sourcePosition: {x: 1894.213747, y: 6394.135665}
+    targetLocalPosition: {x: -0.152816637, y: 0.005752572, z: 0.404491694}
+  - name: Route 082
+    sourcePosition: {x: 1835.077520, y: 6070.312666}
+    targetLocalPosition: {x: -0.158043240, y: 0.005837058, z: 0.371601107}
+  - name: Route 083
+    sourcePosition: {x: 1799.408073, y: 5742.674901}
+    targetLocalPosition: {x: -0.163156302, y: 0.006018421, z: 0.338643588}
+  - name: Route 084
+    sourcePosition: {x: 1773.743414, y: 5414.104556}
+    targetLocalPosition: {x: -0.167653854, y: 0.006056377, z: 0.305606439}
+  - name: Route 085
+    sourcePosition: {x: 1752.952238, y: 5085.176111}
+    targetLocalPosition: {x: -0.170965294, y: 0.006058449, z: 0.272455228}
+  - name: Route 086
+    sourcePosition: {x: 1734.119314, y: 4756.129342}
+    targetLocalPosition: {x: -0.172718731, y: 0.006030566, z: 0.239206707}
+  - name: Route 087
+    sourcePosition: {x: 1716.693191, y: 4427.005883}
+    targetLocalPosition: {x: -0.174000000, y: 0.006024255, z: 0.205921058}
+  - name: Route 088
+    sourcePosition: {x: 1701.521949, y: 4097.769717}
+    targetLocalPosition: {x: -0.175306595, y: 0.006018832, z: 0.172637344}
+  - name: Route 089
+    sourcePosition: {x: 1685.693530, y: 3768.564136}
+    targetLocalPosition: {x: -0.176999961, y: 0.006030212, z: 0.139386330}
+  - name: Route 090
+    sourcePosition: {x: 1669.255585, y: 3439.388493}
+    targetLocalPosition: {x: -0.178004551, y: 0.006052369, z: 0.106087193}
+  - name: Route 091
+    sourcePosition: {x: 1654.547191, y: 3110.132594}
+    targetLocalPosition: {x: -0.179999219, y: 0.006034570, z: 0.072851736}
+  - name: Route 092
+    sourcePosition: {x: 1640.386574, y: 2780.851267}
+    targetLocalPosition: {x: -0.180807232, y: 0.006010926, z: 0.039545262}
+  - name: Route 093
+    sourcePosition: {x: 1624.983379, y: 2451.626027}
+    targetLocalPosition: {x: -0.182000000, y: 0.006003868, z: 0.006253507}
+  - name: Route 094
+    sourcePosition: {x: 1608.977360, y: 2122.431347}
+    targetLocalPosition: {x: -0.183413933, y: 0.006046002, z: -0.027021317}
+  - name: Route 095
+    sourcePosition: {x: 1593.365206, y: 1793.215399}
+    targetLocalPosition: {x: -0.185000000, y: 0.006006934, z: -0.060281027}
+  - name: Route 096
+    sourcePosition: {x: 1576.971217, y: 1464.037514}
+    targetLocalPosition: {x: -0.186196074, y: 0.005997386, z: -0.093572633}
+  - name: Route 097
+    sourcePosition: {x: 1560.214438, y: 1134.877928}
+    targetLocalPosition: {x: -0.187999982, y: 0.006012684, z: -0.126815785}
+  - name: Route 098
+    sourcePosition: {x: 1542.465909, y: 805.773863}
+    targetLocalPosition: {x: -0.189022573, y: 0.005995858, z: -0.160114401}
+  - name: Route 099
+    sourcePosition: {x: 1524.781166, y: 476.664885}
+    targetLocalPosition: {x: -0.190999380, y: 0.006014345, z: -0.193349975}
+  - name: Route 100
+    sourcePosition: {x: 1518.172540, y: 147.183500}
+    targetLocalPosition: {x: -0.192000000, y: 0.005999041, z: -0.226645256}
+  - name: Route 101
+    sourcePosition: {x: 1556.823993, y: -179.469573}
+    targetLocalPosition: {x: -0.192000000, y: 0.005947443, z: -0.259941742}
+  - name: Route 102
+    sourcePosition: {x: 1699.308501, y: -471.511274}
+    targetLocalPosition: {x: -0.177665717, y: 0.006045503, z: -0.287334250}
+  - name: Route 103
+    sourcePosition: {x: 1983.777091, y: -630.485168}
+    targetLocalPosition: {x: -0.148094364, y: 0.006577643, z: -0.299011033}
+  - name: Route 104
+    sourcePosition: {x: 2308.939505, y: -663.074321}
+    targetLocalPosition: {x: -0.115415174, y: 0.007139527, z: -0.298045005}
+  - name: Route 105
+    sourcePosition: {x: 2623.616275, y: -570.014773}
+    targetLocalPosition: {x: -0.083969675, y: 0.007897901, z: -0.288987464}
+  - name: Route 106
+    sourcePosition: {x: 2899.419713, y: -391.206919}
+    targetLocalPosition: {x: -0.056812917, y: 0.008779597, z: -0.270812835}
+  - name: Route 107
+    sourcePosition: {x: 3122.438057, y: -149.522672}
+    targetLocalPosition: {x: -0.033526179, y: 0.009920786, z: -0.247526179}
+  - name: Route 108
+    sourcePosition: {x: 3287.858262, y: 134.975999}
+    targetLocalPosition: {x: -0.013905334, y: 0.011145516, z: -0.221267940}
+  - name: Route 109
+    sourcePosition: {x: 3414.762956, y: 439.081643}
+    targetLocalPosition: {x: -0.001008034, y: 0.012268925, z: -0.190923257}
+  - name: Route 110
+    sourcePosition: {x: 3545.137071, y: 741.333899}
+    targetLocalPosition: {x: 0.010929394, y: 0.013371657, z: -0.160207448}
+  - name: Route 111
+    sourcePosition: {x: 3717.555669, y: 1021.702539}
+    targetLocalPosition: {x: 0.025424112, y: 0.014509549, z: -0.130817664}
+  - name: Route 112
+    sourcePosition: {x: 3937.499994, y: 1265.741661}
+    targetLocalPosition: {x: 0.048563514, y: 0.015524332, z: -0.107436486}
+  - name: Route 113
+    sourcePosition: {x: 4211.705812, y: 1446.144422}
+    targetLocalPosition: {x: 0.074367938, y: 0.016686333, z: -0.087568151}
+  - name: Route 114
+    sourcePosition: {x: 4517.729300, y: 1566.970113}
+    targetLocalPosition: {x: 0.105568535, y: 0.017642538, z: -0.077307764}
+  - name: Route 115
+    sourcePosition: {x: 4843.089914, y: 1614.443120}
+    targetLocalPosition: {x: 0.138324028, y: 0.018392538, z: -0.075002196}
+  - name: Route 116
+    sourcePosition: {x: 5169.305373, y: 1574.849279}
+    targetLocalPosition: {x: 0.170177406, y: 0.018927194, z: -0.081743556}
+  - name: Route 117
+    sourcePosition: {x: 5476.877579, y: 1457.577355}
+    targetLocalPosition: {x: 0.199644658, y: 0.019321725, z: -0.095572445}
+  - name: Route 118
+    sourcePosition: {x: 5771.996916, y: 1310.841225}
+    targetLocalPosition: {x: 0.228817435, y: 0.019516255, z: -0.110158463}
+  - name: Route 119
+    sourcePosition: {x: 6069.115503, y: 1168.221540}
+    targetLocalPosition: {x: 0.257988855, y: 0.019540375, z: -0.124744818}
+  - name: Route 120
+    sourcePosition: {x: 6354.965105, y: 1005.045511}
+    targetLocalPosition: {x: 0.286353852, y: 0.019382660, z: -0.140572559}
+  - name: Route 121
+    sourcePosition: {x: 6585.849553, y: 774.058415}
+    targetLocalPosition: {x: 0.309218879, y: 0.019048123, z: -0.163405618}
+  - name: Route 122
+    sourcePosition: {x: 6664.463335, y: 457.543160}
+    targetLocalPosition: {x: 0.322890770, y: 0.018592733, z: -0.192252308}
+  - name: Route 123
+    sourcePosition: {x: 6577.842822, y: 144.506281}
+    targetLocalPosition: {x: 0.311061576, y: 0.017799474, z: -0.220938418}
+  - name: Route 124
+    sourcePosition: {x: 6355.255451, y: -96.145795}
+    targetLocalPosition: {x: 0.286851857, y: 0.017129147, z: -0.243056282}
+  - name: Route 125
+    sourcePosition: {x: 6078.443838, y: -274.464478}
+    targetLocalPosition: {x: 0.258125850, y: 0.016489145, z: -0.259338038}
+  - name: Route 126
+    sourcePosition: {x: 5787.415338, y: -429.039686}
+    targetLocalPosition: {x: 0.229265379, y: 0.016069131, z: -0.275433353}
+  - name: Route 127
+    sourcePosition: {x: 5494.948174, y: -580.984786}
+    targetLocalPosition: {x: 0.200326313, y: 0.015845894, z: -0.291397408}
+  - name: Route 128
+    sourcePosition: {x: 5203.059229, y: -734.034420}
+    targetLocalPosition: {x: 0.171444463, y: 0.015772348, z: -0.307467490}
+  - name: Route 129
+    sourcePosition: {x: 4912.554617, y: -889.701360}
+    targetLocalPosition: {x: 0.142506375, y: 0.015876407, z: -0.323433500}
+  - name: Route 130
+    sourcePosition: {x: 4623.096181, y: -1047.308694}
+    targetLocalPosition: {x: 0.113568135, y: 0.015919769, z: -0.339399594}
+  - name: Route 131
+    sourcePosition: {x: 4334.217241, y: -1205.977642}
+    targetLocalPosition: {x: 0.084657184, y: 0.015737179, z: -0.355418044}
+  - name: Route 132
+    sourcePosition: {x: 4045.996786, y: -1365.838866}
+    targetLocalPosition: {x: 0.055738849, y: 0.015347281, z: -0.371420779}
+  - name: Route 133
+    sourcePosition: {x: 3757.952030, y: -1526.016974}
+    targetLocalPosition: {x: 0.026805302, y: 0.014703562, z: -0.387395389}
+  - name: Route 134
+    sourcePosition: {x: 3470.003627, y: -1686.367453}
+    targetLocalPosition: {x: -0.002081319, y: 0.013868047, z: -0.403458078}
+  - name: Route 135
+    sourcePosition: {x: 3182.176004, y: -1846.935835}
+    targetLocalPosition: {x: -0.030894374, y: 0.012854068, z: -0.419653511}
+  - name: Route 136
+    sourcePosition: {x: 2894.305484, y: -2007.426831}
+    targetLocalPosition: {x: -0.059832685, y: 0.011669146, z: -0.435619644}
+  - name: Route 137
+    sourcePosition: {x: 2606.608908, y: -2168.229742}
+    targetLocalPosition: {x: -0.088748267, y: 0.010620351, z: -0.451629446}
+  - name: Route 138
+    sourcePosition: {x: 2318.669376, y: -2328.597294}
+    targetLocalPosition: {x: -0.117682981, y: 0.009812501, z: -0.467602449}
+  - name: Route 139
+    sourcePosition: {x: 2030.741944, y: -2488.986631}
+    targetLocalPosition: {x: -0.146595577, y: 0.009272744, z: -0.483615472}
+  - name: Route 140
+    sourcePosition: {x: 1743.700858, y: -2650.953600}
+    targetLocalPosition: {x: -0.175533585, y: 0.008956429, z: -0.499581865}
+  - name: Route 141
+    sourcePosition: {x: 1457.171618, y: -2813.822091}
+    targetLocalPosition: {x: -0.204413356, y: 0.008897280, z: -0.515653980}
+  - name: Route 142
+    sourcePosition: {x: 1171.290147, y: -2977.829078}
+    targetLocalPosition: {x: -0.233279639, y: 0.009045493, z: -0.531750021}
+  - name: Route 143
+    sourcePosition: {x: 884.663755, y: -3140.531392}
+    targetLocalPosition: {x: -0.262368928, y: 0.009188423, z: -0.547434717}
+  - name: Route 144
+    sourcePosition: {x: 597.533134, y: -3302.334022}
+    targetLocalPosition: {x: -0.291515343, y: 0.009147880, z: -0.563010160}
+  - name: Route 145
+    sourcePosition: {x: 301.207114, y: -3445.347973}
+    targetLocalPosition: {x: -0.320586628, y: 0.008894969, z: -0.578610948}
+  - name: Route 146
+    sourcePosition: {x: -21.832707, y: -3497.616887}
+    targetLocalPosition: {x: -0.350016622, y: 0.008504839, z: -0.592855938}
+  - name: Route 147
+    sourcePosition: {x: -302.827488, y: -3347.818710}
+    targetLocalPosition: {x: -0.374284288, y: 0.007927441, z: -0.577305942}
+  - name: Route 148
+    sourcePosition: {x: -476.280583, y: -3069.142927}
+    targetLocalPosition: {x: -0.387713841, y: 0.007252542, z: -0.547697778}
+  - name: Route 149
+    sourcePosition: {x: -560.503437, y: -2751.466778}
+    targetLocalPosition: {x: -0.396999928, y: 0.006526019, z: -0.516720097}
+  - name: Route 150
+    sourcePosition: {x: -576.210338, y: -2422.481889}
+    targetLocalPosition: {x: -0.397000000, y: 0.005748918, z: -0.483527286}
+  - name: Route 151
+    sourcePosition: {x: -564.062422, y: -2093.195109}
+    targetLocalPosition: {x: -0.397000000, y: 0.005215804, z: -0.450319242}
+  - name: Route 152
+    sourcePosition: {x: -543.550658, y: -1764.248854}
+    targetLocalPosition: {x: -0.397000000, y: 0.004801367, z: -0.417103703}
+  - name: Route 153
+    sourcePosition: {x: -524.442860, y: -1435.217188}
+    targetLocalPosition: {x: -0.396000000, y: 0.004441910, z: -0.383951615}
+  - name: Route 154
+    sourcePosition: {x: -506.553721, y: -1106.117994}
+    targetLocalPosition: {x: -0.391011687, y: 0.004322744, z: -0.351461165}
+  - name: Route 155
+    sourcePosition: {x: -488.244059, y: -777.041876}
+    targetLocalPosition: {x: -0.390000000, y: 0.004187678, z: -0.318309227}
+  - name: Route 156
+    sourcePosition: {x: -470.540426, y: -447.931924}
+    targetLocalPosition: {x: -0.388772426, y: 0.004159180, z: -0.285166604}
+  - name: Route 157
+    sourcePosition: {x: -452.078593, y: -118.863481}
+    targetLocalPosition: {x: -0.387000007, y: 0.004104482, z: -0.252068626}
+  - name: Route 158
+    sourcePosition: {x: -435.145640, y: 210.285249}
+    targetLocalPosition: {x: -0.387000000, y: 0.004071969, z: -0.218853203}
+  - name: Route 159
+    sourcePosition: {x: -417.824850, y: 539.415433}
+    targetLocalPosition: {x: -0.387000000, y: 0.004088539, z: -0.185637615}
+  - name: Route 160
+    sourcePosition: {x: -400.488731, y: 868.541148}
+    targetLocalPosition: {x: -0.386000000, y: 0.004111145, z: -0.152485935}
+  - name: Route 161
+    sourcePosition: {x: -384.224303, y: 1197.723802}
+    targetLocalPosition: {x: -0.384897599, y: 0.004112176, z: -0.119336520}

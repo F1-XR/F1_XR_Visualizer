@@ -44,8 +44,7 @@ namespace F1XR.RestAPI.Replay
                 foreach (LocationSample sample in source)
                     list.Add(Copy(sample));
 
-                if (!LocationMotionStabilizer.Apply(list))
-                    RemoveDirectionGlitches(list);
+                RemoveDirectionGlitches(list);
             }
         }
 

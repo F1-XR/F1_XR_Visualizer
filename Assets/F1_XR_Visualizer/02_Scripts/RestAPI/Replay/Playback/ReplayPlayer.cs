@@ -5,6 +5,7 @@ using UnityEngine;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using F1XR.RestAPI.Replay.Playback;
+using F1XR.RestAPI.Replay.Track;
 using F1XR.RestAPI.Replay.Track.Placement;
 using F1XR.RestAPI.Replay.Track.Build;
 
@@ -256,6 +257,19 @@ namespace F1XR.RestAPI.Replay
                 : null;
         }
 
+        internal float GetTrackMapScaleRatio()
+        {
+            Transform track = GetTrackPlacementTransform();
+            if (track == null)
+                return 1f;
+
+            TrackMapView mapView =
+                track.GetComponent<TrackMapView>();
+            return mapView != null
+                ? mapView.MapScaleRatio
+                : 1f;
+        }
+
         private IEnumerator SeekRoutine(float targetTime)
         {
             float seekTime = timeline.ClampToReady(targetTime);
@@ -341,6 +355,7 @@ namespace F1XR.RestAPI.Replay
         private void ShowReplayCars()
         {
             replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
+            replayCars.SetMapScaleRatio(GetTrackMapScaleRatio());
             replayCars.Show(
                 replayChunks.LocationsByDriver,
                 replayChunks.LocationIndices,

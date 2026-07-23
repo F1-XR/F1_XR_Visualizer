@@ -26,6 +26,7 @@ namespace F1XR.RestAPI.Replay
         [Min(0.1f)] public float stageSideOffset = 0.9f;
         [Min(0.1f)] public float stageForwardDistance = 1.1f;
         public float stageHeightOffset = 0.25f;
+        [Min(0.001f)] public float trackRegionPadding = 0.04f;
         [Min(0.001f)] public float roadWidth = 0.035f;
         [Min(0f)] public float roadEndPadding;
         [Min(0f)] public float trackPaddingSeconds = 1.5f;
@@ -44,6 +45,7 @@ namespace F1XR.RestAPI.Replay
         private ReplayAudio eventAudio;
         private ReplayEventDto currentEvent;
         private GameObject stageRoot;
+        private EventTrackSegment trackSegment;
         private Mesh roadMesh;
         private Material roadMaterial;
         private Material edgeMaterial;
@@ -84,11 +86,14 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            ReplayEventDto definition = FindFirstOvertake(player.Events);
+            ReplayEventDto definition = FindClosestOvertake(
+                player.Events,
+                player.CurrentTime);
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (definition == null)
-                definition = FindFirstOvertake(
-                    ReplayEventFixtures.Load(player.Manifest));
+                definition = FindClosestOvertake(
+                    ReplayEventFixtures.Load(player.Manifest),
+                    player.CurrentTime);
 
             if (definition == null && allowDevelopmentFallbackEvent)
                 definition = CreateDevelopmentEvent();
@@ -305,7 +310,12 @@ namespace F1XR.RestAPI.Replay
             float trackStartTime,
             float trackEndTime)
         {
-            eventCars = new ReplayCarSet(player.carPrefab, null, false);
+            eventCars = new ReplayCarSet(
+                player.carPrefab,
+                null,
+                false);
+            eventCars.SetMapScaleRatio(
+                player.GetTrackMapScaleRatio());
             eventCars.SetTeamPrefabs(player.teamCarPrefabs);
             eventCars.SetCalibration(player.trackCalibration, false);
             eventCars.SetLabelsVisible(true);
@@ -324,12 +334,36 @@ namespace F1XR.RestAPI.Replay
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
             CreateStageRoot();
 
+            TryGetMappedPosition(
+                referenceSamples,
+                definition.startTime,
+                out Vector3 eventStartPosition);
+            TryGetMappedPosition(
+                referenceSamples,
+                definition.anchorTime,
+                out Vector3 eventAnchorPosition);
+            Debug.Log(
+                $"[EventReplayFrame] event={definition.eventId}, " +
+                $"center={center:F4}, " +
+                $"startLocal={(sourceToLocalRotation * (eventStartPosition - center)):F4}, " +
+                $"anchorLocal={(sourceToLocalRotation * (eventAnchorPosition - center)):F4}, " +
+                $"stageScale={stageRoot.transform.localScale.x:F4}",
+                this);
+
             Transform carsRoot = new GameObject("Cars").transform;
             carsRoot.SetParent(stageRoot.transform, false);
             eventCars.SetCustomSpace(carsRoot, center, sourceToLocalRotation);
 
-            CreateRoad(center, sourceToLocalRotation);
-            ConfigureStageInteraction();
+            if (!CreateActualTrackRegion(
+                    center,
+                    sourceToLocalRotation,
+                    out Bounds stageBounds))
+            {
+                CreateRoad(center, sourceToLocalRotation);
+                stageBounds = roadMesh.bounds;
+            }
+
+            ConfigureStageInteraction(stageBounds);
 
             eventAudio = new ReplayAudio(eventCars);
             eventAudio.Reset(player.engineSound, true, null);
@@ -556,6 +590,31 @@ namespace F1XR.RestAPI.Replay
 
         }
 
+        private bool CreateActualTrackRegion(
+            Vector3 center,
+            Quaternion sourceToLocalRotation,
+            out Bounds stageBounds)
+        {
+            trackSegment = new EventTrackSegment();
+            bool created = trackSegment.Build(
+                stageRoot.transform,
+                player.GetTrackPlacementTransform(),
+                mappedPath,
+                center,
+                sourceToLocalRotation,
+                trackRegionPadding,
+                out stageBounds);
+            if (created)
+                return true;
+
+            trackSegment.Clear();
+            trackSegment = null;
+            Debug.LogWarning(
+                "[EventReplay] Actual track geometry was unavailable; using the generated road fallback.",
+                this);
+            return false;
+        }
+
         private void ExtendRoadEnd(Vector3[] localPath)
         {
             if (localPath == null || localPath.Length < 2 || roadEndPadding <= 0f)
@@ -591,11 +650,10 @@ namespace F1XR.RestAPI.Replay
                 line.SetPosition(i, roadVertices[i * 2 + side] + Vector3.up * 0.001f);
         }
 
-        private void ConfigureStageInteraction()
+        private void ConfigureStageInteraction(Bounds bounds)
         {
             BoxCollider collider = stageRoot.AddComponent<BoxCollider>();
-            Bounds bounds = roadMesh.bounds;
-            bounds.Expand(new Vector3(roadWidth, 0.04f, roadWidth));
+            bounds.Expand(new Vector3(0f, 0.04f, 0f));
             collider.center = bounds.center;
             collider.size = bounds.size;
 
@@ -669,6 +727,7 @@ namespace F1XR.RestAPI.Replay
 
             if (stageRoot != null)
                 Destroy(stageRoot);
+            trackSegment?.Clear();
             if (roadMesh != null)
                 Destroy(roadMesh);
             if (roadMaterial != null)
@@ -677,6 +736,7 @@ namespace F1XR.RestAPI.Replay
                 Destroy(edgeMaterial);
 
             stageRoot = null;
+            trackSegment = null;
             roadMesh = null;
             roadMaterial = null;
             edgeMaterial = null;
@@ -903,19 +963,32 @@ namespace F1XR.RestAPI.Replay
                     StringComparison.OrdinalIgnoreCase);
         }
 
-        private static ReplayEventDto FindFirstOvertake(ReplayEventDto[] events)
+        private static ReplayEventDto FindClosestOvertake(
+            ReplayEventDto[] events,
+            float time)
         {
             if (events == null)
                 return null;
 
+            ReplayEventDto closest = null;
+            float closestDistance = float.PositiveInfinity;
             foreach (ReplayEventDto item in events)
             {
-                if (item != null &&
-                    string.Equals(item.eventType, "Overtake", StringComparison.OrdinalIgnoreCase))
-                    return item;
+                if (item == null ||
+                    !string.Equals(item.eventType, "Overtake", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                float distance = Mathf.Abs(item.anchorTime - time);
+                if (distance < closestDistance ||
+                    Mathf.Approximately(distance, closestDistance) &&
+                    string.CompareOrdinal(item.eventId, closest?.eventId) < 0)
+                {
+                    closest = item;
+                    closestDistance = distance;
+                }
             }
 
-            return null;
+            return closest;
         }
 
         private static List<LocationSample> CopyRange(
