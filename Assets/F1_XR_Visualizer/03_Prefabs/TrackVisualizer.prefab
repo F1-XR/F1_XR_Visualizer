@@ -176,9 +176,9 @@ MonoBehaviour:
   m_UseDynamicAttach: 1
   m_MatchAttachPosition: 1
   m_MatchAttachRotation: 0
-  m_SnapToColliderVolume: 1
+  m_SnapToColliderVolume: 0
   m_ReinitializeDynamicAttachEverySingleGrab: 1
-  m_AttachEaseInTime: 0.15
+  m_AttachEaseInTime: 0
   m_MovementType: 2
   m_PredictedVisualsTransform: {fileID: 0}
   m_VelocityDamping: 1
@@ -249,6 +249,10 @@ MonoBehaviour:
   keepPositionWhileScaling: 1
   keepRotationWhileScaling: 0
   keepOnlyYRotationWhileScaling: 1
+  smoothWorldTransform: 1
+  positionLerpSpeed: 16
+  rotationLerpSpeed: 16
+  scaleLerpSpeed: 16
   keepRotationWhileMoving: 0
   keepOnlyYRotationWhileMoving: 1
   controllerRayDistance: 20
@@ -302,8 +306,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.WorldGrabPolicy
   grab: {fileID: 8771815587854655358}
   target: {fileID: 4950043802248642531}
+  preserveGrabPoint: 1
   allowFarGrab: 1
   keepOnlyYRotation: 1
+  smoothWorldTransform: 1
+  positionLerpSpeed: 16
+  rotationLerpSpeed: 16
   farMoveSpeed: 2
   farRotateSpeed: 135
   farRotationFollowSpeed: 18
@@ -311,7 +319,7 @@ MonoBehaviour:
   leftRollDirection: -1
   leftThumbstickAction: {fileID: 0}
   thumbstickDeadzone: 0.15
-  centerAttachOnFarGrabTarget: 1
+  centerAttachOnFarGrabTarget: 0
   preferMoveOnDiagonalThumbstick: 1
 --- !u!1 &8335670326271928987
 GameObject:

@@ -219,7 +219,7 @@ namespace F1XR.RestAPI.UI
                         selectedDriverNumber);
             }
 
-            if (player.TryGetCarTransform(
+            if (player.TryGetVisualCarTransform(
                     selectedDriverNumber,
                     out Transform carTransform))
             {

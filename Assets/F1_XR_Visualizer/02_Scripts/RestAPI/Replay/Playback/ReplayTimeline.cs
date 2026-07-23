@@ -6,12 +6,17 @@ namespace F1XR.RestAPI.Replay
     public sealed class ReplayTimeline
     {
         private DatasetManifestDto manifest;
+        private bool hasRange;
+        private float rangeStart;
+        private float rangeEnd;
 
         public float CurrentTime { get; private set; }
         public bool IsPlaying { get; private set; }
 
         public float StartTime =>
-            manifest != null &&
+            hasRange
+                ? rangeStart
+                : manifest != null &&
             manifest.chunks != null &&
             manifest.chunks.Length > 0
                 ? manifest.chunks[0].startT
@@ -22,7 +27,7 @@ namespace F1XR.RestAPI.Replay
             get
             {
                 if (manifest == null)
-                    return 0f;
+                    return hasRange ? rangeStart : 0f;
 
                 return manifest.raceStartT > 0f
                     ? manifest.raceStartT
@@ -31,12 +36,16 @@ namespace F1XR.RestAPI.Replay
         }
 
         public float RaceEndTime =>
-            manifest != null
+            hasRange
+                ? rangeEnd
+                : manifest != null
                 ? manifest.raceEndT
                 : 0f;
 
         public float ReadyUntilTime =>
-            manifest != null
+            hasRange
+                ? rangeEnd
+                : manifest != null
                 ? manifest.readyUntilT
                 : 0f;
 
@@ -44,6 +53,9 @@ namespace F1XR.RestAPI.Replay
         {
             get
             {
+                if (hasRange)
+                    return Mathf.Max(0f, rangeEnd - rangeStart);
+
                 if (manifest == null)
                     return 0f;
 
@@ -59,15 +71,27 @@ namespace F1XR.RestAPI.Replay
         public void Reset(DatasetManifestDto sourceManifest)
         {
             manifest = sourceManifest;
+            hasRange = false;
             CurrentTime = sourceManifest != null
                 ? sourceManifest.playbackStartT
                 : 0f;
             IsPlaying = false;
         }
 
+        public void Reset(float startTime, float endTime)
+        {
+            manifest = null;
+            hasRange = true;
+            rangeStart = startTime;
+            rangeEnd = Mathf.Max(startTime, endTime);
+            CurrentTime = rangeStart;
+            IsPlaying = false;
+        }
+
         public void SetManifest(DatasetManifestDto sourceManifest)
         {
             manifest = sourceManifest;
+            hasRange = false;
         }
 
         public void Play()
@@ -100,11 +124,12 @@ namespace F1XR.RestAPI.Replay
 
         public bool StopAtEnd()
         {
-            if (manifest == null)
+            if (!hasRange && manifest == null)
                 return false;
 
-            float endTime =
-                manifest.requestedDurationSeconds > 0f
+            float endTime = hasRange
+                ? rangeEnd
+                : manifest.requestedDurationSeconds > 0f
                     ? manifest.requestedDurationSeconds
                     : manifest.durationSeconds;
 
