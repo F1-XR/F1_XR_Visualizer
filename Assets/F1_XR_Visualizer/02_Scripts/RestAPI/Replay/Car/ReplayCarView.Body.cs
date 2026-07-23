@@ -17,6 +17,8 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Renderer> bodyRenderers = new();
         private readonly Dictionary<Renderer, MaterialPropertyBlock> bodyBlocks = new();
         private bool bodyRenderersDirty = true;
+        private float visualWidth;
+        private float visualLength;
 
         private void ApplyBodyHighlight()
         {
@@ -54,6 +56,8 @@ namespace F1XR.RestAPI.Replay
 
             bodyRenderers.Clear();
             bodyBlocks.Clear();
+            visualWidth = 0f;
+            visualLength = 0f;
 
             Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
             foreach (Renderer item in renderers)
@@ -112,6 +116,60 @@ namespace F1XR.RestAPI.Replay
             }
 
             return hasBounds;
+        }
+
+        public float GetVisualWidth()
+        {
+            if (!bodyRenderersDirty && visualWidth > 0f)
+                return visualWidth;
+
+            visualWidth = GetVisualSize(Vector3.right);
+            return visualWidth;
+        }
+
+        public float GetVisualLength()
+        {
+            if (!bodyRenderersDirty && visualLength > 0f)
+                return visualLength;
+
+            visualLength = GetVisualSize(Vector3.forward);
+            return visualLength;
+        }
+
+        private float GetVisualSize(Vector3 axis)
+        {
+            RefreshBodyRenderers();
+            float minimum = float.PositiveInfinity;
+            float maximum = float.NegativeInfinity;
+
+            foreach (Renderer item in bodyRenderers)
+            {
+                if (item == null)
+                    continue;
+
+                Bounds bounds = item.localBounds;
+                Matrix4x4 rendererToCar =
+                    LogicalRoot.worldToLocalMatrix * item.transform.localToWorldMatrix;
+                Vector3 min = bounds.min;
+                Vector3 max = bounds.max;
+
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    Vector3 point = new(
+                        (corner & 1) == 0 ? min.x : max.x,
+                        (corner & 2) == 0 ? min.y : max.y,
+                        (corner & 4) == 0 ? min.z : max.z);
+                    float value = Vector3.Dot(
+                        rendererToCar.MultiplyPoint3x4(point),
+                        axis);
+                    minimum = Mathf.Min(minimum, value);
+                    maximum = Mathf.Max(maximum, value);
+                }
+            }
+
+            return minimum <= maximum
+                ? Mathf.Max(0.001f, maximum - minimum)
+                : 0f;
         }
 
         private bool IsSelectionEffectRenderer(Renderer renderer)

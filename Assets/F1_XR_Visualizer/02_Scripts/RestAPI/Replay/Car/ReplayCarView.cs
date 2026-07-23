@@ -8,10 +8,27 @@ namespace F1XR.RestAPI.Replay
         public int driverNumber;
         public Vector3 rawPosition;
 
+        private Transform logicalRoot;
+        private Vector3 visualBasePosition;
+        private Quaternion visualBaseRotation = Quaternion.identity;
+
+        public Transform LogicalRoot => logicalRoot != null
+            ? logicalRoot
+            : transform;
+        public Transform VisualMotionRoot => transform;
+
+        public void SetLogicalRoot(Transform root)
+        {
+            logicalRoot = root;
+            visualBasePosition = transform.localPosition;
+            visualBaseRotation = transform.localRotation;
+        }
+
         public void Init(int number)
         {
             driverNumber = number;
-            name = $"Car_{number}";
+            LogicalRoot.name = $"Car_{number}";
+            name = "VisualMotionRoot";
             bodyRenderersDirty = true;
             SetLabel(number.ToString());
         }
@@ -19,13 +36,33 @@ namespace F1XR.RestAPI.Replay
         public void SetPosition(Vector3 position)
         {
             rawPosition = position;
-            transform.position = position;
+            LogicalRoot.position = position;
         }
 
         public void SetLocalPosition(Vector3 position)
         {
             rawPosition = position;
-            transform.localPosition = position;
+            LogicalRoot.localPosition = position;
+        }
+
+        public void ApplyVisualMotion(Vector3 worldOffset, float localYaw)
+        {
+            if (LogicalRoot == transform)
+                return;
+
+            transform.localPosition =
+                visualBasePosition + LogicalRoot.InverseTransformVector(worldOffset);
+            transform.localRotation =
+                Quaternion.AngleAxis(localYaw, Vector3.up) * visualBaseRotation;
+        }
+
+        public void ResetVisualMotion()
+        {
+            if (LogicalRoot == transform)
+                return;
+
+            transform.localPosition = visualBasePosition;
+            transform.localRotation = visualBaseRotation;
         }
 
         public void CollectOnboardHiddenRenderers(List<Renderer> renderers)
