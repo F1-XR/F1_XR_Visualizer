@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace F1XR.RestAPI.Replay.Track
 {
@@ -48,6 +49,7 @@ namespace F1XR.RestAPI.Replay.Track
             mapInstance.name = mapPrefab.name;
             mapInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
             mapInstance.transform.localScale = Vector3.one * Mathf.Max(0.0001f, scale);
+            DisableShadowCasting(mapInstance);
 
             if (fitToTargetBounds)
                 FitMapScale(targetXZSize);
@@ -209,6 +211,12 @@ namespace F1XR.RestAPI.Replay.Track
                 Mathf.Abs(scale.y),
                 Mathf.Abs(scale.z));
             return value > 0.000001f ? value : 1f;
+        }
+
+        static void DisableShadowCasting(GameObject target)
+        {
+            foreach (Renderer renderer in target.GetComponentsInChildren<Renderer>(includeInactive: true))
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
         }
     }
 }
