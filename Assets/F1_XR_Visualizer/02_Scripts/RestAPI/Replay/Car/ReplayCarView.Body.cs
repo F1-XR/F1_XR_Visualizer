@@ -18,6 +18,7 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<Renderer, MaterialPropertyBlock> bodyBlocks = new();
         private bool bodyRenderersDirty = true;
         private float visualWidth;
+        private float visualLength;
 
         private void ApplyBodyHighlight()
         {
@@ -55,6 +56,8 @@ namespace F1XR.RestAPI.Replay
 
             bodyRenderers.Clear();
             bodyBlocks.Clear();
+            visualWidth = 0f;
+            visualLength = 0f;
 
             Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
             foreach (Renderer item in renderers)
@@ -117,9 +120,24 @@ namespace F1XR.RestAPI.Replay
 
         public float GetVisualWidth()
         {
-            if (visualWidth > 0f)
+            if (!bodyRenderersDirty && visualWidth > 0f)
                 return visualWidth;
 
+            visualWidth = GetVisualSize(Vector3.right);
+            return visualWidth;
+        }
+
+        public float GetVisualLength()
+        {
+            if (!bodyRenderersDirty && visualLength > 0f)
+                return visualLength;
+
+            visualLength = GetVisualSize(Vector3.forward);
+            return visualLength;
+        }
+
+        private float GetVisualSize(Vector3 axis)
+        {
             RefreshBodyRenderers();
             float minimum = float.PositiveInfinity;
             float maximum = float.NegativeInfinity;
@@ -141,16 +159,17 @@ namespace F1XR.RestAPI.Replay
                         (corner & 1) == 0 ? min.x : max.x,
                         (corner & 2) == 0 ? min.y : max.y,
                         (corner & 4) == 0 ? min.z : max.z);
-                    float x = rendererToCar.MultiplyPoint3x4(point).x;
-                    minimum = Mathf.Min(minimum, x);
-                    maximum = Mathf.Max(maximum, x);
+                    float value = Vector3.Dot(
+                        rendererToCar.MultiplyPoint3x4(point),
+                        axis);
+                    minimum = Mathf.Min(minimum, value);
+                    maximum = Mathf.Max(maximum, value);
                 }
             }
 
-            visualWidth = minimum <= maximum
+            return minimum <= maximum
                 ? Mathf.Max(0.001f, maximum - minimum)
                 : 0f;
-            return visualWidth;
         }
 
         private bool IsSelectionEffectRenderer(Renderer renderer)

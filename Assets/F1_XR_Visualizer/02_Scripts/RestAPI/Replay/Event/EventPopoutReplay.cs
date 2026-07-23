@@ -33,6 +33,8 @@ namespace F1XR.RestAPI.Replay
         [Min(3)] public int maxTrackPoints = 192;
         [Min(1f)] public float maxEventDuration = 30f;
         [Min(0.01f)] public float eventPlaybackSpeed = 1f;
+        [Min(0f)] public float eventLeadSeconds = 6f;
+        [Min(0f)] public float eventTailSeconds = 5f;
 
         private readonly ReplayTimeline timeline = new();
         private readonly Dictionary<int, List<LocationSample>> eventSamples = new();
@@ -110,7 +112,8 @@ namespace F1XR.RestAPI.Replay
 
         public void Open(ReplayEventDto definition)
         {
-            if (!TryValidate(definition, out string error))
+            ReplayEventDto presentation = CreatePresentationEvent(definition);
+            if (!TryValidate(presentation, out string error))
             {
                 Debug.LogWarning($"[EventReplay] Invalid event: {error}", this);
                 return;
@@ -128,8 +131,8 @@ namespace F1XR.RestAPI.Replay
                 StopCoroutine(openRoutine);
 
             DestroyStage();
-            currentEvent = definition;
-            openRoutine = StartCoroutine(OpenRoutine(definition));
+            currentEvent = presentation;
+            openRoutine = StartCoroutine(OpenRoutine(presentation));
         }
 
         public void Play()
@@ -762,6 +765,46 @@ namespace F1XR.RestAPI.Replay
                 player.Pause();
 
             hasSnapshot = false;
+        }
+
+        private ReplayEventDto CreatePresentationEvent(ReplayEventDto source)
+        {
+            if (source == null || player == null)
+                return source;
+
+            float anchor = Mathf.Clamp(
+                source.anchorTime,
+                player.TimelineStartTime,
+                player.ReadyUntilTime);
+            float start = Mathf.Max(
+                player.TimelineStartTime,
+                anchor - Mathf.Max(0f, eventLeadSeconds));
+            float end = Mathf.Min(
+                player.ReadyUntilTime,
+                anchor + Mathf.Max(0f, eventTailSeconds));
+
+            return new ReplayEventDto
+            {
+                eventId = source.eventId,
+                eventType = source.eventType,
+                anchorTime = anchor,
+                startTime = start,
+                endTime = end,
+                driverNumbers = source.driverNumbers != null
+                    ? (int[])source.driverNumbers.Clone()
+                    : null,
+                progressStart = source.progressStart,
+                progressEnd = source.progressEnd,
+                confidence = source.confidence,
+                displayTitle = source.displayTitle,
+                displayDescription = source.displayDescription,
+                passingSide = source.passingSide,
+                sideSource = source.sideSource,
+                sideConfidence = source.sideConfidence,
+                motionProfile = source.motionProfile,
+                overtakerShare = source.overtakerShare,
+                defenderShare = source.defenderShare
+            };
         }
 
         private bool TryValidate(ReplayEventDto definition, out string error)
