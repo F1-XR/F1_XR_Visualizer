@@ -18,6 +18,7 @@ namespace F1XR.RestAPI.Replay
         private readonly List<CarFrame> frames = new();
         private readonly Dictionary<int, ReplayCarPose> poses = new();
         private readonly Dictionary<int, float> visualWidths = new();
+        private readonly Dictionary<int, float> visualLengths = new();
         private readonly Dictionary<int, string> debugEventByDriver = new();
         private readonly ReplayPlayer player;
         private readonly bool allowInteraction;
@@ -89,6 +90,7 @@ namespace F1XR.RestAPI.Replay
             frames.Clear();
             poses.Clear();
             visualWidths.Clear();
+            visualLengths.Clear();
 
             foreach (KeyValuePair<int, List<LocationSample>> pair in samples)
             {
@@ -141,6 +143,7 @@ namespace F1XR.RestAPI.Replay
                     duration));
                 poses[driver] = pose;
                 visualWidths[driver] = car.GetVisualWidth();
+                visualLengths[driver] = car.GetVisualLength();
             }
 
             foreach (CarFrame frame in frames)
@@ -152,7 +155,8 @@ namespace F1XR.RestAPI.Replay
                     frame.driver,
                     time,
                     poses,
-                    visualWidths);
+                    visualWidths,
+                    visualLengths);
                 carMotion.ApplyVisualPose(frame.car, frame.pose, visualPose);
 
                 DrawOvertakeDebug(frame, visualPose);
