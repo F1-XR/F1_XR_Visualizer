@@ -12,6 +12,8 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, ReplayCarView> cars = new();
         private readonly Dictionary<int, GameObject> prefabsByDriver = new();
         private readonly Dictionary<int, Quaternion> baseRotations = new();
+        private readonly Dictionary<int, Vector3> authoredVisualScales = new();
+        private float mapScaleRatio = 1f;
 
         public CarInstances(
             TeamCarPrefabs teamCarPrefabs,
@@ -38,9 +40,31 @@ namespace F1XR.RestAPI.Replay
                 cars.Remove(driver);
                 prefabsByDriver.Remove(driver);
                 baseRotations.Remove(driver);
+                authoredVisualScales.Remove(driver);
             }
 
             return Create(driver, onCreated);
+        }
+
+        public void SetMapScaleRatio(float ratio)
+        {
+            mapScaleRatio = CarVisualScale.NormalizeRatio(ratio);
+
+            foreach (KeyValuePair<int, ReplayCarView> pair in cars)
+            {
+                if (pair.Value == null ||
+                    !authoredVisualScales.TryGetValue(
+                        pair.Key,
+                        out Vector3 authoredScale))
+                {
+                    continue;
+                }
+
+                CarVisualScale.Apply(
+                    pair.Value.VisualMotionRoot,
+                    authoredScale,
+                    mapScaleRatio);
+            }
         }
 
         public void SetTeamPrefabs(
@@ -120,6 +144,7 @@ namespace F1XR.RestAPI.Replay
             cars.Clear();
             prefabsByDriver.Clear();
             baseRotations.Clear();
+            authoredVisualScales.Clear();
         }
 
         private ReplayCarView Create(
@@ -140,8 +165,13 @@ namespace F1XR.RestAPI.Replay
             }
 
             Quaternion baseRotation = carObject.transform.rotation;
+            Vector3 authoredVisualScale = carObject.transform.localScale;
             GameObject logicalObject = new GameObject($"Car_{driver}");
             carObject.transform.SetParent(logicalObject.transform, false);
+            CarVisualScale.Apply(
+                carObject.transform,
+                authoredVisualScale,
+                mapScaleRatio);
 
             ReplayCarView car = carObject.GetComponent<ReplayCarView>();
             if (car == null)
@@ -152,6 +182,7 @@ namespace F1XR.RestAPI.Replay
 
             prefabsByDriver[driver] = prefab;
             baseRotations[driver] = baseRotation;
+            authoredVisualScales[driver] = authoredVisualScale;
             cars.Add(driver, car);
             onCreated?.Invoke(driver, car);
 
@@ -178,6 +209,7 @@ namespace F1XR.RestAPI.Replay
             cars.Remove(driver);
             prefabsByDriver.Remove(driver);
             baseRotations.Remove(driver);
+            authoredVisualScales.Remove(driver);
 
             ReplayCarView newCar = Create(driver, onCreated);
             newCar.rawPosition = rawPosition;

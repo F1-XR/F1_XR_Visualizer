@@ -11,6 +11,9 @@ namespace F1XR.RestAPI.Replay.Track
         [SerializeField] float minColliderHeight = 0.04f;
 
         GameObject mapInstance;
+        float authoredMapScale = 1f;
+
+        public float MapScaleRatio { get; private set; } = 1f;
 
         void Awake()
         {
@@ -39,6 +42,8 @@ namespace F1XR.RestAPI.Replay.Track
                 return;
             }
 
+            authoredMapScale = GetUniformScale(
+                mapPrefab.transform.localScale);
             mapInstance = Instantiate(mapPrefab, visualRoot);
             mapInstance.name = mapPrefab.name;
             mapInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
@@ -47,27 +52,22 @@ namespace F1XR.RestAPI.Replay.Track
             if (fitToTargetBounds)
                 FitMapScale(targetXZSize);
 
+            MapScaleRatio =
+                GetUniformScale(mapInstance.transform.localScale) /
+                authoredMapScale;
             FitGrabBox();
         }
 
         public void ClearMap()
         {
-            if (mapInstance != null)
-            {
-                mapInstance.transform.SetParent(null);
-                Destroy(mapInstance);
-                mapInstance = null;
-            }
-
-            if (visualRoot == null)
+            if (mapInstance == null)
                 return;
 
-            for (int i = visualRoot.childCount - 1; i >= 0; i--)
-            {
-                Transform child = visualRoot.GetChild(i);
-                child.SetParent(null);
-                Destroy(child.gameObject);
-            }
+            mapInstance.transform.SetParent(null);
+            Destroy(mapInstance);
+            mapInstance = null;
+            authoredMapScale = 1f;
+            MapScaleRatio = 1f;
         }
 
         public void FitGrabBox()
@@ -89,23 +89,37 @@ namespace F1XR.RestAPI.Replay.Track
 
         bool TryGetVisualBounds(out Bounds bounds)
         {
-            return TryGetBounds(grabBox.transform, out bounds);
+            bounds = default;
+            return mapInstance != null &&
+                TryGetBounds(
+                    mapInstance.transform,
+                    grabBox.transform,
+                    out bounds);
         }
 
         bool TryGetVisualRootBounds(out Bounds bounds)
         {
-            return TryGetBounds(visualRoot, out bounds);
+            bounds = default;
+            return mapInstance != null &&
+                TryGetBounds(
+                    mapInstance.transform,
+                    visualRoot,
+                    out bounds);
         }
 
-        bool TryGetBounds(Transform targetSpace, out Bounds bounds)
+        bool TryGetBounds(
+            Transform renderRoot,
+            Transform targetSpace,
+            out Bounds bounds)
         {
             bounds = default;
             bool found = false;
 
-            if (targetSpace == null)
+            if (renderRoot == null || targetSpace == null)
                 return false;
 
-            Renderer[] renderers = visualRoot.GetComponentsInChildren<Renderer>(includeInactive: true);
+            Renderer[] renderers =
+                renderRoot.GetComponentsInChildren<Renderer>(includeInactive: true);
             foreach (Renderer renderer in renderers)
             {
                 if (renderer == null)
@@ -186,6 +200,15 @@ namespace F1XR.RestAPI.Replay.Track
                 if (found != null)
                     grabBox = found.GetComponent<BoxCollider>();
             }
+        }
+
+        static float GetUniformScale(Vector3 scale)
+        {
+            float value = Mathf.Max(
+                Mathf.Abs(scale.x),
+                Mathf.Abs(scale.y),
+                Mathf.Abs(scale.z));
+            return value > 0.000001f ? value : 1f;
         }
     }
 }

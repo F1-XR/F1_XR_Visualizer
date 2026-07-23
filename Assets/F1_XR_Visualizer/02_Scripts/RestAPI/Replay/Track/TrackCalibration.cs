@@ -25,7 +25,8 @@ namespace F1XR.RestAPI.Replay
         public enum MappingMode
         {
             Global,
-            Segment
+            Segment,
+            Route
         }
 
         private const float SegmentEndpointPadding = 0.08f;
@@ -43,6 +44,7 @@ namespace F1XR.RestAPI.Replay
         public HeightMode heightMode;
         public float localY;
         public float heightOffset;
+        [Min(0.01f)] public float outputScale = 1f;
         public bool useFirstSourceHeightAsOrigin = true;
         public float sourceHeightOrigin;
         public float sourceHeightScale = 0.0001f;
@@ -53,6 +55,11 @@ namespace F1XR.RestAPI.Replay
 
         bool hasRuntimeSourceHeightOrigin;
         float runtimeSourceHeightOrigin;
+        [NonSerialized] bool hasRouteOffsetScale;
+        [NonSerialized] float routeOffsetScale;
+
+        public float OutputScale =>
+            outputScale > 0f ? outputScale : 1f;
 
         [Serializable]
         public struct Point
@@ -68,7 +75,9 @@ namespace F1XR.RestAPI.Replay
                 return false;
 
             if (heightMode == HeightMode.SourceSample)
-                localPosition.y = localY + GetSourceHeight(sample.z) + heightOffset;
+                localPosition.y =
+                    (localY + GetSourceHeight(sample.z)) * OutputScale +
+                    heightOffset;
 
             return true;
         }
@@ -79,6 +88,16 @@ namespace F1XR.RestAPI.Replay
             runtimeSourceHeightOrigin = 0f;
         }
 
+        void OnEnable()
+        {
+            hasRouteOffsetScale = false;
+        }
+
+        void OnValidate()
+        {
+            hasRouteOffsetScale = false;
+        }
+
         public bool TryMap(Vector2 sourcePosition, out Vector3 localPosition)
         {
             localPosition = default;
@@ -86,19 +105,35 @@ namespace F1XR.RestAPI.Replay
             if (!active)
                 return false;
 
+            var mappedSourcePosition = MapSourceAxes(sourcePosition);
+            if (mappingMode == MappingMode.Route && TryMapRoute(
+                mappedSourcePosition,
+                out var routePosition,
+                out var routeHeight))
+            {
+                float scale = OutputScale;
+                localPosition = new Vector3(
+                    routePosition.x * scale,
+                    routeHeight * scale + heightOffset,
+                    routePosition.y * scale);
+                return true;
+            }
+
             if (!TrySolve(out var a, out var b, out var translation))
                 return false;
 
-            var mappedSourcePosition = MapSourceAxes(sourcePosition);
             var globalPosition = MapGlobal(mappedSourcePosition, a, b, translation);
             var mappedPosition = globalPosition;
+            var y = GetHeight(mappedSourcePosition);
 
             if (mappingMode == MappingMode.Segment && TryMapSegment(mappedSourcePosition, out var segmentPosition))
                 mappedPosition = Vector2.Lerp(globalPosition, segmentPosition, Mathf.Clamp01(segmentBlend));
 
-            var y = GetHeight(mappedSourcePosition);
-
-            localPosition = new Vector3(mappedPosition.x, y + heightOffset, mappedPosition.y);
+            float output = OutputScale;
+            localPosition = new Vector3(
+                mappedPosition.x * output,
+                y * output + heightOffset,
+                mappedPosition.y * output);
             return true;
         }
 
@@ -116,7 +151,10 @@ namespace F1XR.RestAPI.Replay
             var mappedPosition = MapGlobal(mappedSourcePosition, a, b, translation);
             var y = GetHeight(mappedSourcePosition);
 
-            localPosition = new Vector3(mappedPosition.x, y + heightOffset, mappedPosition.y);
+            localPosition = new Vector3(
+                mappedPosition.x,
+                y + heightOffset,
+                mappedPosition.y);
             return true;
         }
 
@@ -130,13 +168,41 @@ namespace F1XR.RestAPI.Replay
 
         bool TryMapSegment(Vector2 sourcePosition, out Vector2 targetPosition)
         {
+            return TryMapPolyline(
+                sourcePosition,
+                limitSourceDistance: true,
+                out targetPosition,
+                out _);
+        }
+
+        bool TryMapRoute(
+            Vector2 sourcePosition,
+            out Vector2 targetPosition,
+            out float targetHeight)
+        {
+            return TryMapPolyline(
+                sourcePosition,
+                limitSourceDistance: false,
+                out targetPosition,
+                out targetHeight);
+        }
+
+        bool TryMapPolyline(
+            Vector2 sourcePosition,
+            bool limitSourceDistance,
+            out Vector2 targetPosition,
+            out float targetHeight)
+        {
             targetPosition = default;
+            targetHeight = localY;
 
             if (points == null || GetConfiguredPointCount() < 2)
                 return false;
 
             var bestDistance = float.MaxValue;
             var found = false;
+            var lastConfiguredIndex = loopMappingSegments ? GetLastConfiguredPointIndex() : -1;
+            var firstConfiguredPoint = loopMappingSegments ? GetFirstConfiguredPoint() : null;
 
             for (int i = 0; i < points.Length; i++)
             {
@@ -144,14 +210,27 @@ namespace F1XR.RestAPI.Replay
                 if (!IsConfigured(a))
                     continue;
 
-                if (TryGetNextConfiguredPoint(i, out var b) && TryUseMappingSegment(sourcePosition, a, b, ref bestDistance, ref targetPosition))
+                if (TryGetNextConfiguredPoint(i, out var b) && TryUseMappingSegment(
+                    sourcePosition,
+                    a,
+                    b,
+                    limitSourceDistance,
+                    ref bestDistance,
+                    ref targetPosition,
+                    ref targetHeight))
                     found = true;
 
-                if (!loopMappingSegments || i != GetLastConfiguredPointIndex())
+                if (i != lastConfiguredIndex || !firstConfiguredPoint.HasValue)
                     continue;
 
-                var first = GetFirstConfiguredPoint();
-                if (first.HasValue && TryUseMappingSegment(sourcePosition, a, first.Value, ref bestDistance, ref targetPosition))
+                if (TryUseMappingSegment(
+                    sourcePosition,
+                    a,
+                    firstConfiguredPoint.Value,
+                    limitSourceDistance,
+                    ref bestDistance,
+                    ref targetPosition,
+                    ref targetHeight))
                     found = true;
             }
 
@@ -162,8 +241,10 @@ namespace F1XR.RestAPI.Replay
             Vector2 sourcePosition,
             Point a,
             Point b,
+            bool limitSourceDistance,
             ref float bestDistance,
-            ref Vector2 targetPosition
+            ref Vector2 targetPosition,
+            ref float targetHeight
         )
         {
             var sourceA = MapSourceAxes(a.sourcePosition);
@@ -176,7 +257,8 @@ namespace F1XR.RestAPI.Replay
 
             var sourceLength = Mathf.Sqrt(sourceLengthSquared);
             var rawT = Vector2.Dot(sourcePosition - sourceA, sourceSegment) / sourceLengthSquared;
-            if (rawT < -SegmentEndpointPadding || rawT > 1f + SegmentEndpointPadding)
+            if (limitSourceDistance &&
+                (rawT < -SegmentEndpointPadding || rawT > 1f + SegmentEndpointPadding))
                 return false;
 
             var t = Mathf.Clamp01(rawT);
@@ -187,7 +269,7 @@ namespace F1XR.RestAPI.Replay
                 Mathf.Max(MinSegmentSourceDistance, sourceLength * SegmentSourceDistanceRatio)
             );
 
-            if (distance > maxDistance * maxDistance)
+            if (limitSourceDistance && distance > maxDistance * maxDistance)
                 return false;
 
             if (distance >= bestDistance)
@@ -206,11 +288,70 @@ namespace F1XR.RestAPI.Replay
             var sourceNormal = new Vector2(-sourceDirection.y, sourceDirection.x);
             var targetNormal = new Vector2(-targetDirection.y, targetDirection.x);
             var signedOffset = Vector2.Dot(sourcePosition - projectedSource, sourceNormal);
-            var offsetScale = targetLength / sourceLength;
+            var segmentOffsetScale = targetLength / sourceLength;
+            var offsetScale = mappingMode == MappingMode.Route
+                ? GetRouteOffsetScale(segmentOffsetScale)
+                : segmentOffsetScale;
 
             bestDistance = distance;
             targetPosition = Vector2.Lerp(targetA, targetB, t) + targetNormal * signedOffset * offsetScale;
+            targetHeight = Mathf.Lerp(
+                a.targetLocalPosition.y,
+                b.targetLocalPosition.y,
+                t);
             return true;
+        }
+
+        float GetRouteOffsetScale(float fallback)
+        {
+            if (hasRouteOffsetScale)
+                return routeOffsetScale;
+
+            var sourceLength = 0f;
+            var targetLength = 0f;
+            Point? first = null;
+            Point? previous = null;
+
+            if (points != null)
+            {
+                foreach (var point in points)
+                {
+                    if (!IsConfigured(point))
+                        continue;
+
+                    if (!first.HasValue)
+                        first = point;
+
+                    if (previous.HasValue)
+                        AddRouteSegmentLength(previous.Value, point, ref sourceLength, ref targetLength);
+
+                    previous = point;
+                }
+            }
+
+            if (loopMappingSegments && first.HasValue && previous.HasValue)
+                AddRouteSegmentLength(previous.Value, first.Value, ref sourceLength, ref targetLength);
+
+            routeOffsetScale = sourceLength > 0.000001f && targetLength > 0.000001f
+                ? targetLength / sourceLength
+                : fallback;
+            hasRouteOffsetScale = true;
+            return routeOffsetScale;
+        }
+
+        void AddRouteSegmentLength(
+            Point a,
+            Point b,
+            ref float sourceLength,
+            ref float targetLength)
+        {
+            sourceLength += Vector2.Distance(
+                MapSourceAxes(a.sourcePosition),
+                MapSourceAxes(b.sourcePosition));
+
+            targetLength += Vector2.Distance(
+                new Vector2(a.targetLocalPosition.x, a.targetLocalPosition.z),
+                new Vector2(b.targetLocalPosition.x, b.targetLocalPosition.z));
         }
 
         float GetHeight(Vector2 mappedSourcePosition)
@@ -434,6 +575,8 @@ namespace F1XR.RestAPI.Replay
 
             var bestDistance = float.MaxValue;
             var found = false;
+            var lastConfiguredIndex = loopPointHeightSegments ? GetLastConfiguredPointIndex() : -1;
+            var firstConfiguredPoint = loopPointHeightSegments ? GetFirstConfiguredPoint() : null;
 
             for (int i = 0; i < points.Length; i++)
             {
@@ -453,11 +596,12 @@ namespace F1XR.RestAPI.Replay
                     break;
                 }
 
-                if (!loopPointHeightSegments)
-                    continue;
-
-                var first = GetFirstConfiguredPoint();
-                if (first.HasValue && i == GetLastConfiguredPointIndex() && TryUseHeightSegment(sourcePosition, a, first.Value, ref bestDistance, ref height))
+                if (i == lastConfiguredIndex && firstConfiguredPoint.HasValue && TryUseHeightSegment(
+                    sourcePosition,
+                    a,
+                    firstConfiguredPoint.Value,
+                    ref bestDistance,
+                    ref height))
                     found = true;
             }
 
@@ -559,7 +703,7 @@ namespace F1XR.RestAPI.Replay
             return count;
         }
 
-        static bool IsConfigured(Point point)
+        internal static bool IsConfigured(Point point)
         {
             return !string.IsNullOrWhiteSpace(point.name)
                 && point.sourcePosition.sqrMagnitude > 0.000001f;
@@ -575,7 +719,7 @@ namespace F1XR.RestAPI.Replay
             return MapSourceAxes(sourceAxisMode, x, y);
         }
 
-        static Vector2 MapSourceAxes(SourceAxisMode axisMode, Vector2 sourcePosition)
+        internal static Vector2 MapSourceAxes(SourceAxisMode axisMode, Vector2 sourcePosition)
         {
             return MapSourceAxes(axisMode, sourcePosition.x, sourcePosition.y);
         }
