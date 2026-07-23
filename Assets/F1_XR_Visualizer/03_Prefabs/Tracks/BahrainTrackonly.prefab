@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 565760233811802082}
   - component: {fileID: -5487200462336808562}
   m_Layer: 0
-  m_Name: BahrainTrack
+  m_Name: BahrainTrackonly
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
