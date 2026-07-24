@@ -396,6 +396,7 @@ namespace F1XR.Editor
             {
                 name = MakeMidPointName(selected.name, next.name),
                 sourcePosition = Vector2.Lerp(selected.sourcePosition, next.sourcePosition, 0.5f),
+                sourceHeight = Mathf.Lerp(selected.sourceHeight, next.sourceHeight, 0.5f),
                 targetLocalPosition = Vector3.Lerp(selected.targetLocalPosition, next.targetLocalPosition, 0.5f)
             };
 
@@ -567,6 +568,7 @@ namespace F1XR.Editor
                 {
                     name = source.name,
                     sourcePosition = source.position,
+                    sourceHeight = existingPoint.sourceHeight,
                     targetLocalPosition = existingPoint.targetLocalPosition
                 };
             }

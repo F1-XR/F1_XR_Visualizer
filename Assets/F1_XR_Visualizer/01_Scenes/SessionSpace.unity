@@ -3741,6 +3741,15 @@ MonoBehaviour:
     fitMapToCalibrationBounds: 1
     mapFitScaleMultiplier: 1.25
     calibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
+  - circuitKey: 46
+    circuitName: Suzuka
+    circuitShortName: Suzuka
+    visualizerPrefab: {fileID: 0}
+    mapPrefab: {fileID: 4781409877837566449, guid: a22e6c50786583349af8b25ddbfb743a, type: 3}
+    mapScale: 0.0003
+    fitMapToCalibrationBounds: 0
+    mapFitScaleMultiplier: 1
+    calibration: {fileID: 11400000, guid: 987970e1cf5441518f16c0928ed5bdab, type: 2}
   playOnReady: 1
   waitForTrackPlacementBeforeStart: 1
   playStartingLightsBeforeStart: 1
@@ -3950,14 +3959,14 @@ MonoBehaviour:
   api: {fileID: 1705380155}
   player: {fileID: 1705380154}
   autoStart: 1
-  preferredYear: 2023
-  preferredCircuitShortName: Bahrain
+  preferredYear: 2024
+  preferredCircuitShortName: Suzuka
   preferredSessionName: Race
   replayMinutes: 20
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
-  useEventReplayTestSession: 1
+  useEventReplayTestSession: 0
 --- !u!4 &1705380157
 Transform:
   m_ObjectHideFlags: 0
