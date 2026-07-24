@@ -68,10 +68,37 @@ namespace F1XR.RestAPI.Replay
             ? timeline.ToNormalized(timeline.CurrentTime)
             : 0f;
         public ReplayEventDto CurrentEvent => currentEvent;
+        public Transform PresentationRoot => stageRoot != null
+            ? stageRoot.transform
+            : null;
 
         public void Configure(ReplayPlayer replayPlayer)
         {
             player = replayPlayer;
+        }
+
+        public bool TrySetPresentationPose(
+            Vector3 position,
+            Quaternion rotation,
+            float uniformScale)
+        {
+            if (PresentationRoot == null)
+                return false;
+
+            PresentationRoot.SetPositionAndRotation(position, rotation);
+            PresentationRoot.localScale =
+                Vector3.one * Mathf.Max(0.1f, uniformScale);
+            return true;
+        }
+
+        public bool TryRestoreTableRelativePose()
+        {
+            if (PresentationRoot == null)
+                return false;
+
+            ResolveStagePose(out Vector3 position, out Quaternion rotation);
+            rotation = Quaternion.Euler(0f, rotation.eulerAngles.y, 0f);
+            return TrySetPresentationPose(position, rotation, stageScale);
         }
 
         private void Awake()
@@ -480,10 +507,7 @@ namespace F1XR.RestAPI.Replay
         private void CreateStageRoot()
         {
             stageRoot = new GameObject("EventReplayStage");
-            ResolveStagePose(out Vector3 position, out Quaternion rotation);
-            rotation = Quaternion.Euler(0f, rotation.eulerAngles.y, 0f);
-            stageRoot.transform.SetPositionAndRotation(position, rotation);
-            stageRoot.transform.localScale = Vector3.one * Mathf.Max(0.1f, stageScale);
+            TryRestoreTableRelativePose();
         }
 
         private void ResolveStagePose(out Vector3 position, out Quaternion rotation)
