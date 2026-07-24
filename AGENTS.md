@@ -86,10 +86,105 @@ ReplayUI
 ReplayBar
 ReplaySamples
 CarReplayView
-ChunkReplayPlayer
+ReplayPlayer
 ApiClient
 CoordinateUtil
 ```
+
+`ChunkReplayPlayer` is a legacy serialized class label in `SessionSpace`; the active script is `ReplayPlayer`.
+
+## Feature Development Guardrails
+
+### Confirmed Active Architecture
+
+* Feature work is currently scoped to `Assets/F1_XR_Visualizer/01_Scenes/SessionSpace.unity`.
+* The active Open flow is the runtime-created button in `ReplayUI`, through `OpenTestEvent()` and `EventPopoutReplay.OpenTestOvertake()`.
+* The active replay system is `ReplayPlayer`; do not create a parallel replay manager.
+* The table presentation uses `TrackVisualizer`, with runtime cars under `TrackVisualizer/Visual/Cars`.
+* The enlarged event replay is positioned by `EventPopoutReplay` and contained by the runtime `EventReplayStage` root.
+* Treat `EventReplayStage` as the future presentation transform boundary unless a later phase explicitly changes that decision.
+* The confirmed project versions are Unity `6000.4.11f1`, Meta OpenXR `2.5.1`, URP `17.4.0`, OpenXR `1.16.1`, and AR Foundation `6.5.0`. MRUK is not installed.
+
+### Project Architecture Rules
+
+* Inspect and reuse the confirmed active architecture before creating new systems.
+* Do not create a parallel replay manager.
+* Do not create a second OpenF1 pipeline.
+* Do not create duplicate overtake-event processing.
+* Do not create separate table, floor, or wall replay implementations when one presentation layer can be reused.
+* Extend the confirmed active replay system rather than similarly named legacy or experimental systems.
+* Treat classes identified as legacy, duplicate, experimental, or inactive during the Phase 0 audit as unavailable unless explicitly requested.
+
+### Scope Control Rules
+
+* Implement only the explicitly requested phase.
+* Never continue into the next phase automatically.
+* Do not broaden the task to include cleanup, refactoring, polishing, or optimization outside the requested scope.
+* If a task requires substantially broader changes than expected, stop and report the reason before implementing.
+* Prefer the smallest reversible change.
+* Do not modify more files than necessary.
+* Do not perform unrelated formatting changes.
+
+### Unity Asset Safety Rules
+
+* Do not rename existing classes, public methods, serialized fields, scenes, prefabs, GameObjects, or assets without explicit approval.
+* Preserve all existing Inspector references.
+* Preserve prefab connections and overrides.
+* Avoid editing scene or prefab YAML manually unless explicitly required and justified.
+* Do not regenerate or modify `.meta` files unnecessarily.
+* Do not move assets unless explicitly requested.
+* Do not modify generated Unity folders or files.
+
+### Package and Platform Rules
+
+* Do not upgrade or downgrade Unity.
+* Do not upgrade or downgrade Meta XR, MRUK, URP, XR, OpenXR, or other packages unless explicitly requested.
+* Use only APIs confirmed to exist in the installed package versions.
+* Do not copy examples from newer SDK versions without verifying compatibility.
+* Preserve the current Meta Quest target and URP render pipeline.
+* Keep XR stereo compatibility in mind for future visual features.
+
+### Replay-System Rules
+
+* Keep logical replay data separate from presentation-only spatial transforms.
+* OpenF1 positions, timing, event order, and logical car state must remain authoritative.
+* Room placement, portal placement, cinematic offsets, scale, and path mapping must not be written back into logical replay data.
+* Do not allow presentation offsets to accumulate after restart, seeking, reuse, or cleanup.
+* Reuse existing replay timing rather than creating an unrelated timer where practical.
+* Preserve the current table replay until an explicitly requested phase changes its presentation.
+* Existing normal replay behavior must remain available as a fallback until explicitly removed.
+
+### MR Placement Rules
+
+* Use actual scanned MRUK or Meta scene data rather than fixed world positions for walls and tables.
+* Showcase layout may use manual selection and tunable offsets, but it must remain relative to real detected anchors.
+* Do not implement fully automatic arbitrary-room placement until explicitly requested.
+* Do not search the entire room every frame.
+* Subscribe and unsubscribe from room lifecycle events safely.
+
+### Data and Backend Rules
+
+* Do not modify the Python or FastAPI backend unless explicitly requested.
+* Do not modify OpenF1 API calls, cached files, replay DTOs, schemas, JSON formats, or dataset formats unless explicitly requested.
+* Do not invent telemetry that does not exist.
+* Clearly treat lateral overtake movement as presentation reconstruction when it is not real lane-level telemetry.
+
+### Phase Validation Rules
+
+After every implementation phase, report:
+
+* files changed
+* why each file changed
+* hierarchy or serialized-reference changes
+* compilation or test commands run
+* compilation errors and warnings
+* manual Unity Editor checks
+* manual Quest headset checks
+* known limitations
+* postponed work
+* confirmation that the next phase was not started
+
+If validation cannot be completed, state exactly what remains unverified.
 
 ## User Preference
 
