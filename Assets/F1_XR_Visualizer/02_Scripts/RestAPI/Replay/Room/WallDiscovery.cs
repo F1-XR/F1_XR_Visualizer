@@ -171,12 +171,14 @@ namespace F1XR.RestAPI.Replay.Room
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation;
         private Vector3 lastRootScale;
+        private int selectionRevision;
 
         public IReadOnlyList<WallCandidate> Candidates =>
             readOnlyCandidates ??= candidates.AsReadOnly();
 
         public TrackableId? EntryWallId => entryWallId;
         public TrackableId? ExitWallId => exitWallId;
+        public int SelectionRevision => selectionRevision;
         public bool BothSelectionsValid =>
             TryGetEntryWall(out _) &&
             TryGetExitWall(out _) &&
@@ -296,6 +298,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             entryWallId = wall.TrackableId;
             SetEntryIndex(index);
+            IncrementSelectionRevision();
             WarnIfSameWallSelected();
             RefreshAllDebugViews();
             return true;
@@ -308,6 +311,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             exitWallId = wall.TrackableId;
             SetExitIndex(index);
+            IncrementSelectionRevision();
             WarnIfSameWallSelected();
             RefreshAllDebugViews();
             return true;
@@ -354,16 +358,22 @@ namespace F1XR.RestAPI.Replay.Room
         [ContextMenu("Clear Entry Wall")]
         public void ClearEntrySelection()
         {
+            var hadSelection = entryWallId.HasValue;
             entryWallId = null;
             SetEntryIndex(-1);
+            if (hadSelection)
+                IncrementSelectionRevision();
             RefreshAllDebugViews();
         }
 
         [ContextMenu("Clear Exit Wall")]
         public void ClearExitSelection()
         {
+            var hadSelection = exitWallId.HasValue;
             exitWallId = null;
             SetExitIndex(-1);
+            if (hadSelection)
+                IncrementSelectionRevision();
             RefreshAllDebugViews();
         }
 
@@ -479,6 +489,12 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
+            if (entryWallId == candidate.TrackableId ||
+                exitWallId == candidate.TrackableId)
+            {
+                IncrementSelectionRevision();
+            }
+
             RefreshSelectionIndices();
             RefreshDebugView(candidate);
         }
@@ -506,6 +522,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (!candidatesById.Remove(id, out var candidate))
                 return;
 
+            var selectionChanged = false;
             candidate.Invalidate();
             candidates.Remove(candidate);
             DestroyDebugView(id);
@@ -514,6 +531,7 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 entryWallId = null;
                 SetEntryIndex(-1);
+                selectionChanged = true;
                 Debug.LogWarning($"[WallDiscovery] Entry Wall cleared. {reason}", this);
             }
 
@@ -521,8 +539,12 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 exitWallId = null;
                 SetExitIndex(-1);
+                selectionChanged = true;
                 Debug.LogWarning($"[WallDiscovery] Exit Wall cleared. {reason}", this);
             }
+
+            if (selectionChanged)
+                IncrementSelectionRevision();
 
             RefreshSelectionIndices();
             RefreshAllDebugViews();
@@ -530,6 +552,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void ClearCandidates(string reason)
         {
+            var hadSelection = entryWallId.HasValue || exitWallId.HasValue;
             foreach (var candidate in candidates)
                 candidate.Invalidate();
 
@@ -546,6 +569,8 @@ namespace F1XR.RestAPI.Replay.Room
             exitWallId = null;
             SetEntryIndex(-1);
             SetExitIndex(-1);
+            if (hadSelection)
+                IncrementSelectionRevision();
         }
 
         private bool TryGetSelectedWall(
@@ -647,6 +672,14 @@ namespace F1XR.RestAPI.Replay.Room
                 Debug.LogWarning(
                     "[WallDiscovery] Entry Wall and Exit Wall reference the same AR plane.",
                     this);
+            }
+        }
+
+        private void IncrementSelectionRevision()
+        {
+            unchecked
+            {
+                selectionRevision++;
             }
         }
 

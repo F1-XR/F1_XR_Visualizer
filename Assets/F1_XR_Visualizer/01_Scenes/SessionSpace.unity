@@ -5399,6 +5399,7 @@ GameObject:
   - component: {fileID: 2086967216}
   - component: {fileID: 2086967217}
   - component: {fileID: 2086967218}
+  - component: {fileID: 2086967219}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5794,6 +5795,37 @@ MonoBehaviour:
   showDebug: 1
   debugLineWidth: 0.015
   normalLength: 0.35
+--- !u!114 &2086967219
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 950c352572a13054ca4e35d1e0fc7470, type: 3}
+  m_Name: ShowcaseLayout
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcaseLayout
+  wallDiscovery: {fileID: 2086967218}
+  xrMainCamera: {fileID: 1918400212}
+  entryHorizontalOffset: 0
+  entryVerticalOffset: 0
+  entryDepthOffset: 0.05
+  entryYawOffset: 0
+  heroForwardDistance: 1.5
+  heroHorizontalOffset: 0
+  heroVerticalOffset: -0.3
+  heroYawOffset: 0
+  exitHorizontalOffset: 0
+  exitVerticalOffset: 0
+  exitDepthOffset: 0.05
+  exitYawOffset: 0
+  wallBoundsSafetyMargin: 0.1
+  showDebug: 1
+  markerSize: 0.08
+  arrowLength: 0.35
+  debugLineWidth: 0.015
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
