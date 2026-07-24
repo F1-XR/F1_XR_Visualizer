@@ -82,18 +82,6 @@ namespace F1XR.RestAPI.Replay
 
         private void OnDestroy()
         {
-            if (labelTextMaterial != null)
-                Destroy(labelTextMaterial);
-
-            if (labelLineMaterial != null)
-                Destroy(labelLineMaterial);
-
-            if (labelBackgroundMaterial != null)
-                Destroy(labelBackgroundMaterial);
-
-            if (labelDotMaterial != null)
-                Destroy(labelDotMaterial);
-
             if (selectionRingMaterial != null)
                 Destroy(selectionRingMaterial);
 
@@ -129,7 +117,9 @@ namespace F1XR.RestAPI.Replay
             labelTopDot ??= CreateLabelDot("DriverLabelTopDot");
             labelBottomDot ??= CreateLabelDot("DriverLabelBottomDot");
 
-            UpdateLabelLayout();
+            if (labelLayoutDirty && UpdateLabelLayout())
+                labelLayoutDirty = false;
+
             label.transform.rotation = Camera.main.transform.rotation;
         }
 
