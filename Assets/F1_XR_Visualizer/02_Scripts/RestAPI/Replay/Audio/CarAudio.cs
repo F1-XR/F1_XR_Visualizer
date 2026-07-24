@@ -71,12 +71,18 @@ namespace F1XR.RestAPI.Replay
 
         public void SetPlaying(bool value)
         {
+            if (playing == value)
+                return;
+
             playing = value;
             ApplyPlayingState();
         }
 
         public void SetPlacementReady(bool value)
         {
+            if (placementReady == value)
+                return;
+
             placementReady = value;
             ApplyPlayingState();
         }

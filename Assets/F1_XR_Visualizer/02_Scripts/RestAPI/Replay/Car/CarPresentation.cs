@@ -34,15 +34,6 @@ namespace F1XR.RestAPI.Replay
             ApplySelection(driver, car);
         }
 
-        public void UpdateCar(int driver, ReplayCarView car)
-        {
-            if (car == null)
-                return;
-
-            car.SetLeaderHighlightVisible(leaderHighlightVisible);
-            ApplySelection(driver, car);
-        }
-
         public void SetRank(ReplayCarView car, int rank)
         {
             if (car != null)
@@ -59,6 +50,9 @@ namespace F1XR.RestAPI.Replay
 
         public void SetLabelsVisible(bool visible)
         {
+            if (labelsVisible == visible)
+                return;
+
             labelsVisible = visible;
 
             foreach (ReplayCarView car in cars.Values)
@@ -70,6 +64,9 @@ namespace F1XR.RestAPI.Replay
 
         public void SetLeaderHighlightVisible(bool visible)
         {
+            if (leaderHighlightVisible == visible)
+                return;
+
             leaderHighlightVisible = visible;
 
             foreach (ReplayCarView car in cars.Values)
