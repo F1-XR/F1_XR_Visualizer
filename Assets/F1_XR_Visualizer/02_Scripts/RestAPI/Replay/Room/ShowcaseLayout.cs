@@ -59,6 +59,7 @@ namespace F1XR.RestAPI.Replay.Room
         private Vector3 heroLocalPosition;
         private Quaternion heroLocalRotation = Quaternion.identity;
         private int observedSelectionRevision = -1;
+        private int layoutRevision;
         private bool rebuildRequested = true;
         private bool entryBoundsWarningActive;
         private bool exitBoundsWarningActive;
@@ -92,6 +93,7 @@ namespace F1XR.RestAPI.Replay.Room
         public Vector3 ExitTravelDirection => exitTravelDirection;
         public TrackableId EntryWallId => entryWallId;
         public TrackableId ExitWallId => exitWallId;
+        public int LayoutRevision => layoutRevision;
 
         private void Reset()
         {
@@ -232,6 +234,7 @@ namespace F1XR.RestAPI.Replay.Room
         {
             ResolveReferences();
             rebuildRequested = false;
+            layoutRevision++;
             observedSelectionRevision =
                 wallDiscovery != null ? wallDiscovery.SelectionRevision : -1;
 

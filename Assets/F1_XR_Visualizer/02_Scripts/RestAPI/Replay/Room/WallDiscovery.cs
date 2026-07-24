@@ -8,6 +8,13 @@ using UnityEngine.XR.ARSubsystems;
 
 namespace F1XR.RestAPI.Replay.Room
 {
+    public enum WallSelectionState
+    {
+        None,
+        Selected,
+        Reacquiring
+    }
+
     public sealed class WallCandidate
     {
         private readonly List<Vector3> boundary = new();
@@ -23,6 +30,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         public TrackableId TrackableId { get; }
         public ARPlane SourcePlane { get; private set; }
+        public PlaneClassifications Classifications { get; private set; }
         public bool IsSemanticWall { get; private set; }
         public bool IsFallback { get; private set; }
         public Vector3 Center { get; private set; }
@@ -32,6 +40,10 @@ namespace F1XR.RestAPI.Replay.Room
         public Vector3 VerticalAxis { get; private set; }
         public float Width { get; private set; }
         public float Height { get; private set; }
+        public float MinHorizontal { get; private set; }
+        public float MaxHorizontal { get; private set; }
+        public float MinVertical { get; private set; }
+        public float MaxVertical { get; private set; }
         public IReadOnlyList<Vector3> Boundary => readOnlyBoundary;
         public bool IsValid { get; private set; }
 
@@ -41,6 +53,7 @@ namespace F1XR.RestAPI.Replay.Room
             Transform orientationCamera)
         {
             SourcePlane = plane;
+            Classifications = plane.classifications;
             IsSemanticWall = isSemanticWall;
             IsFallback = !isSemanticWall;
             Center = plane.center;
@@ -70,6 +83,22 @@ namespace F1XR.RestAPI.Replay.Room
             CopyBoundary(plane);
             MeasureBoundary();
             IsValid = true;
+        }
+
+        internal void AlignInwardNormal(Vector3 referenceNormal)
+        {
+            if (Vector3.Dot(InwardNormal, referenceNormal) >= 0f)
+                return;
+
+            inwardNormalSign = -inwardNormalSign;
+            InwardNormal = -InwardNormal;
+            HorizontalAxis = Vector3.Cross(
+                VerticalAxis,
+                InwardNormal).normalized;
+            Rotation = Quaternion.LookRotation(
+                InwardNormal,
+                VerticalAxis);
+            MeasureBoundary();
         }
 
         internal void Invalidate()
@@ -121,6 +150,10 @@ namespace F1XR.RestAPI.Replay.Room
 
             Width = maxHorizontal - minHorizontal;
             Height = maxVertical - minVertical;
+            MinHorizontal = minHorizontal;
+            MaxHorizontal = maxHorizontal;
+            MinVertical = minVertical;
+            MaxVertical = maxVertical;
         }
     }
 
@@ -151,6 +184,16 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private int entryCandidateIndex = -1;
         [SerializeField] private int exitCandidateIndex = -1;
 
+        [Header("Selection Reacquisition")]
+        [SerializeField] private bool reacquisitionEnabled = true;
+        [SerializeField, Min(0.1f)] private float reacquisitionGraceDuration = 2f;
+        [SerializeField, Min(0.01f)] private float planeDistanceTolerance = 0.15f;
+        [SerializeField, Range(1f, 45f)] private float normalAngleTolerance = 12f;
+        [SerializeField, Range(0.1f, 1f)] private float minimumOverlap = 0.55f;
+        [SerializeField, Range(0f, 0.9f)] private float sizeDifferenceTolerance = 0.65f;
+        [SerializeField, Range(0f, 1f)] private float minimumMatchScore = 0.65f;
+        [SerializeField, Range(0.01f, 1f)] private float ambiguityMargin = 0.12f;
+
         [Header("Development Debug")]
         [SerializeField] private bool showDebug = true;
         [SerializeField, Min(0.001f)] private float debugLineWidth = 0.015f;
@@ -172,12 +215,30 @@ namespace F1XR.RestAPI.Replay.Room
         private Quaternion lastRootRotation;
         private Vector3 lastRootScale;
         private int selectionRevision;
+        private readonly SelectionData entrySelection = new();
+        private readonly SelectionData exitSelection = new();
+
+        private const float SelectedPositionTolerance = 0.01f;
+        private const float SelectedAngleTolerance = 1f;
+        private const float SelectedSizeTolerance = 0.02f;
 
         public IReadOnlyList<WallCandidate> Candidates =>
             readOnlyCandidates ??= candidates.AsReadOnly();
 
         public TrackableId? EntryWallId => entryWallId;
         public TrackableId? ExitWallId => exitWallId;
+        public WallSelectionState EntrySelectionState =>
+            entrySelection.State;
+        public WallSelectionState ExitSelectionState =>
+            exitSelection.State;
+        public bool IsEntryReacquiring =>
+            entrySelection.State == WallSelectionState.Reacquiring;
+        public bool IsExitReacquiring =>
+            exitSelection.State == WallSelectionState.Reacquiring;
+        public TrackableId? EntrySelectedTrackableId =>
+            GetDiagnosticTrackableId(entryWallId, entrySelection);
+        public TrackableId? ExitSelectedTrackableId =>
+            GetDiagnosticTrackableId(exitWallId, exitSelection);
         public int SelectionRevision => selectionRevision;
         public bool BothSelectionsValid =>
             TryGetEntryWall(out _) &&
@@ -262,6 +323,8 @@ namespace F1XR.RestAPI.Replay.Room
                 observedExitIndex = exitCandidateIndex;
                 SelectExitByIndex(exitCandidateIndex);
             }
+
+            UpdateReacquisitionTimeouts();
         }
 
         private void LateUpdate()
@@ -277,6 +340,20 @@ namespace F1XR.RestAPI.Replay.Room
         {
             minimumWidth = Mathf.Max(0.1f, minimumWidth);
             minimumHeight = Mathf.Max(0.1f, minimumHeight);
+            reacquisitionGraceDuration =
+                Mathf.Max(0.1f, reacquisitionGraceDuration);
+            planeDistanceTolerance =
+                Mathf.Max(0.01f, planeDistanceTolerance);
+            normalAngleTolerance =
+                Mathf.Clamp(normalAngleTolerance, 1f, 45f);
+            minimumOverlap =
+                Mathf.Clamp(minimumOverlap, 0.1f, 1f);
+            sizeDifferenceTolerance =
+                Mathf.Clamp(sizeDifferenceTolerance, 0f, 0.9f);
+            minimumMatchScore =
+                Mathf.Clamp01(minimumMatchScore);
+            ambiguityMargin =
+                Mathf.Clamp(ambiguityMargin, 0.01f, 1f);
             debugLineWidth = Mathf.Max(0.001f, debugLineWidth);
             normalLength = Mathf.Max(0.05f, normalLength);
         }
@@ -291,12 +368,25 @@ namespace F1XR.RestAPI.Replay.Room
             return TryGetSelectedWall(exitWallId, out wall);
         }
 
+        public bool TryGetEntryWallFrame(out WallCandidate wall)
+        {
+            return TryGetEntryWall(out wall);
+        }
+
+        public bool TryGetExitWallFrame(out WallCandidate wall)
+        {
+            return TryGetExitWall(out wall);
+        }
+
         public bool SelectEntryByIndex(int index)
         {
             if (!TryGetCandidate(index, "Entry", out var wall))
                 return false;
 
+            CancelReacquisition(entrySelection);
             entryWallId = wall.TrackableId;
+            entrySelection.State = WallSelectionState.Selected;
+            entrySelection.Snapshot = CaptureSnapshot(wall);
             SetEntryIndex(index);
             IncrementSelectionRevision();
             WarnIfSameWallSelected();
@@ -309,7 +399,10 @@ namespace F1XR.RestAPI.Replay.Room
             if (!TryGetCandidate(index, "Exit", out var wall))
                 return false;
 
+            CancelReacquisition(exitSelection);
             exitWallId = wall.TrackableId;
+            exitSelection.State = WallSelectionState.Selected;
+            exitSelection.Snapshot = CaptureSnapshot(wall);
             SetExitIndex(index);
             IncrementSelectionRevision();
             WarnIfSameWallSelected();
@@ -358,8 +451,11 @@ namespace F1XR.RestAPI.Replay.Room
         [ContextMenu("Clear Entry Wall")]
         public void ClearEntrySelection()
         {
-            var hadSelection = entryWallId.HasValue;
+            var hadSelection =
+                entryWallId.HasValue ||
+                entrySelection.State != WallSelectionState.None;
             entryWallId = null;
+            ResetSelection(entrySelection);
             SetEntryIndex(-1);
             if (hadSelection)
                 IncrementSelectionRevision();
@@ -369,8 +465,11 @@ namespace F1XR.RestAPI.Replay.Room
         [ContextMenu("Clear Exit Wall")]
         public void ClearExitSelection()
         {
-            var hadSelection = exitWallId.HasValue;
+            var hadSelection =
+                exitWallId.HasValue ||
+                exitSelection.State != WallSelectionState.None;
             exitWallId = null;
+            ResetSelection(exitSelection);
             SetExitIndex(-1);
             if (hadSelection)
                 IncrementSelectionRevision();
@@ -421,20 +520,24 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnTrackablesChanged(
             ARTrackablesChangedEventArgs<ARPlane> changes)
         {
+            foreach (var removed in changes.removed)
+                RemoveCandidate(removed.Key, "Source AR plane was removed.");
+
             foreach (var plane in changes.added)
                 AddOrUpdateCandidate(plane);
 
             foreach (var plane in changes.updated)
                 AddOrUpdateCandidate(plane);
 
-            foreach (var removed in changes.removed)
-                RemoveCandidate(removed.Key, "Source AR plane was removed.");
+            AttemptPendingReacquisitions();
         }
 
         private void SyncExistingPlanes()
         {
             foreach (var plane in planeManager.trackables)
                 AddOrUpdateCandidate(plane);
+
+            AttemptPendingReacquisitions();
         }
 
         private void RefreshCandidatesAfterRootMove()
@@ -449,6 +552,8 @@ namespace F1XR.RestAPI.Replay.Room
                 else
                     AddOrUpdateCandidate(plane);
             }
+
+            AttemptPendingReacquisitions();
         }
 
         private bool HasRootPoseChanged()
@@ -489,11 +594,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            if (entryWallId == candidate.TrackableId ||
-                exitWallId == candidate.TrackableId)
-            {
-                IncrementSelectionRevision();
-            }
+            RefreshSelectedFrame(candidate);
 
             RefreshSelectionIndices();
             RefreshDebugView(candidate);
@@ -522,7 +623,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (!candidatesById.Remove(id, out var candidate))
                 return;
 
-            var selectionChanged = false;
+            var removedSnapshot = CaptureSnapshot(candidate);
             candidate.Invalidate();
             candidates.Remove(candidate);
             DestroyDebugView(id);
@@ -531,20 +632,43 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 entryWallId = null;
                 SetEntryIndex(-1);
-                selectionChanged = true;
-                Debug.LogWarning($"[WallDiscovery] Entry Wall cleared. {reason}", this);
+                if (reacquisitionEnabled)
+                {
+                    BeginReacquisition(
+                        entrySelection,
+                        removedSnapshot,
+                        "Entry");
+                }
+                else
+                {
+                    ResetSelection(entrySelection);
+                    IncrementSelectionRevision();
+                    Debug.LogWarning(
+                        $"[WallDiscovery] Entry Wall cleared. {reason}",
+                        this);
+                }
             }
 
             if (exitWallId == id)
             {
                 exitWallId = null;
                 SetExitIndex(-1);
-                selectionChanged = true;
-                Debug.LogWarning($"[WallDiscovery] Exit Wall cleared. {reason}", this);
+                if (reacquisitionEnabled)
+                {
+                    BeginReacquisition(
+                        exitSelection,
+                        removedSnapshot,
+                        "Exit");
+                }
+                else
+                {
+                    ResetSelection(exitSelection);
+                    IncrementSelectionRevision();
+                    Debug.LogWarning(
+                        $"[WallDiscovery] Exit Wall cleared. {reason}",
+                        this);
+                }
             }
-
-            if (selectionChanged)
-                IncrementSelectionRevision();
 
             RefreshSelectionIndices();
             RefreshAllDebugViews();
@@ -552,7 +676,11 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void ClearCandidates(string reason)
         {
-            var hadSelection = entryWallId.HasValue || exitWallId.HasValue;
+            var hadSelection =
+                entryWallId.HasValue ||
+                exitWallId.HasValue ||
+                entrySelection.State != WallSelectionState.None ||
+                exitSelection.State != WallSelectionState.None;
             foreach (var candidate in candidates)
                 candidate.Invalidate();
 
@@ -567,6 +695,8 @@ namespace F1XR.RestAPI.Replay.Room
 
             entryWallId = null;
             exitWallId = null;
+            ResetSelection(entrySelection);
+            ResetSelection(exitSelection);
             SetEntryIndex(-1);
             SetExitIndex(-1);
             if (hadSelection)
@@ -683,6 +813,593 @@ namespace F1XR.RestAPI.Replay.Room
             }
         }
 
+        private void BeginReacquisition(
+            SelectionData selection,
+            WallSnapshot snapshot,
+            string selectionName)
+        {
+            snapshot.RemovedAt = Time.unscaledTime;
+            selection.State = WallSelectionState.Reacquiring;
+            selection.Snapshot = snapshot;
+            selection.ReacquireUntil =
+                snapshot.RemovedAt + reacquisitionGraceDuration;
+            selection.AmbiguityLogged = false;
+            IncrementSelectionRevision();
+            Debug.LogWarning(
+                $"[WallDiscovery] {selectionName} Wall source removed; " +
+                $"reacquiring for {reacquisitionGraceDuration:0.0} s.",
+                this);
+        }
+
+        private void UpdateReacquisitionTimeouts()
+        {
+            var refreshDebug = false;
+            refreshDebug |= TryTimeoutReacquisition(
+                entrySelection,
+                "Entry");
+            refreshDebug |= TryTimeoutReacquisition(
+                exitSelection,
+                "Exit");
+
+            if (refreshDebug)
+                RefreshAllDebugViews();
+        }
+
+        private bool TryTimeoutReacquisition(
+            SelectionData selection,
+            string selectionName)
+        {
+            if (selection.State != WallSelectionState.Reacquiring ||
+                Time.unscaledTime < selection.ReacquireUntil)
+            {
+                return false;
+            }
+
+            ResetSelection(selection);
+            IncrementSelectionRevision();
+            Debug.LogWarning(
+                $"[WallDiscovery] {selectionName} Wall reacquisition " +
+                "timed out; selection cleared.",
+                this);
+            return true;
+        }
+
+        private void AttemptPendingReacquisitions()
+        {
+            if (!IsEntryReacquiring && !IsExitReacquiring)
+                return;
+
+            TryRecoverExactId(entrySelection, true, "Entry");
+            TryRecoverExactId(exitSelection, false, "Exit");
+
+            var entryMatch = IsEntryReacquiring
+                ? FindBestPhysicalMatch(entrySelection, true)
+                : default;
+            var exitMatch = IsExitReacquiring
+                ? FindBestPhysicalMatch(exitSelection, false)
+                : default;
+
+            if (entryMatch.IsConfident &&
+                exitMatch.IsConfident &&
+                entryMatch.Candidate.TrackableId ==
+                exitMatch.Candidate.TrackableId)
+            {
+                LogAmbiguousOnce(entrySelection, "Entry");
+                LogAmbiguousOnce(exitSelection, "Exit");
+                return;
+            }
+
+            ApplyPhysicalMatch(
+                entrySelection,
+                entryMatch,
+                true,
+                "Entry");
+            ApplyPhysicalMatch(
+                exitSelection,
+                exitMatch,
+                false,
+                "Exit");
+        }
+
+        private bool TryRecoverExactId(
+            SelectionData selection,
+            bool entry,
+            string selectionName)
+        {
+            if (selection.State != WallSelectionState.Reacquiring ||
+                !selection.Snapshot.IsValid ||
+                !candidatesById.TryGetValue(
+                    selection.Snapshot.TrackableId,
+                    out var candidate) ||
+                !candidate.IsValid ||
+                IsReservedByOtherSelection(candidate.TrackableId, entry))
+            {
+                return false;
+            }
+
+            RecoverSelection(
+                selection,
+                candidate,
+                entry,
+                selectionName,
+                true,
+                1f);
+            return true;
+        }
+
+        private WallMatch FindBestPhysicalMatch(
+            SelectionData selection,
+            bool entry)
+        {
+            var result = new WallMatch();
+            if (!selection.Snapshot.IsValid)
+                return result;
+
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                var candidate = candidates[i];
+                if (!candidate.IsValid ||
+                    candidate.TrackableId ==
+                    selection.Snapshot.TrackableId ||
+                    IsReservedByOtherSelection(
+                        candidate.TrackableId,
+                        entry) ||
+                    !TryScorePhysicalMatch(
+                        selection.Snapshot,
+                        candidate,
+                        out var score))
+                {
+                    continue;
+                }
+
+                if (result.Candidate == null ||
+                    score > result.Score)
+                {
+                    result.SecondScore =
+                        result.Candidate == null
+                            ? float.NegativeInfinity
+                            : result.Score;
+                    result.Candidate = candidate;
+                    result.Score = score;
+                }
+                else if (score > result.SecondScore)
+                {
+                    result.SecondScore = score;
+                }
+            }
+
+            if (result.Candidate == null)
+                return result;
+
+            result.IsAmbiguous =
+                result.SecondScore > float.NegativeInfinity &&
+                result.Score - result.SecondScore < ambiguityMargin;
+            result.IsConfident =
+                !result.IsAmbiguous &&
+                result.Score >= minimumMatchScore;
+            return result;
+        }
+
+        private void ApplyPhysicalMatch(
+            SelectionData selection,
+            WallMatch match,
+            bool entry,
+            string selectionName)
+        {
+            if (selection.State != WallSelectionState.Reacquiring)
+                return;
+
+            if (match.IsAmbiguous)
+            {
+                LogAmbiguousOnce(selection, selectionName);
+                return;
+            }
+
+            if (!match.IsConfident)
+                return;
+
+            RecoverSelection(
+                selection,
+                match.Candidate,
+                entry,
+                selectionName,
+                false,
+                match.Score);
+        }
+
+        private void RecoverSelection(
+            SelectionData selection,
+            WallCandidate candidate,
+            bool entry,
+            string selectionName,
+            bool sameTrackableId,
+            float score)
+        {
+            var previousId = selection.Snapshot.TrackableId;
+            candidate.AlignInwardNormal(
+                selection.Snapshot.InwardNormal);
+
+            if (entry)
+            {
+                entryWallId = candidate.TrackableId;
+                SetEntryIndex(
+                    FindCandidateIndex(entryWallId));
+            }
+            else
+            {
+                exitWallId = candidate.TrackableId;
+                SetExitIndex(
+                    FindCandidateIndex(exitWallId));
+            }
+
+            selection.State = WallSelectionState.Selected;
+            selection.Snapshot = CaptureSnapshot(candidate);
+            selection.ReacquireUntil = 0f;
+            selection.AmbiguityLogged = false;
+            IncrementSelectionRevision();
+
+            if (sameTrackableId)
+            {
+                Debug.Log(
+                    $"[WallDiscovery] {selectionName} Wall recovered " +
+                    "with the same TrackableId.",
+                    this);
+            }
+            else
+            {
+                Debug.Log(
+                    $"[WallDiscovery] {selectionName} Wall rebound from " +
+                    $"{previousId} to {candidate.TrackableId}; " +
+                    $"physical-wall score={score:0.000}.",
+                    this);
+            }
+
+            RefreshAllDebugViews();
+        }
+
+        private bool IsReservedByOtherSelection(
+            TrackableId candidateId,
+            bool entry)
+        {
+            var otherId = entry ? exitWallId : entryWallId;
+            return otherId.HasValue &&
+                otherId.Value == candidateId;
+        }
+
+        private bool TryScorePhysicalMatch(
+            WallSnapshot snapshot,
+            WallCandidate candidate,
+            out float score)
+        {
+            score = 0f;
+            var normalDot = Mathf.Clamp(
+                Mathf.Abs(Vector3.Dot(
+                    snapshot.InwardNormal,
+                    candidate.InwardNormal)),
+                0f,
+                1f);
+            var normalAngle = Mathf.Acos(normalDot) * Mathf.Rad2Deg;
+            if (normalAngle > normalAngleTolerance)
+                return false;
+
+            var centerOffset = candidate.Center - snapshot.Center;
+            var planeDistance = Mathf.Abs(Vector3.Dot(
+                centerOffset,
+                snapshot.InwardNormal));
+            if (planeDistance > planeDistanceTolerance)
+                return false;
+
+            if (!TryMeasureProjectedOverlap(
+                    snapshot,
+                    candidate,
+                    out var horizontalOverlap,
+                    out var verticalOverlap))
+            {
+                return false;
+            }
+
+            if (horizontalOverlap < minimumOverlap ||
+                verticalOverlap < minimumOverlap)
+            {
+                return false;
+            }
+
+            var widthRatio = SizeRatio(
+                snapshot.Width,
+                candidate.Width);
+            var heightRatio = SizeRatio(
+                snapshot.Height,
+                candidate.Height);
+            var minimumSizeRatio = 1f - sizeDifferenceTolerance;
+            if (widthRatio < minimumSizeRatio ||
+                heightRatio < minimumSizeRatio)
+            {
+                return false;
+            }
+
+            var semanticModeChanged =
+                snapshot.IsSemanticWall != candidate.IsSemanticWall;
+            if (semanticModeChanged)
+            {
+                var strongOverlap =
+                    Mathf.Min(1f, minimumOverlap + 0.2f);
+                if (normalAngle > normalAngleTolerance * 0.5f ||
+                    planeDistance > planeDistanceTolerance * 0.5f ||
+                    horizontalOverlap < strongOverlap ||
+                    verticalOverlap < strongOverlap ||
+                    widthRatio < Mathf.Max(minimumSizeRatio, 0.5f) ||
+                    heightRatio < Mathf.Max(minimumSizeRatio, 0.5f))
+                {
+                    return false;
+                }
+            }
+
+            var normalScore =
+                1f - normalAngle / normalAngleTolerance;
+            var planeScore =
+                1f - planeDistance / planeDistanceTolerance;
+            var overlapScore =
+                (horizontalOverlap + verticalOverlap) * 0.5f;
+            var sizeScore =
+                (widthRatio + heightRatio) * 0.5f;
+            var horizontalCenter = Vector3.Dot(
+                centerOffset,
+                snapshot.HorizontalAxis);
+            var verticalCenter = Vector3.Dot(
+                centerOffset,
+                snapshot.VerticalAxis);
+            var planarCenterDistance = Mathf.Sqrt(
+                horizontalCenter * horizontalCenter +
+                verticalCenter * verticalCenter);
+            var centerScale = Mathf.Max(
+                0.25f,
+                Mathf.Sqrt(
+                    snapshot.Width * snapshot.Width +
+                    snapshot.Height * snapshot.Height) * 0.5f);
+            var centerScore =
+                1f / (1f + planarCenterDistance / centerScale);
+            var semanticScore = GetSemanticScore(
+                snapshot,
+                candidate);
+
+            score =
+                normalScore * 0.18f +
+                planeScore * 0.18f +
+                overlapScore * 0.28f +
+                sizeScore * 0.14f +
+                centerScore * 0.12f +
+                semanticScore * 0.10f;
+            return true;
+        }
+
+        private static bool TryMeasureProjectedOverlap(
+            WallSnapshot snapshot,
+            WallCandidate candidate,
+            out float horizontalOverlapRatio,
+            out float verticalOverlapRatio)
+        {
+            horizontalOverlapRatio = 0f;
+            verticalOverlapRatio = 0f;
+            var boundary = candidate.Boundary;
+            if (boundary.Count < 3)
+                return false;
+
+            var candidateMinHorizontal = float.PositiveInfinity;
+            var candidateMaxHorizontal = float.NegativeInfinity;
+            var candidateMinVertical = float.PositiveInfinity;
+            var candidateMaxVertical = float.NegativeInfinity;
+            for (var i = 0; i < boundary.Count; i++)
+            {
+                var offset = boundary[i] - snapshot.Center;
+                var horizontal = Vector3.Dot(
+                    offset,
+                    snapshot.HorizontalAxis);
+                var vertical = Vector3.Dot(
+                    offset,
+                    snapshot.VerticalAxis);
+                candidateMinHorizontal = Mathf.Min(
+                    candidateMinHorizontal,
+                    horizontal);
+                candidateMaxHorizontal = Mathf.Max(
+                    candidateMaxHorizontal,
+                    horizontal);
+                candidateMinVertical = Mathf.Min(
+                    candidateMinVertical,
+                    vertical);
+                candidateMaxVertical = Mathf.Max(
+                    candidateMaxVertical,
+                    vertical);
+            }
+
+            var horizontalOverlap = Mathf.Max(
+                0f,
+                Mathf.Min(
+                    snapshot.MaxHorizontal,
+                    candidateMaxHorizontal) -
+                Mathf.Max(
+                    snapshot.MinHorizontal,
+                    candidateMinHorizontal));
+            var verticalOverlap = Mathf.Max(
+                0f,
+                Mathf.Min(
+                    snapshot.MaxVertical,
+                    candidateMaxVertical) -
+                Mathf.Max(
+                    snapshot.MinVertical,
+                    candidateMinVertical));
+            var candidateWidth =
+                candidateMaxHorizontal -
+                candidateMinHorizontal;
+            var candidateHeight =
+                candidateMaxVertical -
+                candidateMinVertical;
+            var horizontalBase = Mathf.Min(
+                snapshot.Width,
+                candidateWidth);
+            var verticalBase = Mathf.Min(
+                snapshot.Height,
+                candidateHeight);
+            if (horizontalBase <= Mathf.Epsilon ||
+                verticalBase <= Mathf.Epsilon)
+            {
+                return false;
+            }
+
+            horizontalOverlapRatio =
+                horizontalOverlap / horizontalBase;
+            verticalOverlapRatio =
+                verticalOverlap / verticalBase;
+            return true;
+        }
+
+        private static float GetSemanticScore(
+            WallSnapshot snapshot,
+            WallCandidate candidate)
+        {
+            if (snapshot.Classifications == candidate.Classifications)
+                return 1f;
+
+            if (snapshot.IsSemanticWall &&
+                candidate.IsSemanticWall &&
+                HasAny(
+                    snapshot.Classifications,
+                    candidate.Classifications))
+            {
+                return 0.8f;
+            }
+
+            if (snapshot.IsFallback && candidate.IsFallback)
+                return 0.6f;
+
+            return 0f;
+        }
+
+        private void RefreshSelectedFrame(WallCandidate candidate)
+        {
+            if (entryWallId == candidate.TrackableId &&
+                entrySelection.State == WallSelectionState.Selected)
+            {
+                candidate.AlignInwardNormal(
+                    entrySelection.Snapshot.InwardNormal);
+                if (SelectedFrameChanged(
+                        entrySelection.Snapshot,
+                        candidate))
+                {
+                    entrySelection.Snapshot =
+                        CaptureSnapshot(candidate);
+                    IncrementSelectionRevision();
+                }
+            }
+
+            if (exitWallId == candidate.TrackableId &&
+                exitSelection.State == WallSelectionState.Selected)
+            {
+                candidate.AlignInwardNormal(
+                    exitSelection.Snapshot.InwardNormal);
+                if (SelectedFrameChanged(
+                        exitSelection.Snapshot,
+                        candidate))
+                {
+                    exitSelection.Snapshot =
+                        CaptureSnapshot(candidate);
+                    IncrementSelectionRevision();
+                }
+            }
+        }
+
+        private static bool SelectedFrameChanged(
+            WallSnapshot snapshot,
+            WallCandidate candidate)
+        {
+            return
+                (snapshot.Center - candidate.Center).sqrMagnitude >
+                SelectedPositionTolerance *
+                SelectedPositionTolerance ||
+                Vector3.Angle(
+                    snapshot.InwardNormal,
+                    candidate.InwardNormal) >
+                SelectedAngleTolerance ||
+                Mathf.Abs(snapshot.Width - candidate.Width) >
+                SelectedSizeTolerance ||
+                Mathf.Abs(snapshot.Height - candidate.Height) >
+                SelectedSizeTolerance ||
+                snapshot.Classifications != candidate.Classifications;
+        }
+
+        private static WallSnapshot CaptureSnapshot(
+            WallCandidate candidate)
+        {
+            return new WallSnapshot
+            {
+                IsValid = true,
+                TrackableId = candidate.TrackableId,
+                Center = candidate.Center,
+                InwardNormal = candidate.InwardNormal,
+                HorizontalAxis = candidate.HorizontalAxis,
+                VerticalAxis = candidate.VerticalAxis,
+                Width = candidate.Width,
+                Height = candidate.Height,
+                MinHorizontal = candidate.MinHorizontal,
+                MaxHorizontal = candidate.MaxHorizontal,
+                MinVertical = candidate.MinVertical,
+                MaxVertical = candidate.MaxVertical,
+                Classifications = candidate.Classifications,
+                IsSemanticWall = candidate.IsSemanticWall,
+                IsFallback = candidate.IsFallback
+            };
+        }
+
+        private static float SizeRatio(float first, float second)
+        {
+            var largest = Mathf.Max(first, second);
+            return largest > Mathf.Epsilon
+                ? Mathf.Min(first, second) / largest
+                : 0f;
+        }
+
+        private void LogAmbiguousOnce(
+            SelectionData selection,
+            string selectionName)
+        {
+            if (selection.AmbiguityLogged)
+                return;
+
+            selection.AmbiguityLogged = true;
+            Debug.LogWarning(
+                $"[WallDiscovery] {selectionName} Wall replacement " +
+                "was ambiguous; waiting.",
+                this);
+        }
+
+        private static void CancelReacquisition(
+            SelectionData selection)
+        {
+            selection.ReacquireUntil = 0f;
+            selection.AmbiguityLogged = false;
+        }
+
+        private static void ResetSelection(
+            SelectionData selection)
+        {
+            selection.State = WallSelectionState.None;
+            selection.Snapshot = default;
+            selection.ReacquireUntil = 0f;
+            selection.AmbiguityLogged = false;
+        }
+
+        private static TrackableId? GetDiagnosticTrackableId(
+            TrackableId? selectedId,
+            SelectionData selection)
+        {
+            if (selectedId.HasValue)
+                return selectedId;
+
+            return selection.State == WallSelectionState.Reacquiring &&
+                selection.Snapshot.IsValid
+                    ? selection.Snapshot.TrackableId
+                    : null;
+        }
+
         private static bool HasAny(
             PlaneClassifications value,
             PlaneClassifications mask)
@@ -780,6 +1497,43 @@ namespace F1XR.RestAPI.Replay.Room
 
             Destroy(debugMaterial);
             debugMaterial = null;
+        }
+
+        private sealed class SelectionData
+        {
+            public WallSelectionState State;
+            public WallSnapshot Snapshot;
+            public float ReacquireUntil;
+            public bool AmbiguityLogged;
+        }
+
+        private struct WallSnapshot
+        {
+            public bool IsValid;
+            public TrackableId TrackableId;
+            public Vector3 Center;
+            public Vector3 InwardNormal;
+            public Vector3 HorizontalAxis;
+            public Vector3 VerticalAxis;
+            public float Width;
+            public float Height;
+            public float MinHorizontal;
+            public float MaxHorizontal;
+            public float MinVertical;
+            public float MaxVertical;
+            public PlaneClassifications Classifications;
+            public bool IsSemanticWall;
+            public bool IsFallback;
+            public float RemovedAt;
+        }
+
+        private struct WallMatch
+        {
+            public WallCandidate Candidate;
+            public float Score;
+            public float SecondScore;
+            public bool IsConfident;
+            public bool IsAmbiguous;
         }
 
         private sealed class WallDebugView : IDisposable

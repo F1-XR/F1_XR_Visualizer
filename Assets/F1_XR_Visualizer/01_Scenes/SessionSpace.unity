@@ -5400,6 +5400,7 @@ GameObject:
   - component: {fileID: 2086967217}
   - component: {fileID: 2086967218}
   - component: {fileID: 2086967219}
+  - component: {fileID: 2086967220}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5792,6 +5793,14 @@ MonoBehaviour:
   minimumHeight: 1.2
   entryCandidateIndex: -1
   exitCandidateIndex: -1
+  reacquisitionEnabled: 1
+  reacquisitionGraceDuration: 2
+  planeDistanceTolerance: 0.15
+  normalAngleTolerance: 12
+  minimumOverlap: 0.55
+  sizeDifferenceTolerance: 0.65
+  minimumMatchScore: 0.65
+  ambiguityMargin: 0.12
   showDebug: 1
   debugLineWidth: 0.015
   normalLength: 0.35
@@ -5826,6 +5835,32 @@ MonoBehaviour:
   markerSize: 0.08
   arrowLength: 0.35
   debugLineWidth: 0.015
+--- !u!114 &2086967220
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46641686fb8f31d4fb19347ae14ea129, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcasePathPreview
+  showcaseLayout: {fileID: 2086967219}
+  xrOrigin: {fileID: 2086967207}
+  entryHandleLength: 1
+  heroIncomingHandleLength: 1
+  heroOutgoingHandleLength: 1
+  exitHandleLength: 1
+  samplesPerSegment: 24
+  pathPositionOffset: {x: 0, y: 0, z: 0}
+  debugLineWidth: 0.025
+  capsuleSize: {x: 0.12, y: 0.12, z: 0.3}
+  previewMovementEnabled: 1
+  autoplay: 1
+  loop: 1
+  autoplayDuration: 8
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
