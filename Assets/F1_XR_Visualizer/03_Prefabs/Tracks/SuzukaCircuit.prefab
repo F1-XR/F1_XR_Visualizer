@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5897699444999409665}
   - component: {fileID: 5669368885790107147}
+  - component: {fileID: 6842239511074216370}
   m_Layer: 0
   m_Name: SuzukaCircuit
   m_TagString: Untagged
@@ -55,6 +56,19 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &6842239511074216370
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4781409877837566449}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d71a3a5a31164a3eb2a14acd41cc9969, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.TrackMaterialDepthFix
+  alphaCutoff: 0.5
 --- !u!1 &6806919721181665232
 GameObject:
   m_ObjectHideFlags: 0
