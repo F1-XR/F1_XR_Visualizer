@@ -1,13 +1,28 @@
+using System;
 using System.Collections.Generic;
 using F1XR.RestAPI.Replay.Track.Placement;
 using F1XR.RestAPI.Api;
 using UnityEngine;
+using Unity.Profiling;
 using F1XR.RestAPI.Replay.Track.Build;
 
 namespace F1XR.RestAPI.Replay
 {
     public class ReplayCarSet
     {
+        private static readonly ProfilerMarker BuildFramesMarker =
+            new("F1XR.Cars.BuildFrames");
+        private static readonly ProfilerMarker ApplyLogicalPosesMarker =
+            new("F1XR.Cars.ApplyLogicalPoses");
+        private static readonly ProfilerMarker ApplyVisualsMarker =
+            new("F1XR.Cars.ApplyVisuals");
+        private static readonly ProfilerMarker AudioAudibilityMarker =
+            new("F1XR.Cars.AudioAudibility");
+        private static readonly ProfilerMarker FindCarMarker =
+            new("F1XR.Cars.FindCar");
+        private static readonly ProfilerMarker ResolvePoseMarker =
+            new("F1XR.Cars.ResolvePose");
+
         private readonly CarInstances carInstances;
         private readonly ReplayCarMotion carMotion;
         private readonly ReplayGridStartAudio gridStartAudio = new();
@@ -19,7 +34,10 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, ReplayCarPose> poses = new();
         private readonly Dictionary<int, float> visualWidths = new();
         private readonly Dictionary<int, float> visualLengths = new();
+        private readonly Dictionary<int, int> ranks = new();
         private readonly Dictionary<int, string> debugEventByDriver = new();
+        private readonly Action<int> removeCarState;
+        private readonly Action<int, ReplayCarView> setupCar;
         private readonly ReplayPlayer player;
         private readonly bool allowInteraction;
         private OvertakeMotionSettings overtakeSettings = new();
@@ -32,6 +50,8 @@ namespace F1XR.RestAPI.Replay
         {
             this.player = player;
             this.allowInteraction = allowInteraction;
+            removeCarState = RemoveCarState;
+            setupCar = SetupCar;
             TeamCarPrefabs teamCarPrefabs = new TeamCarPrefabs(carPrefab);
             carInstances = new CarInstances(
                 teamCarPrefabs,
@@ -52,8 +72,8 @@ namespace F1XR.RestAPI.Replay
         {
             carInstances.SetTeamPrefabs(
                 prefabs,
-                RemoveCarState,
-                SetupCar);
+                removeCarState,
+                setupCar);
         }
 
         public bool TryGetCarTransform(int driverNumber, out Transform carTransform)
@@ -87,6 +107,7 @@ namespace F1XR.RestAPI.Replay
             Dictionary<int, int> ranks = positions != null
                 ? GetRanksByDriver(positions)
                 : null;
+            BuildFramesMarker.Begin();
             frames.Clear();
             poses.Clear();
             visualWidths.Clear();
@@ -103,10 +124,12 @@ namespace F1XR.RestAPI.Replay
                 if (list.Count < 2)
                     continue;
 
+                FindCarMarker.Begin();
                 ReplayCarView car = carInstances.GetOrCreate(
                     driver,
-                    RemoveCarState,
-                    SetupCar);
+                    removeCarState,
+                    setupCar);
+                FindCarMarker.End();
 
                 carAudio.EnsureCar(driver, car);
                 if (ranks != null && ranks.TryGetValue(driver, out int rank))
@@ -123,6 +146,7 @@ namespace F1XR.RestAPI.Replay
 
                 indices[driver] = index;
 
+                ResolvePoseMarker.Begin();
                 carMotion.ResolvePose(
                     car,
                     list[Mathf.Max(0, index - 1)],
@@ -133,6 +157,7 @@ namespace F1XR.RestAPI.Replay
                     out ReplayCarPose pose,
                     out float interpolation,
                     out float duration);
+                ResolvePoseMarker.End();
                 frames.Add(new CarFrame(
                     driver,
                     car,
@@ -145,10 +170,14 @@ namespace F1XR.RestAPI.Replay
                 visualWidths[driver] = car.GetVisualWidth();
                 visualLengths[driver] = car.GetVisualLength();
             }
+            BuildFramesMarker.End();
 
+            ApplyLogicalPosesMarker.Begin();
             foreach (CarFrame frame in frames)
                 carMotion.ApplyLogicalPose(frame.car, frame.pose);
+            ApplyLogicalPosesMarker.End();
 
+            ApplyVisualsMarker.Begin();
             foreach (CarFrame frame in frames)
             {
                 VisualMotionPose visualPose = overtakeMotion.Resolve(
@@ -167,28 +196,30 @@ namespace F1XR.RestAPI.Replay
                     frame.b,
                     frame.interpolation,
                     frame.duration);
-                carPresentation.UpdateCar(frame.driver, frame.car);
             }
+            ApplyVisualsMarker.End();
 
+            AudioAudibilityMarker.Begin();
             carAudio.UpdateAudibility();
+            AudioAudibilityMarker.End();
         }
 
-        private static Dictionary<int, int> GetRanksByDriver(List<PositionSampleDto> positions)
+        private Dictionary<int, int> GetRanksByDriver(List<PositionSampleDto> positions)
         {
-            Dictionary<int, int> result = new();
+            ranks.Clear();
 
             if (positions == null)
-                return result;
+                return ranks;
 
             foreach (PositionSampleDto position in positions)
             {
                 if (position == null)
                     continue;
 
-                result[position.driverNumber] = position.position;
+                ranks[position.driverNumber] = position.position;
             }
 
-            return result;
+            return ranks;
         }
 
         public void Clear()
@@ -377,7 +408,7 @@ namespace F1XR.RestAPI.Replay
             gridStartAudio.SetDrivers(
                 driverRoster.Teams,
                 carAudio.Settings != null && carAudio.Settings.useTeamBasedEngineAudio);
-            carInstances.RefreshPrefabs(RemoveCarState, SetupCar);
+            carInstances.RefreshPrefabs(removeCarState, setupCar);
             carPresentation.RefreshDriverAppearance();
 
             foreach (KeyValuePair<int, ReplayCarView> pair in carInstances.Cars)

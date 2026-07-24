@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using F1XR.RestAPI.Replay.Track.Placement;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay.Track.Build;
@@ -40,6 +41,7 @@ namespace F1XR.RestAPI.Replay
         private static readonly bool SnapCarsToTrackSurface = false;
 
         private readonly CarGroundSnap groundSnap = new();
+        private readonly Dictionary<LocationSample, Vector3> mappedPositions = new();
 
         private bool hasOrigin;
         private Vector3 origin;
@@ -75,6 +77,7 @@ namespace F1XR.RestAPI.Replay
             bool resetRuntimeHeightOrigin = true)
         {
             calibration = source;
+            mappedPositions.Clear();
 
             if (calibration != null && resetRuntimeHeightOrigin)
                 calibration.ResetRuntimeHeightOrigin();
@@ -99,10 +102,22 @@ namespace F1XR.RestAPI.Replay
             LocationSample sample,
             out Vector3 position)
         {
+            if (sample == null)
+            {
+                position = default;
+                return false;
+            }
+
+            if (mappedPositions.TryGetValue(sample, out position))
+                return true;
+
             if (calibration != null)
             {
                 if (calibration.TryMap(sample, out position))
+                {
+                    mappedPositions.Add(sample, position);
                     return true;
+                }
             }
 
             position = ReplayCoordinate.ToUnity(sample);
@@ -113,6 +128,7 @@ namespace F1XR.RestAPI.Replay
             }
 
             position -= origin;
+            mappedPositions.Add(sample, position);
             return true;
         }
 
@@ -301,6 +317,7 @@ namespace F1XR.RestAPI.Replay
         public void Clear()
         {
             groundSnap.Clear();
+            mappedPositions.Clear();
             hasOrigin = false;
             origin = Vector3.zero;
         }

@@ -203,7 +203,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             // 이미 하나 배치했고 교체 허용이 꺼져 있으면 더 이상 preview를 보여주지 않음
             if (spawnedInstance != null && !allowReplaceExisting)
             {
-                if (!HasEnabledRenderer(spawnedInstance))
+                if (!spawnedInstance.activeInHierarchy)
                 {
                     ClearSpawned();
                 }
@@ -501,21 +501,6 @@ namespace F1XR.RestAPI.Replay.Track.Build
             lockedRotationPlane = null;
             hasLockedPlacementRotation = false;
             hasPlacementFallbackRotation = false;
-        }
-
-        static bool HasEnabledRenderer(GameObject target)
-        {
-            if (target == null || !target.activeInHierarchy)
-                return false;
-
-            Renderer[] renderers = target.GetComponentsInChildren<Renderer>(includeInactive: false);
-            foreach (Renderer renderer in renderers)
-            {
-                if (renderer != null && renderer.enabled)
-                    return true;
-            }
-
-            return false;
         }
 
     }

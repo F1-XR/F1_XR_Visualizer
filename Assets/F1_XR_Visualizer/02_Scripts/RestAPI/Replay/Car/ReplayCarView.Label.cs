@@ -21,11 +21,13 @@ namespace F1XR.RestAPI.Replay
         private Material labelLineMaterial;
         private Material labelBackgroundMaterial;
         private Material labelDotMaterial;
+        private MaterialPropertyBlock labelDotBlock;
         private Color labelColor = Color.white;
         private string driverLabel;
         private int rank;
         private bool labelVisible = true;
         private bool leaderHighlightVisible;
+        private bool labelLayoutDirty = true;
 
         public void SetLabel(string text)
         {
@@ -41,6 +43,9 @@ namespace F1XR.RestAPI.Replay
 
         public void SetRank(int value)
         {
+            if (rank == value)
+                return;
+
             rank = value;
             RefreshLabelText();
 
@@ -72,8 +77,8 @@ namespace F1XR.RestAPI.Replay
             if (label != null)
                 label.color = labelColor;
 
-            SetMaterialColor(labelTextMaterial, labelColor);
-            SetMaterialColor(labelDotMaterial, labelColor);
+            SetLabelDotColor(labelTopDot);
+            SetLabelDotColor(labelBottomDot);
             SetSelectionColor(color);
             ApplyBodyHighlight();
         }
@@ -83,9 +88,15 @@ namespace F1XR.RestAPI.Replay
             if (label == null)
                 return;
 
-            label.text = rank > 0
+            string text = rank > 0
                 ? $"{rank}  {driverLabel}"
                 : driverLabel;
+
+            if (label.text == text)
+                return;
+
+            label.text = text;
+            labelLayoutDirty = true;
         }
 
         private TextMesh CreateLabel()
@@ -105,8 +116,8 @@ namespace F1XR.RestAPI.Replay
             labelRenderer = obj.GetComponent<MeshRenderer>();
             labelRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             labelRenderer.receiveShadows = false;
-            labelTextMaterial = CreateTextMaterial(text, labelColor);
-            labelRenderer.material = labelTextMaterial;
+            labelTextMaterial = GetLabelTextMaterial(text);
+            labelRenderer.sharedMaterial = labelTextMaterial;
 
             return text;
         }
@@ -124,8 +135,8 @@ namespace F1XR.RestAPI.Replay
             line.receiveShadows = false;
 
             Color lineColor = new Color(1f, 1f, 1f, 0.72f);
-            labelLineMaterial = CreateUnlitMaterial(lineColor);
-            line.material = labelLineMaterial;
+            labelLineMaterial = GetLabelLineMaterial();
+            line.sharedMaterial = labelLineMaterial;
             line.startColor = lineColor;
             line.endColor = new Color(1f, 1f, 1f, 0.42f);
 
@@ -147,17 +158,16 @@ namespace F1XR.RestAPI.Replay
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            labelBackgroundMaterial = CreateUnlitMaterial(new Color(0f, 0f, 0f, 0.34f));
-            labelBackgroundMaterial.renderQueue = 2990;
-            renderer.material = labelBackgroundMaterial;
+            labelBackgroundMaterial = GetLabelBackgroundMaterial();
+            renderer.sharedMaterial = labelBackgroundMaterial;
 
             return renderer;
         }
 
-        private void UpdateLabelLayout()
+        private bool UpdateLabelLayout()
         {
             if (!TryGetCarBounds(out Bounds bounds))
-                return;
+                return false;
 
             float carSize = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
             float textHeight = carSize * LabelSizeRatio;
@@ -204,6 +214,7 @@ namespace F1XR.RestAPI.Replay
                 out Vector3 backgroundScale);
             labelBackground.transform.localPosition = backgroundPosition;
             labelBackground.transform.localScale = backgroundScale;
+            return true;
         }
 
         private MeshRenderer CreateLabelDot(string objectName)
@@ -220,9 +231,22 @@ namespace F1XR.RestAPI.Replay
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            labelDotMaterial ??= CreateUnlitMaterial(labelColor);
-            renderer.material = labelDotMaterial;
+            labelDotMaterial = GetLabelDotMaterial();
+            renderer.sharedMaterial = labelDotMaterial;
+            SetLabelDotColor(renderer);
             return renderer;
+        }
+
+        private void SetLabelDotColor(MeshRenderer renderer)
+        {
+            if (renderer == null)
+                return;
+
+            labelDotBlock ??= new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(labelDotBlock);
+            labelDotBlock.SetColor("_BaseColor", labelColor);
+            labelDotBlock.SetColor("_Color", labelColor);
+            renderer.SetPropertyBlock(labelDotBlock);
         }
 
         private static void SetDot(MeshRenderer dot, Vector3 position, float worldSize)
