@@ -49,19 +49,34 @@ namespace F1XR.RestAPI.Replay
 
     public sealed class OvertakeMotion
     {
-        private ReplayEventDto[] events;
+        private readonly Dictionary<int, List<ReplayEventDto>> eventsByDriver = new();
         private OvertakeMotionSettings settings = new();
 
         public void SetEvents(ReplayEventDto[] source)
         {
-            if (source == null || source.Length == 0)
-            {
-                events = source;
-                return;
-            }
+            eventsByDriver.Clear();
 
-            events = (ReplayEventDto[])source.Clone();
-            Array.Sort(events, CompareEvents);
+            if (source == null || source.Length == 0)
+                return;
+
+            ReplayEventDto[] sortedEvents = (ReplayEventDto[])source.Clone();
+            Array.Sort(sortedEvents, CompareEvents);
+
+            foreach (ReplayEventDto replayEvent in sortedEvents)
+            {
+                if (replayEvent == null ||
+                    !string.Equals(
+                        replayEvent.eventType,
+                        "Overtake",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    replayEvent.driverNumbers == null ||
+                    replayEvent.driverNumbers.Length < 2)
+                    continue;
+
+                AddDriverEvent(replayEvent.driverNumbers[0], replayEvent);
+                if (replayEvent.driverNumbers[1] != replayEvent.driverNumbers[0])
+                    AddDriverEvent(replayEvent.driverNumbers[1], replayEvent);
+            }
         }
 
         public void SetSettings(OvertakeMotionSettings source)
@@ -76,7 +91,10 @@ namespace F1XR.RestAPI.Replay
             IReadOnlyDictionary<int, float> visualWidths,
             IReadOnlyDictionary<int, float> visualLengths)
         {
-            if (!settings.enableOvertakeVisuals || events == null || events.Length == 0)
+            if (!settings.enableOvertakeVisuals ||
+                !eventsByDriver.TryGetValue(
+                    driverNumber,
+                    out List<ReplayEventDto> driverEvents))
                 return VisualMotionPose.None;
 
             float sumOffset = 0f;
@@ -90,7 +108,7 @@ namespace F1XR.RestAPI.Replay
             string strongestRole = null;
             float strongestConfidence = 0f;
 
-            foreach (ReplayEventDto replayEvent in events)
+            foreach (ReplayEventDto replayEvent in driverEvents)
             {
                 if (!TryGetRole(replayEvent, driverNumber, time, out bool overtaker))
                     continue;
@@ -196,6 +214,21 @@ namespace F1XR.RestAPI.Replay
                 strongestSource,
                 strongestRole,
                 strongestConfidence);
+        }
+
+        private void AddDriverEvent(
+            int driverNumber,
+            ReplayEventDto replayEvent)
+        {
+            if (!eventsByDriver.TryGetValue(
+                    driverNumber,
+                    out List<ReplayEventDto> driverEvents))
+            {
+                driverEvents = new List<ReplayEventDto>();
+                eventsByDriver.Add(driverNumber, driverEvents);
+            }
+
+            driverEvents.Add(replayEvent);
         }
 
         private float RequiredCorrection(

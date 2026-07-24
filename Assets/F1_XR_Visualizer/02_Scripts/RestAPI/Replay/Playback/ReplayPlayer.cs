@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Profiling;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using F1XR.RestAPI.Replay.Playback;
@@ -13,6 +14,17 @@ namespace F1XR.RestAPI.Replay
 {
     public class ReplayPlayer : MonoBehaviour
     {
+        private static readonly ProfilerMarker AudioStateMarker =
+            new("F1XR.Replay.AudioState");
+        private static readonly ProfilerMarker ShowCarsMarker =
+            new("F1XR.Replay.ShowCars");
+        private static readonly ProfilerMarker LoadChunksMarker =
+            new("F1XR.Replay.LoadChunks");
+        private static readonly ProfilerMarker StartingLightsMarker =
+            new("F1XR.Replay.StartingLights");
+        private static readonly ProfilerMarker GridStartMarker =
+            new("F1XR.Replay.GridStart");
+
         public ApiClient api;
         public GameObject carPrefab;
         public TeamCarPrefab[] teamCarPrefabs;
@@ -314,11 +326,13 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetLabelsVisible(showCarLabels);
             bool trackPlaced = HasPlacedTrack();
             bool replayCarsReady = AreReplayCarsReady();
+            AudioStateMarker.Begin();
             replayAudio.Update(
                 engineSound,
                 replayCarsReady,
                 timeline.IsPlaying,
                 ApplyDriverMetadata);
+            AudioStateMarker.End();
 
             if (trackPlaced)
                 TryAutoPlay();
@@ -354,6 +368,7 @@ namespace F1XR.RestAPI.Replay
 
         private void ShowReplayCars()
         {
+            using var marker = ShowCarsMarker.Auto();
             replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
             replayCars.SetMapScaleRatio(GetTrackMapScaleRatio());
             replayCars.Show(
@@ -390,6 +405,7 @@ namespace F1XR.RestAPI.Replay
 
         private void LoadNearChunks()
         {
+            using var marker = LoadChunksMarker.Auto();
             replayChunks.LoadNear(timeline.CurrentTime, preloadChunksAhead, TryAutoPlay);
         }
 
@@ -407,6 +423,7 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplyStartingLightTimeline()
         {
+            using var marker = StartingLightsMarker.Auto();
             if (_manifest == null)
                 return;
 
@@ -556,6 +573,7 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplyGridStartTimeline()
         {
+            using var marker = GridStartMarker.Auto();
             if (replayAudio == null || _manifest == null)
                 return;
 

@@ -1,11 +1,21 @@
 using System.Collections.Generic;
 using F1XR.RestAPI.Api;
+using UnityEngine;
+using Unity.Profiling;
 
 namespace F1XR.RestAPI.Replay
 {
     public class PositionReplaySamples
     {
+        private static readonly ProfilerMarker GetMarker =
+            new("F1XR.Positions.Get");
+
         private readonly Dictionary<int, List<PositionSampleDto>> byDriver = new();
+        private readonly Dictionary<int, int> indices = new();
+        private readonly List<PositionSampleDto> current = new();
+        private bool indicesDirty = true;
+        private bool hasPreviousTime;
+        private float previousTime;
 
         public void Add(ReplayChunkDto chunk)
         {
@@ -18,45 +28,86 @@ namespace F1XR.RestAPI.Replay
                 {
                     list = new List<PositionSampleDto>();
                     byDriver.Add(sample.driverNumber, list);
+                    indices.Add(sample.driverNumber, 0);
                 }
 
                 list.Add(sample);
             }
 
-            foreach (List<PositionSampleDto> list in byDriver.Values)
+            foreach (KeyValuePair<int, List<PositionSampleDto>> pair in byDriver)
+            {
+                List<PositionSampleDto> list = pair.Value;
                 list.Sort((a, b) => a.t.CompareTo(b.t));
+            }
+
+            indicesDirty = true;
         }
 
         public List<PositionSampleDto> Get(float time)
         {
-            List<PositionSampleDto> result = new();
+            using var marker = GetMarker.Auto();
+            current.Clear();
+            bool seek = indicesDirty ||
+                !hasPreviousTime ||
+                Mathf.Abs(time - previousTime) > 1f;
 
-            foreach (var pair in byDriver)
+            foreach (KeyValuePair<int, List<PositionSampleDto>> pair in byDriver)
             {
-                PositionSampleDto latest = null;
+                List<PositionSampleDto> samples = pair.Value;
+                if (samples.Count == 0)
+                    continue;
 
-                foreach (PositionSampleDto sample in pair.Value)
+                int index = seek
+                    ? FindIndex(samples, time)
+                    : indices.TryGetValue(pair.Key, out int value)
+                        ? Mathf.Clamp(value, 0, samples.Count - 1)
+                        : 0;
+
+                while (index > 0 && samples[index].t > time)
+                    index--;
+
+                while (index < samples.Count - 1 &&
+                    samples[index + 1].t <= time)
                 {
-                    if (sample.t > time)
-                        break;
-
-                    latest = sample;
+                    index++;
                 }
 
-                if (latest == null && pair.Value.Count > 0)
-                    latest = pair.Value[0];
-
-                if (latest != null)
-                    result.Add(latest);
+                indices[pair.Key] = index;
+                current.Add(samples[index]);
             }
 
-            result.Sort((a, b) => a.position.CompareTo(b.position));
-            return result;
+            indicesDirty = false;
+            hasPreviousTime = true;
+            previousTime = time;
+            current.Sort((a, b) => a.position.CompareTo(b.position));
+            return current;
+        }
+
+        private static int FindIndex(List<PositionSampleDto> samples, float time)
+        {
+            int low = 0;
+            int high = samples.Count - 1;
+
+            while (low < high)
+            {
+                int middle = (low + high + 1) / 2;
+                if (samples[middle].t <= time)
+                    low = middle;
+                else
+                    high = middle - 1;
+            }
+
+            return low;
         }
 
         public void Clear()
         {
             byDriver.Clear();
+            indices.Clear();
+            current.Clear();
+            indicesDirty = true;
+            hasPreviousTime = false;
+            previousTime = 0f;
         }
     }
 }

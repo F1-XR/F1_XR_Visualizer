@@ -9,6 +9,10 @@ namespace F1XR.RestAPI.Replay
         private static readonly int DstBlendId = Shader.PropertyToID("_DstBlend");
         private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
         private static readonly int CullId = Shader.PropertyToID("_Cull");
+        private static Material sharedLabelTextMaterial;
+        private static Material sharedLabelLineMaterial;
+        private static Material sharedLabelBackgroundMaterial;
+        private static Material sharedLabelDotMaterial;
 
         public static Color WithAlpha(Color color, float alpha)
         {
@@ -108,6 +112,53 @@ namespace F1XR.RestAPI.Replay
             SetMaterialColor(material, color);
             material.renderQueue = 3000;
             return material;
+        }
+
+        public static Material GetLabelTextMaterial(TextMesh text)
+        {
+            if (sharedLabelTextMaterial == null)
+            {
+                sharedLabelTextMaterial = CreateTextMaterial(text, Color.white);
+                sharedLabelTextMaterial.name = "Shared_DriverLabelText";
+            }
+
+            return sharedLabelTextMaterial;
+        }
+
+        public static Material GetLabelLineMaterial()
+        {
+            if (sharedLabelLineMaterial == null)
+            {
+                sharedLabelLineMaterial =
+                    CreateUnlitMaterial(new Color(1f, 1f, 1f, 0.72f));
+                sharedLabelLineMaterial.name = "Shared_DriverLabelLine";
+            }
+
+            return sharedLabelLineMaterial;
+        }
+
+        public static Material GetLabelBackgroundMaterial()
+        {
+            if (sharedLabelBackgroundMaterial == null)
+            {
+                sharedLabelBackgroundMaterial =
+                    CreateUnlitMaterial(new Color(0f, 0f, 0f, 0.34f));
+                sharedLabelBackgroundMaterial.name = "Shared_DriverLabelBackground";
+                sharedLabelBackgroundMaterial.renderQueue = 2990;
+            }
+
+            return sharedLabelBackgroundMaterial;
+        }
+
+        public static Material GetLabelDotMaterial()
+        {
+            if (sharedLabelDotMaterial == null)
+            {
+                sharedLabelDotMaterial = CreateUnlitMaterial(Color.white);
+                sharedLabelDotMaterial.name = "Shared_DriverLabelDot";
+            }
+
+            return sharedLabelDotMaterial;
         }
 
         public static Mesh CreateRingMesh(string meshName, int segments, out Vector3[] vertices)
