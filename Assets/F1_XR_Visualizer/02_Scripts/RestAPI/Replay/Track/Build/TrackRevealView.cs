@@ -10,6 +10,10 @@ namespace F1XR.RestAPI.Replay.Track.Build
     {
         static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        static readonly int AlphaCutoffId = Shader.PropertyToID("_AlphaCutoff");
+        static readonly int GltfBaseMapId = Shader.PropertyToID("baseColorTexture");
+        static readonly int GltfBaseColorId = Shader.PropertyToID("baseColorFactor");
+        static readonly int GltfAlphaCutoffId = Shader.PropertyToID("alphaCutoff");
         static readonly int BuildHeightId = Shader.PropertyToID("_BuildHeight");
         static readonly int EdgeWidthId = Shader.PropertyToID("_EdgeWidth");
         static readonly int EdgeColorId = Shader.PropertyToID("_EdgeColor");
@@ -200,9 +204,22 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 baseTexture = source.GetTexture("_BaseMap");
             else if (source.HasProperty("_MainTex"))
                 baseTexture = source.GetTexture("_MainTex");
+            else if (source.HasProperty(GltfBaseMapId))
+                baseTexture = source.GetTexture(GltfBaseMapId);
 
             if (baseTexture != null)
+            {
                 destination.SetTexture(BaseMapId, baseTexture);
+                string sourceTextureName = source.HasProperty(GltfBaseMapId)
+                    ? "baseColorTexture"
+                    : source.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
+                destination.SetTextureScale(
+                    "_BaseMap",
+                    source.GetTextureScale(sourceTextureName));
+                destination.SetTextureOffset(
+                    "_BaseMap",
+                    source.GetTextureOffset(sourceTextureName));
+            }
 
             Color baseColor = Color.white;
 
@@ -210,8 +227,15 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 baseColor = source.GetColor("_BaseColor");
             else if (source.HasProperty("_Color"))
                 baseColor = source.GetColor("_Color");
+            else if (source.HasProperty(GltfBaseColorId))
+                baseColor = source.GetColor(GltfBaseColorId);
 
             destination.SetColor(BaseColorId, baseColor);
+
+            float alphaCutoff = source.HasProperty(GltfAlphaCutoffId)
+                ? source.GetFloat(GltfAlphaCutoffId)
+                : 0.5f;
+            destination.SetFloat(AlphaCutoffId, Mathf.Clamp01(alphaCutoff));
         }
 
         bool TryCalculateWorldBounds(out Bounds bounds)

@@ -5,6 +5,7 @@ Shader "F1XR/BuildRevealURP"
         // 원본 머티리얼에서 복사되는 기본 텍스처/색입니다. 트랙 자체의 색감이 바뀝니다.
         _BaseMap ("Base Map", 2D) = "white" {}
         _BaseColor ("Base Color", Color) = (1,1,1,1)
+        _AlphaCutoff ("Alpha Cutoff", Range(0,1)) = 0.5
 
         // _BuildHeight를 올리면 이 높이보다 아래에 있는 부분만 보입니다. 코드가 매 프레임 올려서 아래->위 생성 효과를 만듭니다.
         _BuildHeight ("Build Height", Float) = 0
@@ -46,6 +47,7 @@ Shader "F1XR/BuildRevealURP"
 
             // XR / Single Pass Instanced 대응
             #pragma multi_compile_instancing
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -55,6 +57,7 @@ Shader "F1XR/BuildRevealURP"
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
                 half4 _BaseColor;
+                float _AlphaCutoff;
 
                 float _BuildHeight;
                 float _EdgeWidth;
@@ -130,6 +133,7 @@ Shader "F1XR/BuildRevealURP"
                 // _BaseColor = 원래 색
                 half4 baseCol =
                     SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
+                clip(baseCol.a - _AlphaCutoff);
 
                 // ------------------------------------------------------------
                 // 3. 생성 중에 살짝 주황빛을 섞기
