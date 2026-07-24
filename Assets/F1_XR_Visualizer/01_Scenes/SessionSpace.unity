@@ -3741,6 +3741,15 @@ MonoBehaviour:
     fitMapToCalibrationBounds: 1
     mapFitScaleMultiplier: 1.25
     calibration: {fileID: 11400000, guid: 0d2d5acfc2f24ea4f9ea7394a3c06c65, type: 2}
+  - circuitKey: 46
+    circuitName: Suzuka
+    circuitShortName: Suzuka
+    visualizerPrefab: {fileID: 0}
+    mapPrefab: {fileID: 4781409877837566449, guid: a22e6c50786583349af8b25ddbfb743a, type: 3}
+    mapScale: 0.0003
+    fitMapToCalibrationBounds: 0
+    mapFitScaleMultiplier: 1
+    calibration: {fileID: 11400000, guid: 987970e1cf5441518f16c0928ed5bdab, type: 2}
   playOnReady: 1
   waitForTrackPlacementBeforeStart: 1
   playStartingLightsBeforeStart: 1
@@ -3950,14 +3959,14 @@ MonoBehaviour:
   api: {fileID: 1705380155}
   player: {fileID: 1705380154}
   autoStart: 1
-  preferredYear: 2023
-  preferredCircuitShortName: Bahrain
+  preferredYear: 2024
+  preferredCircuitShortName: Suzuka
   preferredSessionName: Race
   replayMinutes: 20
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
-  useEventReplayTestSession: 1
+  useEventReplayTestSession: 0
 --- !u!4 &1705380157
 Transform:
   m_ObjectHideFlags: 0
@@ -5389,6 +5398,7 @@ GameObject:
   - component: {fileID: 2086967215}
   - component: {fileID: 2086967216}
   - component: {fileID: 2086967217}
+  - component: {fileID: 2086967218}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5762,6 +5772,28 @@ MonoBehaviour:
   softRimStrength: 0.2
   softRimPower: 2
   outlineRimPower: 5
+--- !u!114 &2086967218
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
+  planeManager: {fileID: 2086967208}
+  orientationCamera: {fileID: 1918400212}
+  allowVerticalFallback: 1
+  minimumWidth: 0.75
+  minimumHeight: 1.2
+  entryCandidateIndex: -1
+  exitCandidateIndex: -1
+  showDebug: 1
+  debugLineWidth: 0.015
+  normalLength: 0.35
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

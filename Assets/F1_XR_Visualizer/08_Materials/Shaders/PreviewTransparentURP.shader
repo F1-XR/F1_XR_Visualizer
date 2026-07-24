@@ -30,6 +30,7 @@ Shader "F1XR/PreviewTransparentURP"
 
             // XR / Single Pass Instanced 대응
             #pragma multi_compile_instancing
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 

@@ -51,6 +51,8 @@ namespace F1XR.RestAPI.Replay
         public bool useNearestPointHeight = true;
         [Range(0f, 1f)] public float pointHeightBlend = 0.25f;
         public bool loopPointHeightSegments = true;
+        public bool useSourceHeightForRouteSegments;
+        [Min(0f)] public float routeSourceHeightWeight = 1f;
         public Point[] points;
 
         bool hasRuntimeSourceHeightOrigin;
@@ -66,13 +68,30 @@ namespace F1XR.RestAPI.Replay
         {
             public string name;
             public Vector2 sourcePosition;
+            public float sourceHeight;
             public Vector3 targetLocalPosition;
         }
 
         public bool TryMap(LocationSample sample, out Vector3 localPosition)
         {
-            if (!TryMap(new Vector2(sample.x, sample.y), out localPosition))
+            if (active &&
+                mappingMode == MappingMode.Route &&
+                TryMapRoute(
+                    MapSourceAxes(sample.x, sample.y),
+                    sample.z,
+                    out var routePosition,
+                    out var routeHeight))
+            {
+                float scale = OutputScale;
+                localPosition = new Vector3(
+                    routePosition.x * scale,
+                    routeHeight * scale + heightOffset,
+                    routePosition.y * scale);
+            }
+            else if (!TryMap(new Vector2(sample.x, sample.y), out localPosition))
+            {
                 return false;
+            }
 
             if (heightMode == HeightMode.SourceSample)
                 localPosition.y =
@@ -108,6 +127,7 @@ namespace F1XR.RestAPI.Replay
             var mappedSourcePosition = MapSourceAxes(sourcePosition);
             if (mappingMode == MappingMode.Route && TryMapRoute(
                 mappedSourcePosition,
+                null,
                 out var routePosition,
                 out var routeHeight))
             {
@@ -170,6 +190,7 @@ namespace F1XR.RestAPI.Replay
         {
             return TryMapPolyline(
                 sourcePosition,
+                null,
                 limitSourceDistance: true,
                 out targetPosition,
                 out _);
@@ -177,11 +198,13 @@ namespace F1XR.RestAPI.Replay
 
         bool TryMapRoute(
             Vector2 sourcePosition,
+            float? sourceHeight,
             out Vector2 targetPosition,
             out float targetHeight)
         {
             return TryMapPolyline(
                 sourcePosition,
+                sourceHeight,
                 limitSourceDistance: false,
                 out targetPosition,
                 out targetHeight);
@@ -189,6 +212,7 @@ namespace F1XR.RestAPI.Replay
 
         bool TryMapPolyline(
             Vector2 sourcePosition,
+            float? sourceHeight,
             bool limitSourceDistance,
             out Vector2 targetPosition,
             out float targetHeight)
@@ -212,6 +236,7 @@ namespace F1XR.RestAPI.Replay
 
                 if (TryGetNextConfiguredPoint(i, out var b) && TryUseMappingSegment(
                     sourcePosition,
+                    sourceHeight,
                     a,
                     b,
                     limitSourceDistance,
@@ -225,6 +250,7 @@ namespace F1XR.RestAPI.Replay
 
                 if (TryUseMappingSegment(
                     sourcePosition,
+                    sourceHeight,
                     a,
                     firstConfiguredPoint.Value,
                     limitSourceDistance,
@@ -239,6 +265,7 @@ namespace F1XR.RestAPI.Replay
 
         bool TryUseMappingSegment(
             Vector2 sourcePosition,
+            float? sourceHeight,
             Point a,
             Point b,
             bool limitSourceDistance,
@@ -264,6 +291,20 @@ namespace F1XR.RestAPI.Replay
             var t = Mathf.Clamp01(rawT);
             var projectedSource = sourceA + sourceSegment * t;
             var distance = (sourcePosition - projectedSource).sqrMagnitude;
+
+            if (useSourceHeightForRouteSegments && sourceHeight.HasValue)
+            {
+                float projectedSourceHeight = Mathf.Lerp(
+                    a.sourceHeight,
+                    b.sourceHeight,
+                    t);
+                float heightDistance =
+                    sourceHeight.Value - projectedSourceHeight;
+                distance +=
+                    heightDistance *
+                    heightDistance *
+                    Mathf.Max(0f, routeSourceHeightWeight);
+            }
             var maxDistance = Mathf.Min(
                 MaxSegmentSourceDistance,
                 Mathf.Max(MinSegmentSourceDistance, sourceLength * SegmentSourceDistanceRatio)
