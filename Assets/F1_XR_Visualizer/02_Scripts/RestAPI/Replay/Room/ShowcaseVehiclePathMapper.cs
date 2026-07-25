@@ -16,6 +16,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         [Header("Target")]
         [SerializeField, Min(0)] private int targetDriverNumber;
+        [SerializeField, Min(0)] private int secondTargetDriverNumber;
 
         [Header("Progress Mapping")]
         [SerializeField, Range(0f, 1f)] private float sourceProgressStart;
@@ -31,30 +32,86 @@ namespace F1XR.RestAPI.Replay.Room
 
         private EventPopoutReplay eventReplay;
         private Transform boundStage;
-        private Transform vehicleRoot;
-        private Transform visualMotionRoot;
-        private Transform originalVisualParent;
-        private Transform roomPathPresentationRoot;
+        private VehicleBinding firstBinding;
+        private VehicleBinding secondBinding;
         private int bindRetryFrames;
-        private int resolvedDriverNumber;
         private string bindingState = "WaitingForEvent";
         private string lastFailureReason = "";
         private float sourceReplayProgress;
-        private float mappedPathProgress;
-        private bool isApplyingRoomPose;
+        private float sourceWindowLength;
+        private float referenceSourceLongitudinal;
+        private float anchorMappedProgress;
+        private float firstSourceLongitudinal;
+        private float secondSourceLongitudinal;
+        private float firstMappedProgress;
+        private float secondMappedProgress;
+        private float sourceLongitudinalGap;
+        private float mappedLongitudinalGap;
+        private int sourceOrder;
+        private int mappedOrder;
+        private int previousSourceOrder;
+        private int previousMappedOrder;
+        private int sourceOrderTransitionCount;
+        private int mappedOrderTransitionCount;
+        private bool overtakeTransitionDetected;
+        private bool isApplyingRoomPoses;
 
         public bool TargetVehicleResolved =>
-            vehicleRoot != null &&
-            visualMotionRoot != null &&
-            roomPathPresentationRoot != null;
-        public int TargetDriverId => resolvedDriverNumber;
+            firstBinding != null &&
+            firstBinding.IsValid;
+        public int TargetDriverId => FirstTargetDriverId;
         public string BoundVehicleName =>
-            vehicleRoot != null ? vehicleRoot.name : "";
+            firstBinding != null && firstBinding.VehicleRoot != null
+                ? firstBinding.VehicleRoot.name
+                : "";
         public string BindingState => bindingState;
         public float SourceReplayProgress => sourceReplayProgress;
-        public float MappedPathProgress => mappedPathProgress;
-        public bool IsApplyingRoomPose => isApplyingRoomPose;
+        public float MappedPathProgress => firstMappedProgress;
+        public bool IsApplyingRoomPose => isApplyingRoomPoses;
         public string LastFailureReason => lastFailureReason;
+        public int BoundVehicleCount =>
+            firstBinding != null && firstBinding.IsValid &&
+            secondBinding != null && secondBinding.IsValid
+                ? 2
+                : 0;
+        public int FirstTargetDriverId =>
+            firstBinding != null ? firstBinding.DriverNumber : 0;
+        public int SecondTargetDriverId =>
+            secondBinding != null ? secondBinding.DriverNumber : 0;
+        public float FirstSourceLongitudinal => firstSourceLongitudinal;
+        public float SecondSourceLongitudinal => secondSourceLongitudinal;
+        public float ReferenceSourceLongitudinal =>
+            referenceSourceLongitudinal;
+        public float AnchorMappedProgress => anchorMappedProgress;
+        public float FirstMappedProgress => firstMappedProgress;
+        public float SecondMappedProgress => secondMappedProgress;
+        public float SourceLongitudinalGap => sourceLongitudinalGap;
+        public float MappedLongitudinalGap => mappedLongitudinalGap;
+        public int SourceOrder => sourceOrder;
+        public int MappedOrder => mappedOrder;
+        public bool OvertakeTransitionDetected =>
+            overtakeTransitionDetected;
+        public int SourceOrderTransitionCount =>
+            sourceOrderTransitionCount;
+        public int MappedOrderTransitionCount =>
+            mappedOrderTransitionCount;
+        public bool IsApplyingRoomPoses => isApplyingRoomPoses;
+        public Vector3 FirstVisualLocalPosition =>
+            firstBinding != null && firstBinding.VisualMotionRoot != null
+                ? firstBinding.VisualMotionRoot.localPosition
+                : Vector3.zero;
+        public Vector3 SecondVisualLocalPosition =>
+            secondBinding != null && secondBinding.VisualMotionRoot != null
+                ? secondBinding.VisualMotionRoot.localPosition
+                : Vector3.zero;
+        public Quaternion FirstVisualLocalRotation =>
+            firstBinding != null && firstBinding.VisualMotionRoot != null
+                ? firstBinding.VisualMotionRoot.localRotation
+                : Quaternion.identity;
+        public Quaternion SecondVisualLocalRotation =>
+            secondBinding != null && secondBinding.VisualMotionRoot != null
+                ? secondBinding.VisualMotionRoot.localRotation
+                : Quaternion.identity;
 
         private void Reset()
         {
@@ -83,13 +140,20 @@ namespace F1XR.RestAPI.Replay.Room
                     sourceProgressEnd - 0.01f);
             }
 
-            if (mappedPathEnd < mappedPathStart)
-                mappedPathEnd = mappedPathStart;
+            if (mappedPathEnd <= mappedPathStart)
+            {
+                mappedPathEnd = Mathf.Min(
+                    1f,
+                    mappedPathStart + 0.01f);
+                mappedPathStart = Mathf.Min(
+                    mappedPathStart,
+                    mappedPathEnd - 0.01f);
+            }
         }
 
         private void LateUpdate()
         {
-            isApplyingRoomPose = false;
+            isApplyingRoomPoses = false;
             ResolveEventReplay();
 
             if (!mappingEnabled)
@@ -143,9 +207,10 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             if (boundStage != stage ||
-                vehicleRoot == null ||
-                visualMotionRoot == null ||
-                roomPathPresentationRoot == null)
+                firstBinding == null ||
+                !firstBinding.IsValid ||
+                secondBinding == null ||
+                !secondBinding.IsValid)
             {
                 ReleaseBinding();
 
@@ -161,18 +226,51 @@ namespace F1XR.RestAPI.Replay.Room
                     return;
             }
 
+            if (!eventReplay.TryGetSourceLongitudinal(
+                    firstBinding.DriverNumber,
+                    out firstSourceLongitudinal) ||
+                !eventReplay.TryGetSourceLongitudinal(
+                    secondBinding.DriverNumber,
+                    out secondSourceLongitudinal) ||
+                !eventReplay.TryGetReferenceSourceLongitudinal(
+                    sourceReplayProgress,
+                    out referenceSourceLongitudinal))
+            {
+                ReleaseBinding();
+                SetInactive(
+                    "SourceUnavailable",
+                    "Current per-vehicle source longitudinal state is unavailable.");
+                return;
+            }
+
+            float mappedRange = mappedPathEnd - mappedPathStart;
             float sourceRangeProgress = Mathf.InverseLerp(
                 sourceProgressStart,
                 sourceProgressEnd,
                 sourceReplayProgress);
-            mappedPathProgress = Mathf.Lerp(
+            anchorMappedProgress = Mathf.Lerp(
                 mappedPathStart,
                 mappedPathEnd,
                 sourceRangeProgress);
+            firstMappedProgress =
+                anchorMappedProgress +
+                (firstSourceLongitudinal - referenceSourceLongitudinal) /
+                sourceWindowLength *
+                mappedRange;
+            secondMappedProgress =
+                anchorMappedProgress +
+                (secondSourceLongitudinal - referenceSourceLongitudinal) /
+                sourceWindowLength *
+                mappedRange;
 
-            if (!showcasePath.TryEvaluate(
-                    mappedPathProgress,
-                    out Pose pathPose))
+            UpdateOrderDiagnostics();
+
+            if (!TryApplyRoomPose(
+                    firstBinding,
+                    firstMappedProgress) ||
+                !TryApplyRoomPose(
+                    secondBinding,
+                    secondMappedProgress))
             {
                 ReleaseBinding();
                 SetInactive(
@@ -181,22 +279,17 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            Quaternion rotation =
-                pathPose.rotation *
-                Quaternion.Euler(0f, modelHeadingCorrection, 0f);
-            roomPathPresentationRoot.SetPositionAndRotation(
-                pathPose.position,
-                rotation);
-
             bindingState = "Applying";
             lastFailureReason = "";
-            isApplyingRoomPose = true;
+            isApplyingRoomPoses =
+                firstBinding.PresentationRoot.gameObject.activeSelf ||
+                secondBinding.PresentationRoot.gameObject.activeSelf;
         }
 
         private void OnDisable()
         {
             ReleaseBinding();
-            isApplyingRoomPose = false;
+            isApplyingRoomPoses = false;
             bindingState = "Disabled";
         }
 
@@ -230,12 +323,13 @@ namespace F1XR.RestAPI.Replay.Room
 
         private bool TryBind(Transform stage)
         {
-            int driverNumber = ResolveTargetDriver();
-            if (driverNumber <= 0)
+            if (!TryResolveTargetDrivers(
+                    out int firstDriver,
+                    out int secondDriver))
             {
                 SetInactive(
                     "WaitingForVehicle",
-                    "The active replay event has no valid target driver.");
+                    "The active replay event has fewer than two valid target drivers.");
                 return false;
             }
 
@@ -248,6 +342,106 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            if (!TryResolveVehicle(
+                    carsRoot,
+                    firstDriver,
+                    out VehicleBinding first) ||
+                !TryResolveVehicle(
+                    carsRoot,
+                    secondDriver,
+                    out VehicleBinding second))
+            {
+                return false;
+            }
+
+            if (!eventReplay.TryGetReferenceSourceLongitudinal(
+                    sourceProgressStart,
+                    out float windowStart) ||
+                !eventReplay.TryGetReferenceSourceLongitudinal(
+                    sourceProgressEnd,
+                    out float windowEnd) ||
+                windowEnd - windowStart <= 0.0001f)
+            {
+                SetInactive(
+                    "SourceUnavailable",
+                    "The shared source longitudinal window is unavailable.");
+                return false;
+            }
+
+            CreatePresentationRoot(first);
+            CreatePresentationRoot(second);
+
+            boundStage = stage;
+            firstBinding = first;
+            secondBinding = second;
+            sourceWindowLength = windowEnd - windowStart;
+            ResetOrderDiagnostics();
+            bindingState = "Bound";
+            lastFailureReason = "";
+            return true;
+        }
+
+        private bool TryResolveTargetDrivers(
+            out int firstDriver,
+            out int secondDriver)
+        {
+            firstDriver = 0;
+            secondDriver = 0;
+            ReplayEventDto replayEvent = eventReplay.CurrentEvent;
+            int[] drivers = replayEvent != null
+                ? replayEvent.driverNumbers
+                : null;
+            if (drivers == null || drivers.Length < 2)
+                return false;
+
+            firstDriver = ResolveConfiguredDriver(
+                drivers,
+                targetDriverNumber,
+                0);
+            if (firstDriver <= 0)
+                return false;
+
+            secondDriver = ResolveConfiguredDriver(
+                drivers,
+                secondTargetDriverNumber,
+                firstDriver);
+            return secondDriver > 0 && secondDriver != firstDriver;
+        }
+
+        private static int ResolveConfiguredDriver(
+            int[] drivers,
+            int configuredDriver,
+            int excludedDriver)
+        {
+            if (configuredDriver > 0)
+            {
+                for (int i = 0; i < drivers.Length; i++)
+                {
+                    if (drivers[i] == configuredDriver &&
+                        drivers[i] != excludedDriver)
+                    {
+                        return configuredDriver;
+                    }
+                }
+
+                return 0;
+            }
+
+            for (int i = 0; i < drivers.Length; i++)
+            {
+                if (drivers[i] > 0 && drivers[i] != excludedDriver)
+                    return drivers[i];
+            }
+
+            return 0;
+        }
+
+        private bool TryResolveVehicle(
+            Transform carsRoot,
+            int driverNumber,
+            out VehicleBinding binding)
+        {
+            binding = null;
             Transform logicalRoot =
                 carsRoot.Find($"Car_{driverNumber}");
             if (logicalRoot == null)
@@ -267,90 +461,219 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            GameObject presentationObject =
-                new($"RoomPathPresentationRoot_{driverNumber}");
-            Transform presentation = presentationObject.transform;
-            presentation.SetParent(logicalRoot, false);
+            if (logicalRoot.Find("RoomPathPresentationRoot") != null)
+            {
+                SetInactive(
+                    "WaitingForVehicle",
+                    $"Car_{driverNumber} already has a room presentation root.");
+                return false;
+            }
 
-            Vector3 visualLocalPosition = visualRoot.localPosition;
-            Quaternion visualLocalRotation = visualRoot.localRotation;
-            Vector3 visualLocalScale = visualRoot.localScale;
-            visualRoot.SetParent(presentation, false);
-            visualRoot.localPosition = visualLocalPosition;
-            visualRoot.localRotation = visualLocalRotation;
-            visualRoot.localScale = visualLocalScale;
-
-            boundStage = stage;
-            vehicleRoot = logicalRoot;
-            visualMotionRoot = visualRoot;
-            originalVisualParent = logicalRoot;
-            roomPathPresentationRoot = presentation;
-            resolvedDriverNumber = driverNumber;
-            bindingState = "Bound";
-            lastFailureReason = "";
+            binding = new VehicleBinding(
+                driverNumber,
+                logicalRoot,
+                visualRoot);
             return true;
         }
 
-        private int ResolveTargetDriver()
+        private static void CreatePresentationRoot(
+            VehicleBinding binding)
         {
-            ReplayEventDto replayEvent = eventReplay.CurrentEvent;
-            int[] drivers = replayEvent != null
-                ? replayEvent.driverNumbers
-                : null;
-            if (drivers == null || drivers.Length == 0)
-                return 0;
+            GameObject presentationObject =
+                new("RoomPathPresentationRoot");
+            Transform presentation = presentationObject.transform;
+            presentation.SetParent(binding.VehicleRoot, false);
 
-            if (targetDriverNumber <= 0)
+            Transform visualRoot = binding.VisualMotionRoot;
+            Vector3 localPosition = visualRoot.localPosition;
+            Quaternion localRotation = visualRoot.localRotation;
+            Vector3 localScale = visualRoot.localScale;
+            visualRoot.SetParent(presentation, false);
+            visualRoot.localPosition = localPosition;
+            visualRoot.localRotation = localRotation;
+            visualRoot.localScale = localScale;
+            binding.PresentationRoot = presentation;
+        }
+
+        private bool TryApplyRoomPose(
+            VehicleBinding binding,
+            float progress)
+        {
+            bool visible =
+                progress >= mappedPathStart &&
+                progress <= mappedPathEnd;
+            GameObject presentationObject =
+                binding.PresentationRoot.gameObject;
+            if (!visible)
             {
-                for (int i = 0; i < drivers.Length; i++)
+                if (presentationObject.activeSelf)
+                    presentationObject.SetActive(false);
+                return true;
+            }
+
+            if (!presentationObject.activeSelf)
+                presentationObject.SetActive(true);
+
+            if (!showcasePath.TryEvaluate(
+                    progress,
+                    out Pose pathPose))
+            {
+                return false;
+            }
+
+            Quaternion rotation =
+                pathPose.rotation *
+                Quaternion.Euler(0f, modelHeadingCorrection, 0f);
+            binding.PresentationRoot.SetPositionAndRotation(
+                pathPose.position,
+                rotation);
+            return true;
+        }
+
+        private void UpdateOrderDiagnostics()
+        {
+            sourceLongitudinalGap =
+                firstSourceLongitudinal -
+                secondSourceLongitudinal;
+            mappedLongitudinalGap =
+                firstMappedProgress -
+                secondMappedProgress;
+            sourceOrder = GapOrder(sourceLongitudinalGap);
+            mappedOrder = GapOrder(mappedLongitudinalGap);
+
+            if (sourceOrder != 0)
+            {
+                if (previousSourceOrder != 0 &&
+                    sourceOrder != previousSourceOrder)
                 {
-                    if (drivers[i] > 0)
-                        return drivers[i];
+                    sourceOrderTransitionCount++;
+                    overtakeTransitionDetected = true;
                 }
 
-                return 0;
+                previousSourceOrder = sourceOrder;
             }
 
-            for (int i = 0; i < drivers.Length; i++)
+            if (mappedOrder != 0)
             {
-                if (drivers[i] == targetDriverNumber)
-                    return targetDriverNumber;
-            }
+                if (previousMappedOrder != 0 &&
+                    mappedOrder != previousMappedOrder)
+                {
+                    mappedOrderTransitionCount++;
+                }
 
+                previousMappedOrder = mappedOrder;
+            }
+        }
+
+        private static int GapOrder(float gap)
+        {
+            if (gap > 0.0001f)
+                return 1;
+            if (gap < -0.0001f)
+                return -1;
             return 0;
+        }
+
+        private void ResetOrderDiagnostics()
+        {
+            firstSourceLongitudinal = 0f;
+            secondSourceLongitudinal = 0f;
+            referenceSourceLongitudinal = 0f;
+            anchorMappedProgress = 0f;
+            firstMappedProgress = 0f;
+            secondMappedProgress = 0f;
+            sourceLongitudinalGap = 0f;
+            mappedLongitudinalGap = 0f;
+            sourceOrder = 0;
+            mappedOrder = 0;
+            previousSourceOrder = 0;
+            previousMappedOrder = 0;
+            sourceOrderTransitionCount = 0;
+            mappedOrderTransitionCount = 0;
+            overtakeTransitionDetected = false;
         }
 
         private void ReleaseBinding()
         {
-            if (visualMotionRoot != null &&
-                originalVisualParent != null &&
-                visualMotionRoot.parent == roomPathPresentationRoot)
-            {
-                Vector3 localPosition = visualMotionRoot.localPosition;
-                Quaternion localRotation = visualMotionRoot.localRotation;
-                Vector3 localScale = visualMotionRoot.localScale;
-                visualMotionRoot.SetParent(originalVisualParent, false);
-                visualMotionRoot.localPosition = localPosition;
-                visualMotionRoot.localRotation = localRotation;
-                visualMotionRoot.localScale = localScale;
-            }
-
-            if (roomPathPresentationRoot != null)
-                Destroy(roomPathPresentationRoot.gameObject);
+            ReleaseBinding(firstBinding);
+            ReleaseBinding(secondBinding);
 
             boundStage = null;
-            vehicleRoot = null;
-            visualMotionRoot = null;
-            originalVisualParent = null;
-            roomPathPresentationRoot = null;
-            resolvedDriverNumber = 0;
-            isApplyingRoomPose = false;
+            firstBinding = null;
+            secondBinding = null;
+            sourceWindowLength = 0f;
+            isApplyingRoomPoses = false;
+            ResetOrderDiagnostics();
+        }
+
+        private static void ReleaseBinding(
+            VehicleBinding binding)
+        {
+            if (binding == null)
+                return;
+
+            Transform visualRoot = binding.VisualMotionRoot;
+            Transform presentationRoot = binding.PresentationRoot;
+            if (visualRoot != null &&
+                binding.OriginalVisualParent != null &&
+                visualRoot.parent == presentationRoot)
+            {
+                Vector3 localPosition = visualRoot.localPosition;
+                Quaternion localRotation = visualRoot.localRotation;
+                Vector3 localScale = visualRoot.localScale;
+                visualRoot.SetParent(
+                    binding.OriginalVisualParent,
+                    false);
+                visualRoot.localPosition = localPosition;
+                visualRoot.localRotation = localRotation;
+                visualRoot.localScale = localScale;
+            }
+
+            if (presentationRoot != null)
+                Destroy(presentationRoot.gameObject);
         }
 
         private void SetInactive(string state, string failure)
         {
             bindingState = state;
             lastFailureReason = failure;
+        }
+
+        private sealed class VehicleBinding
+        {
+            public readonly int DriverNumber;
+            public readonly Transform VehicleRoot;
+            public readonly Transform VisualMotionRoot;
+            public readonly Transform OriginalVisualParent;
+            public readonly Vector3 OriginalVisualLocalPosition;
+            public readonly Quaternion OriginalVisualLocalRotation;
+            public readonly Vector3 OriginalVisualLocalScale;
+            public Transform PresentationRoot;
+
+            public bool IsValid =>
+                VehicleRoot != null &&
+                VisualMotionRoot != null &&
+                OriginalVisualParent != null &&
+                PresentationRoot != null &&
+                VisualMotionRoot.parent == PresentationRoot;
+
+            public VehicleBinding(
+                int driverNumber,
+                Transform vehicleRoot,
+                Transform visualMotionRoot)
+            {
+                DriverNumber = driverNumber;
+                VehicleRoot = vehicleRoot;
+                VisualMotionRoot = visualMotionRoot;
+                OriginalVisualParent = visualMotionRoot.parent;
+                OriginalVisualLocalPosition =
+                    visualMotionRoot.localPosition;
+                OriginalVisualLocalRotation =
+                    visualMotionRoot.localRotation;
+                OriginalVisualLocalScale =
+                    visualMotionRoot.localScale;
+                PresentationRoot = null;
+            }
         }
     }
 }
