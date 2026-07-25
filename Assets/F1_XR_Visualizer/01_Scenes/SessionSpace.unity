@@ -5401,6 +5401,7 @@ GameObject:
   - component: {fileID: 2086967218}
   - component: {fileID: 2086967219}
   - component: {fileID: 2086967220}
+  - component: {fileID: 2086967221}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -5861,6 +5862,28 @@ MonoBehaviour:
   autoplay: 1
   loop: 1
   autoplayDuration: 8
+--- !u!114 &2086967221
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2086967203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3bd128e5de8250a4a821eaca7ef6c6d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcaseVehiclePathMapper
+  showcasePath: {fileID: 2086967220}
+  showcaseLayout: {fileID: 2086967219}
+  replayPlayer: {fileID: 1705380154}
+  targetDriverNumber: 0
+  sourceProgressStart: 0
+  sourceProgressEnd: 1
+  mappedPathStart: 0
+  mappedPathEnd: 1
+  modelHeadingCorrection: 0
+  mappingEnabled: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
