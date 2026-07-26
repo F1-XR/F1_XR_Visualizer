@@ -42,8 +42,13 @@ namespace F1XR.Interaction.Input
         [Header("Base plant (captured when shown)")]
         [Tooltip("Where the base plants, as an offset in the controller's local space at the moment it appears.")]
         [SerializeField] Vector3 attachLocalPosition = Vector3.zero;
-        [Tooltip("World orientation of the planted base (default = upright). The base does NOT rotate with the wrist.")]
+        [Tooltip("World orientation of the planted base (default = upright). Only the Y (yaw) is applied - " +
+            "pitch/roll are stripped so the base stays perfectly vertical and never leans with the wrist. " +
+            "When Face User is on, Y is added on top of the user-facing yaw.")]
         [SerializeField] Vector3 attachLocalEuler = Vector3.zero;
+        [Tooltip("Aim the base's front-back plane toward the user (headset) when it appears, so pushing " +
+            "the hand forward/back tilts the lever forward/back instead of a direction that gets clipped.")]
+        [SerializeField] bool faceUserOnPlant = true;
         [SerializeField] Vector3 attachLocalScale = new Vector3(10f, 10f, 10f);
         [Tooltip("Extra vertical offset of the planted base, in multiples of the gear shift's own height. " +
             "-0.5 spawns it half a gear shift lower. Negative = lower, positive = higher.")]
@@ -55,19 +60,9 @@ namespace F1XR.Interaction.Input
         [Tooltip("Which hand's button to read. Right by default (this is the right controller).")]
         [SerializeField] bool useRightHand = true;
 
-        [Header("Detent haptics (a click when the direction changes)")]
-        [Tooltip("While shown, fire one crisp click when the knob is pushed into a new direction " +
-            "(not continuously while moving). Holding a direction = silent.")]
+        [Header("Detent haptics (a click when the gear changes)")]
+        [Tooltip("While shown, fire one crisp click each time the lever snaps into a new gear.")]
         [SerializeField] bool leanHaptics = true;
-        [Tooltip("Lean (deg from upright) needed to engage a direction. Higher = the heading is more " +
-            "stable when the first click fires (less double-click).")]
-        [SerializeField, Min(0f)] float directionDeadzoneAngle = 10f;
-        [Tooltip("How much the lean direction (azimuth) must change before another click fires.")]
-        [SerializeField, Range(5f, 180f)] float directionChangeAngle = 45f;
-        [Tooltip("Minimum time between clicks (s). Guarantees one crisp click instead of a quick double.")]
-        [SerializeField, Min(0f)] float minClickInterval = 0.12f;
-        [Tooltip("Also click when the knob returns to center/neutral.")]
-        [SerializeField] bool clickOnReturnToCenter = true;
         [Tooltip("Click strength (0-1). Higher = firmer 'clunk'.")]
         [SerializeField, Range(0f, 1f)] float detentAmplitude = 0.7f;
         [Tooltip("Click length (seconds). Short = crisp click, long = softer thud.")]
@@ -80,9 +75,6 @@ namespace F1XR.Interaction.Input
         GameObject instance;
         GearShiftController instanceShift;
         bool shown;
-        bool leanEngaged;
-        float lastClickAzimuth;
-        float lastClickTime = -999f;
         readonly List<InputDevice> devices = new List<InputDevice>();
 
         void Awake()
@@ -98,6 +90,12 @@ namespace F1XR.Interaction.Input
                 SetShown(false);
         }
 
+        void OnDestroy()
+        {
+            if (instanceShift != null)
+                instanceShift.GearChanged -= OnGearChanged;
+        }
+
         void Update()
         {
             var held = ReadHoldButton();
@@ -106,66 +104,13 @@ namespace F1XR.Interaction.Input
                 SetShown(true);
             else if (!held && shown)
                 SetShown(false);
-
-            if (shown && leanHaptics)
-                UpdateLeanHaptics();
         }
 
-        void UpdateLeanHaptics()
+        // One crisp click each time the lever snaps into a new gear.
+        void OnGearChanged(int gear)
         {
-            if (instanceShift == null)
-                return;
-
-            // A click fires only on a direction change: pushing out of center, swinging to a new
-            // heading, or returning to center. Holding a direction stays silent.
-            var axis = instanceShift.CurrentLeanAxisLocal;
-            var leanAngle = Vector3.Angle(Vector3.up, axis);
-
-            // Engage/disengage hysteresis so a lean hovering at the boundary can't chatter.
-            var disengageAngle = directionDeadzoneAngle * 0.6f;
-            var engagedRegion = leanEngaged ? leanAngle >= disengageAngle : leanAngle >= directionDeadzoneAngle;
-
-            if (engagedRegion)
-            {
-                // Heading of the lean in the joint's horizontal plane.
-                var azimuth = Mathf.Atan2(axis.z, axis.x) * Mathf.Rad2Deg;
-
-                if (!leanEngaged)
-                {
-                    // Just pushed out of center -> one click.
-                    leanEngaged = true;
-                    TryClick();
-                    lastClickAzimuth = azimuth;
-                }
-                else if (Time.time - lastClickTime < minClickInterval)
-                {
-                    // Refractory window right after a click: let the heading settle so the noisy
-                    // engage azimuth can't be mistaken for a fresh direction change (kills "따닥").
-                    lastClickAzimuth = azimuth;
-                }
-                else if (Mathf.Abs(Mathf.DeltaAngle(lastClickAzimuth, azimuth)) >= directionChangeAngle)
-                {
-                    // Swung into a meaningfully different direction -> click.
-                    if (TryClick())
-                        lastClickAzimuth = azimuth;
-                }
-            }
-            else if (leanEngaged)
-            {
-                leanEngaged = false;
-                if (clickOnReturnToCenter)
-                    TryClick();
-            }
-        }
-
-        bool TryClick()
-        {
-            if (Time.time - lastClickTime < minClickInterval)
-                return false;
-
-            SendHaptic(detentAmplitude, detentDuration);
-            lastClickTime = Time.time;
-            return true;
+            if (leanHaptics)
+                SendHaptic(detentAmplitude, detentDuration);
         }
 
         void SendHaptic(float amplitude, float duration)
@@ -211,7 +156,6 @@ namespace F1XR.Interaction.Input
         void SetShown(bool on)
         {
             shown = on;
-            leanEngaged = false; // reset direction tracking so appearing never spikes a haptic
 
             if (on)
             {
@@ -246,6 +190,9 @@ namespace F1XR.Interaction.Input
             instance.transform.localScale = attachLocalScale;
             instanceShift = instance.GetComponentInChildren<GearShiftController>(true);
 
+            if (instanceShift != null)
+                instanceShift.GearChanged += OnGearChanged;
+
             if (disableInteractionOnAttach)
                 StripInteraction(instance);
         }
@@ -256,12 +203,38 @@ namespace F1XR.Interaction.Input
                 return;
 
             var t = instance.transform;
-            t.rotation = Quaternion.Euler(attachLocalEuler);
+            // Plant perfectly upright: strip any pitch/roll so the base never leans and the lever's
+            // front-back plane stays vertical. Only yaw (which way the plane faces) is honored.
+            // Face the user so the front-back plane lines up with the way the hand pushes; otherwise a
+            // forward/back push lands perpendicular to the plane and gets clipped (lever won't move).
+            float yaw = attachLocalEuler.y;
+            if (faceUserOnPlant)
+                yaw += UserFacingYaw();
+            t.rotation = Quaternion.Euler(0f, yaw, 0f);
             t.localScale = attachLocalScale;
 
             var pos = poseSource.TransformPoint(attachLocalPosition);
             pos += Vector3.up * (GetInstanceHeight() * baseHeightOffset);
             t.position = pos;
+        }
+
+        // Horizontal yaw (deg) that makes the base's local +Z point along the user's gaze direction,
+        // so the lever's front-back plane faces the user. Falls back to the pose source, then to 0.
+        float UserFacingYaw()
+        {
+            Vector3 fwd = Vector3.zero;
+
+            var cam = Camera.main;
+            if (cam != null)
+                fwd = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
+
+            if (fwd.sqrMagnitude < 1e-6f && poseSource != null)
+                fwd = Vector3.ProjectOnPlane(poseSource.forward, Vector3.up);
+
+            if (fwd.sqrMagnitude < 1e-6f)
+                return 0f;
+
+            return Mathf.Atan2(fwd.x, fwd.z) * Mathf.Rad2Deg;
         }
 
         float GetInstanceHeight()

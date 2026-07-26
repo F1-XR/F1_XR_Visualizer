@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
@@ -10,38 +11,70 @@ namespace F1XR.Interaction.World
     ///   - Base bone (green section):  fixed to the ground, never moves.
     ///   - Bend bone (red section):    a soft rubber joint. Vertices in the red band are
     ///                                 weight-blended between the base and this bone, so the
-    ///                                 collar bends smoothly (like rubber) as the stick leans.
-    ///   - Knob bone (yellow section): the rigid top. It rides on the bend bone, so it can be
-    ///                                 pushed to any direction around a full 360 circle.
+    ///                                 collar stretches like rubber as the bend bone moves.
+    ///   - Knob bone (yellow section): the rigid top. It rides on the bend bone.
     ///
-    /// While an XR interactor holds the knob the stick leans toward the hand (clamped to
-    /// <see cref="maxLeanAngle"/>); when released it springs back upright.
+    /// The stick behaves like an H-pattern gate shifter: the base stays planted and the bend bone
+    /// TRANSLATES straight forward/back along a single horizontal line (not a rotation), so the knob
+    /// slides between a straight line of discrete gear slots at a constant height - it never arcs
+    /// up-and-over. The rubber collar stretches to follow. Pushing the hand builds resistance until
+    /// it crosses a detent boundary, then the lever clicks into the next gear and fires
+    /// <see cref="GearChanged"/> (used for a haptic click).
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class GearShiftController : MonoBehaviour
     {
         [Header("Bones")]
-        [Tooltip("Green section root. Stays fixed - only referenced for its pivot.")]
+        [Tooltip("Green section root. Stays planted - only referenced for its pivot.")]
         [SerializeField] Transform baseBone;
-        [Tooltip("Red section joint. This is the bone that actually leans; the rubber blend lives around it.")]
+        [Tooltip("Red section joint. This bone slides forward/back; its rubber collar stretches to follow.")]
         [SerializeField] Transform bendBone;
-        [Tooltip("Yellow section. Rides rigidly on the bend bone.")]
+        [Tooltip("Yellow section. Rides rigidly on the bend bone, staying upright as it slides.")]
         [SerializeField] Transform knobBone;
 
         [Header("Interaction")]
         [SerializeField] XRSimpleInteractable interactable;
 
-        [Header("Lean")]
-        [Tooltip("Maximum tilt of the stick from upright, in degrees.")]
-        [SerializeField, Range(0f, 80f)] float maxLeanAngle = 35f;
-        [Tooltip("Responsiveness while held. Smaller = snappier follow.")]
-        [SerializeField, Min(0f)] float followSmoothTime = 0.05f;
-        [Tooltip("Spring-back time after release. Smaller = quicker return.")]
-        [SerializeField, Min(0f)] float returnSmoothTime = 0.12f;
+        [Header("Gears")]
+        [Tooltip("Number of gear slots in the straight line.")]
+        [SerializeField, Range(2, 8)] int gearCount = 4;
+        [Tooltip("Spacing between gear slots, as a fraction of the stick's length. The whole gate spans " +
+                 "(gearCount - 1) * this.")]
+        [SerializeField, Range(0.05f, 1f)] float gearThrow = 0.3f;
+        [Tooltip("Gear the lever rests in when it first appears (0 = frontmost).")]
+        [SerializeField] int initialGear = 0;
+
+        [Tooltip("How much the knob tilts to follow the slide so the shaft and knob line up as one " +
+                 "leaning lever instead of an S-kink. 0 = knob stays bolt upright (S-shape), 1 = fully " +
+                 "aligned with the leaning shaft.")]
+        [SerializeField, Range(0f, 1f)] float leanFollow = 1f;
+
+        [Header("Detent feel")]
+        [Tooltip("Hand push (deg from upright) between adjacent gears. Controls how far you swing the " +
+                 "hand to change gear - independent of the visual slot spacing.")]
+        [SerializeField, Range(2f, 40f)] float stepAngle = 18f;
+        [Tooltip("Extra push past the halfway point needed to click into the next gear, in degrees. " +
+                 "Higher = firmer detents / more resistance before it gives.")]
+        [SerializeField, Range(0f, 15f)] float detentHysteresis = 4f;
+        [Tooltip("How quickly the knob slides to its slot. Smaller = snappier click.")]
+        [SerializeField, Min(0f)] float snapSmoothTime = 0.04f;
+
+        [Header("Plane")]
+        [Tooltip("Hinge axis in the bend bone's parent space. The gate line runs perpendicular to this, " +
+                 "in the horizontal plane. Default (1,0,0) = the knob slides forward/back (along Z).")]
+        [SerializeField] Vector3 hingeAxisLocal = Vector3.right;
+
+        /// <summary>Raised when the lever clicks into a different gear. Argument is the new gear index.</summary>
+        public event Action<int> GearChanged;
 
         IXRSelectInteractor heldInteractor;
         Quaternion bendRest;
+        Quaternion knobRest;
+        Vector3 bendRestPos;
         Vector3 restUpLocal;
+        Vector3 slideDirLocal;   // horizontal gate direction in the bend bone's parent space
+        float slotSpacing;       // distance between slots, in local units
+        int currentGear;
 
         void Awake()
         {
@@ -51,8 +84,41 @@ namespace F1XR.Interaction.World
             if (bendBone != null)
             {
                 bendRest = bendBone.localRotation;
+                bendRestPos = bendBone.localPosition;
                 restUpLocal = bendRest * Vector3.up;
             }
+
+            if (knobBone != null)
+                knobRest = knobBone.localRotation;
+
+            ResolveGate();
+
+            currentGear = Mathf.Clamp(initialGear, 0, gearCount - 1);
+            if (bendBone != null)
+            {
+                bendBone.localRotation = bendRest;
+                bendBone.localPosition = GearPosition(currentGear);
+            }
+        }
+
+        // Precompute the gate's horizontal slide direction and slot spacing from the rig.
+        void ResolveGate()
+        {
+            var hinge = Hinge();
+
+            // The gate line is perpendicular to the hinge and horizontal (so height stays constant).
+            slideDirLocal = Vector3.Cross(hinge, Vector3.up);
+            if (slideDirLocal.sqrMagnitude < 1e-10f)
+                slideDirLocal = Vector3.forward;
+            slideDirLocal.Normalize();
+
+            // Slot spacing scales with the stick length so it reads the same at any model scale.
+            // Use the REST position (bendBone slides at runtime, so its live position isn't the length).
+            var stickLen = bendRestPos.magnitude +
+                           (knobBone != null ? knobBone.localPosition.magnitude : 0f);
+            if (stickLen < 1e-6f)
+                stickLen = bendRestPos.magnitude;
+            slotSpacing = stickLen * gearThrow;
         }
 
         void OnEnable()
@@ -85,9 +151,9 @@ namespace F1XR.Interaction.World
         }
 
         /// <summary>
-        /// Optional external aim. When set, the knob bends toward this transform's position instead
+        /// Optional external aim. When set, the knob shifts toward this transform's position instead
         /// of a grabbing interactor. Used to drive the shift like a fixed lever (base stays put,
-        /// only the knob leans toward the hand). Set to null to release.
+        /// only the knob slides toward the hand). Set to null to release.
         /// </summary>
         public Transform ExternalAimTarget { get; set; }
 
@@ -96,13 +162,73 @@ namespace F1XR.Interaction.World
             if (bendBone == null)
                 return;
 
-            var active = TryGetAimPosition(out var aimPos);
-            var target = active ? ComputeAimRotation(aimPos) : bendRest;
+            // Recompute the gate every frame so tweaking Gear Throw / Gear Count / Hinge in the
+            // Inspector updates live during Play (they'd otherwise only apply on spawn).
+            ResolveGate();
+            currentGear = Mathf.Clamp(currentGear, 0, gearCount - 1);
 
-            // Framerate-independent exponential smoothing toward the target.
-            var smoothTime = active ? followSmoothTime : returnSmoothTime;
-            var t = smoothTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / smoothTime);
-            bendBone.localRotation = Quaternion.Slerp(bendBone.localRotation, target, t);
+            // While aimed, let the hand drive the detent state machine; otherwise hold the current gear.
+            if (TryGetAimPosition(out var aimPos))
+                UpdateGear(AimAngle(aimPos));
+
+            // Slide toward the current gear's slot. The knob holds at a detent (resistance) until
+            // UpdateGear advances it, then springs into the new slot (click). Rotation stays at rest
+            // so the knob keeps upright and travels in a dead-straight horizontal line.
+            var target = GearPosition(currentGear);
+            var t = snapSmoothTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / snapSmoothTime);
+            bendBone.localPosition = Vector3.Lerp(bendBone.localPosition, target, t);
+            bendBone.localRotation = bendRest;
+
+            // Tilt the knob to follow the slide so the shaft and knob read as one leaning lever, not an
+            // S-kink (the shaft shears while an upright knob would stick out sideways). This is purely
+            // cosmetic - the knob still tracks the flat gate line, it just leans to match the shear.
+            if (knobBone != null)
+            {
+                var offset = Vector3.Dot(bendBone.localPosition - bendRestPos, slideDirLocal);
+                var restHeight = bendRestPos.magnitude;
+                var leanDeg = restHeight > 1e-6f
+                    ? Mathf.Atan2(offset, restHeight) * Mathf.Rad2Deg * leanFollow
+                    : 0f;
+                knobBone.localRotation = Quaternion.AngleAxis(leanDeg, Hinge()) * knobRest;
+            }
+        }
+
+        /// <summary>Local position of gear slot i: the rest position offset along the gate line.</summary>
+        Vector3 GearPosition(int i) =>
+            bendRestPos + slideDirLocal * ((i - (gearCount - 1) * 0.5f) * slotSpacing);
+
+        /// <summary>Hand-push angle (deg from upright, signed about the hinge) mapped to gear i, for detents.</summary>
+        float GearAngle(int i) => (i - (gearCount - 1) * 0.5f) * stepAngle;
+
+        Vector3 Hinge() => hingeAxisLocal.sqrMagnitude > 1e-10f ? hingeAxisLocal.normalized : Vector3.right;
+
+        /// <summary>
+        /// Advances or retreats the current gear based on the aim angle, with hysteresis so the lever
+        /// resists at each detent and only clicks over once pushed past the boundary. Fires
+        /// <see cref="GearChanged"/> on each click.
+        /// </summary>
+        void UpdateGear(float aimAngle)
+        {
+            var changed = false;
+
+            // Push toward higher gears: cross the halfway point plus the hysteresis margin.
+            while (currentGear < gearCount - 1 &&
+                   aimAngle > GearAngle(currentGear) + stepAngle * 0.5f + detentHysteresis)
+            {
+                currentGear++;
+                changed = true;
+            }
+
+            // Pull toward lower gears.
+            while (currentGear > 0 &&
+                   aimAngle < GearAngle(currentGear) - stepAngle * 0.5f - detentHysteresis)
+            {
+                currentGear--;
+                changed = true;
+            }
+
+            if (changed)
+                GearChanged?.Invoke(currentGear);
         }
 
         bool TryGetAimPosition(out Vector3 position)
@@ -127,39 +253,35 @@ namespace F1XR.Interaction.World
             return false;
         }
 
-        Quaternion ComputeAimRotation(Vector3 aimWorldPosition)
+        /// <summary>
+        /// The hand's push angle (deg, signed about the hinge, within the lever plane), measured from a
+        /// stable pivot so the moving knob doesn't feed back into the reading. Returns the current
+        /// gear's angle when the aim is degenerate so the state machine holds.
+        /// </summary>
+        float AimAngle(Vector3 aimWorldPosition)
         {
             if (bendBone.parent == null)
-                return bendRest;
+                return GearAngle(currentGear);
 
-            // Direction from the joint pivot toward the aim, expressed in the bend bone's parent space.
-            var worldDir = aimWorldPosition - bendBone.position;
+            // Pivot at the stick's rest base (fixed), not the sliding bone, to avoid feedback.
+            var pivotWorld = bendBone.parent.TransformPoint(bendRestPos);
+            var worldDir = aimWorldPosition - pivotWorld;
             var localDir = bendBone.parent.InverseTransformDirection(worldDir);
-            if (localDir.sqrMagnitude < 1e-10f)
-                return bendRest;
 
-            // Clamp the lean to the allowed cone around the upright rest axis.
-            var want = Vector3.RotateTowards(restUpLocal, localDir.normalized, maxLeanAngle * Mathf.Deg2Rad, 0f);
-            return Quaternion.FromToRotation(restUpLocal, want) * bendRest;
+            // Collapse to the lever plane (drop the component along the hinge) and measure the signed
+            // tilt from upright. Only the in-plane push decides the gear.
+            var hinge = Hinge();
+            var planar = Vector3.ProjectOnPlane(localDir, hinge);
+            if (planar.sqrMagnitude < 1e-10f)
+                return GearAngle(currentGear);
+
+            return Vector3.SignedAngle(restUpLocal, planar.normalized, hinge);
         }
 
-        /// <summary>
-        /// The knob's current lean axis in the joint's local space. It changes as the knob moves in
-        /// any direction, so the angular difference between frames measures how fast the knob is moving.
-        /// </summary>
-        public Vector3 CurrentLeanAxisLocal => bendBone != null ? bendBone.localRotation * Vector3.up : Vector3.up;
+        /// <summary>Current gear index, 0 (frontmost) to <see cref="GearCount"/> - 1.</summary>
+        public int CurrentGear => currentGear;
 
-        /// <summary>Current lean amount, 0 (upright) to 1 (at max angle). Useful for gear-state logic.</summary>
-        public float NormalizedLean
-        {
-            get
-            {
-                if (bendBone == null || maxLeanAngle <= 0f)
-                    return 0f;
-
-                var up = bendBone.localRotation * Vector3.up;
-                return Mathf.Clamp01(Vector3.Angle(restUpLocal, up) / maxLeanAngle);
-            }
-        }
+        /// <summary>Total number of gear positions.</summary>
+        public int GearCount => gearCount;
     }
 }

@@ -245,9 +245,14 @@ MonoBehaviour:
   bendBone: {fileID: 8783629189015460267}
   knobBone: {fileID: 1919112123930072369}
   interactable: {fileID: 6935187646015634282}
-  maxLeanAngle: 35
-  followSmoothTime: 0.05
-  returnSmoothTime: 0.12
+  gearCount: 4
+  gearThrow: 0.15
+  initialGear: 0
+  leanFollow: 0
+  stepAngle: 24
+  detentHysteresis: 8
+  snapSmoothTime: 0.05
+  hingeAxisLocal: {x: 1, y: 0, z: 0}
 --- !u!114 &4363933637874043221
 MonoBehaviour:
   m_ObjectHideFlags: 0
