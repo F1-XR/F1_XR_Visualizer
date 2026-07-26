@@ -28,6 +28,7 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private Vector3 pathPositionOffset;
 
         [Header("Debug")]
+        [SerializeField] private bool showDebug = true;
         [SerializeField, Min(0.001f)] private float debugLineWidth = 0.025f;
         [SerializeField] private Vector3 capsuleSize =
             new(0.12f, 0.12f, 0.3f);
@@ -227,6 +228,26 @@ namespace F1XR.RestAPI.Replay.Room
 
             if (!wasValid && autoplay && previewMovementEnabled)
                 PlayPreview();
+        }
+
+        public void SetDebugVisible(bool visible)
+        {
+            if (showDebug == visible)
+                return;
+
+            showDebug = visible;
+            if (!showDebug)
+            {
+                DestroyDebug();
+                return;
+            }
+
+            if (isPathValid)
+            {
+                EnsureDebug();
+                RefreshDebug();
+                SetPreviewProgress(previewProgress);
+            }
         }
 
         /// <summary>
@@ -488,7 +509,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void EnsureDebug()
         {
-            if (debugRoot != null)
+            if (!showDebug || debugRoot != null)
                 return;
 
             var rootObject = new GameObject(DebugRootName)
@@ -572,7 +593,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void RefreshDebug()
         {
-            if (debugRoot == null || pathLine == null)
+            if (!showDebug || debugRoot == null || pathLine == null)
                 return;
 
             debugRoot.gameObject.SetActive(isPathValid);

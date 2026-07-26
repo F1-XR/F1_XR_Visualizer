@@ -15,6 +15,70 @@ namespace F1XR.RestAPI.Replay.Room
         Reacquiring
     }
 
+    public readonly struct WallCandidateInfo
+    {
+        public WallCandidateInfo(
+            TrackableId id,
+            int displayIndex,
+            int userFacingNumber,
+            Vector3 center,
+            Quaternion rotation,
+            Vector3 inwardNormal,
+            Vector3 horizontalAxis,
+            Vector3 verticalAxis,
+            float width,
+            float height,
+            bool isSemanticWall,
+            bool isAvailable)
+        {
+            Id = id;
+            DisplayIndex = displayIndex;
+            UserFacingNumber = userFacingNumber;
+            Center = center;
+            Rotation = rotation;
+            InwardNormal = inwardNormal;
+            HorizontalAxis = horizontalAxis;
+            VerticalAxis = verticalAxis;
+            Width = width;
+            Height = height;
+            IsSemanticWall = isSemanticWall;
+            IsAvailable = isAvailable;
+        }
+
+        public TrackableId Id { get; }
+        public int DisplayIndex { get; }
+        public int UserFacingNumber { get; }
+        public Vector3 Center { get; }
+        public Quaternion Rotation { get; }
+        public Vector3 InwardNormal { get; }
+        public Vector3 HorizontalAxis { get; }
+        public Vector3 VerticalAxis { get; }
+        public float Width { get; }
+        public float Height { get; }
+        public bool IsSemanticWall { get; }
+        public bool IsAvailable { get; }
+    }
+
+    public interface IShowcaseWallProvider
+    {
+        int CandidateCount { get; }
+        int UserFacingCandidateCount { get; }
+        int CandidateRevision { get; }
+        WallSelectionState EntrySelectionState { get; }
+        WallSelectionState ExitSelectionState { get; }
+        TrackableId? EntrySelectedTrackableId { get; }
+        TrackableId? ExitSelectedTrackableId { get; }
+        bool TryGetCandidate(int index, out WallCandidateInfo info);
+        bool TryGetCandidateById(TrackableId id, out WallCandidateInfo info);
+        bool TrySelectEntryById(TrackableId id);
+        bool TrySelectExitById(TrackableId id);
+        bool TrySetPreviewById(TrackableId id);
+        void FinalizeUserFacingOrder();
+        void ClearPreview();
+        void ClearEntrySelection();
+        void ClearExitSelection();
+    }
+
     public sealed class WallCandidate
     {
         private readonly List<Vector3> boundary = new();
@@ -22,13 +86,17 @@ namespace F1XR.RestAPI.Replay.Room
         private bool hasOrientation;
         private float inwardNormalSign = 1f;
 
-        public WallCandidate(TrackableId trackableId)
+        public WallCandidate(
+            TrackableId trackableId,
+            int userFacingNumber)
         {
             TrackableId = trackableId;
+            UserFacingNumber = userFacingNumber;
             readOnlyBoundary = boundary.AsReadOnly();
         }
 
         public TrackableId TrackableId { get; }
+        public int UserFacingNumber { get; private set; }
         public ARPlane SourcePlane { get; private set; }
         public PlaneClassifications Classifications { get; private set; }
         public bool IsSemanticWall { get; private set; }
@@ -46,6 +114,17 @@ namespace F1XR.RestAPI.Replay.Room
         public float MaxVertical { get; private set; }
         public IReadOnlyList<Vector3> Boundary => readOnlyBoundary;
         public bool IsValid { get; private set; }
+
+        internal void AssignUserFacingNumber(int number)
+        {
+            if (UserFacingNumber <= 0)
+                UserFacingNumber = number;
+        }
+
+        internal void SetUserFacingNumber(int number)
+        {
+            UserFacingNumber = number;
+        }
 
         internal void UpdateFromPlane(
             ARPlane plane,
@@ -159,7 +238,7 @@ namespace F1XR.RestAPI.Replay.Room
 
     [DisallowMultipleComponent]
     [RequireComponent(typeof(ARPlaneManager))]
-    public sealed class WallDiscovery : MonoBehaviour
+    public sealed class WallDiscovery : MonoBehaviour, IShowcaseWallProvider
     {
         private static readonly PlaneClassifications WallClassifications =
             PlaneClassifications.WallFace |
@@ -178,6 +257,7 @@ namespace F1XR.RestAPI.Replay.Room
         [Header("Wall Qualification")]
         [SerializeField] private bool allowVerticalFallback = true;
         [SerializeField, Min(0.1f)] private float minimumWidth = 0.75f;
+        [SerializeField, Min(0.1f)] private float minimumFallbackWidth = 1.2f;
         [SerializeField, Min(0.1f)] private float minimumHeight = 1.2f;
 
         [Header("Manual Selection")]
@@ -201,6 +281,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private readonly List<WallCandidate> candidates = new();
         private readonly Dictionary<TrackableId, WallCandidate> candidatesById = new();
+        private readonly Dictionary<TrackableId, int> userFacingNumbersById = new();
         private readonly Dictionary<TrackableId, WallDebugView> debugViews = new();
         private ReadOnlyCollection<WallCandidate> readOnlyCandidates;
         private TrackableId? entryWallId;
@@ -214,7 +295,12 @@ namespace F1XR.RestAPI.Replay.Room
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation;
         private Vector3 lastRootScale;
+        private TrackableId? previewWallId;
+        private int candidateRevision;
         private int selectionRevision;
+        private int nextUserFacingNumber = 1;
+        private bool userFacingOrderFinalized;
+        private bool reacquisitionPausedForNoCandidates;
         private readonly SelectionData entrySelection = new();
         private readonly SelectionData exitSelection = new();
 
@@ -225,6 +311,10 @@ namespace F1XR.RestAPI.Replay.Room
         public IReadOnlyList<WallCandidate> Candidates =>
             readOnlyCandidates ??= candidates.AsReadOnly();
 
+        public int CandidateCount => candidates.Count;
+        public int UserFacingCandidateCount => nextUserFacingNumber - 1;
+        public int CandidateRevision => candidateRevision;
+        public TrackableId? PreviewWallId => previewWallId;
         public TrackableId? EntryWallId => entryWallId;
         public TrackableId? ExitWallId => exitWallId;
         public WallSelectionState EntrySelectionState =>
@@ -339,6 +429,8 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnValidate()
         {
             minimumWidth = Mathf.Max(0.1f, minimumWidth);
+            minimumFallbackWidth =
+                Mathf.Max(minimumWidth, minimumFallbackWidth);
             minimumHeight = Mathf.Max(0.1f, minimumHeight);
             reacquisitionGraceDuration =
                 Mathf.Max(0.1f, reacquisitionGraceDuration);
@@ -376,6 +468,119 @@ namespace F1XR.RestAPI.Replay.Room
         public bool TryGetExitWallFrame(out WallCandidate wall)
         {
             return TryGetExitWall(out wall);
+        }
+
+        public bool TryGetCandidate(int index, out WallCandidateInfo info)
+        {
+            if (index < 0 || index >= candidates.Count)
+            {
+                info = default;
+                return false;
+            }
+
+            var candidate = candidates[index];
+            if (!candidate.IsValid)
+            {
+                info = default;
+                return false;
+            }
+
+            info = CreateCandidateInfo(candidate, index);
+            return true;
+        }
+
+        public bool TryGetCandidateById(
+            TrackableId id,
+            out WallCandidateInfo info)
+        {
+            if (!candidatesById.TryGetValue(id, out var candidate) ||
+                !candidate.IsValid)
+            {
+                info = default;
+                return false;
+            }
+
+            info = CreateCandidateInfo(
+                candidate,
+                candidates.IndexOf(candidate));
+            return true;
+        }
+
+        public bool TrySelectEntryById(TrackableId id)
+        {
+            if (exitWallId.HasValue && exitWallId.Value == id)
+                return false;
+
+            var index = FindCandidateIndex(id);
+            return index >= 0 && SelectEntryByIndex(index);
+        }
+
+        public bool TrySelectExitById(TrackableId id)
+        {
+            if (entryWallId.HasValue && entryWallId.Value == id)
+                return false;
+
+            var index = FindCandidateIndex(id);
+            return index >= 0 && SelectExitByIndex(index);
+        }
+
+        public bool TrySetPreviewById(TrackableId id)
+        {
+            if (!candidatesById.TryGetValue(id, out var candidate) ||
+                !candidate.IsValid)
+            {
+                return false;
+            }
+
+            if (previewWallId == id)
+                return true;
+
+            previewWallId = id;
+            RefreshAllDebugViews();
+            return true;
+        }
+
+        public void FinalizeUserFacingOrder()
+        {
+            if (userFacingOrderFinalized || candidates.Count == 0)
+                return;
+
+            var frontCandidate = FindFrontCandidate();
+            candidates.Sort(CompareCandidatesClockwise);
+            if (frontCandidate != null)
+            {
+                while (candidates[0] != frontCandidate)
+                {
+                    var first = candidates[0];
+                    candidates.RemoveAt(0);
+                    candidates.Add(first);
+                }
+            }
+
+            userFacingNumbersById.Clear();
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                var number = i + 1;
+                candidates[i].SetUserFacingNumber(number);
+                userFacingNumbersById.Add(
+                    candidates[i].TrackableId,
+                    number);
+            }
+
+            nextUserFacingNumber = candidates.Count + 1;
+            userFacingOrderFinalized = true;
+            RefreshSelectionIndices();
+            IncrementCandidateRevision();
+            RefreshAllDebugViews();
+        }
+
+        public void ClearPreview()
+        {
+            if (!previewWallId.HasValue)
+                return;
+
+            previewWallId = null;
+            RefreshAllDebugViews();
         }
 
         public bool SelectEntryByIndex(int index)
@@ -578,20 +783,37 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            if (!candidatesById.TryGetValue(plane.trackableId, out var candidate))
-            {
-                candidate = new WallCandidate(plane.trackableId);
-                candidates.Add(candidate);
-                candidatesById.Add(plane.trackableId, candidate);
-            }
+            var isNewCandidate = !candidatesById.TryGetValue(
+                plane.trackableId,
+                out var candidate);
+            if (isNewCandidate)
+                candidate = new WallCandidate(plane.trackableId, 0);
 
             candidate.UpdateFromPlane(plane, isSemanticWall, orientationCamera);
-            if (candidate.Width < minimumWidth || candidate.Height < minimumHeight)
+            var requiredWidth = candidate.IsFallback
+                ? Mathf.Max(minimumWidth, minimumFallbackWidth)
+                : minimumWidth;
+            if (candidate.Width < requiredWidth ||
+                candidate.Height < minimumHeight)
             {
-                RemoveCandidate(
-                    plane.trackableId,
-                    $"Wall is below the minimum {minimumWidth:0.##} m x {minimumHeight:0.##} m.");
+                if (!isNewCandidate)
+                {
+                    RemoveCandidate(
+                        plane.trackableId,
+                        $"Wall is below the minimum {requiredWidth:0.##} m x " +
+                        $"{minimumHeight:0.##} m.");
+                }
+
                 return;
+            }
+
+            if (isNewCandidate)
+            {
+                candidate.AssignUserFacingNumber(
+                    GetOrAssignUserFacingNumber(plane.trackableId));
+                InsertCandidateByUserFacingNumber(candidate);
+                candidatesById.Add(plane.trackableId, candidate);
+                IncrementCandidateRevision();
             }
 
             RefreshSelectedFrame(candidate);
@@ -623,10 +845,14 @@ namespace F1XR.RestAPI.Replay.Room
             if (!candidatesById.Remove(id, out var candidate))
                 return;
 
+            if (previewWallId == id)
+                previewWallId = null;
+
             var removedSnapshot = CaptureSnapshot(candidate);
             candidate.Invalidate();
             candidates.Remove(candidate);
             DestroyDebugView(id);
+            IncrementCandidateRevision();
 
             if (entryWallId == id)
             {
@@ -681,12 +907,16 @@ namespace F1XR.RestAPI.Replay.Room
                 exitWallId.HasValue ||
                 entrySelection.State != WallSelectionState.None ||
                 exitSelection.State != WallSelectionState.None;
+            var hadCandidates = candidates.Count > 0;
             foreach (var candidate in candidates)
                 candidate.Invalidate();
 
             candidates.Clear();
             candidatesById.Clear();
+            previewWallId = null;
             DestroyAllDebugViews();
+            if (hadCandidates)
+                IncrementCandidateRevision();
 
             if (entryWallId.HasValue)
                 Debug.LogWarning($"[WallDiscovery] Entry Wall cleared. {reason}", this);
@@ -813,6 +1043,110 @@ namespace F1XR.RestAPI.Replay.Room
             }
         }
 
+        private void IncrementCandidateRevision()
+        {
+            unchecked
+            {
+                candidateRevision++;
+            }
+        }
+
+        private int GetOrAssignUserFacingNumber(TrackableId id)
+        {
+            if (userFacingNumbersById.TryGetValue(id, out var number))
+                return number;
+
+            number = nextUserFacingNumber++;
+            userFacingNumbersById.Add(id, number);
+            return number;
+        }
+
+        private WallCandidate FindFrontCandidate()
+        {
+            WallCandidate frontCandidate = null;
+            var smallestAngle = float.PositiveInfinity;
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                var angle = Mathf.Abs(Mathf.DeltaAngle(
+                    0f,
+                    GetClockwiseAngle(candidates[i])));
+                if (angle >= smallestAngle)
+                    continue;
+
+                smallestAngle = angle;
+                frontCandidate = candidates[i];
+            }
+
+            return frontCandidate;
+        }
+
+        private int CompareCandidatesClockwise(
+            WallCandidate first,
+            WallCandidate second)
+        {
+            return GetClockwiseAngle(first).CompareTo(
+                GetClockwiseAngle(second));
+        }
+
+        private float GetClockwiseAngle(WallCandidate candidate)
+        {
+            if (orientationCamera == null)
+                return candidate.UserFacingNumber;
+
+            var up = transform.up.normalized;
+            var forward = Vector3.ProjectOnPlane(
+                orientationCamera.forward,
+                up);
+            var direction = Vector3.ProjectOnPlane(
+                candidate.Center - orientationCamera.position,
+                up);
+            if (forward.sqrMagnitude < 0.0001f ||
+                direction.sqrMagnitude < 0.0001f)
+            {
+                return candidate.UserFacingNumber;
+            }
+
+            return Mathf.Repeat(
+                Vector3.SignedAngle(
+                    forward.normalized,
+                    direction.normalized,
+                    up),
+                360f);
+        }
+
+        private void InsertCandidateByUserFacingNumber(
+            WallCandidate candidate)
+        {
+            var index = candidates.Count;
+            while (index > 0 &&
+                candidates[index - 1].UserFacingNumber >
+                candidate.UserFacingNumber)
+            {
+                index--;
+            }
+
+            candidates.Insert(index, candidate);
+        }
+
+        private static WallCandidateInfo CreateCandidateInfo(
+            WallCandidate candidate,
+            int displayIndex)
+        {
+            return new WallCandidateInfo(
+                candidate.TrackableId,
+                displayIndex,
+                candidate.UserFacingNumber,
+                candidate.Center,
+                candidate.Rotation,
+                candidate.InwardNormal,
+                candidate.HorizontalAxis,
+                candidate.VerticalAxis,
+                candidate.Width,
+                candidate.Height,
+                candidate.IsSemanticWall,
+                candidate.IsValid);
+        }
+
         private void BeginReacquisition(
             SelectionData selection,
             WallSnapshot snapshot,
@@ -833,6 +1167,24 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void UpdateReacquisitionTimeouts()
         {
+            if (candidates.Count == 0)
+            {
+                reacquisitionPausedForNoCandidates =
+                    IsEntryReacquiring || IsExitReacquiring;
+                return;
+            }
+
+            if (reacquisitionPausedForNoCandidates)
+            {
+                var reacquireUntil =
+                    Time.unscaledTime + reacquisitionGraceDuration;
+                if (IsEntryReacquiring)
+                    entrySelection.ReacquireUntil = reacquireUntil;
+                if (IsExitReacquiring)
+                    exitSelection.ReacquireUntil = reacquireUntil;
+                reacquisitionPausedForNoCandidates = false;
+            }
+
             var refreshDebug = false;
             refreshDebug |= TryTimeoutReacquisition(
                 entrySelection,
@@ -1436,11 +1788,13 @@ namespace F1XR.RestAPI.Replay.Room
             var index = candidates.IndexOf(candidate);
             var isEntry = entryWallId == candidate.TrackableId;
             var isExit = exitWallId == candidate.TrackableId;
+            var isPreview = previewWallId == candidate.TrackableId;
             view.Refresh(
                 candidate,
                 index,
                 isEntry,
                 isExit,
+                isPreview,
                 debugLineWidth,
                 normalLength);
         }
@@ -1548,6 +1902,8 @@ namespace F1XR.RestAPI.Replay.Room
                 new(1f, 0.2f, 0.8f, 0.95f);
             private static readonly Color SameWallColor =
                 new(1f, 0.9f, 0.1f, 0.95f);
+            private static readonly Color PreviewColor =
+                new(0f, 1f, 1f, 1f);
 
             private readonly GameObject root;
             private readonly LineRenderer boundaryLine;
@@ -1602,12 +1958,18 @@ namespace F1XR.RestAPI.Replay.Room
                 int index,
                 bool isEntry,
                 bool isExit,
+                bool isPreview,
                 float lineWidth,
                 float inwardNormalLength)
             {
-                var color = ResolveColor(candidate, isEntry, isExit);
-                ApplyLine(boundaryLine, color, lineWidth);
-                ApplyLine(normalLine, color, lineWidth * 0.8f);
+                var color = ResolveColor(
+                    candidate,
+                    isEntry,
+                    isExit,
+                    isPreview);
+                var widthScale = isPreview ? 1.5f : 1f;
+                ApplyLine(boundaryLine, color, lineWidth * widthScale);
+                ApplyLine(normalLine, color, lineWidth * 0.8f * widthScale);
 
                 var boundary = candidate.Boundary;
                 if (boundaryPositions.Length != boundary.Count)
@@ -1649,9 +2011,12 @@ namespace F1XR.RestAPI.Replay.Room
                         ? "ENTRY"
                         : isExit
                             ? "EXIT"
-                            : "WALL";
+                            : isPreview
+                                ? "PREVIEW"
+                                : "WALL";
                 var source = candidate.IsFallback ? "FALLBACK" : "SEMANTIC";
-                label.text = $"{index}: {role}\n{source}";
+                label.text =
+                    $"{candidate.UserFacingNumber}: {role}\n{source}";
                 label.color = color;
                 label.transform.localPosition =
                     root.transform.InverseTransformPoint(
@@ -1697,7 +2062,8 @@ namespace F1XR.RestAPI.Replay.Room
             private static Color ResolveColor(
                 WallCandidate candidate,
                 bool isEntry,
-                bool isExit)
+                bool isExit,
+                bool isPreview)
             {
                 if (isEntry && isExit)
                     return SameWallColor;
@@ -1705,6 +2071,8 @@ namespace F1XR.RestAPI.Replay.Room
                     return EntryColor;
                 if (isExit)
                     return ExitColor;
+                if (isPreview)
+                    return PreviewColor;
                 return candidate.IsFallback ? FallbackColor : SemanticColor;
             }
 
