@@ -211,10 +211,11 @@ namespace F1XR.RestAPI.UI
             rect.sizeDelta = new Vector2(width, height);
         }
 
-        private static TMP_Text CreateText(string name, Transform parent, int size, FontStyles style, TextAlignmentOptions alignment)
+        private TMP_Text CreateText(string name, Transform parent, int size, FontStyles style, TextAlignmentOptions alignment)
         {
             TMP_Text text = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TMP_Text>();
             text.transform.SetParent(parent, false);
+            text.font = rankText.font;
             text.fontSize = size;
             text.fontStyle = style;
             text.alignment = alignment;
