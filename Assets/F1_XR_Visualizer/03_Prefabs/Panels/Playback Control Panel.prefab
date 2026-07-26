@@ -391,6 +391,10 @@ MonoBehaviour:
   minScaleStartDistance: 0.08
   minScale: 0.00025
   maxScale: 0.0025
+  smoothWorldTransform: 1
+  positionLerpSpeed: 18
+  rotationLerpSpeed: 18
+  scaleLerpSpeed: 18
   keepPivotFixed: 0
   keepPositionWhileScaling: 0
   keepRotationWhileScaling: 0
@@ -420,6 +424,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.PanelYawGrabLock
   grab: {fileID: 0}
   target: {fileID: 0}
+  rotationLerpSpeed: 18
 --- !u!114 &1762943173342073573
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -558,8 +563,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Option A
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+  m_sharedMaterial: {fileID: 794122084255011996, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -738,6 +743,8 @@ MonoBehaviour:
   rankText: {fileID: 0}
   standingsSize: {x: 196, y: 470}
   driverDetailSize: {x: 180, y: 150}
+  driverOnboardSize: {x: 260, y: 176}
+  driverOnboardTextureSize: {x: 512, y: 288}
   standingsRowHeight: 19
   positionChangeFlashSeconds: 1.2
   standingsMoveSpeed: 10
@@ -1855,8 +1862,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Button
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+  m_sharedMaterial: {fileID: 794122084255011996, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -2246,8 +2253,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Option A
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+  m_sharedMaterial: {fileID: 794122084255011996, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
