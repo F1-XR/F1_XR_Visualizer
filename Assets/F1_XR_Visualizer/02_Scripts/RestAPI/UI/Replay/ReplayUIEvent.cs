@@ -2,6 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using F1XR.RestAPI.Replay;
+using F1XR.RestAPI.Replay.Room;
 
 namespace F1XR.RestAPI.UI
 {
@@ -15,6 +16,7 @@ namespace F1XR.RestAPI.UI
         private Button eventCloseButton;
         private Slider eventSlider;
         private bool refreshingEventSlider;
+        private RoomShowcaseSetupController roomSetup;
 
         private void EnsureEventControls()
         {
@@ -163,9 +165,11 @@ namespace F1XR.RestAPI.UI
             if (eventControls == null || player == null)
                 return;
 
+            ResolveRoomSetup();
             EventPopoutReplay eventReplay = player.EventReplay;
             bool loading = eventReplay != null && eventReplay.IsLoading;
             bool active = eventReplay != null && eventReplay.IsActive;
+            bool roomReady = roomSetup == null || roomSetup.IsSetupReady;
 
             eventOpenButton.gameObject.SetActive(!active && !loading);
             eventPlayButton.gameObject.SetActive(active);
@@ -181,10 +185,13 @@ namespace F1XR.RestAPI.UI
 
             if (!active)
             {
-                eventStatus.text = player.HasDataset
-                    ? "OVERTAKE EVENT"
-                    : "EVENT DATA NOT READY";
-                eventOpenButton.interactable = player.HasDataset;
+                eventStatus.text = !roomReady
+                    ? "ROOM SETUP REQUIRED"
+                    : player.HasDataset
+                        ? "OVERTAKE EVENT"
+                        : "EVENT DATA NOT READY";
+                eventOpenButton.interactable =
+                    player.HasDataset && roomReady;
                 return;
             }
 
@@ -202,8 +209,26 @@ namespace F1XR.RestAPI.UI
 
         private void OpenTestEvent()
         {
+            ResolveRoomSetup();
+            if (roomSetup != null && !roomSetup.IsSetupReady)
+            {
+                roomSetup.NotifyOpenBlocked();
+                RefreshEventControls();
+                return;
+            }
+
             player?.EventReplay?.OpenTestOvertake();
             RefreshEventControls();
+        }
+
+        private void ResolveRoomSetup()
+        {
+            if (roomSetup == null)
+            {
+                roomSetup =
+                    Object.FindAnyObjectByType<RoomShowcaseSetupController>(
+                        FindObjectsInactive.Include);
+            }
         }
 
         private void ToggleEventPlay()
