@@ -41,6 +41,8 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, int> eventIndices = new();
         private readonly HashSet<int> eventDrivers = new();
         private readonly List<Vector3> mappedPath = new();
+        private readonly List<float> mappedPathDistances = new();
+        private readonly Dictionary<int, List<float>> eventLongitudinals = new();
 
         private ReplayPlayer player;
         private ReplayCarSet eventCars;
@@ -71,6 +73,36 @@ namespace F1XR.RestAPI.Replay
         public Transform PresentationRoot => stageRoot != null
             ? stageRoot.transform
             : null;
+
+        public bool TryGetSourceLongitudinal(
+            int driverNumber,
+            out float longitudinal)
+        {
+            longitudinal = 0f;
+            return isActive &&
+                TryGetSourceLongitudinalAtTime(
+                    driverNumber,
+                    timeline.CurrentTime,
+                    out longitudinal);
+        }
+
+        public bool TryGetReferenceSourceLongitudinal(
+            float normalizedTime,
+            out float longitudinal)
+        {
+            longitudinal = 0f;
+            if (!isActive || referenceDriverNumber <= 0)
+                return false;
+
+            float time = Mathf.Lerp(
+                timeline.StartTime,
+                timeline.RaceEndTime,
+                Mathf.Clamp01(normalizedTime));
+            return TryGetSourceLongitudinalAtTime(
+                referenceDriverNumber,
+                time,
+                out longitudinal);
+        }
 
         public void Configure(ReplayPlayer replayPlayer)
         {
@@ -360,6 +392,8 @@ namespace F1XR.RestAPI.Replay
                     trackStartTime,
                     trackEndTime))
                 return false;
+            if (!BuildEventLongitudinals())
+                return false;
 
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
             CreateStageRoot();
@@ -440,6 +474,134 @@ namespace F1XR.RestAPI.Replay
             AddMappedPathPoint(samples, endTime, ref last, ref hasLast);
 
             return mappedPath.Count >= 3;
+        }
+
+        private bool BuildEventLongitudinals()
+        {
+            mappedPathDistances.Clear();
+            eventLongitudinals.Clear();
+            if (mappedPath.Count < 2)
+                return false;
+
+            float distance = 0f;
+            mappedPathDistances.Add(distance);
+            for (int i = 1; i < mappedPath.Count; i++)
+            {
+                distance += Vector3.Distance(
+                    mappedPath[i - 1],
+                    mappedPath[i]);
+                mappedPathDistances.Add(distance);
+            }
+
+            if (distance <= 0.0001f)
+                return false;
+
+            foreach (KeyValuePair<int, List<LocationSample>> pair in eventSamples)
+            {
+                List<LocationSample> samples = pair.Value;
+                List<float> longitudinals = new(samples.Count);
+                for (int i = 0; i < samples.Count; i++)
+                {
+                    if (!eventCars.TryGetMappedPosition(
+                            samples[i],
+                            out Vector3 position))
+                    {
+                        eventLongitudinals.Clear();
+                        return false;
+                    }
+
+                    longitudinals.Add(ProjectSourcePathDistance(position));
+                }
+
+                eventLongitudinals.Add(pair.Key, longitudinals);
+            }
+
+            return eventLongitudinals.Count > 0;
+        }
+
+        private float ProjectSourcePathDistance(Vector3 position)
+        {
+            float closestSqrDistance = float.PositiveInfinity;
+            float closestPathDistance = 0f;
+
+            for (int i = 0; i < mappedPath.Count - 1; i++)
+            {
+                Vector3 start = mappedPath[i];
+                Vector3 segment = mappedPath[i + 1] - start;
+                float segmentSqrLength = segment.sqrMagnitude;
+                if (segmentSqrLength <= 0.000001f)
+                    continue;
+
+                float interpolation = Mathf.Clamp01(
+                    Vector3.Dot(position - start, segment) /
+                    segmentSqrLength);
+                Vector3 projected = start + segment * interpolation;
+                float sqrDistance =
+                    Vector3.SqrMagnitude(position - projected);
+                if (sqrDistance >= closestSqrDistance)
+                    continue;
+
+                closestSqrDistance = sqrDistance;
+                closestPathDistance =
+                    mappedPathDistances[i] +
+                    Mathf.Sqrt(segmentSqrLength) * interpolation;
+            }
+
+            return closestPathDistance;
+        }
+
+        private bool TryGetSourceLongitudinalAtTime(
+            int driverNumber,
+            float time,
+            out float longitudinal)
+        {
+            longitudinal = 0f;
+            if (!eventSamples.TryGetValue(
+                    driverNumber,
+                    out List<LocationSample> samples) ||
+                !eventLongitudinals.TryGetValue(
+                    driverNumber,
+                    out List<float> longitudinals) ||
+                samples.Count < 2 ||
+                longitudinals.Count != samples.Count)
+            {
+                return false;
+            }
+
+            if (time <= samples[0].t)
+            {
+                longitudinal = longitudinals[0];
+                return true;
+            }
+
+            int last = samples.Count - 1;
+            if (time >= samples[last].t)
+            {
+                longitudinal = longitudinals[last];
+                return true;
+            }
+
+            int low = 0;
+            int high = last;
+            while (low + 1 < high)
+            {
+                int middle = (low + high) / 2;
+                if (samples[middle].t <= time)
+                    low = middle;
+                else
+                    high = middle;
+            }
+
+            float duration = Mathf.Max(
+                0.001f,
+                samples[high].t - samples[low].t);
+            float interpolation = Mathf.Clamp01(
+                (time - samples[low].t) / duration);
+            longitudinal = Mathf.Lerp(
+                longitudinals[low],
+                longitudinals[high],
+                interpolation);
+            return true;
         }
 
         private void AddMappedPathPoint(
@@ -773,6 +935,8 @@ namespace F1XR.RestAPI.Replay
             eventDrivers.Clear();
             referenceDriverNumber = 0;
             mappedPath.Clear();
+            mappedPathDistances.Clear();
+            eventLongitudinals.Clear();
         }
 
         private void RestoreReplay()
