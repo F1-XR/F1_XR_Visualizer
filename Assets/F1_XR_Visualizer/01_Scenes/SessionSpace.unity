@@ -3959,7 +3959,7 @@ MonoBehaviour:
   api: {fileID: 1705380155}
   player: {fileID: 1705380154}
   autoStart: 1
-  preferredYear: 2024
+  preferredYear: 2025
   preferredCircuitShortName: Suzuka
   preferredSessionName: Race
   replayMinutes: 20
@@ -5889,7 +5889,9 @@ MonoBehaviour:
   mappedPathEnd: 1
   modelHeadingCorrection: 0
   wallContinuationTarget: 10
+  entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
+  roadFloorOffset: 0.02
   mappingEnabled: 1
 --- !u!114 &2086967222
 MonoBehaviour:
@@ -6052,13 +6054,13 @@ SceneRoots:
   m_Roots:
   - {fileID: 818663381}
   - {fileID: 746344902}
-  - {fileID: 1954351460}
-  - {fileID: 1705380157}
-  - {fileID: 968411816}
-  - {fileID: 2086967207}
-  - {fileID: 1304137258}
-  - {fileID: 1127476783}
   - {fileID: 2072499156}
+  - {fileID: 1954351460}
+  - {fileID: 968411816}
+  - {fileID: 1705380157}
+  - {fileID: 2086967207}
+  - {fileID: 1127476783}
+  - {fileID: 1304137258}
   - {fileID: 778030370}
   - {fileID: 1751285736}
   - {fileID: 803093117}
