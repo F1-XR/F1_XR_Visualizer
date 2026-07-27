@@ -104,6 +104,8 @@ namespace F1XR.RestAPI.Replay
             List<PositionSampleDto> positions = null,
             HashSet<int> driverFilter = null)
         {
+            carMotion.PrepareMappedPositions(samples);
+
             Dictionary<int, int> ranks = positions != null
                 ? GetRanksByDriver(positions)
                 : null;
@@ -321,9 +323,9 @@ namespace F1XR.RestAPI.Replay
 
         public void SetCalibration(
             TrackCalibration source,
-            bool resetRuntimeHeightOrigin = true)
+            bool resetRuntimeState = true)
         {
-            carMotion.SetCalibration(source, resetRuntimeHeightOrigin);
+            carMotion.SetCalibration(source, resetRuntimeState);
         }
 
         public void SetCustomSpace(
