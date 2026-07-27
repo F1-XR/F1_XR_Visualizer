@@ -57,6 +57,11 @@ namespace F1XR.Interaction.Input
         [Header("Hold to show")]
         [Tooltip("The gear shift is shown only while this controller button is held down; releasing it restores the controller.")]
         [SerializeField] MorphHoldButton holdButton = MorphHoldButton.Trigger;
+        [Tooltip("Require a second button held at the same time (e.g. Grip + Trigger). The gear shift " +
+            "only appears while BOTH are held.")]
+        [SerializeField] bool requireSecondButton = false;
+        [Tooltip("The second button that must also be held when Require Second Button is on.")]
+        [SerializeField] MorphHoldButton secondButton = MorphHoldButton.Trigger;
         [Tooltip("Which hand's button to read. Right by default (this is the right controller).")]
         [SerializeField] bool useRightHand = true;
 
@@ -93,7 +98,10 @@ namespace F1XR.Interaction.Input
         void OnDestroy()
         {
             if (instanceShift != null)
-                instanceShift.GearChanged -= OnGearChanged;
+            {
+                instanceShift.HoverDirectionChanged -= OnHoverDirectionChanged;
+                instanceShift.GearChanged -= OnGearDetent;
+            }
         }
 
         void Update()
@@ -106,8 +114,15 @@ namespace F1XR.Interaction.Input
                 SetShown(false);
         }
 
-        // One crisp click each time the lever snaps into a new gear.
-        void OnGearChanged(int gear)
+        // One crisp click each time the lever leans into a new direction (detent feedback).
+        void OnHoverDirectionChanged(GearDirection direction)
+        {
+            if (leanHaptics)
+                SendHaptic(detentAmplitude, detentDuration);
+        }
+
+        // One crisp click each time the lever snaps into a new front/back gear (detent feedback).
+        void OnGearDetent(int gear)
         {
             if (leanHaptics)
                 SendHaptic(detentAmplitude, detentDuration);
@@ -131,12 +146,21 @@ namespace F1XR.Interaction.Input
 
         bool ReadHoldButton()
         {
+            if (!ReadButton(holdButton))
+                return false;
+            if (requireSecondButton && !ReadButton(secondButton))
+                return false;
+            return true;
+        }
+
+        bool ReadButton(MorphHoldButton button)
+        {
             var handedness = useRightHand ? InputDeviceCharacteristics.Right : InputDeviceCharacteristics.Left;
             devices.Clear();
             InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller | handedness, devices);
 
             InputFeatureUsage<bool> usage;
-            switch (holdButton)
+            switch (button)
             {
                 case MorphHoldButton.Grip: usage = CommonUsages.gripButton; break;
                 case MorphHoldButton.PrimaryButton: usage = CommonUsages.primaryButton; break;
@@ -191,7 +215,10 @@ namespace F1XR.Interaction.Input
             instanceShift = instance.GetComponentInChildren<GearShiftController>(true);
 
             if (instanceShift != null)
-                instanceShift.GearChanged += OnGearChanged;
+            {
+                instanceShift.HoverDirectionChanged += OnHoverDirectionChanged;
+                instanceShift.GearChanged += OnGearDetent;
+            }
 
             if (disableInteractionOnAttach)
                 StripInteraction(instance);
