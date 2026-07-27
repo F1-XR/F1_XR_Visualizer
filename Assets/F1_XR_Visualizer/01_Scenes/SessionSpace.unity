@@ -5888,6 +5888,8 @@ MonoBehaviour:
   mappedPathStart: 0
   mappedPathEnd: 1
   modelHeadingCorrection: 0
+  wallContinuationTarget: 10
+  heroForwardOffset: 0.25
   mappingEnabled: 1
 --- !u!114 &2086967222
 MonoBehaviour:
@@ -6000,7 +6002,7 @@ MonoBehaviour:
   m_FallbackScreenDPI: 96
   m_DefaultSpriteDPI: 96
   m_DynamicPixelsPerUnit: 10
-  m_PresetInfoIsWorld: 0
+  m_PresetInfoIsWorld: 1
 --- !u!223 &2100327794
 Canvas:
   m_ObjectHideFlags: 0
