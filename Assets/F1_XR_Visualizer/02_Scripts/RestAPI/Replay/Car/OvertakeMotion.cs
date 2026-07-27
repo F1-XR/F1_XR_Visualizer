@@ -15,7 +15,8 @@ namespace F1XR.RestAPI.Replay
             null,
             null,
             null,
-            0f);
+            0f,
+            Vector3.right);
 
         public readonly float lateralOffset;
         public readonly float localYaw;
@@ -25,6 +26,7 @@ namespace F1XR.RestAPI.Replay
         public readonly string sideSource;
         public readonly string role;
         public readonly float confidence;
+        public readonly Vector3 localLateralDirection;
 
         public VisualMotionPose(
             float lateralOffset,
@@ -34,7 +36,8 @@ namespace F1XR.RestAPI.Replay
             string passingSide,
             string sideSource,
             string role,
-            float confidence)
+            float confidence,
+            Vector3 localLateralDirection)
         {
             this.lateralOffset = lateralOffset;
             this.localYaw = localYaw;
@@ -44,17 +47,21 @@ namespace F1XR.RestAPI.Replay
             this.sideSource = sideSource;
             this.role = role;
             this.confidence = confidence;
+            this.localLateralDirection = localLateralDirection;
         }
     }
 
     public sealed class OvertakeMotion
     {
         private readonly Dictionary<int, List<ReplayEventDto>> eventsByDriver = new();
+        private readonly Dictionary<ReplayEventDto, int> resolvedPassingSides = new();
+        private readonly OvertakeFallbackCorridor fallbackCorridor = new();
         private OvertakeMotionSettings settings = new();
 
         public void SetEvents(ReplayEventDto[] source)
         {
             eventsByDriver.Clear();
+            resolvedPassingSides.Clear();
 
             if (source == null || source.Length == 0)
                 return;
@@ -84,6 +91,15 @@ namespace F1XR.RestAPI.Replay
             settings = source ?? new OvertakeMotionSettings();
         }
 
+        public void SetFallbackCorridor(
+            IReadOnlyList<Vector3> centerline,
+            float roadWidth,
+            bool loop)
+        {
+            fallbackCorridor.Set(centerline, roadWidth, loop);
+            resolvedPassingSides.Clear();
+        }
+
         public VisualMotionPose Resolve(
             int driverNumber,
             float time,
@@ -107,31 +123,40 @@ namespace F1XR.RestAPI.Replay
             string strongestSource = null;
             string strongestRole = null;
             float strongestConfidence = 0f;
+            Vector3 strongestDirection = Vector3.right;
 
             foreach (ReplayEventDto replayEvent in driverEvents)
             {
-                if (!TryGetRole(replayEvent, driverNumber, time, out bool overtaker))
+                if (!TryGetEventRole(
+                        replayEvent,
+                        driverNumber,
+                        out bool overtaker))
                     continue;
 
-                int side = PassingSide(replayEvent);
+                int side = ResolvePassingSide(
+                    replayEvent,
+                    poses,
+                    visualWidths);
                 EvaluateEnvelope(
                     replayEvent,
                     time,
                     out float weight,
                     out float velocity,
-                    out bool returning);
-                if (!returning)
+                    out _);
+                if (IsCollisionGuardEvent(
+                        driverEvents,
+                        replayEvent,
+                        driverNumber,
+                        time))
                 {
                     float guardWeight = CollisionGuardWeight(
                         replayEvent,
                         poses,
                         visualWidths,
                         visualLengths);
-                    float guardActivation = SmoothStep(
-                        Mathf.Clamp01(weight * 2f));
                     weight = Mathf.Max(
                         weight,
-                        guardWeight * guardActivation);
+                        guardWeight);
                 }
                 if (weight <= 0f && Mathf.Abs(velocity) <= Mathf.Epsilon)
                     continue;
@@ -140,7 +165,8 @@ namespace F1XR.RestAPI.Replay
                     replayEvent,
                     side,
                     poses,
-                    visualWidths);
+                    visualWidths,
+                    out Vector3 lateralDirection);
                 float share = DriverShare(replayEvent, overtaker);
                 float roleSign = overtaker ? side : -side;
                 float offset = roleSign * correction * share * weight;
@@ -163,11 +189,21 @@ namespace F1XR.RestAPI.Replay
                     strongestSource = SideSource(replayEvent);
                     strongestRole = overtaker ? "Overtaker" : "Defender";
                     strongestConfidence = confidence;
+                    strongestDirection = lateralDirection;
                 }
             }
 
+            float vehicleWidth =
+                GetVehicleWidth(
+                    driverNumber,
+                    visualWidths);
             if (strongestEvent == null)
-                return VisualMotionPose.None;
+            {
+                return ResolveFallbackCorridorPose(
+                    driverNumber,
+                    poses,
+                    vehicleWidth);
+            }
 
             float lateralOffset = settings.overlapBlendMode == OvertakeBlendMode.Strongest
                 ? strongestOffset
@@ -175,7 +211,6 @@ namespace F1XR.RestAPI.Replay
             float lateralVelocity = settings.overlapBlendMode == OvertakeBlendMode.Strongest
                 ? strongestVelocity
                 : sumVelocity;
-            float vehicleWidth = GetVehicleWidth(driverNumber, visualWidths);
             float maximumOffset = vehicleWidth * Mathf.Max(
                 0f,
                 settings.maximumOffsetInVehicleWidths);
@@ -190,6 +225,22 @@ namespace F1XR.RestAPI.Replay
                 float scale = maximumOffset / Mathf.Abs(lateralOffset);
                 lateralOffset *= scale;
                 lateralVelocity *= scale;
+            }
+
+            if (poses != null &&
+                poses.TryGetValue(driverNumber, out ReplayCarPose corridorPose))
+            {
+                float safetyMargin =
+                    vehicleWidth *
+                    Mathf.Max(
+                        0f,
+                        settings.targetSeparationInVehicleWidths - 1f);
+                lateralOffset = fallbackCorridor.ClampOffset(
+                    corridorPose.rawPosition,
+                    strongestDirection,
+                    vehicleWidth,
+                    safetyMargin,
+                    lateralOffset);
             }
 
             float forwardSpeed = 0f;
@@ -213,7 +264,8 @@ namespace F1XR.RestAPI.Replay
                 strongestSide,
                 strongestSource,
                 strongestRole,
-                strongestConfidence);
+                strongestConfidence,
+                strongestDirection);
         }
 
         private void AddDriverEvent(
@@ -231,12 +283,132 @@ namespace F1XR.RestAPI.Replay
             driverEvents.Add(replayEvent);
         }
 
+        private static bool IsCollisionGuardEvent(
+            IReadOnlyList<ReplayEventDto> driverEvents,
+            ReplayEventDto candidate,
+            int driverNumber,
+            float time)
+        {
+            int counterpart = CounterpartDriver(
+                candidate,
+                driverNumber);
+            if (counterpart <= 0)
+                return false;
+
+            float candidateDistance =
+                DistanceToEvent(candidate, time);
+            for (int i = 0; i < driverEvents.Count; i++)
+            {
+                ReplayEventDto other = driverEvents[i];
+                if (ReferenceEquals(other, candidate) ||
+                    CounterpartDriver(other, driverNumber) !=
+                    counterpart)
+                {
+                    continue;
+                }
+
+                float otherDistance =
+                    DistanceToEvent(other, time);
+                if (otherDistance <
+                        candidateDistance -
+                        Mathf.Epsilon ||
+                    Mathf.Approximately(
+                        otherDistance,
+                        candidateDistance) &&
+                    CompareEventIds(other, candidate) < 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static int CounterpartDriver(
+            ReplayEventDto replayEvent,
+            int driverNumber)
+        {
+            if (!TryGetEventRole(
+                    replayEvent,
+                    driverNumber,
+                    out bool overtaker))
+            {
+                return 0;
+            }
+
+            return overtaker
+                ? replayEvent.driverNumbers[1]
+                : replayEvent.driverNumbers[0];
+        }
+
+        private static float DistanceToEvent(
+            ReplayEventDto replayEvent,
+            float time)
+        {
+            if (time < replayEvent.startTime)
+                return replayEvent.startTime - time;
+            if (time > replayEvent.endTime)
+                return time - replayEvent.endTime;
+
+            return 0f;
+        }
+
+        private VisualMotionPose ResolveFallbackCorridorPose(
+            int driverNumber,
+            IReadOnlyDictionary<int, ReplayCarPose> poses,
+            float vehicleWidth)
+        {
+            if (vehicleWidth <= 0f ||
+                poses == null ||
+                !poses.TryGetValue(
+                    driverNumber,
+                    out ReplayCarPose pose))
+            {
+                return VisualMotionPose.None;
+            }
+
+            Vector3 lateralDirection = Vector3.Cross(
+                Vector3.up,
+                pose.localForward);
+            if (lateralDirection.sqrMagnitude <= 0.000001f)
+                return VisualMotionPose.None;
+
+            lateralDirection.Normalize();
+            float safetyMargin =
+                vehicleWidth *
+                Mathf.Max(
+                    0f,
+                    settings.targetSeparationInVehicleWidths - 1f);
+            float lateralOffset =
+                fallbackCorridor.ClampOffset(
+                    pose.rawPosition,
+                    lateralDirection,
+                    vehicleWidth,
+                    safetyMargin,
+                    0f);
+            if (Mathf.Abs(lateralOffset) <= Mathf.Epsilon)
+                return VisualMotionPose.None;
+
+            return new VisualMotionPose(
+                lateralOffset,
+                0f,
+                true,
+                "FallbackCorridor",
+                null,
+                "FallbackCorridor",
+                "CorridorCorrection",
+                1f,
+                lateralDirection);
+        }
+
         private float RequiredCorrection(
             ReplayEventDto replayEvent,
             int side,
             IReadOnlyDictionary<int, ReplayCarPose> poses,
-            IReadOnlyDictionary<int, float> visualWidths)
+            IReadOnlyDictionary<int, float> visualWidths,
+            out Vector3 lateralDirection)
         {
+            lateralDirection = Vector3.right;
             if (replayEvent.driverNumbers == null ||
                 replayEvent.driverNumbers.Length < 2 ||
                 poses == null ||
@@ -265,6 +437,7 @@ namespace F1XR.RestAPI.Replay
 
             forward.Normalize();
             Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+            lateralDirection = right;
             float existingSeparation = Vector3.Dot(
                 overtaker.rawPosition - defender.rawPosition,
                 right * side);
@@ -274,6 +447,130 @@ namespace F1XR.RestAPI.Replay
                 correction,
                 -maximumCorrection,
                 maximumCorrection);
+        }
+
+        private int ResolvePassingSide(
+            ReplayEventDto replayEvent,
+            IReadOnlyDictionary<int, ReplayCarPose> poses,
+            IReadOnlyDictionary<int, float> visualWidths)
+        {
+            if (resolvedPassingSides.TryGetValue(
+                    replayEvent,
+                    out int resolved))
+            {
+                return resolved;
+            }
+
+            int preferred = PassingSide(replayEvent);
+            if (!fallbackCorridor.IsAvailable ||
+                replayEvent.driverNumbers == null ||
+                replayEvent.driverNumbers.Length < 2 ||
+                poses == null ||
+                visualWidths == null ||
+                !poses.TryGetValue(
+                    replayEvent.driverNumbers[0],
+                    out ReplayCarPose overtaker) ||
+                !poses.TryGetValue(
+                    replayEvent.driverNumbers[1],
+                    out ReplayCarPose defender) ||
+                !visualWidths.TryGetValue(
+                    replayEvent.driverNumbers[0],
+                    out float overtakerWidth) ||
+                !visualWidths.TryGetValue(
+                    replayEvent.driverNumbers[1],
+                    out float defenderWidth))
+            {
+                resolvedPassingSides[replayEvent] =
+                    preferred;
+                return preferred;
+            }
+
+            Vector3 forward =
+                overtaker.localForward +
+                defender.localForward;
+            if (forward.sqrMagnitude <= 0.000001f)
+                forward = overtaker.localForward;
+            if (forward.sqrMagnitude <= 0.000001f)
+            {
+                resolvedPassingSides[replayEvent] =
+                    preferred;
+                return preferred;
+            }
+
+            forward.Normalize();
+            Vector3 right =
+                Vector3.Cross(Vector3.up, forward).normalized;
+            float vehicleWidth = Mathf.Max(
+                0.001f,
+                (overtakerWidth + defenderWidth) * 0.5f);
+            float targetSeparation =
+                vehicleWidth *
+                Mathf.Max(
+                    0f,
+                    settings.targetSeparationInVehicleWidths);
+            float safetyMargin =
+                vehicleWidth *
+                Mathf.Max(
+                    0f,
+                    settings.targetSeparationInVehicleWidths - 1f);
+            float overtakerShare =
+                DriverShare(replayEvent, true);
+            float defenderShare =
+                DriverShare(replayEvent, false);
+
+            float preferredResult = AchievableSeparation(
+                preferred);
+            float alternateResult = AchievableSeparation(
+                -preferred);
+            if (alternateResult > preferredResult + Mathf.Epsilon &&
+                preferredResult + Mathf.Epsilon < targetSeparation)
+            {
+                resolved = -preferred;
+            }
+            else
+            {
+                resolved = preferred;
+            }
+
+            resolvedPassingSides[replayEvent] =
+                resolved;
+            return resolved;
+
+            float AchievableSeparation(int side)
+            {
+                float existing = Vector3.Dot(
+                    overtaker.rawPosition -
+                    defender.rawPosition,
+                    right * side);
+                float correction = Mathf.Max(
+                    0f,
+                    targetSeparation - existing);
+                float overtakerDesired =
+                    correction * overtakerShare;
+                float defenderDesired =
+                    correction * defenderShare;
+                float overtakerCapacity =
+                    fallbackCorridor.AvailableOffset(
+                        overtaker.rawPosition,
+                        right,
+                        overtakerWidth,
+                        safetyMargin,
+                        side);
+                float defenderCapacity =
+                    fallbackCorridor.AvailableOffset(
+                        defender.rawPosition,
+                        right,
+                        defenderWidth,
+                        safetyMargin,
+                        -side);
+                return existing +
+                    Mathf.Min(
+                        overtakerDesired,
+                        overtakerCapacity) +
+                    Mathf.Min(
+                        defenderDesired,
+                        defenderCapacity);
+            }
         }
 
         private float CollisionGuardWeight(
@@ -334,14 +631,17 @@ namespace F1XR.RestAPI.Replay
 
         private float DriverShare(ReplayEventDto replayEvent, bool overtaker)
         {
-            float eventTotal = replayEvent.overtakerShare + replayEvent.defenderShare;
-            bool hasEventSplit = eventTotal > 0.0001f;
-            float overtakerShare = hasEventSplit
-                ? Mathf.Max(0f, replayEvent.overtakerShare)
-                : settings.overtakerShare;
-            float defenderShare = hasEventSplit
-                ? Mathf.Max(0f, replayEvent.defenderShare)
-                : settings.defenderShare;
+            float settingsTotal =
+                settings.overtakerShare +
+                settings.defenderShare;
+            bool hasSettingsSplit =
+                settingsTotal > 0.0001f;
+            float overtakerShare = hasSettingsSplit
+                ? Mathf.Max(0f, settings.overtakerShare)
+                : Mathf.Max(0f, replayEvent.overtakerShare);
+            float defenderShare = hasSettingsSplit
+                ? Mathf.Max(0f, settings.defenderShare)
+                : Mathf.Max(0f, replayEvent.defenderShare);
             float share = overtaker ? overtakerShare : defenderShare;
             float total = Mathf.Max(0.0001f, overtakerShare + defenderShare);
             return Mathf.Clamp01(share / total);
@@ -398,21 +698,23 @@ namespace F1XR.RestAPI.Replay
             velocity = -SmoothStepDerivative(returnT) / ((1f - returnStart) * duration);
         }
 
-        private static bool TryGetRole(
+        private static bool TryGetEventRole(
             ReplayEventDto replayEvent,
             int driverNumber,
-            float time,
             out bool overtaker)
         {
             overtaker = false;
             if (replayEvent == null ||
-                !string.Equals(replayEvent.eventType, "Overtake", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(
+                    replayEvent.eventType,
+                    "Overtake",
+                    StringComparison.OrdinalIgnoreCase) ||
                 replayEvent.driverNumbers == null ||
                 replayEvent.driverNumbers.Length < 2 ||
-                replayEvent.endTime <= replayEvent.startTime ||
-                time < replayEvent.startTime ||
-                time > replayEvent.endTime)
+                replayEvent.endTime <= replayEvent.startTime)
+            {
                 return false;
+            }
 
             if (driverNumber == replayEvent.driverNumbers[0])
             {

@@ -40,7 +40,7 @@ namespace F1XR.RestAPI.Replay
         [Min(0f)] public float overtakeMotionLeadSeconds = 3f;
         [Min(0f)] public float raceStartMotionGraceSeconds = 1f;
         [Min(0f)] public float minimumMovingLeadSeconds = 4f;
-        [Min(1f)] public float eventMinimumSeparationInVehicleWidths = 1.25f;
+        [Min(1f)] public float eventMinimumSeparationInVehicleWidths = 1.05f;
 
         private readonly ReplayTimeline timeline = new();
         private readonly Dictionary<int, List<LocationSample>> eventSamples = new();
@@ -48,6 +48,7 @@ namespace F1XR.RestAPI.Replay
         private readonly HashSet<int> eventDrivers = new();
         private readonly List<Vector3> mappedPath = new();
         private readonly List<float> mappedPathDistances = new();
+        private readonly List<Vector3> fallbackCorridorPath = new();
         private readonly Dictionary<int, List<float>> eventLongitudinals = new();
 
         private ReplayPlayer player;
@@ -585,6 +586,14 @@ namespace F1XR.RestAPI.Replay
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
             eventSpaceCenter = center;
             sourceToEventRotation = sourceToLocalRotation;
+            bool fallbackCorridorLoops =
+                BuildFallbackCorridorPath(
+                    center,
+                    sourceToLocalRotation);
+            eventCars.SetFallbackOvertakeCorridor(
+                fallbackCorridorPath,
+                roadWidth,
+                fallbackCorridorLoops);
             CreateStageRoot();
 
             TryGetMappedPosition(
@@ -1146,6 +1155,53 @@ namespace F1XR.RestAPI.Replay
             return false;
         }
 
+        private bool BuildFallbackCorridorPath(
+            Vector3 center,
+            Quaternion sourceToLocalRotation)
+        {
+            fallbackCorridorPath.Clear();
+            TrackCalibration calibration =
+                player != null
+                    ? player.trackCalibration
+                    : null;
+            if (calibration != null &&
+                calibration.active &&
+                calibration.mappingMode ==
+                TrackCalibration.MappingMode.Route &&
+                calibration.points != null &&
+                calibration.points.Length >= 2)
+            {
+                float scale = calibration.OutputScale;
+                for (int i = 0;
+                     i < calibration.points.Length;
+                     i++)
+                {
+                    Vector3 target =
+                        calibration.points[i]
+                            .targetLocalPosition;
+                    target = new Vector3(
+                        target.x * scale,
+                        target.y * scale +
+                        calibration.heightOffset,
+                        target.z * scale);
+                    fallbackCorridorPath.Add(
+                        sourceToLocalRotation *
+                        (target - center));
+                }
+
+                return calibration.loopMappingSegments;
+            }
+
+            for (int i = 0; i < mappedPath.Count; i++)
+            {
+                fallbackCorridorPath.Add(
+                    sourceToLocalRotation *
+                    (mappedPath[i] - center));
+            }
+
+            return false;
+        }
+
         private float ResolveTrackRegionPadding()
         {
             float pathLength = 0f;
@@ -1300,6 +1356,7 @@ namespace F1XR.RestAPI.Replay
             referenceDriverNumber = 0;
             mappedPath.Clear();
             mappedPathDistances.Clear();
+            fallbackCorridorPath.Clear();
             eventLongitudinals.Clear();
             eventSpaceCenter = Vector3.zero;
             sourceToEventRotation = Quaternion.identity;
