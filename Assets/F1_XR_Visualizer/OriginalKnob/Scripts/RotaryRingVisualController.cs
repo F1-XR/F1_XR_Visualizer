@@ -44,14 +44,16 @@ namespace F1XR.OriginalKnob
         [SerializeField] XRSimpleInteractable interactable;
 
         [Header("Arcs (concentric, drawn by turns)")]
+        // Same diameter and thickness for every ring - they are separated by DEPTH (Z), not radius, to
+        // form the 3D stacked-coil look. The per-ring depth offset lives on the ring quads (see builder).
         [SerializeField] ArcSettings baseRing = new ArcSettings
-        { radius = 0.79f, lineWidth = 0.012f, intensity = 0.10f, alpha = 1f, color = new Color(0.5f, 0.5f, 0.58f) };
+        { radius = 0.72f, lineWidth = 0.012f, intensity = 0.10f, alpha = 1f, color = new Color(0.5f, 0.5f, 0.58f) };
         [SerializeField] ArcSettings mainGlowArc = new ArcSettings
-        { radius = 0.79f, lineWidth = 0.02f, intensity = 2.4f, alpha = 1f, color = Color.white };
+        { radius = 0.72f, lineWidth = 0.018f, intensity = 2.2f, alpha = 1f, color = Color.white };
         [SerializeField] ArcSettings trailArc01 = new ArcSettings
-        { radius = 0.86f, lineWidth = 0.013f, intensity = 1.9f, alpha = 1f, color = Color.white };
+        { radius = 0.72f, lineWidth = 0.018f, intensity = 2.2f, alpha = 1f, color = Color.white };
         [SerializeField] ArcSettings trailArc02 = new ArcSettings
-        { radius = 0.72f, lineWidth = 0.011f, intensity = 1.6f, alpha = 1f, color = Color.white };
+        { radius = 0.72f, lineWidth = 0.018f, intensity = 2.2f, alpha = 1f, color = Color.white };
 
         [Header("Drawing")]
         [Tooltip("Angle (deg) where each arc starts drawing from. 90 = top.")]
