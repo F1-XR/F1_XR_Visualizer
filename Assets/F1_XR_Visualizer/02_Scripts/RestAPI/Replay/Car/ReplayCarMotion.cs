@@ -39,12 +39,16 @@ namespace F1XR.RestAPI.Replay
     public class ReplayCarMotion
     {
         private static readonly bool SnapCarsToTrackSurface = false;
+        private const float RouteContinuityMaximumGap = 2f;
 
         private readonly CarGroundSnap groundSnap = new();
         private readonly Dictionary<LocationSample, Vector3> mappedPositions = new();
+        private readonly Dictionary<int, int> preparedSampleCounts = new();
+        private readonly Dictionary<int, LocationSample> preparedLastSamples = new();
 
         private bool hasOrigin;
         private Vector3 origin;
+        private Vector2 preparedRuntimeSourceTranslation;
         private ARPlanePlacementController placement;
         private TrackCalibration calibration;
         private TrackRevealPlacer buildPlacer;
@@ -74,13 +78,17 @@ namespace F1XR.RestAPI.Replay
 
         public void SetCalibration(
             TrackCalibration source,
-            bool resetRuntimeHeightOrigin = true)
+            bool resetRuntimeState = true)
         {
             calibration = source;
             mappedPositions.Clear();
+            ClearPreparedSamples();
 
-            if (calibration != null && resetRuntimeHeightOrigin)
+            if (calibration != null && resetRuntimeState)
+            {
                 calibration.ResetRuntimeHeightOrigin();
+                calibration.ResetRuntimeSourceTranslation();
+            }
 
             hasOrigin = false;
             origin = Vector3.zero;
@@ -96,6 +104,69 @@ namespace F1XR.RestAPI.Replay
             customOrigin = sourceOrigin;
             customRotation = sourceToLocalRotation;
             groundSnap.ClearSurfaceCache();
+        }
+
+        internal void PrepareMappedPositions(
+            Dictionary<int, List<LocationSample>> samplesByDriver)
+        {
+            if (calibration == null ||
+                !calibration.active ||
+                calibration.mappingMode != TrackCalibration.MappingMode.Route ||
+                samplesByDriver == null ||
+                IsPrepared(samplesByDriver))
+            {
+                return;
+            }
+
+            mappedPositions.Clear();
+            preparedSampleCounts.Clear();
+            preparedLastSamples.Clear();
+            hasOrigin = false;
+            origin = Vector3.zero;
+
+            foreach (KeyValuePair<int, List<LocationSample>> pair in samplesByDriver)
+            {
+                List<LocationSample> samples = pair.Value;
+                int previousSegmentIndex = -1;
+                LocationSample previousSample = null;
+
+                for (int i = 0; i < samples.Count; i++)
+                {
+                    LocationSample sample = samples[i];
+                    if (sample == null)
+                        continue;
+
+                    if (previousSample == null ||
+                        sample.t <= previousSample.t ||
+                        sample.t - previousSample.t > RouteContinuityMaximumGap)
+                    {
+                        previousSegmentIndex = -1;
+                    }
+
+                    if (calibration.TryMapContinuous(
+                        sample,
+                        previousSegmentIndex,
+                        out Vector3 position,
+                        out int mappedSegmentIndex))
+                    {
+                        mappedPositions[sample] = position;
+                        previousSegmentIndex = mappedSegmentIndex;
+                    }
+                    else
+                    {
+                        previousSegmentIndex = -1;
+                    }
+
+                    previousSample = sample;
+                }
+
+                preparedSampleCounts[pair.Key] = samples.Count;
+                preparedLastSamples[pair.Key] =
+                    samples.Count > 0 ? samples[samples.Count - 1] : null;
+            }
+
+            preparedRuntimeSourceTranslation =
+                calibration.RuntimeSourceTranslation;
         }
 
         public bool TryGetMappedPosition(
@@ -318,8 +389,48 @@ namespace F1XR.RestAPI.Replay
         {
             groundSnap.Clear();
             mappedPositions.Clear();
+            ClearPreparedSamples();
             hasOrigin = false;
             origin = Vector3.zero;
+        }
+
+        private bool IsPrepared(
+            Dictionary<int, List<LocationSample>> samplesByDriver)
+        {
+            if (preparedSampleCounts.Count != samplesByDriver.Count ||
+                preparedRuntimeSourceTranslation !=
+                    calibration.RuntimeSourceTranslation)
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<int, List<LocationSample>> pair in samplesByDriver)
+            {
+                List<LocationSample> samples = pair.Value;
+                LocationSample lastSample =
+                    samples.Count > 0 ? samples[samples.Count - 1] : null;
+
+                if (!preparedSampleCounts.TryGetValue(
+                        pair.Key,
+                        out int preparedCount) ||
+                    preparedCount != samples.Count ||
+                    !preparedLastSamples.TryGetValue(
+                        pair.Key,
+                        out LocationSample preparedLastSample) ||
+                    !ReferenceEquals(preparedLastSample, lastSample))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void ClearPreparedSamples()
+        {
+            preparedSampleCounts.Clear();
+            preparedLastSamples.Clear();
+            preparedRuntimeSourceTranslation = Vector2.zero;
         }
 
         private Transform ResolvePlacementTransform()
