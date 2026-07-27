@@ -2307,15 +2307,14 @@ MonoBehaviour:
   gearShiftPrefab: {fileID: 1363074936441265726, guid: 7254bcea3345fcd499916378a5c8c15c, type: 3}
   attachLocalPosition: {x: 0, y: 0, z: 0}
   attachLocalEuler: {x: 0, y: 0, z: 0}
+  faceUserOnPlant: 1
   attachLocalScale: {x: 10, y: 10, z: 10}
   baseHeightOffset: -0.5
-  holdButton: 0
+  holdButton: 1
+  requireSecondButton: 1
+  secondButton: 0
   useRightHand: 1
   leanHaptics: 1
-  directionDeadzoneAngle: 10
-  directionChangeAngle: 45
-  minClickInterval: 0.12
-  clickOnReturnToCenter: 1
   detentAmplitude: 0.7
   detentDuration: 0.02
   disableInteractionOnAttach: 1
