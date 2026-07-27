@@ -12,6 +12,8 @@ namespace F1XR.RestAPI.Replay
     public sealed class EventPopoutReplay : MonoBehaviour
     {
         private const int MaxEventDrivers = 4;
+        private const float RelativeTrackRegionPadding = 0.12f;
+        private const float MinimumTrackRegionPadding = 0.00005f;
 
         [Header("Development")]
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -33,8 +35,12 @@ namespace F1XR.RestAPI.Replay
         [Min(3)] public int maxTrackPoints = 192;
         [Min(1f)] public float maxEventDuration = 30f;
         [Min(0.01f)] public float eventPlaybackSpeed = 1f;
-        [Min(0f)] public float eventLeadSeconds = 6f;
+        [Min(0f)] public float eventLeadSeconds = 8f;
         [Min(0f)] public float eventTailSeconds = 5f;
+        [Min(0f)] public float overtakeMotionLeadSeconds = 3f;
+        [Min(0f)] public float raceStartMotionGraceSeconds = 1f;
+        [Min(0f)] public float minimumMovingLeadSeconds = 4f;
+        [Min(1f)] public float eventMinimumSeparationInVehicleWidths = 1.25f;
 
         private readonly ReplayTimeline timeline = new();
         private readonly Dictionary<int, List<LocationSample>> eventSamples = new();
@@ -49,6 +55,7 @@ namespace F1XR.RestAPI.Replay
         private ReplayAudio eventAudio;
         private ReplayEventDto currentEvent;
         private GameObject stageRoot;
+        private BoxCollider stageInteractionCollider;
         private EventTrackSegment trackSegment;
         private Mesh roadMesh;
         private Material roadMaterial;
@@ -56,6 +63,9 @@ namespace F1XR.RestAPI.Replay
         private Coroutine openRoutine;
         private ReplaySnapshot snapshot;
         private int referenceDriverNumber;
+        private int sourceGeometryRevision;
+        private Vector3 eventSpaceCenter;
+        private Quaternion sourceToEventRotation = Quaternion.identity;
         private bool hasSnapshot;
         private bool isLoading;
         private bool isActive;
@@ -73,6 +83,165 @@ namespace F1XR.RestAPI.Replay
         public Transform PresentationRoot => stageRoot != null
             ? stageRoot.transform
             : null;
+        public int SourceGeometryRevision => sourceGeometryRevision;
+        public int SourceGeometryPointCount => mappedPath.Count;
+        public float OrderingTransitionTime => isActive
+            ? ResolveOrderingTransitionTime()
+            : 0f;
+
+        public bool TryCopyEventLocalCenterPath(
+            List<Vector3> destination,
+            out Vector3 overtakePosition,
+            out float transitionReplayProgress)
+        {
+            overtakePosition = Vector3.zero;
+            if (!TryCopySourceCenterPath(
+                    destination,
+                    out _,
+                    out transitionReplayProgress))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < destination.Count; i++)
+            {
+                destination[i] =
+                    sourceToEventRotation *
+                    (destination[i] - eventSpaceCenter);
+            }
+
+            float transitionTime = ResolveOrderingTransitionTime();
+            if (referenceDriverNumber > 0 &&
+                TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    transitionTime,
+                    out float transitionDistance))
+            {
+                overtakePosition =
+                    sourceToEventRotation *
+                    (EvaluateSourcePathDistance(transitionDistance) -
+                     eventSpaceCenter);
+            }
+            else
+            {
+                overtakePosition =
+                    destination[destination.Count / 2];
+            }
+
+            return true;
+        }
+
+        public bool TryCopySourceCenterPath(
+            List<Vector3> destination,
+            out float transitionPathProgress,
+            out float transitionReplayProgress)
+        {
+            transitionPathProgress = 0.5f;
+            transitionReplayProgress = 0.5f;
+            destination?.Clear();
+            if (!isActive ||
+                destination == null ||
+                mappedPath.Count < 3 ||
+                mappedPathDistances.Count != mappedPath.Count)
+            {
+                return false;
+            }
+
+            if (!TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    timeline.StartTime,
+                    out float windowStart) ||
+                !TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    timeline.RaceEndTime,
+                    out float windowEnd) ||
+                windowEnd - windowStart <= 0.0001f)
+            {
+                return false;
+            }
+
+            CopySourcePathWindow(
+                destination,
+                windowStart,
+                windowEnd);
+            if (destination.Count < 3)
+                return false;
+
+            float transitionTime = ResolveOrderingTransitionTime();
+            transitionReplayProgress =
+                timeline.ToNormalized(transitionTime);
+
+            if (referenceDriverNumber > 0 &&
+                TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    transitionTime,
+                    out float transitionDistance))
+            {
+                transitionPathProgress = Mathf.InverseLerp(
+                    windowStart,
+                    windowEnd,
+                    transitionDistance);
+            }
+
+            return true;
+        }
+
+        private void CopySourcePathWindow(
+            List<Vector3> destination,
+            float startDistance,
+            float endDistance)
+        {
+            destination.Add(EvaluateSourcePathDistance(startDistance));
+            for (int i = 1; i < mappedPath.Count - 1; i++)
+            {
+                float distance = mappedPathDistances[i];
+                if (distance <= startDistance ||
+                    distance >= endDistance)
+                {
+                    continue;
+                }
+
+                Vector3 point = mappedPath[i];
+                if (Vector3.SqrMagnitude(
+                        point - destination[destination.Count - 1]) >
+                    0.000001f)
+                {
+                    destination.Add(point);
+                }
+            }
+
+            Vector3 end = EvaluateSourcePathDistance(endDistance);
+            if (Vector3.SqrMagnitude(
+                    end - destination[destination.Count - 1]) >
+                0.000001f)
+            {
+                destination.Add(end);
+            }
+        }
+
+        private Vector3 EvaluateSourcePathDistance(float distance)
+        {
+            float clamped = Mathf.Clamp(
+                distance,
+                mappedPathDistances[0],
+                mappedPathDistances[mappedPathDistances.Count - 1]);
+            int upper = 1;
+            while (upper < mappedPathDistances.Count - 1 &&
+                   mappedPathDistances[upper] < clamped)
+            {
+                upper++;
+            }
+
+            int lower = upper - 1;
+            float blend = Mathf.InverseLerp(
+                mappedPathDistances[lower],
+                mappedPathDistances[upper],
+                clamped);
+            return Vector3.Lerp(
+                mappedPath[lower],
+                mappedPath[upper],
+                blend);
+        }
 
         public bool TryGetSourceLongitudinal(
             int driverNumber,
@@ -147,14 +316,18 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
+            float earliestUsableAnchor =
+                ResolveEarliestAutomaticOvertakeAnchor();
             ReplayEventDto definition = FindClosestOvertake(
                 player.Events,
-                player.CurrentTime);
+                player.CurrentTime,
+                earliestUsableAnchor);
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (definition == null)
                 definition = FindClosestOvertake(
                     ReplayEventFixtures.Load(player.Manifest),
-                    player.CurrentTime);
+                    player.CurrentTime,
+                    earliestUsableAnchor);
 
             if (definition == null && allowDevelopmentFallbackEvent)
                 definition = CreateDevelopmentEvent();
@@ -383,8 +556,9 @@ namespace F1XR.RestAPI.Replay
             eventCars.SetLabelsVisible(true);
             eventCars.SetLeaderHighlightVisible(false);
             eventCars.SetDrivers(player.Manifest != null ? player.Manifest.drivers : null);
-            eventCars.SetOvertakeSettings(player.overtakeMotion);
-            eventCars.SetReplayEvents(new[] { definition });
+            eventCars.SetOvertakeSettings(
+                CreateEventOvertakeSettings(
+                    player.overtakeMotion));
 
             List<LocationSample> referenceSamples = FindReferenceSamples();
             if (!BuildMappedPath(
@@ -394,8 +568,23 @@ namespace F1XR.RestAPI.Replay
                 return false;
             if (!BuildEventLongitudinals())
                 return false;
+            float transitionTime =
+                ResolveOrderingTransitionTime(
+                    definition,
+                    definition.startTime,
+                    definition.endTime);
+            eventCars.SetReplayEvents(
+                new[]
+                {
+                    CreateMotionEvent(
+                        definition,
+                        transitionTime)
+                });
+            sourceGeometryRevision++;
 
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
+            eventSpaceCenter = center;
+            sourceToEventRotation = sourceToLocalRotation;
             CreateStageRoot();
 
             TryGetMappedPosition(
@@ -431,6 +620,7 @@ namespace F1XR.RestAPI.Replay
 
             eventAudio = new ReplayAudio(eventCars);
             eventAudio.Reset(player.engineSound, true, null);
+            stageRoot.SetActive(false);
 
             Debug.Log(
                 $"[EventReplay] Opened '{definition.eventId}' with {eventDrivers.Count} vehicle(s) " +
@@ -500,6 +690,8 @@ namespace F1XR.RestAPI.Replay
             {
                 List<LocationSample> samples = pair.Value;
                 List<float> longitudinals = new(samples.Count);
+                float previousLongitudinal = 0f;
+                int previousSegment = 0;
                 for (int i = 0; i < samples.Count; i++)
                 {
                     if (!eventCars.TryGetMappedPosition(
@@ -510,7 +702,14 @@ namespace F1XR.RestAPI.Replay
                         return false;
                     }
 
-                    longitudinals.Add(ProjectSourcePathDistance(position));
+                    float longitudinal = ProjectSourcePathDistance(
+                        position,
+                        previousLongitudinal,
+                        ref previousSegment);
+                    previousLongitudinal = Mathf.Max(
+                        previousLongitudinal,
+                        longitudinal);
+                    longitudinals.Add(previousLongitudinal);
                 }
 
                 eventLongitudinals.Add(pair.Key, longitudinals);
@@ -519,12 +718,17 @@ namespace F1XR.RestAPI.Replay
             return eventLongitudinals.Count > 0;
         }
 
-        private float ProjectSourcePathDistance(Vector3 position)
+        private float ProjectSourcePathDistance(
+            Vector3 position,
+            float minimumPathDistance,
+            ref int segmentHint)
         {
             float closestSqrDistance = float.PositiveInfinity;
-            float closestPathDistance = 0f;
+            float closestPathDistance = minimumPathDistance;
+            int closestSegment = segmentHint;
 
-            for (int i = 0; i < mappedPath.Count - 1; i++)
+            int firstSegment = Mathf.Max(0, segmentHint - 1);
+            for (int i = firstSegment; i < mappedPath.Count - 1; i++)
             {
                 Vector3 start = mappedPath[i];
                 Vector3 segment = mappedPath[i + 1] - start;
@@ -535,6 +739,12 @@ namespace F1XR.RestAPI.Replay
                 float interpolation = Mathf.Clamp01(
                     Vector3.Dot(position - start, segment) /
                     segmentSqrLength);
+                float pathDistance =
+                    mappedPathDistances[i] +
+                    Mathf.Sqrt(segmentSqrLength) * interpolation;
+                if (pathDistance + 0.00001f < minimumPathDistance)
+                    continue;
+
                 Vector3 projected = start + segment * interpolation;
                 float sqrDistance =
                     Vector3.SqrMagnitude(position - projected);
@@ -542,11 +752,11 @@ namespace F1XR.RestAPI.Replay
                     continue;
 
                 closestSqrDistance = sqrDistance;
-                closestPathDistance =
-                    mappedPathDistances[i] +
-                    Mathf.Sqrt(segmentSqrLength) * interpolation;
+                closestPathDistance = pathDistance;
+                closestSegment = i;
             }
 
+            segmentHint = closestSegment;
             return closestPathDistance;
         }
 
@@ -602,6 +812,136 @@ namespace F1XR.RestAPI.Replay
                 longitudinals[high],
                 interpolation);
             return true;
+        }
+
+        public bool TryConfigureRoomStageInteraction(
+            Vector3 eventLocalFocus,
+            float physicalWidth = 0.6f)
+        {
+            if (stageInteractionCollider == null ||
+                PresentationRoot == null)
+            {
+                return false;
+            }
+
+            Vector3 worldScale = PresentationRoot.lossyScale;
+            float uniformWorldScale = Mathf.Max(
+                Mathf.Abs(worldScale.x),
+                Mathf.Abs(worldScale.y),
+                Mathf.Abs(worldScale.z));
+            if (uniformWorldScale <= 0.000001f)
+                return false;
+
+            float localWidth =
+                Mathf.Max(0.1f, physicalWidth) /
+                uniformWorldScale;
+            float localHeight = 0.12f / uniformWorldScale;
+            stageInteractionCollider.center =
+                eventLocalFocus +
+                Vector3.up * localHeight * 0.5f;
+            stageInteractionCollider.size =
+                new Vector3(
+                    localWidth,
+                    localHeight,
+                    localWidth);
+            return true;
+        }
+
+        private float ResolveOrderingTransitionTime()
+        {
+            return ResolveOrderingTransitionTime(
+                currentEvent,
+                timeline.StartTime,
+                timeline.RaceEndTime);
+        }
+
+        private float ResolveOrderingTransitionTime(
+            ReplayEventDto definition,
+            float startTime,
+            float endTime)
+        {
+            float fallback = definition != null
+                ? definition.anchorTime
+                : Mathf.Lerp(startTime, endTime, 0.5f);
+            int[] drivers = definition != null
+                ? definition.driverNumbers
+                : null;
+            if (drivers == null || drivers.Length < 2)
+                return fallback;
+
+            const int sampleCount = 96;
+            float previousTime = startTime;
+            if (!TryGetSourceGap(
+                    drivers[0],
+                    drivers[1],
+                    previousTime,
+                    out float previousGap))
+            {
+                return fallback;
+            }
+
+            for (int i = 1; i <= sampleCount; i++)
+            {
+                float time = Mathf.Lerp(
+                    startTime,
+                    endTime,
+                    i / (float)sampleCount);
+                if (!TryGetSourceGap(
+                        drivers[0],
+                        drivers[1],
+                        time,
+                        out float gap))
+                {
+                    continue;
+                }
+
+                if (GapOrder(previousGap) != 0 &&
+                    GapOrder(gap) != 0 &&
+                    GapOrder(previousGap) != GapOrder(gap))
+                {
+                    float blend =
+                        Mathf.Abs(previousGap) /
+                        (Mathf.Abs(previousGap) + Mathf.Abs(gap));
+                    return Mathf.Lerp(previousTime, time, blend);
+                }
+
+                previousTime = time;
+                previousGap = gap;
+            }
+
+            return fallback;
+        }
+
+        private bool TryGetSourceGap(
+            int firstDriver,
+            int secondDriver,
+            float time,
+            out float gap)
+        {
+            gap = 0f;
+            if (!TryGetSourceLongitudinalAtTime(
+                    firstDriver,
+                    time,
+                    out float first) ||
+                !TryGetSourceLongitudinalAtTime(
+                    secondDriver,
+                    time,
+                    out float second))
+            {
+                return false;
+            }
+
+            gap = first - second;
+            return true;
+        }
+
+        private static int GapOrder(float gap)
+        {
+            if (gap > 0.0001f)
+                return 1;
+            if (gap < -0.0001f)
+                return -1;
+            return 0;
         }
 
         private void AddMappedPathPoint(
@@ -784,6 +1124,8 @@ namespace F1XR.RestAPI.Replay
             Quaternion sourceToLocalRotation,
             out Bounds stageBounds)
         {
+            float effectivePadding =
+                ResolveTrackRegionPadding();
             trackSegment = new EventTrackSegment();
             bool created = trackSegment.Build(
                 stageRoot.transform,
@@ -791,7 +1133,7 @@ namespace F1XR.RestAPI.Replay
                 mappedPath,
                 center,
                 sourceToLocalRotation,
-                trackRegionPadding,
+                effectivePadding,
                 out stageBounds);
             if (created)
                 return true;
@@ -802,6 +1144,25 @@ namespace F1XR.RestAPI.Replay
                 "[EventReplay] Actual track geometry was unavailable; using the generated road fallback.",
                 this);
             return false;
+        }
+
+        private float ResolveTrackRegionPadding()
+        {
+            float pathLength = 0f;
+            for (int i = 1; i < mappedPath.Count; i++)
+            {
+                Vector3 segment =
+                    mappedPath[i] - mappedPath[i - 1];
+                segment.y = 0f;
+                pathLength += segment.magnitude;
+            }
+
+            float relativePadding = Mathf.Max(
+                MinimumTrackRegionPadding,
+                pathLength * RelativeTrackRegionPadding);
+            return Mathf.Min(
+                trackRegionPadding,
+                relativePadding);
         }
 
         private void ExtendRoadEnd(Vector3[] localPath)
@@ -842,6 +1203,7 @@ namespace F1XR.RestAPI.Replay
         private void ConfigureStageInteraction(Bounds bounds)
         {
             BoxCollider collider = stageRoot.AddComponent<BoxCollider>();
+            stageInteractionCollider = collider;
             bounds.Expand(new Vector3(0f, 0.04f, 0f));
             collider.center = bounds.center;
             collider.size = bounds.size;
@@ -860,6 +1222,7 @@ namespace F1XR.RestAPI.Replay
             grab.trackRotation = false;
             grab.snapToColliderVolume = false;
             grab.attachEaseInTime = 0f;
+            grab.throwOnDetach = false;
 
             stageRoot.AddComponent<WorldGrabTarget>();
             WorldGrabPolicy policy = stageRoot.AddComponent<WorldGrabPolicy>();
@@ -925,6 +1288,7 @@ namespace F1XR.RestAPI.Replay
                 Destroy(edgeMaterial);
 
             stageRoot = null;
+            stageInteractionCollider = null;
             trackSegment = null;
             roadMesh = null;
             roadMaterial = null;
@@ -937,6 +1301,9 @@ namespace F1XR.RestAPI.Replay
             mappedPath.Clear();
             mappedPathDistances.Clear();
             eventLongitudinals.Clear();
+            eventSpaceCenter = Vector3.zero;
+            sourceToEventRotation = Quaternion.identity;
+            sourceGeometryRevision++;
         }
 
         private void RestoreReplay()
@@ -967,6 +1334,16 @@ namespace F1XR.RestAPI.Replay
             float start = Mathf.Max(
                 player.TimelineStartTime,
                 anchor - Mathf.Max(0f, eventLeadSeconds));
+            float movingStart =
+                player.RaceStartTime +
+                Mathf.Max(0f, raceStartMotionGraceSeconds);
+            if (movingStart > player.TimelineStartTime &&
+                anchor > player.RaceStartTime)
+            {
+                start = Mathf.Min(
+                    anchor,
+                    Mathf.Max(start, movingStart));
+            }
             float end = Mathf.Min(
                 player.ReadyUntilTime,
                 anchor + Mathf.Max(0f, eventTailSeconds));
@@ -993,6 +1370,89 @@ namespace F1XR.RestAPI.Replay
                 overtakerShare = source.overtakerShare,
                 defenderShare = source.defenderShare
             };
+        }
+
+        private ReplayEventDto CreateMotionEvent(
+            ReplayEventDto source,
+            float transitionTime)
+        {
+            if (source == null)
+                return null;
+
+            float motionAnchor = Mathf.Clamp(
+                transitionTime,
+                source.startTime,
+                source.endTime);
+            float motionStart = Mathf.Clamp(
+                motionAnchor -
+                Mathf.Max(0f, overtakeMotionLeadSeconds),
+                source.startTime,
+                motionAnchor);
+            return new ReplayEventDto
+            {
+                eventId = source.eventId,
+                eventType = source.eventType,
+                anchorTime = motionAnchor,
+                startTime = motionStart,
+                endTime = source.endTime,
+                driverNumbers = source.driverNumbers != null
+                    ? (int[])source.driverNumbers.Clone()
+                    : null,
+                progressStart = source.progressStart,
+                progressEnd = source.progressEnd,
+                confidence = source.confidence,
+                displayTitle = source.displayTitle,
+                displayDescription = source.displayDescription,
+                passingSide = source.passingSide,
+                sideSource = source.sideSource,
+                sideConfidence = source.sideConfidence,
+                motionProfile = source.motionProfile,
+                overtakerShare = source.overtakerShare,
+                defenderShare = source.defenderShare
+            };
+        }
+
+        private OvertakeMotionSettings CreateEventOvertakeSettings(
+            OvertakeMotionSettings source)
+        {
+            source ??= new OvertakeMotionSettings();
+            return new OvertakeMotionSettings
+            {
+                enableOvertakeVisuals =
+                    source.enableOvertakeVisuals,
+                targetSeparationInVehicleWidths =
+                    Mathf.Max(
+                        source.targetSeparationInVehicleWidths,
+                        eventMinimumSeparationInVehicleWidths),
+                maximumCorrectionInVehicleWidths =
+                    source.maximumCorrectionInVehicleWidths,
+                maximumOffsetInVehicleWidths =
+                    source.maximumOffsetInVehicleWidths,
+                overtakerShare = source.overtakerShare,
+                defenderShare = source.defenderShare,
+                approachPortion = source.approachPortion,
+                parallelPortion = source.parallelPortion,
+                returnPortion = source.returnPortion,
+                maximumVisualYawDegrees =
+                    source.maximumVisualYawDegrees,
+                overlapBlendMode = source.overlapBlendMode,
+                debugOvertakeVisuals =
+                    source.debugOvertakeVisuals
+            };
+        }
+
+        private float ResolveEarliestAutomaticOvertakeAnchor()
+        {
+            if (player == null ||
+                player.RaceStartTime <=
+                player.TimelineStartTime + 0.001f)
+            {
+                return float.NegativeInfinity;
+            }
+
+            return player.RaceStartTime +
+                Mathf.Max(0f, raceStartMotionGraceSeconds) +
+                Mathf.Max(0f, minimumMovingLeadSeconds);
         }
 
         private bool TryValidate(ReplayEventDto definition, out string error)
@@ -1196,7 +1656,9 @@ namespace F1XR.RestAPI.Replay
 
         private static ReplayEventDto FindClosestOvertake(
             ReplayEventDto[] events,
-            float time)
+            float time,
+            float minimumAnchorTime =
+                float.NegativeInfinity)
         {
             if (events == null)
                 return null;
@@ -1207,6 +1669,8 @@ namespace F1XR.RestAPI.Replay
             {
                 if (item == null ||
                     !string.Equals(item.eventType, "Overtake", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (item.anchorTime < minimumAnchorTime)
                     continue;
 
                 float distance = Mathf.Abs(item.anchorTime - time);

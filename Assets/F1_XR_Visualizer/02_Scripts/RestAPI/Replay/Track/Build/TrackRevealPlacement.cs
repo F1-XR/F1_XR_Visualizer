@@ -7,7 +7,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
     {
         public void ConfirmPlacement()
         {
-            if (!placementActive || !hasCurrentHit || placementPrefab == null)
+            if (!placementActive ||
+                !hasCurrentHit ||
+                !IsPlacementVisualReady())
                 return;
 
             if (spawnedInstance != null && !allowReplaceExisting)

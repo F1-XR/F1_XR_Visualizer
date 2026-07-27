@@ -73,7 +73,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         public bool HasPlacement => spawnedInstance != null;
         public bool IsPlacementActive => placementActive;
-        public bool HasValidSurface => hasCurrentHit;
+        public bool HasValidSurface =>
+            hasCurrentHit &&
+            IsPlacementVisualReady();
         public bool IsEditMode => editState != null && editState.IsEditMode;
         public bool CanUndo => editState != null && editState.CanUndo;
         public TrackPlacementMode PlacementMode => placementMode;
@@ -301,7 +303,10 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         void TryRestoreSavedPlacement()
         {
-            if (!restoreSavedPlacement || spawnedInstance != null || placementPrefab == null || !HasSavedPlacement)
+            if (!restoreSavedPlacement ||
+                spawnedInstance != null ||
+                !IsPlacementVisualReady() ||
+                !HasSavedPlacement)
                 return;
 
             GameObject target = Instantiate(placementPrefab);
@@ -321,6 +326,26 @@ namespace F1XR.RestAPI.Replay.Track.Build
             placementActive = false;
             ConfigureEditState(target);
             ObserveCurrentTransform();
+        }
+
+        bool IsPlacementVisualReady()
+        {
+            if (placementPrefab == null)
+                return false;
+
+            if (placementPrefab
+                    .GetComponentsInChildren<Renderer>(
+                        includeInactive: true)
+                    .Length > 0)
+            {
+                return true;
+            }
+
+            return trackMapPrefab != null &&
+                trackMapPrefab
+                    .GetComponentsInChildren<Renderer>(
+                        includeInactive: true)
+                    .Length > 0;
         }
 
         void UpdatePlacementPersistence()
@@ -468,8 +493,25 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         void UpdatePlacementHit()
         {
-            hasCurrentHit = placementController != null &&
-                placementController.TryGetPlacementHit(out currentPose, out currentPlane);
+            hasCurrentHit = false;
+            if (placementController != null)
+            {
+                if (placementMode ==
+                    TrackPlacementMode.TableAutomatic)
+                {
+                    hasCurrentHit =
+                        placementController.TryGetAutomaticTableHit(
+                            out currentPose,
+                            out currentPlane);
+                }
+                else
+                {
+                    hasCurrentHit =
+                        placementController.TryGetPlacementHit(
+                            out currentPose,
+                            out currentPlane);
+                }
+            }
 
             if (hasCurrentHit)
             {
