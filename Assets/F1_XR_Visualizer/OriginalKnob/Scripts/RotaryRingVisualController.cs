@@ -44,14 +44,16 @@ namespace F1XR.OriginalKnob
         [SerializeField] XRSimpleInteractable interactable;
 
         [Header("Arcs (concentric, drawn by turns)")]
+        // Same diameter and thickness for every ring - they are separated by DEPTH (Z), not radius, to
+        // form the 3D stacked-coil look. The per-ring depth offset lives on the ring quads (see builder).
         [SerializeField] ArcSettings baseRing = new ArcSettings
-        { radius = 0.79f, lineWidth = 0.012f, intensity = 0.10f, alpha = 1f, color = new Color(0.5f, 0.5f, 0.58f) };
+        { radius = 0.72f, lineWidth = 0.012f, intensity = 0.10f, alpha = 1f, color = new Color(0.5f, 0.5f, 0.58f) };
         [SerializeField] ArcSettings mainGlowArc = new ArcSettings
-        { radius = 0.79f, lineWidth = 0.02f, intensity = 2.4f, alpha = 1f, color = Color.white };
+        { radius = 0.72f, lineWidth = 0.018f, intensity = 2.2f, alpha = 1f, color = Color.white };
         [SerializeField] ArcSettings trailArc01 = new ArcSettings
-        { radius = 0.86f, lineWidth = 0.013f, intensity = 1.9f, alpha = 1f, color = Color.white };
+        { radius = 0.72f, lineWidth = 0.018f, intensity = 2.2f, alpha = 1f, color = Color.white };
         [SerializeField] ArcSettings trailArc02 = new ArcSettings
-        { radius = 0.72f, lineWidth = 0.011f, intensity = 1.6f, alpha = 1f, color = Color.white };
+        { radius = 0.72f, lineWidth = 0.018f, intensity = 2.2f, alpha = 1f, color = Color.white };
 
         [Header("Drawing")]
         [Tooltip("Angle (deg) where each arc starts drawing from. 90 = top.")]
@@ -153,21 +155,27 @@ namespace F1XR.OriginalKnob
             SetArc(baseRing, baseRing.startAngle, 0f, 360f, baseRing.lineWidth, grooveIntensity, baseRing.alpha);
 
             float per = Mathf.Max(turnsPerRing, 0.1f);
-            float turns = knob != null ? Mathf.Abs(knob.TotalAngle) / (360f * per) : 0f;
+            // Signed visual rotation: magnitude fills the rings, sign sets the draw direction so the line
+            // winds the SAME way the knob (and marker) turns. The panel is mirrored, so +visualTotal reads
+            // as clockwise on screen; drawing toward decreasing shader angle keeps the line clockwise too.
+            float signed = knob != null ? knob.VisualAngle : 0f;
+            float turns = Mathf.Abs(signed) / (360f * per);
+            float dirSign = signed >= 0f ? 1f : -1f;
+            if (invertDraw) dirSign = -dirSign;
 
-            // Each ring fills over one "per"-turn lap; the next starts once the previous is full.
-            DrawRing(mainGlowArc, Mathf.Clamp01(turns));
-            DrawRing(trailArc01, Mathf.Clamp01(turns - 1f));
-            DrawRing(trailArc02, Mathf.Clamp01(turns - 2f));
+            DrawRing(mainGlowArc, Mathf.Clamp01(turns), dirSign);
+            DrawRing(trailArc01, Mathf.Clamp01(turns - 1f), dirSign);
+            DrawRing(trailArc02, Mathf.Clamp01(turns - 2f), dirSign);
         }
 
-        void DrawRing(ArcSettings arc, float progress)
+        void DrawRing(ArcSettings arc, float progress, float dirSign)
         {
             float len = progress * 360f;
             float vis = activeAmount * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0f, 0.02f, progress));
 
-            // Grow from a fixed anchor; direction is flippable so it winds with the knob.
-            float start = invertDraw ? drawStartAngle - len : drawStartAngle;
+            // Anchor fixed at drawStartAngle; grow in the knob's turn direction. dirSign > 0 grows toward
+            // decreasing shader angle (screen-clockwise), so the arc occupies [anchor-len, anchor].
+            float start = dirSign > 0f ? drawStartAngle - len : drawStartAngle;
 
             SetArc(arc, start, 0f, len, arc.lineWidth, arc.intensity * vis, arc.alpha * vis);
         }

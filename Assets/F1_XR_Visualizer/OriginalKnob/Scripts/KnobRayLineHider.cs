@@ -2,24 +2,44 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
-using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 
 namespace F1XR.OriginalKnob
 {
     /// <summary>
-    /// While the knob is selected, hides the grabbing controller's ray line so it does not draw over
-    /// the knob and glow ring. It disables the interactor's line visual behaviour and its LineRenderer
-    /// for the duration of the grab, then restores exactly what it disabled on release. Scoped to this
-    /// knob only - it touches the interactor at runtime and never edits the shared rig asset.
+    /// Keeps an interactor's ray from locking onto the knob centre.
+    /// - While HOVERING the knob: the line stays visible but its endpoint snap is turned off, so the ray
+    ///   lands on the knob surface (aim anywhere) instead of sucking into the centre.
+    /// - While SELECTING (grabbing) the knob: the line is hidden entirely, so the attach anchor at the knob
+    ///   centre is never shown. Rotation is driven by sweeping the controller, so the ray isn't needed then.
+    /// Everything is restored to its original state once the interactor stops hovering and selecting the
+    /// knob. Runtime-only, scoped to this knob - it never edits the shared rig asset.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class KnobRayLineHider : MonoBehaviour
     {
         [SerializeField] XRSimpleInteractable interactable;
 
-        readonly List<Behaviour> disabledBehaviours = new List<Behaviour>();
-        readonly List<LineRenderer> disabledLines = new List<LineRenderer>();
-        IXRSelectInteractor activeInteractor;
+        class VisualEntry
+        {
+            public XRInteractorLineVisual visual;
+            public bool origSnap;
+            public bool origEnabled;
+        }
+
+        class LineEntry
+        {
+            public LineRenderer line;
+            public bool origEnabled;
+        }
+
+        class Captured
+        {
+            public readonly List<VisualEntry> visuals = new List<VisualEntry>();
+            public readonly List<LineEntry> lines = new List<LineEntry>();
+        }
+
+        readonly Dictionary<Transform, Captured> map = new Dictionary<Transform, Captured>();
 
         void Awake()
         {
@@ -31,6 +51,8 @@ namespace F1XR.OriginalKnob
         {
             if (interactable == null)
                 return;
+            interactable.hoverEntered.AddListener(OnHoverEntered);
+            interactable.hoverExited.AddListener(OnHoverExited);
             interactable.selectEntered.AddListener(OnSelectEntered);
             interactable.selectExited.AddListener(OnSelectExited);
         }
@@ -39,61 +61,129 @@ namespace F1XR.OriginalKnob
         {
             if (interactable != null)
             {
+                interactable.hoverEntered.RemoveListener(OnHoverEntered);
+                interactable.hoverExited.RemoveListener(OnHoverExited);
                 interactable.selectEntered.RemoveListener(OnSelectEntered);
                 interactable.selectExited.RemoveListener(OnSelectExited);
             }
-            Restore();
+            RestoreAll();
         }
 
-        void OnSelectEntered(SelectEnterEventArgs args)
-        {
-            if (activeInteractor != null)
-                return;
+        void OnHoverEntered(HoverEnterEventArgs a) => ApplyState(a.interactorObject?.transform);
+        void OnHoverExited(HoverExitEventArgs a) => ApplyState(a.interactorObject?.transform);
+        void OnSelectEntered(SelectEnterEventArgs a) => ApplyState(a.interactorObject?.transform);
+        void OnSelectExited(SelectExitEventArgs a) => ApplyState(a.interactorObject?.transform);
 
-            activeInteractor = args.interactorObject;
-            var interactorTransform = activeInteractor.transform;
+        void ApplyState(Transform interactorTransform)
+        {
             if (interactorTransform == null)
                 return;
 
-            // Line visual behaviours (e.g. XRInteractorLineVisual) drive the LineRenderer, so disable
-            // both: the behaviour to stop it re-enabling the line, and the LineRenderer itself.
-            foreach (var b in interactorTransform.GetComponentsInChildren<Behaviour>(true))
+            bool selected = IsSelecting(interactorTransform);
+            bool hovered = IsHovering(interactorTransform);
+
+            if (!selected && !hovered)
             {
-                if (b != null && b.enabled && b.GetType().Name.Contains("LineVisual"))
-                {
-                    b.enabled = false;
-                    disabledBehaviours.Add(b);
-                }
+                Restore(interactorTransform);
+                return;
             }
 
+            if (!map.TryGetValue(interactorTransform, out var cap))
+            {
+                cap = Capture(interactorTransform);
+                map[interactorTransform] = cap;
+            }
+
+            // Hovering -> visible, no snap. Selecting -> hidden.
+            foreach (var ve in cap.visuals)
+            {
+                if (ve.visual == null)
+                    continue;
+                ve.visual.snapEndpointIfAvailable = false;
+                ve.visual.enabled = !selected;
+            }
+            foreach (var le in cap.lines)
+            {
+                if (le.line != null)
+                    le.line.enabled = !selected;
+            }
+        }
+
+        Captured Capture(Transform interactorTransform)
+        {
+            var cap = new Captured();
+            foreach (var v in interactorTransform.GetComponentsInChildren<XRInteractorLineVisual>(true))
+            {
+                if (v != null)
+                    cap.visuals.Add(new VisualEntry { visual = v, origSnap = v.snapEndpointIfAvailable, origEnabled = v.enabled });
+            }
             foreach (var lr in interactorTransform.GetComponentsInChildren<LineRenderer>(true))
             {
-                if (lr != null && lr.enabled)
+                if (lr != null)
+                    cap.lines.Add(new LineEntry { line = lr, origEnabled = lr.enabled });
+            }
+            return cap;
+        }
+
+        bool IsSelecting(Transform interactorTransform)
+        {
+            if (interactable == null)
+                return false;
+            foreach (var s in interactable.interactorsSelecting)
+                if (s != null && s.transform == interactorTransform)
+                    return true;
+            return false;
+        }
+
+        bool IsHovering(Transform interactorTransform)
+        {
+            if (interactable == null)
+                return false;
+            foreach (var h in interactable.interactorsHovering)
+                if (h != null && h.transform == interactorTransform)
+                    return true;
+            return false;
+        }
+
+        void Restore(Transform interactorTransform)
+        {
+            if (interactorTransform == null || !map.TryGetValue(interactorTransform, out var cap))
+                return;
+
+            foreach (var ve in cap.visuals)
+            {
+                if (ve.visual == null)
+                    continue;
+                ve.visual.snapEndpointIfAvailable = ve.origSnap;
+                ve.visual.enabled = ve.origEnabled;
+            }
+            foreach (var le in cap.lines)
+            {
+                if (le.line != null)
+                    le.line.enabled = le.origEnabled;
+            }
+
+            map.Remove(interactorTransform);
+        }
+
+        void RestoreAll()
+        {
+            foreach (var kv in map)
+            {
+                foreach (var ve in kv.Value.visuals)
                 {
-                    lr.enabled = false;
-                    disabledLines.Add(lr);
+                    if (ve.visual == null)
+                        continue;
+                    ve.visual.snapEndpointIfAvailable = ve.origSnap;
+                    ve.visual.enabled = ve.origEnabled;
+                }
+                foreach (var le in kv.Value.lines)
+                {
+                    if (le.line != null)
+                        le.line.enabled = le.origEnabled;
                 }
             }
-        }
-
-        void OnSelectExited(SelectExitEventArgs args)
-        {
-            if (args.interactorObject == activeInteractor)
-                Restore();
-        }
-
-        void Restore()
-        {
-            foreach (var b in disabledBehaviours)
-                if (b != null)
-                    b.enabled = true;
-            foreach (var lr in disabledLines)
-                if (lr != null)
-                    lr.enabled = true;
-
-            disabledBehaviours.Clear();
-            disabledLines.Clear();
-            activeInteractor = null;
+            map.Clear();
         }
     }
 }
