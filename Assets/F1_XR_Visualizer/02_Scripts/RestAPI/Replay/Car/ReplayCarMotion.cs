@@ -369,9 +369,15 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            Vector3 localRight = Vector3.Cross(
-                Vector3.up,
-                basePose.localForward).normalized;
+            Vector3 localRight =
+                visualPose.localLateralDirection;
+            if (localRight.sqrMagnitude <= 0.000001f)
+            {
+                localRight = Vector3.Cross(
+                    Vector3.up,
+                    basePose.localForward);
+            }
+            localRight.Normalize();
             Vector3 localOffset = localRight * visualPose.lateralOffset;
             Vector3 worldOffset = basePose.parent != null
                 ? basePose.parent.TransformVector(localOffset)

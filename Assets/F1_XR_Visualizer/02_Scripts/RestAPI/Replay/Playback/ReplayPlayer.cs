@@ -74,6 +74,7 @@ namespace F1XR.RestAPI.Replay
         private int selectedDriverNumber;
         private readonly ReplayTimeline timeline = new();
         private readonly ReplayReadyStart readyStart = new();
+        private readonly List<Vector3> fallbackOvertakeCenterline = new();
     
         public float CurrentTime => timeline.CurrentTime;
         public float TimelineStartTime => timeline.StartTime;
@@ -145,6 +146,7 @@ namespace F1XR.RestAPI.Replay
             if (eventReplay == null)
                 eventReplay = gameObject.AddComponent<EventPopoutReplay>();
             eventReplay.Configure(this);
+            ConfigureFallbackOvertakeCorridor();
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -191,6 +193,7 @@ namespace F1XR.RestAPI.Replay
 
             replayCars.SetBuildPlacer(buildPlacer);
             replayCars.SetCalibration(trackCalibration);
+            ConfigureFallbackOvertakeCorridor();
             trackAlignmentReady =
                 trackCalibration == null ||
                 !trackCalibration.RequiresRuntimeSourceAlignment(
@@ -214,6 +217,48 @@ namespace F1XR.RestAPI.Replay
                 _trackAlignmentCoroutine =
                     StartCoroutine(PrepareTrackAlignment());
             }
+        }
+
+        private void ConfigureFallbackOvertakeCorridor()
+        {
+            fallbackOvertakeCenterline.Clear();
+            if (replayCars == null ||
+                eventReplay == null ||
+                trackCalibration == null ||
+                !trackCalibration.active ||
+                trackCalibration.mappingMode !=
+                TrackCalibration.MappingMode.Route ||
+                trackCalibration.points == null)
+            {
+                replayCars?.SetFallbackOvertakeCorridor(
+                    fallbackOvertakeCenterline,
+                    0f,
+                    false);
+                return;
+            }
+
+            float scale =
+                trackCalibration.OutputScale;
+            for (int i = 0;
+                 i < trackCalibration.points.Length;
+                 i++)
+            {
+                Vector3 target =
+                    trackCalibration
+                        .points[i]
+                        .targetLocalPosition;
+                fallbackOvertakeCenterline.Add(
+                    new Vector3(
+                        target.x * scale,
+                        target.y * scale +
+                        trackCalibration.heightOffset,
+                        target.z * scale));
+            }
+
+            replayCars.SetFallbackOvertakeCorridor(
+                fallbackOvertakeCenterline,
+                eventReplay.roadWidth,
+                trackCalibration.loopMappingSegments);
         }
 
         public void Play()

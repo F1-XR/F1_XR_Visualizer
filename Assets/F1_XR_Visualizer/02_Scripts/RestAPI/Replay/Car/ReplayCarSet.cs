@@ -97,6 +97,17 @@ namespace F1XR.RestAPI.Replay
             overtakeMotion.SetSettings(overtakeSettings);
         }
 
+        public void SetFallbackOvertakeCorridor(
+            IReadOnlyList<Vector3> centerline,
+            float roadWidth,
+            bool loop)
+        {
+            overtakeMotion.SetFallbackCorridor(
+                centerline,
+                roadWidth,
+                loop);
+        }
+
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
             Dictionary<int, int> indices,

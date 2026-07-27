@@ -10,3 +10,9 @@ args = [
 startup_timeout_sec = 30
 tool_timeout_sec = 120
 
+[mcp_servers.unity.tools.Unity_RunCommand]
+approval_mode = "approve"
+
+[mcp_servers.unity.tools.Unity_GetConsoleLogs]
+approval_mode = "approve"
+
