@@ -153,21 +153,27 @@ namespace F1XR.OriginalKnob
             SetArc(baseRing, baseRing.startAngle, 0f, 360f, baseRing.lineWidth, grooveIntensity, baseRing.alpha);
 
             float per = Mathf.Max(turnsPerRing, 0.1f);
-            float turns = knob != null ? Mathf.Abs(knob.TotalAngle) / (360f * per) : 0f;
+            // Signed visual rotation: magnitude fills the rings, sign sets the draw direction so the line
+            // winds the SAME way the knob (and marker) turns. The panel is mirrored, so +visualTotal reads
+            // as clockwise on screen; drawing toward decreasing shader angle keeps the line clockwise too.
+            float signed = knob != null ? knob.VisualAngle : 0f;
+            float turns = Mathf.Abs(signed) / (360f * per);
+            float dirSign = signed >= 0f ? 1f : -1f;
+            if (invertDraw) dirSign = -dirSign;
 
-            // Each ring fills over one "per"-turn lap; the next starts once the previous is full.
-            DrawRing(mainGlowArc, Mathf.Clamp01(turns));
-            DrawRing(trailArc01, Mathf.Clamp01(turns - 1f));
-            DrawRing(trailArc02, Mathf.Clamp01(turns - 2f));
+            DrawRing(mainGlowArc, Mathf.Clamp01(turns), dirSign);
+            DrawRing(trailArc01, Mathf.Clamp01(turns - 1f), dirSign);
+            DrawRing(trailArc02, Mathf.Clamp01(turns - 2f), dirSign);
         }
 
-        void DrawRing(ArcSettings arc, float progress)
+        void DrawRing(ArcSettings arc, float progress, float dirSign)
         {
             float len = progress * 360f;
             float vis = activeAmount * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0f, 0.02f, progress));
 
-            // Grow from a fixed anchor; direction is flippable so it winds with the knob.
-            float start = invertDraw ? drawStartAngle - len : drawStartAngle;
+            // Anchor fixed at drawStartAngle; grow in the knob's turn direction. dirSign > 0 grows toward
+            // decreasing shader angle (screen-clockwise), so the arc occupies [anchor-len, anchor].
+            float start = dirSign > 0f ? drawStartAngle - len : drawStartAngle;
 
             SetArc(arc, start, 0f, len, arc.lineWidth, arc.intensity * vis, arc.alpha * vis);
         }

@@ -546,7 +546,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.OriginalKnob.ControllerRotaryInput
   interactable: {fileID: 2882906342675324118}
   knob: {fileID: 2136616850104210297}
-  minInteractRadius: 0.02
   angleDeadzone: 0.02
   maxDeltaPerFrame: 45
 --- !u!114 &4395769061022203113

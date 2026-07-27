@@ -24,9 +24,6 @@ namespace F1XR.OriginalKnob
         [SerializeField] RotaryKnobController knob;
 
         [Header("Stability")]
-        [Tooltip("Ignore controller motion when it is closer than this (m) to the knob centre, where the " +
-                 "swept-angle direction becomes numerically unstable.")]
-        [SerializeField, Min(0.001f)] float minInteractRadius = 0.02f;
         [Tooltip("Per-frame angle changes smaller than this (deg) are treated as zero to kill jitter.")]
         [SerializeField, Min(0f)] float angleDeadzone = 0.02f;
         [Tooltip("Clamp of the per-frame angle (deg) to reject glitchy tracking spikes.")]
@@ -81,7 +78,11 @@ namespace F1XR.OriginalKnob
                 return;
 
             activeInteractor = args.interactorObject;
-            attachTransform = activeInteractor.GetAttachTransform(interactable);
+            // Track the interactor's OWN transform (the physical controller), not GetAttachTransform:
+            // the NearFar interactor's InteractionAttachController snaps its attach anchor onto the
+            // grabbed knob's centre on select, which would collapse the orbit vector to zero and make
+            // the knob feel "grabbed at the centre". The controller transform always orbits the centre.
+            attachTransform = activeInteractor.transform;
             hasPreviousDir = TryGetPlaneDir(out previousDir);
             knob.BeginRotation();
         }
@@ -126,8 +127,11 @@ namespace F1XR.OriginalKnob
         }
 
         /// <summary>
-        /// Direction from the knob centre to the controller, projected onto the rotation plane and
-        /// normalised. Returns false when the controller is too close to the centre to be reliable.
+        /// Direction, in the knob's rotation plane, from the knob centre to the point where the controller's
+        /// ray crosses that plane. Sweeping the ray (or moving the hand) moves this point around the knob,
+        /// and we track how its angle changes between frames to turn the knob. Works for both the far ray and
+        /// near interaction, is independent of grab distance and of any attach snapping to the knob centre.
+        /// Returns false when the ray is parallel to the plane or aimed at the exact centre.
         /// </summary>
         bool TryGetPlaneDir(out Vector3 dir)
         {
@@ -136,10 +140,20 @@ namespace F1XR.OriginalKnob
                 return false;
 
             Vector3 axis = knob.RotationAxis;
-            Vector3 toController = attachTransform.position - knob.Center;
-            Vector3 planar = Vector3.ProjectOnPlane(toController, axis);
-            if (planar.sqrMagnitude < minInteractRadius * minInteractRadius)
-                return false;
+            Vector3 origin = attachTransform.position;
+            Vector3 rayDir = attachTransform.forward;
+
+            // Intersect the controller ray with the knob's rotation plane (through the centre, normal = axis).
+            float denom = Vector3.Dot(rayDir, axis);
+            if (Mathf.Abs(denom) < 1e-4f)
+                return false; // ray runs parallel to the plane
+
+            float t = Vector3.Dot(knob.Center - origin, axis) / denom;
+            Vector3 hit = origin + rayDir * t;
+
+            Vector3 planar = Vector3.ProjectOnPlane(hit - knob.Center, axis);
+            if (planar.sqrMagnitude < 1e-6f)
+                return false; // aimed at the exact centre - angle undefined
 
             dir = planar.normalized;
             return true;
