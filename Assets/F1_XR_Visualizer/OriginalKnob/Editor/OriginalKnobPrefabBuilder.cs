@@ -32,6 +32,12 @@ namespace F1XR.OriginalKnob.Editor
         static float KnobCenterZ => PanelHalfDepth + PanelKnobGap + KnobThickness * 0.5f;
         static float RingZ => PanelHalfDepth + 0.002f;
 
+        // Glow-ring depth stack (local Z, forward = toward the user). BaseRing near the panel; the three
+        // glow rings step forward across the knob's side so they read as a 3D coil.
+        static float RingBaseZ => PanelHalfDepth + 0.002f;   // faint groove, near the panel
+        const float GlowRing1Z = 0.030f;                     // first glow ring (near the knob back)
+        const float GlowRingDepthStep = 0.015f;              // gap between successive rings
+
         [MenuItem("Tools/F1 XR/OriginalKnob/Build Prefab")]
         public static void BuildPrefab()
         {
@@ -86,12 +92,14 @@ namespace F1XR.OriginalKnob.Editor
             panelCol.size = new Vector3(PanelW, PanelH, PanelD);
             panelCol.center = Vector3.zero;
 
-            // ---- Glow ring (four additive arcs sharing one material) ----
-            var ringRoot = NewChild("RingRoot", root.transform, new Vector3(0f, 0f, RingZ));
-            var baseRing = CreateRingQuad("BaseRing", ringRoot.transform, ringMat);
-            var mainGlowArc = CreateRingQuad("MainGlowArc", ringRoot.transform, ringMat);
-            var trailArc01 = CreateRingQuad("TrailArc01", ringRoot.transform, ringMat);
-            var trailArc02 = CreateRingQuad("TrailArc02", ringRoot.transform, ringMat);
+            // ---- Glow ring: same-diameter arcs STACKED IN DEPTH (Z) to form a 3D coil. ----
+            // BaseRing sits at the back (near the panel); the three glow rings step forward toward the
+            // knob face, each a fixed gap in front of the previous one.
+            var ringRoot = NewChild("RingRoot", root.transform, Vector3.zero);
+            var baseRing = CreateRingQuad("BaseRing", ringRoot.transform, ringMat, RingBaseZ);
+            var mainGlowArc = CreateRingQuad("MainGlowArc", ringRoot.transform, ringMat, GlowRing1Z);
+            var trailArc01 = CreateRingQuad("TrailArc01", ringRoot.transform, ringMat, GlowRing1Z + GlowRingDepthStep);
+            var trailArc02 = CreateRingQuad("TrailArc02", ringRoot.transform, ringMat, GlowRing1Z + GlowRingDepthStep * 2f);
 
             // ---- Knob pivot (the only thing that rotates) ----
             var knobPivot = NewChild("KnobPivot", root.transform, new Vector3(0f, 0f, KnobCenterZ));
@@ -113,15 +121,15 @@ namespace F1XR.OriginalKnob.Editor
 
             var marker = NewChild("RotationMarker", knobPivot.transform, Vector3.zero);
             float markerZ = KnobThickness * 0.5f + 0.003f;
-            // Three small dots near the rim, strung out along the circle's TANGENT (a short streak) so the
-            // spin direction reads clearly. Base point at the top of the knob; tangent there points -X.
-            float baseAngle = 90f * Mathf.Deg2Rad;
-            float markerRadius = 0.052f;
-            Vector3 basePos = new Vector3(Mathf.Cos(baseAngle) * markerRadius, Mathf.Sin(baseAngle) * markerRadius, markerZ);
-            Vector3 tangent = new Vector3(-Mathf.Sin(baseAngle), Mathf.Cos(baseAngle), 0f); // along circumference
-            CreateMarkerDot("DotLarge", marker.transform, basePos, 0.0085f, markerMat);
-            CreateMarkerDot("DotMedium", marker.transform, basePos + tangent * 0.012f, 0.006f, markerMat);
-            CreateMarkerDot("DotSmall", marker.transform, basePos + tangent * 0.021f, 0.004f, markerMat);
+            // Three EQUAL-size dots arranged as a short diagonal streak near the top of the knob face,
+            // descending to the right, matching the reference.
+            const float dotSize = 0.0055f;
+            const float dotStep = 0.013f;
+            Vector3 dotCenter = new Vector3(0f, 0.05f, markerZ);
+            Vector3 dotDir = new Vector3(-0.8f, -0.6f, 0f).normalized; // reads as descending-right on screen (panel is mirrored)
+            CreateMarkerDot("Dot1", marker.transform, dotCenter - dotDir * dotStep, dotSize, markerMat);
+            CreateMarkerDot("Dot2", marker.transform, dotCenter, dotSize, markerMat);
+            CreateMarkerDot("Dot3", marker.transform, dotCenter + dotDir * dotStep, dotSize, markerMat);
 
             // ---- Interaction + logic components on the pivot / root ----
             var interactable = knobPivot.AddComponent<XRSimpleInteractable>();
@@ -131,6 +139,7 @@ namespace F1XR.OriginalKnob.Editor
             var ringVisual = root.AddComponent<RotaryRingVisualController>();
             var haptic = root.AddComponent<ControllerHapticController>();
             var rayHider = root.AddComponent<KnobRayLineHider>();
+            var dotLights = root.AddComponent<MarkerDotTurnLights>();
 
             SetRef(knobController, "knobPivot", knobPivot.transform);
 
@@ -149,17 +158,20 @@ namespace F1XR.OriginalKnob.Editor
 
             SetRef(rayHider, "interactable", interactable);
 
+            SetRef(dotLights, "knob", knobController);
+            SetRef(dotLights, "rotationMarker", marker.transform);
+
             return root;
         }
 
         // ---------- Ring / marker helpers ----------
 
-        static GameObject CreateRingQuad(string name, Transform parent, Material ringMat)
+        static GameObject CreateRingQuad(string name, Transform parent, Material ringMat, float zOffset)
         {
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = name;
             quad.transform.SetParent(parent, false);
-            quad.transform.localPosition = Vector3.zero;
+            quad.transform.localPosition = new Vector3(0f, 0f, zOffset);
             // Unity's Quad faces -Z; the panel is rotated 180 deg to face the user, so we'd view the quad
             // from behind (UV mirrored in X). Flip the quad 180 deg about Y so its front faces the user and
             // the arc angle convention reads un-mirrored.
