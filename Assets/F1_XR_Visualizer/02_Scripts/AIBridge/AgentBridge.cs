@@ -8,6 +8,7 @@ using F1XR.AIBridge.Net;
 using F1XR.AIBridge.Voice;
 using F1XR.AIBridge.Commands;
 using F1XR.AIBridge.Protocol;
+using F1XR.RestAPI.Replay;   // ReplayPlayer (현재 재생 시각)
 
 namespace F1XR.AIBridge
 {
@@ -17,6 +18,11 @@ namespace F1XR.AIBridge
         public AgentWebSocketClient client;
         public AgentCommandDispatcher dispatcher;
         public TtsAudioPlayer ttsPlayer;
+
+        [Tooltip("현재 재생 시각(at_time)을 뽑을 ReplayPlayer. 비우면 자동 탐색")]
+        public ReplayPlayer player;
+        ReplayPlayer Player =>
+            player != null ? player : (player = FindFirstObjectByType<ReplayPlayer>());
 
         void OnEnable() { if (client != null) client.OnMessage += Route; }
         void OnDisable() { if (client != null) client.OnMessage -= Route; }
@@ -47,8 +53,18 @@ namespace F1XR.AIBridge
         /// <summary>텍스트 발화 전송(디버그·키보드 입력용).</summary>
         public void SendText(string text, int sessionKey, string atTime = null)
         {
+            // at_time 을 안 주면 현재 리플레이 시각으로 채운다(스포일러 방지).
+            if (string.IsNullOrEmpty(atTime)) atTime = CurrentAtTime();
             var msg = new UtteranceMsg { text = text, session_key = sessionKey, at_time = atTime };
             client.Send(JsonUtility.ToJson(msg));
+        }
+
+        /// <summary>현재 리플레이 시각을 ISO 절대시각으로. 리플레이 없으면 null.</summary>
+        public string CurrentAtTime()
+        {
+            ReplayPlayer p = Player;
+            if (p == null || !p.HasDataset) return null;
+            return ReplayTimeMap.RelativeToIso(p, p.CurrentTime);
         }
     }
 }

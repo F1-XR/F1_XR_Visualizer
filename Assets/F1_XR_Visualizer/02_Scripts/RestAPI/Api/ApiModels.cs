@@ -121,6 +121,7 @@ namespace F1XR.RestAPI.Api
         public int sessionKey;
         public int meetingKey;
         public string sessionName;
+        public string baseDate;   // t=0의 절대시각(ISO) — 상대초↔절대시각 변환 기준(서버 제공)
 
         public int chunkMinutes;
         public int overlapSeconds;

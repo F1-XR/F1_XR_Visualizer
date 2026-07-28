@@ -39,10 +39,17 @@ namespace F1XR.AIBridge.Commands
                 case "seek":
                     if (value != null && value.Type == JTokenType.String)
                     {
-                        // ISO 절대시각(jump_to_event) → 리플레이 상대초로 변환해야 함.
-                        // ReplayPlayer.Seek 는 상대초(float)를 받으므로, 세션 시작 절대시각 기준
-                        // 매핑이 필요. 그 기준값 확보 후 구현 예정.
-                        Debug.LogWarning("[AIBridge] ISO 절대시각 seek 미지원(상대초 변환 필요). 수치 seek만 동작.");
+                        // ISO 절대시각(jump_to_event) → 상대초로 변환 후 Seek
+                        string iso = (string)value;
+                        if (ReplayTimeMap.IsoToRelative(p, iso, out float rel))
+                        {
+                            Debug.Log($"[AIBridge] seek ISO {iso} → 상대 {rel:0.0}s");
+                            p.Seek(rel);
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[AIBridge] seek 시각 변환 실패(앵커 없음): {iso}");
+                        }
                     }
                     else
                     {

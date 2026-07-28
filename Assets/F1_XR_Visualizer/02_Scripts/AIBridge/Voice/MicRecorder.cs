@@ -5,6 +5,7 @@
 using UnityEngine;
 using F1XR.AIBridge.Net;
 using F1XR.AIBridge.Protocol;
+using F1XR.RestAPI.Replay;   // ReplayPlayer (현재 재생 시각)
 
 namespace F1XR.AIBridge.Voice
 {
@@ -41,6 +42,14 @@ namespace F1XR.AIBridge.Voice
             Microphone.End(_device);
             _recording = false;
             if (pos <= 0) { Debug.LogWarning("[AIBridge] 녹음 비어있음"); return; }
+
+            // at_time 이 비어있으면 현재 리플레이 시각으로 채운다(스포일러 방지).
+            if (string.IsNullOrEmpty(currentAtTime))
+            {
+                ReplayPlayer p = FindFirstObjectByType<ReplayPlayer>();
+                if (p != null && p.HasDataset)
+                    currentAtTime = ReplayTimeMap.RelativeToIso(p, p.CurrentTime);
+            }
 
             byte[] wav = WavUtil.FromAudioClip(_clip, pos);
             string b64 = System.Convert.ToBase64String(wav);
