@@ -33,6 +33,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private readonly List<LayerBinding> sourceLayers = new();
         private readonly HashSet<Transform> capturedLayerTransforms = new();
+        private readonly List<LabelRendererState> labelRendererStates = new();
         private readonly List<RendererBinding> roomCarRenderers = new();
         private readonly List<GameObject> rendererProxies = new();
         private readonly List<Mesh> runtimeMeshes = new();
@@ -278,6 +279,11 @@ namespace F1XR.RestAPI.Replay.Room
             }
             sourceLayers.Clear();
             capturedLayerTransforms.Clear();
+
+            for (int i = 0; i < labelRendererStates.Count; i++)
+                labelRendererStates[i].Restore();
+
+            labelRendererStates.Clear();
             roomCarRenderers.Clear();
             roomTrackLeftBoundary.Clear();
             roomTrackRightBoundary.Clear();
@@ -520,6 +526,13 @@ namespace F1XR.RestAPI.Replay.Room
                     current,
                     current.gameObject.layer));
                 current.gameObject.layer = PortalSceneLayer;
+
+                if (IsDriverLabelRenderer(renderer))
+                {
+                    labelRendererStates.Add(
+                        new LabelRendererState(renderer));
+                    renderer.forceRenderingOff = true;
+                }
             }
         }
 
@@ -642,6 +655,32 @@ namespace F1XR.RestAPI.Replay.Room
                             source,
                             proxyRenderer,
                             vehicleRoot));
+                    created++;
+                }
+                else if (source is LineRenderer sourceLine)
+                {
+                    GameObject proxy =
+                        CreateRendererProxyObject(source);
+                    LineRenderer proxyLine =
+                        proxy.AddComponent<LineRenderer>();
+                    CopyRendererSettings(
+                        sourceLine,
+                        proxyLine);
+                    CopyLineRendererSettings(
+                        sourceLine,
+                        proxyLine);
+                    SyncLineRenderer(
+                        sourceLine,
+                        proxyLine);
+                    roomCarRenderers.Add(
+                        new RendererBinding(
+                            source,
+                            proxyLine,
+                            vehicleRoot,
+                            null,
+                            null,
+                            sourceLine,
+                            proxyLine));
                     created++;
                 }
                 else if (source is SkinnedMeshRenderer skinned &&
@@ -1531,6 +1570,9 @@ namespace F1XR.RestAPI.Replay.Room
                 SyncTextMesh(
                     binding.SourceText,
                     binding.ProxyText);
+                SyncLineRenderer(
+                    binding.SourceLine,
+                    binding.ProxyLine);
                 bool visible =
                     binding.Source != null &&
                     binding.Proxy != null &&
@@ -1542,6 +1584,45 @@ namespace F1XR.RestAPI.Replay.Room
                 if (binding.Proxy != null)
                     binding.Proxy.enabled = visible;
             }
+        }
+
+        private static void SyncLineRenderer(
+            LineRenderer source,
+            LineRenderer destination)
+        {
+            if (source == null ||
+                destination == null)
+            {
+                return;
+            }
+
+            destination.startWidth = source.startWidth;
+            destination.endWidth = source.endWidth;
+            destination.startColor = source.startColor;
+            destination.endColor = source.endColor;
+
+            if (destination.positionCount != source.positionCount)
+                destination.positionCount = source.positionCount;
+
+            for (int i = 0; i < source.positionCount; i++)
+                destination.SetPosition(i, source.GetPosition(i));
+        }
+
+        private static void CopyLineRendererSettings(
+            LineRenderer source,
+            LineRenderer destination)
+        {
+            destination.useWorldSpace = source.useWorldSpace;
+            destination.loop = source.loop;
+            destination.widthMultiplier = source.widthMultiplier;
+            destination.widthCurve = source.widthCurve;
+            destination.colorGradient = source.colorGradient;
+            destination.numCornerVertices = source.numCornerVertices;
+            destination.numCapVertices = source.numCapVertices;
+            destination.alignment = source.alignment;
+            destination.textureMode = source.textureMode;
+            destination.generateLightingData =
+                source.generateLightingData;
         }
 
         private static void SyncTextMesh(
@@ -1600,6 +1681,15 @@ namespace F1XR.RestAPI.Replay.Room
             destination.SetPropertyBlock(block);
         }
 
+        private static bool IsDriverLabelRenderer(
+            Renderer renderer)
+        {
+            return renderer != null &&
+                renderer.gameObject.name.StartsWith(
+                    "DriverLabel",
+                    System.StringComparison.Ordinal);
+        }
+
         private static Vector3 Flat(Vector3 value)
         {
             value.y = 0f;
@@ -1620,6 +1710,27 @@ namespace F1XR.RestAPI.Replay.Room
             }
         }
 
+        private readonly struct LabelRendererState
+        {
+            private readonly Renderer renderer;
+            private readonly bool forceRenderingOff;
+
+            public LabelRendererState(Renderer source)
+            {
+                renderer = source;
+                forceRenderingOff =
+                    source != null &&
+                    source.forceRenderingOff;
+            }
+
+            public void Restore()
+            {
+                if (renderer != null)
+                    renderer.forceRenderingOff =
+                        forceRenderingOff;
+            }
+        }
+
         private readonly struct RendererBinding
         {
             public readonly Renderer Source;
@@ -1627,6 +1738,8 @@ namespace F1XR.RestAPI.Replay.Room
             public readonly Transform VehicleRoot;
             public readonly TextMesh SourceText;
             public readonly TextMesh ProxyText;
+            public readonly LineRenderer SourceLine;
+            public readonly LineRenderer ProxyLine;
 
             public RendererBinding(
                 Renderer source,
@@ -1636,6 +1749,8 @@ namespace F1XR.RestAPI.Replay.Room
                     source,
                     proxy,
                     vehicleRoot,
+                    null,
+                    null,
                     null,
                     null)
             {
@@ -1647,12 +1762,33 @@ namespace F1XR.RestAPI.Replay.Room
                 Transform vehicleRoot,
                 TextMesh sourceText,
                 TextMesh proxyText)
+                : this(
+                    source,
+                    proxy,
+                    vehicleRoot,
+                    sourceText,
+                    proxyText,
+                    null,
+                    null)
+            {
+            }
+
+            public RendererBinding(
+                Renderer source,
+                Renderer proxy,
+                Transform vehicleRoot,
+                TextMesh sourceText,
+                TextMesh proxyText,
+                LineRenderer sourceLine,
+                LineRenderer proxyLine)
             {
                 Source = source;
                 Proxy = proxy;
                 VehicleRoot = vehicleRoot;
                 SourceText = sourceText;
                 ProxyText = proxyText;
+                SourceLine = sourceLine;
+                ProxyLine = proxyLine;
             }
         }
     }
