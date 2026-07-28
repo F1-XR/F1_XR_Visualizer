@@ -7,7 +7,7 @@ using F1XR.Interaction.World;
 
 namespace F1XR.Interaction.Input
 {
-    public enum MorphExitButton
+    public enum MorphHoldButton
     {
         Trigger,
         Grip,
@@ -16,10 +16,13 @@ namespace F1XR.Interaction.Input
     }
 
     /// <summary>
-    /// Swaps a controller's visual model for a gear-shift prefab when the controller is tilted
-    /// past a threshold. Once morphed it STAYS a gear shift (regardless of angle) until the exit
-    /// button is pressed, then it swaps back to the controller. The gear shift is spawned once as a
-    /// child of the controller pose, so it follows the hand like a held object.
+    /// Shows a gear-shift on the controller WHILE a button is held. Press-and-hold the button and
+    /// the controller's visual model is swapped for the gear-shift prefab; release it and the gear
+    /// shift disappears, restoring the controller. The gear shift is spawned once as a child of the
+    /// controller pose, so it follows the hand like a held object.
+    ///
+    /// While shown, the knob leans toward the hand (via <see cref="GearShiftController"/>) and fires
+    /// detent haptics as the lean direction changes.
     ///
     /// Put this on the controller pose object (e.g. "Right Controller"). The gear-shift copy is a
     /// static visual by default (its grab/bend interaction is disabled on the attached instance so
@@ -29,52 +32,42 @@ namespace F1XR.Interaction.Input
     public sealed class ControllerShiftMorph : MonoBehaviour
     {
         [Header("References")]
-        [Tooltip("Transform whose orientation is read for the tilt gesture. Defaults to this transform (the controller pose).")]
+        [Tooltip("Transform whose pose the gear shift follows. Defaults to this transform (the controller pose).")]
         [SerializeField] Transform poseSource;
-        [Tooltip("The controller's visual model root that gets hidden while morphed (e.g. \"XR Controller Right\").")]
+        [Tooltip("The controller's visual model root that gets hidden while shown (e.g. \"XR Controller Right\").")]
         [SerializeField] GameObject controllerModelRoot;
         [Tooltip("Gear-shift prefab spawned onto the controller.")]
         [SerializeField] GameObject gearShiftPrefab;
 
-        [Header("Base plant (captured when morphing on)")]
-        [Tooltip("Where the base plants, as an offset in the controller's local space at the moment of morph.")]
+        [Header("Base plant (captured when shown)")]
+        [Tooltip("Where the base plants, as an offset in the controller's local space at the moment it appears.")]
         [SerializeField] Vector3 attachLocalPosition = Vector3.zero;
-        [Tooltip("World orientation of the planted base (default = upright). The base does NOT rotate with the wrist.")]
+        [Tooltip("World orientation of the planted base (default = upright). Only the Y (yaw) is applied - " +
+            "pitch/roll are stripped so the base stays perfectly vertical and never leans with the wrist. " +
+            "When Face User is on, Y is added on top of the user-facing yaw.")]
         [SerializeField] Vector3 attachLocalEuler = Vector3.zero;
+        [Tooltip("Aim the base's front-back plane toward the user (headset) when it appears, so pushing " +
+            "the hand forward/back tilts the lever forward/back instead of a direction that gets clipped.")]
+        [SerializeField] bool faceUserOnPlant = true;
         [SerializeField] Vector3 attachLocalScale = new Vector3(10f, 10f, 10f);
         [Tooltip("Extra vertical offset of the planted base, in multiples of the gear shift's own height. " +
             "-0.5 spawns it half a gear shift lower. Negative = lower, positive = higher.")]
         [SerializeField, Range(-2f, 2f)] float baseHeightOffset = -0.5f;
 
-        [Header("Tilt gesture (auto-calibrated neutral)")]
-        [Tooltip("Which local axis of the controller is measured against world up. Forward (0,0,1) by default.")]
-        [SerializeField] Vector3 tiltMeasureAxis = Vector3.forward;
-        [Tooltip("How fast the neutral hold adapts to however you're currently holding the controller (seconds). " +
-            "Larger = a held pose stays neutral longer, so only quicker/bigger tilts trigger. " +
-            "Steady holding always reads ~0 deviation, so it never triggers on its own.")]
-        [SerializeField, Min(0.05f)] float neutralFollowTime = 1.5f;
-        [Tooltip("How far (deg) the controller must rotate away from the adapting neutral to turn the gear shift ON.")]
-        [SerializeField, Range(0f, 180f)] float tiltOnDelta = 35f;
-
-        [Header("Exit (return to controller)")]
-        [Tooltip("Once morphed, the gear shift stays until this controller button is pressed.")]
-        [SerializeField] MorphExitButton exitButton = MorphExitButton.Trigger;
+        [Header("Hold to show")]
+        [Tooltip("The gear shift is shown only while this controller button is held down; releasing it restores the controller.")]
+        [SerializeField] MorphHoldButton holdButton = MorphHoldButton.Trigger;
+        [Tooltip("Require a second button held at the same time (e.g. Grip + Trigger). The gear shift " +
+            "only appears while BOTH are held.")]
+        [SerializeField] bool requireSecondButton = false;
+        [Tooltip("The second button that must also be held when Require Second Button is on.")]
+        [SerializeField] MorphHoldButton secondButton = MorphHoldButton.Trigger;
         [Tooltip("Which hand's button to read. Right by default (this is the right controller).")]
         [SerializeField] bool useRightHand = true;
 
-        [Header("Detent haptics (a click when the direction changes)")]
-        [Tooltip("While morphed, fire one crisp click when the knob is pushed into a new direction " +
-            "(not continuously while moving). Holding a direction = silent.")]
+        [Header("Detent haptics (a click when the gear changes)")]
+        [Tooltip("While shown, fire one crisp click each time the lever snaps into a new gear.")]
         [SerializeField] bool leanHaptics = true;
-        [Tooltip("Lean (deg from upright) needed to engage a direction. Higher = the heading is more " +
-            "stable when the first click fires (less double-click).")]
-        [SerializeField, Min(0f)] float directionDeadzoneAngle = 10f;
-        [Tooltip("How much the lean direction (azimuth) must change before another click fires.")]
-        [SerializeField, Range(5f, 180f)] float directionChangeAngle = 45f;
-        [Tooltip("Minimum time between clicks (s). Guarantees one crisp click instead of a quick double.")]
-        [SerializeField, Min(0f)] float minClickInterval = 0.12f;
-        [Tooltip("Also click when the knob returns to center/neutral.")]
-        [SerializeField] bool clickOnReturnToCenter = true;
         [Tooltip("Click strength (0-1). Higher = firmer 'clunk'.")]
         [SerializeField, Range(0f, 1f)] float detentAmplitude = 0.7f;
         [Tooltip("Click length (seconds). Short = crisp click, long = softer thud.")]
@@ -84,25 +77,9 @@ namespace F1XR.Interaction.Input
         [Tooltip("Disable colliders / interactable / controller script on the spawned copy so it's a pure visual.")]
         [SerializeField] bool disableInteractionOnAttach = true;
 
-        [Header("Debug")]
-        [Tooltip("Force the morph on to position the attach transform.")]
-        [SerializeField] bool debugForceMorph;
-        [Tooltip("Live readout: current angle (deg) between the measured axis and world up.")]
-        [SerializeField] float debugCurrentAxisAngle;
-        [Tooltip("Live readout: the auto-adapting neutral angle (deg).")]
-        [SerializeField] float debugNeutralAngle;
-        [Tooltip("Live readout: current deviation (deg) from neutral. Morph turns ON when this crosses On-delta.")]
-        [SerializeField] float debugCurrentDeviation;
-
         GameObject instance;
         GearShiftController instanceShift;
-        bool morphed;
-        float neutralAngle;
-        bool neutralInit;
-        bool exitPressedLast;
-        bool leanEngaged;
-        float lastClickAzimuth;
-        float lastClickTime = -999f;
+        bool shown;
         readonly List<InputDevice> devices = new List<InputDevice>();
 
         void Awake()
@@ -113,117 +90,42 @@ namespace F1XR.Interaction.Input
 
         void OnDisable()
         {
-            // Leave the controller visible if this object is deactivated mid-morph.
-            if (morphed)
-                SetMorph(false);
+            // Leave the controller visible if this object is deactivated while the gear shift is up.
+            if (shown)
+                SetShown(false);
+        }
+
+        void OnDestroy()
+        {
+            if (instanceShift != null)
+            {
+                instanceShift.HoverDirectionChanged -= OnHoverDirectionChanged;
+                instanceShift.GearChanged -= OnGearDetent;
+            }
         }
 
         void Update()
         {
-            var axis = poseSource.TransformDirection(tiltMeasureAxis);
-            var angle = Vector3.Angle(axis, Vector3.up);
+            var held = ReadHoldButton();
 
-            // Seed neutral on the first valid frame so startup never spikes a morph.
-            if (!neutralInit)
-            {
-                neutralAngle = angle;
-                neutralInit = true;
-            }
-
-            // While not morphed, the neutral eases toward the current pose: whatever you hold
-            // steadily becomes "neutral", so a steady grip reads ~0 deviation. Only a tilt faster
-            // than this follow time builds up deviation. Neutral is frozen while morphed.
-            if (!morphed)
-            {
-                var k = 1f - Mathf.Exp(-Time.deltaTime / neutralFollowTime);
-                neutralAngle = Mathf.Lerp(neutralAngle, angle, k);
-            }
-
-            var deviation = Mathf.Abs(angle - neutralAngle);
-            debugCurrentAxisAngle = angle;
-            debugNeutralAngle = neutralAngle;
-            debugCurrentDeviation = deviation;
-
-            // Edge-detect the exit button every frame so a press is never missed.
-            var exitEdge = ReadExitButtonEdge();
-
-            if (debugForceMorph)
-            {
-                if (!morphed) SetMorph(true);
-                return;
-            }
-
-            if (!morphed)
-            {
-                if (deviation >= tiltOnDelta)
-                    SetMorph(true);
-            }
-            else if (exitEdge)
-            {
-                // Stay morphed regardless of angle until the exit button returns us to the controller.
-                SetMorph(false);
-                neutralInit = false; // re-seed neutral to the current pose so it doesn't instantly re-trigger
-            }
-
-            if (morphed && leanHaptics)
-                UpdateLeanHaptics();
+            if (held && !shown)
+                SetShown(true);
+            else if (!held && shown)
+                SetShown(false);
         }
 
-        void UpdateLeanHaptics()
+        // One crisp click each time the lever leans into a new direction (detent feedback).
+        void OnHoverDirectionChanged(GearDirection direction)
         {
-            if (instanceShift == null)
-                return;
-
-            // A click fires only on a direction change: pushing out of center, swinging to a new
-            // heading, or returning to center. Holding a direction stays silent.
-            var axis = instanceShift.CurrentLeanAxisLocal;
-            var leanAngle = Vector3.Angle(Vector3.up, axis);
-
-            // Engage/disengage hysteresis so a lean hovering at the boundary can't chatter.
-            var disengageAngle = directionDeadzoneAngle * 0.6f;
-            var engagedRegion = leanEngaged ? leanAngle >= disengageAngle : leanAngle >= directionDeadzoneAngle;
-
-            if (engagedRegion)
-            {
-                // Heading of the lean in the joint's horizontal plane.
-                var azimuth = Mathf.Atan2(axis.z, axis.x) * Mathf.Rad2Deg;
-
-                if (!leanEngaged)
-                {
-                    // Just pushed out of center -> one click.
-                    leanEngaged = true;
-                    TryClick();
-                    lastClickAzimuth = azimuth;
-                }
-                else if (Time.time - lastClickTime < minClickInterval)
-                {
-                    // Refractory window right after a click: let the heading settle so the noisy
-                    // engage azimuth can't be mistaken for a fresh direction change (kills "따닥").
-                    lastClickAzimuth = azimuth;
-                }
-                else if (Mathf.Abs(Mathf.DeltaAngle(lastClickAzimuth, azimuth)) >= directionChangeAngle)
-                {
-                    // Swung into a meaningfully different direction -> click.
-                    if (TryClick())
-                        lastClickAzimuth = azimuth;
-                }
-            }
-            else if (leanEngaged)
-            {
-                leanEngaged = false;
-                if (clickOnReturnToCenter)
-                    TryClick();
-            }
+            if (leanHaptics)
+                SendHaptic(detentAmplitude, detentDuration);
         }
 
-        bool TryClick()
+        // One crisp click each time the lever snaps into a new front/back gear (detent feedback).
+        void OnGearDetent(int gear)
         {
-            if (Time.time - lastClickTime < minClickInterval)
-                return false;
-
-            SendHaptic(detentAmplitude, detentDuration);
-            lastClickTime = Time.time;
-            return true;
+            if (leanHaptics)
+                SendHaptic(detentAmplitude, detentDuration);
         }
 
         void SendHaptic(float amplitude, float duration)
@@ -242,26 +144,27 @@ namespace F1XR.Interaction.Input
             }
         }
 
-        bool ReadExitButtonEdge()
+        bool ReadHoldButton()
         {
-            var pressed = ReadExitButton();
-            var edge = pressed && !exitPressedLast;
-            exitPressedLast = pressed;
-            return edge;
+            if (!ReadButton(holdButton))
+                return false;
+            if (requireSecondButton && !ReadButton(secondButton))
+                return false;
+            return true;
         }
 
-        bool ReadExitButton()
+        bool ReadButton(MorphHoldButton button)
         {
             var handedness = useRightHand ? InputDeviceCharacteristics.Right : InputDeviceCharacteristics.Left;
             devices.Clear();
             InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller | handedness, devices);
 
             InputFeatureUsage<bool> usage;
-            switch (exitButton)
+            switch (button)
             {
-                case MorphExitButton.Grip: usage = CommonUsages.gripButton; break;
-                case MorphExitButton.PrimaryButton: usage = CommonUsages.primaryButton; break;
-                case MorphExitButton.SecondaryButton: usage = CommonUsages.secondaryButton; break;
+                case MorphHoldButton.Grip: usage = CommonUsages.gripButton; break;
+                case MorphHoldButton.PrimaryButton: usage = CommonUsages.primaryButton; break;
+                case MorphHoldButton.SecondaryButton: usage = CommonUsages.secondaryButton; break;
                 default: usage = CommonUsages.triggerButton; break;
             }
 
@@ -274,10 +177,9 @@ namespace F1XR.Interaction.Input
             return false;
         }
 
-        void SetMorph(bool on)
+        void SetShown(bool on)
         {
-            morphed = on;
-            leanEngaged = false; // reset direction tracking so a morph never spikes a haptic
+            shown = on;
 
             if (on)
             {
@@ -312,6 +214,12 @@ namespace F1XR.Interaction.Input
             instance.transform.localScale = attachLocalScale;
             instanceShift = instance.GetComponentInChildren<GearShiftController>(true);
 
+            if (instanceShift != null)
+            {
+                instanceShift.HoverDirectionChanged += OnHoverDirectionChanged;
+                instanceShift.GearChanged += OnGearDetent;
+            }
+
             if (disableInteractionOnAttach)
                 StripInteraction(instance);
         }
@@ -322,12 +230,38 @@ namespace F1XR.Interaction.Input
                 return;
 
             var t = instance.transform;
-            t.rotation = Quaternion.Euler(attachLocalEuler);
+            // Plant perfectly upright: strip any pitch/roll so the base never leans and the lever's
+            // front-back plane stays vertical. Only yaw (which way the plane faces) is honored.
+            // Face the user so the front-back plane lines up with the way the hand pushes; otherwise a
+            // forward/back push lands perpendicular to the plane and gets clipped (lever won't move).
+            float yaw = attachLocalEuler.y;
+            if (faceUserOnPlant)
+                yaw += UserFacingYaw();
+            t.rotation = Quaternion.Euler(0f, yaw, 0f);
             t.localScale = attachLocalScale;
 
             var pos = poseSource.TransformPoint(attachLocalPosition);
             pos += Vector3.up * (GetInstanceHeight() * baseHeightOffset);
             t.position = pos;
+        }
+
+        // Horizontal yaw (deg) that makes the base's local +Z point along the user's gaze direction,
+        // so the lever's front-back plane faces the user. Falls back to the pose source, then to 0.
+        float UserFacingYaw()
+        {
+            Vector3 fwd = Vector3.zero;
+
+            var cam = Camera.main;
+            if (cam != null)
+                fwd = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
+
+            if (fwd.sqrMagnitude < 1e-6f && poseSource != null)
+                fwd = Vector3.ProjectOnPlane(poseSource.forward, Vector3.up);
+
+            if (fwd.sqrMagnitude < 1e-6f)
+                return 0f;
+
+            return Mathf.Atan2(fwd.x, fwd.z) * Mathf.Rad2Deg;
         }
 
         float GetInstanceHeight()

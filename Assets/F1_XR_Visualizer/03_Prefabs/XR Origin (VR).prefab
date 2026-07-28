@@ -341,12 +341,11 @@ GameObject:
   - component: {fileID: 5473299740403965983}
   - component: {fileID: 3661482066174012299}
   - component: {fileID: 5971044503539204043}
-  - component: {fileID: 4104917067994936181}
   - component: {fileID: 3416252152838388730}
   - component: {fileID: 2713799799325825105}
   - component: {fileID: 7774318946425536081}
+  - component: {fileID: 4104917067994936181}
   - component: {fileID: 8884318946425536081}
-  - component: {fileID: 9994318946425536081}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -517,29 +516,6 @@ MonoBehaviour:
   planeManager: {fileID: 0}
   raycastManager: {fileID: 0}
   disableManagersUntilPermissionGranted: 1
---- !u!114 &4104917067994936181
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3494979625393617182}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.RedPointer
-  placementController: {fileID: 3661482066174012299}
-  showPointer: 1
-  showControllerPointers: 1
-  showHandPointers: 1
-  pointerSize: 0.01
-  surfaceOffset: 0.005
-  pointerColor: {r: 1, g: 0, b: 0, a: 1}
-  previewLineWidth: 0.01
-  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.5176471}
-  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.5176471}
-  prefabPreviewAlpha: 0.4
 --- !u!114 &3416252152838388730
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -616,6 +592,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6d28f00fbefa9e64a9b7926435e89e6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.HandInputModeSwitcher
+  showInputVisualMeshes: 0
   handVisualizerRoot: {fileID: 6355290183892247996}
   leftHandRoot: {fileID: 7182445629687837298}
   leftHandRay: {fileID: 3218022297858878498}
@@ -633,7 +610,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e85a8d9d4ca54ce983634dfc17645282, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.ContextualInputFeedback
   mode: 0
   enterDistance: 0.035
@@ -666,6 +643,29 @@ MonoBehaviour:
   fadeSpeed: 8
   pinchStartDistance: 0.025
   pinchEndDistance: 0.04
+--- !u!114 &4104917067994936181
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3494979625393617182}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.RedPointer
+  placementController: {fileID: 3661482066174012299}
+  showPointer: 1
+  showControllerPointers: 1
+  showHandPointers: 1
+  pointerSize: 0.01
+  surfaceOffset: 0.005
+  pointerColor: {r: 1, g: 0, b: 0, a: 1}
+  previewLineWidth: 0.01
+  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.5176471}
+  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.5176471}
+  prefabPreviewAlpha: 0.4
 --- !u!114 &8884318946425536081
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -676,7 +676,7 @@ MonoBehaviour:
   m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 318ec3ba2f0d4049956f3e90c2651161, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.LocalDepthOccluderPrototype
   mode: 1
   contextualFeedback: {fileID: 7774318946425536081}
@@ -687,38 +687,6 @@ MonoBehaviour:
   showValidationCube: 1
   validationDistance: 0.65
   validationCubeSize: 0.22
---- !u!114 &9994318946425536081
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3494979625393617182}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 91b26d9356c74a6cb286dd4eb5127193, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.OccludedInputVisualController
-  mode: 0
-  contextualFeedback: {fileID: 7774318946425536081}
-  occludedMaterial: {fileID: 2100000, guid: b58c80ce13004df58ec6292d601b8dd1, type: 2}
-  leftHandRoot: {fileID: 7182445629687837298}
-  rightHandRoot: {fileID: 6393571801743313195}
-  leftHandRay: {fileID: 3218022297858878498}
-  rightHandRay: {fileID: 8911723853133913048}
-  leftController: {fileID: 5829972554189839919}
-  rightController: {fileID: 3306124228781898365}
-  leftHandSource: {fileID: 0}
-  rightHandSource: {fileID: 0}
-  leftControllerSources: []
-  rightControllerSources: []
-  idleOpacity: 0.18
-  hoverOpacity: 0.24
-  activeOpacity: 0.36
-  opacitySpeed: 8
-  softRimStrength: 0.2
-  softRimPower: 2
-  outlineRimPower: 5
 --- !u!1 &4913892970057843589
 GameObject:
   m_ObjectHideFlags: 0

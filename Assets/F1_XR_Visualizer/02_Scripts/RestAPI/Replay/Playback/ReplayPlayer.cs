@@ -24,6 +24,7 @@ namespace F1XR.RestAPI.Replay
             new("F1XR.Replay.StartingLights");
         private static readonly ProfilerMarker GridStartMarker =
             new("F1XR.Replay.GridStart");
+        private const float TrackAlignmentSampleSeconds = 180f;
 
         public ApiClient api;
         public GameObject carPrefab;
@@ -62,6 +63,8 @@ namespace F1XR.RestAPI.Replay
         private ReplayStartingLights _replayStartingLights;
 
         private Coroutine _seekCoroutine;
+        private Coroutine _trackAlignmentCoroutine;
+        private bool trackAlignmentReady = true;
 
         private ReplayChunkLoader replayChunks;
         private ReplayManifestPoller manifestPoller;
@@ -71,6 +74,7 @@ namespace F1XR.RestAPI.Replay
         private int selectedDriverNumber;
         private readonly ReplayTimeline timeline = new();
         private readonly ReplayReadyStart readyStart = new();
+        private readonly List<Vector3> fallbackOvertakeCenterline = new();
     
         public float CurrentTime => timeline.CurrentTime;
         public float TimelineStartTime => timeline.StartTime;
@@ -142,6 +146,7 @@ namespace F1XR.RestAPI.Replay
             if (eventReplay == null)
                 eventReplay = gameObject.AddComponent<EventPopoutReplay>();
             eventReplay.Configure(this);
+            ConfigureFallbackOvertakeCorridor();
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -153,6 +158,7 @@ namespace F1XR.RestAPI.Replay
         {
             EnsureEngineSound();
             EnsureOvertakeMotion();
+            StopTrackAlignment();
             ReplayCoordinate.scale = positionScale;
             
             _manifest = manifest;
@@ -187,6 +193,11 @@ namespace F1XR.RestAPI.Replay
 
             replayCars.SetBuildPlacer(buildPlacer);
             replayCars.SetCalibration(trackCalibration);
+            ConfigureFallbackOvertakeCorridor();
+            trackAlignmentReady =
+                trackCalibration == null ||
+                !trackCalibration.RequiresRuntimeSourceAlignment(
+                    manifest.sessionKey);
             replayCars.SetLabelsVisible(showCarLabels);
             replayCars.SetLeaderHighlightVisible(false);
             replayEvents = ResolveReplayEvents(manifest);
@@ -200,11 +211,59 @@ namespace F1XR.RestAPI.Replay
 
             manifestPoller ??= new ReplayManifestPoller(this);
             manifestPoller.Start(api, _datasetId, manifestPollSeconds, ApplyManifest);
+
+            if (!trackAlignmentReady)
+            {
+                _trackAlignmentCoroutine =
+                    StartCoroutine(PrepareTrackAlignment());
+            }
+        }
+
+        private void ConfigureFallbackOvertakeCorridor()
+        {
+            fallbackOvertakeCenterline.Clear();
+            if (replayCars == null ||
+                eventReplay == null ||
+                trackCalibration == null ||
+                !trackCalibration.active ||
+                trackCalibration.mappingMode !=
+                TrackCalibration.MappingMode.Route ||
+                trackCalibration.points == null)
+            {
+                replayCars?.SetFallbackOvertakeCorridor(
+                    fallbackOvertakeCenterline,
+                    0f,
+                    false);
+                return;
+            }
+
+            float scale =
+                trackCalibration.OutputScale;
+            for (int i = 0;
+                 i < trackCalibration.points.Length;
+                 i++)
+            {
+                Vector3 target =
+                    trackCalibration
+                        .points[i]
+                        .targetLocalPosition;
+                fallbackOvertakeCenterline.Add(
+                    new Vector3(
+                        target.x * scale,
+                        target.y * scale +
+                        trackCalibration.heightOffset,
+                        target.z * scale));
+            }
+
+            replayCars.SetFallbackOvertakeCorridor(
+                fallbackOvertakeCenterline,
+                eventReplay.roadWidth,
+                trackCalibration.loopMappingSegments);
         }
 
         public void Play()
         {
-            if (_manifest == null)
+            if (_manifest == null || !trackAlignmentReady)
                 return;
 
             timeline.Play();
@@ -411,6 +470,9 @@ namespace F1XR.RestAPI.Replay
 
         private void TryAutoPlay()
         {
+            if (!trackAlignmentReady)
+                return;
+
             readyStart.TryStart(
                 _manifest,
                 replayChunks,
@@ -419,6 +481,86 @@ namespace F1XR.RestAPI.Replay
                 HasPlacedTrack(),
                 TryAutoPlay,
                 Play);
+        }
+
+        private IEnumerator PrepareTrackAlignment()
+        {
+            string alignmentDatasetId = _datasetId;
+            float startTime =
+                _manifest.raceStartT > 0f
+                    ? _manifest.raceStartT
+                    : _manifest.playbackStartT;
+            float availableEnd =
+                _manifest.requestedDurationSeconds > 0f
+                    ? _manifest.requestedDurationSeconds
+                    : _manifest.durationSeconds;
+            float endTime =
+                Mathf.Min(
+                    startTime + TrackAlignmentSampleSeconds,
+                    availableEnd);
+
+            while (_datasetId == alignmentDatasetId &&
+                timeline.ReadyUntilTime + 0.001f < endTime &&
+                _manifest.status != "complete" &&
+                _manifest.status != "failed")
+            {
+                yield return new WaitForSeconds(
+                    Mathf.Max(0.1f, manifestPollSeconds));
+            }
+
+            if (_datasetId != alignmentDatasetId)
+                yield break;
+
+            bool loadedRange = false;
+            if (endTime > startTime)
+            {
+                yield return replayChunks.LoadRange(
+                    startTime,
+                    endTime,
+                    loaded => loadedRange = loaded);
+            }
+
+            if (loadedRange &&
+                trackCalibration.TryEstimateRuntimeSourceTranslation(
+                    replayChunks.LocationsByDriver,
+                    startTime,
+                    out Vector2 translation,
+                    out float rmsError,
+                    out int driverNumber))
+            {
+                Vector2 sessionCorrection =
+                    trackCalibration.GetSourceTranslationCorrection(
+                        _manifest.sessionKey);
+                translation += sessionCorrection;
+                trackCalibration.SetRuntimeSourceTranslation(
+                    translation);
+                Debug.Log(
+                    $"[TrackAlignment] dataset={alignmentDatasetId}, " +
+                    $"driver={driverNumber}, translation={translation}, " +
+                    $"sessionCorrection={sessionCorrection}, " +
+                    $"rms={rmsError:0.###}");
+            }
+            else
+            {
+                trackCalibration.ResetRuntimeSourceTranslation();
+                Debug.LogWarning(
+                    $"[TrackAlignment] dataset={alignmentDatasetId}, " +
+                    "a complete reference lap was not available. " +
+                    "Using the calibration source coordinates unchanged.");
+            }
+
+            trackAlignmentReady = true;
+            _trackAlignmentCoroutine = null;
+            TryAutoPlay();
+        }
+
+        private void StopTrackAlignment()
+        {
+            if (_trackAlignmentCoroutine == null)
+                return;
+
+            StopCoroutine(_trackAlignmentCoroutine);
+            _trackAlignmentCoroutine = null;
         }
 
         private void ApplyStartingLightTimeline()
@@ -615,6 +757,7 @@ namespace F1XR.RestAPI.Replay
         private void OnDestroy()
         {
             manifestPoller?.Stop();
+            StopTrackAlignment();
 
             if (_seekCoroutine != null)
                 StopCoroutine(_seekCoroutine);
