@@ -18,6 +18,7 @@ GameObject:
   - component: {fileID: 8143694281412360011}
   - component: {fileID: 612189976496330165}
   - component: {fileID: 1512278900930449566}
+  - component: {fileID: 2599781216080018502}
   m_Layer: 0
   m_Name: AIBridge
   m_TagString: Untagged
@@ -95,6 +96,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad10dd520aa698f4eace1777ee9f9644, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.LoadSessionHandler
+  player: {fileID: 0}
 --- !u!114 &1972968151036858088
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -243,5 +245,23 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.AgentBridgeTester
   bridge: {fileID: 358480993955718652}
+  mic: {fileID: 2599781216080018502}
   question: "DRS\uAC00 \uBB50\uC57C?"
   sessionKey: 9839
+--- !u!114 &2599781216080018502
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3195421536832648194}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 50a3615d0824ecd4da8ad0c969bd8a27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Voice.MicRecorder
+  client: {fileID: 7823266626266337528}
+  sampleRate: 16000
+  maxSeconds: 15
+  currentSessionKey: 0
+  currentAtTime: 
