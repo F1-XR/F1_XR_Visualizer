@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7de2f3634bf10e648bf2dd23813d472f, type: 3}
+  m_Name: AgentConnectionConfig
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Net.AgentConnectionConfig
+  url: ws://localhost:8001/ws
+  autoReconnect: 1
+  reconnectDelaySec: 2
