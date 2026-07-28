@@ -16,20 +16,23 @@ namespace F1XR.RestAPI.Replay.Room
         private const int PortalSurfaceLayer = 2;
         private const int TextureSize = 512;
         private const int TextureDepthBits = 16;
-        private const float FallbackPortalWidth = 2.4f;
-        private const float FallbackPortalHeight = 1.8f;
-        private const float MinimumPortalWidth = 1.8f;
-        private const float MinimumPortalHeight = 1.5f;
-        private const float MaximumPortalWidth = 4f;
-        private const float MaximumPortalHeight = 2.8f;
-        private const float PortalWallFill = 0.9f;
-        private const float PortalWallMargin = 0.1f;
+        private const float FallbackPortalWidth = 2.8f;
+        private const float FallbackPortalHeight = 2.1f;
+        private const float MinimumPortalWidth = 2f;
+        private const float MinimumPortalHeight = 1.7f;
+        private const float MaximumPortalWidth = 5.5f;
+        private const float MaximumPortalHeight = 3.5f;
+        private const float PortalWallFill = 1.1f;
+        private const float MaximumPortalSideOverflow = 0.35f;
+        private const float MaximumPortalTopOverflow = 0.5f;
         private const float PortalBottomOffset = 0.02f;
         private const float PortalClipTolerance = 0.12f;
         private const float PortalRoadOverlap = 0.08f;
         private const float PortalApertureCropDepth = 2f;
         private const float PortalApertureExpansion = 1f;
         private const float RoomPlaneTolerance = 0.06f;
+        internal const float ImmersiveMaximumScale = 3f;
+        private const float ImmersiveScaleRampDistance = 1.2f;
 
         private readonly List<LayerBinding> sourceLayers = new();
         private readonly HashSet<Transform> capturedLayerTransforms = new();
@@ -413,6 +416,8 @@ namespace F1XR.RestAPI.Replay.Room
 
             Transform apron =
                 stage.Find("EventRoadSafetyApron");
+            if (apron == null)
+                apron = stage.Find("EventRoad");
             MeshFilter filter =
                 apron != null
                     ? apron.GetComponent<MeshFilter>()
@@ -747,6 +752,7 @@ namespace F1XR.RestAPI.Replay.Room
                 new(source.subMeshCount);
             List<Material> materials =
                 new(source.subMeshCount);
+            HashSet<int> keptVertices = new();
             Material[] sourceMaterials =
                 sourceRenderer.sharedMaterials;
             int keptTriangles = 0;
@@ -802,6 +808,9 @@ namespace F1XR.RestAPI.Replay.Room
                     kept.Add(a);
                     kept.Add(b);
                     kept.Add(c);
+                    keptVertices.Add(a);
+                    keptVertices.Add(b);
+                    keptVertices.Add(c);
                     keptTriangles++;
                 }
 
@@ -828,6 +837,10 @@ namespace F1XR.RestAPI.Replay.Room
                 return null;
             }
 
+            WidenRoomTrack(
+                copy,
+                sourceTransform,
+                keptVertices);
             copy.subMeshCount = submeshes.Count;
             for (int submesh = 0;
                  submesh < submeshes.Count;
@@ -843,6 +856,124 @@ namespace F1XR.RestAPI.Replay.Room
             clippedMaterials = materials.ToArray();
             runtimeMeshes.Add(copy);
             return copy;
+        }
+
+        private void WidenRoomTrack(
+            Mesh mesh,
+            Transform sourceTransform,
+            HashSet<int> keptVertices)
+        {
+            if (mesh == null ||
+                sourceTransform == null ||
+                keptVertices == null ||
+                keptVertices.Count == 0 ||
+                ImmersiveMaximumScale <= 1f ||
+                roomTrackLeftBoundary.Count < 2 ||
+                roomTrackRightBoundary.Count !=
+                roomTrackLeftBoundary.Count)
+            {
+                return;
+            }
+
+            Vector3[] vertices = mesh.vertices;
+            foreach (int index in keptVertices)
+            {
+                if (index < 0 || index >= vertices.Length)
+                    continue;
+
+                Vector3 world =
+                    sourceTransform.TransformPoint(
+                        vertices[index]);
+                if (!TryGetTrackCrossSection(
+                        world,
+                        out Vector3 center,
+                        out Vector3 side))
+                {
+                    continue;
+                }
+
+                float lateral =
+                    Vector3.Dot(world - center, side);
+                float widthScale =
+                    EvaluateImmersiveScale(world);
+                world +=
+                    side *
+                    lateral *
+                    (widthScale - 1f);
+                vertices[index] =
+                    sourceTransform.InverseTransformPoint(
+                        world);
+            }
+
+            mesh.vertices = vertices;
+        }
+
+        private bool TryGetTrackCrossSection(
+            Vector3 world,
+            out Vector3 center,
+            out Vector3 side)
+        {
+            center = Vector3.zero;
+            side = Vector3.zero;
+            float bestDistance = float.PositiveInfinity;
+
+            for (int i = 0;
+                 i < roomTrackLeftBoundary.Count - 1;
+                 i++)
+            {
+                Vector3 start =
+                    (roomTrackLeftBoundary[i] +
+                     roomTrackRightBoundary[i]) *
+                    0.5f;
+                Vector3 end =
+                    (roomTrackLeftBoundary[i + 1] +
+                     roomTrackRightBoundary[i + 1]) *
+                    0.5f;
+                Vector3 flatSegment = Flat(end - start);
+                float lengthSquared =
+                    flatSegment.sqrMagnitude;
+                float t = lengthSquared > 0.000001f
+                    ? Mathf.Clamp01(
+                        Vector3.Dot(
+                            Flat(world - start),
+                            flatSegment) /
+                        lengthSquared)
+                    : 0f;
+                Vector3 candidateCenter =
+                    Vector3.Lerp(start, end, t);
+                float distance =
+                    Flat(world - candidateCenter)
+                        .sqrMagnitude;
+                if (distance >= bestDistance)
+                    continue;
+
+                Vector3 candidateSide = Flat(
+                    Vector3.Lerp(
+                        roomTrackRightBoundary[i] -
+                        roomTrackLeftBoundary[i],
+                        roomTrackRightBoundary[i + 1] -
+                        roomTrackLeftBoundary[i + 1],
+                        t));
+                if (candidateSide.sqrMagnitude <=
+                    0.000001f)
+                {
+                    candidateSide = Vector3.Cross(
+                        Vector3.up,
+                        flatSegment);
+                }
+
+                if (candidateSide.sqrMagnitude <=
+                    0.000001f)
+                {
+                    continue;
+                }
+
+                bestDistance = distance;
+                center = candidateCenter;
+                side = candidateSide.normalized;
+            }
+
+            return side.sqrMagnitude > 0.000001f;
         }
 
         private bool TriangleTouchesTrackCorridor(
@@ -1032,6 +1163,34 @@ namespace F1XR.RestAPI.Replay.Room
                        position - exitPosition,
                        exitInward) >=
                    -RoomPlaneTolerance;
+        }
+
+        public float EvaluateImmersiveScale(
+            Vector3 worldPosition)
+        {
+            if (!IsInsideRoom(worldPosition))
+                return 1f;
+
+            float entryDepth = Mathf.Max(
+                0f,
+                Vector3.Dot(
+                    worldPosition - entryPosition,
+                    entryInward));
+            float exitDepth = Mathf.Max(
+                0f,
+                Vector3.Dot(
+                    worldPosition - exitPosition,
+                    exitInward));
+            float blend = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.Clamp01(
+                    Mathf.Min(entryDepth, exitDepth) /
+                    ImmersiveScaleRampDistance));
+            return Mathf.Lerp(
+                1f,
+                ImmersiveMaximumScale,
+                blend);
         }
 
         private bool IsInsidePortalApertures(
@@ -1364,10 +1523,12 @@ namespace F1XR.RestAPI.Replay.Room
 
             float availableWidth = Mathf.Max(
                 0.1f,
-                wallSize.x - PortalWallMargin * 2f);
+                wallSize.x +
+                MaximumPortalSideOverflow * 2f);
             float availableHeight = Mathf.Max(
                 0.1f,
-                wallSize.y - PortalWallMargin * 2f);
+                wallSize.y +
+                MaximumPortalTopOverflow);
             float width = Mathf.Min(
                 availableWidth,
                 Mathf.Clamp(
