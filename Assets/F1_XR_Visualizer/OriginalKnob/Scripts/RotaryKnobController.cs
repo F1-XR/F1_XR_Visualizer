@@ -71,6 +71,9 @@ namespace F1XR.OriginalKnob
         public float AngularVelocity => angularVelocity;
         /// <summary>-1, 0 or +1 in the visual convention: which way the knob is currently turning.</summary>
         public int Direction => direction;
+        /// <summary>Signed, unbounded accumulated angle actually applied to the pivot (visual, CCW positive).
+        /// Use this to drive visuals that must follow the knob's real turn direction.</summary>
+        public float VisualAngle => visualTotal;
 
         void Awake()
         {

@@ -173,6 +173,104 @@ namespace F1XR.RestAPI.Replay.Room
             return exitPoseValid;
         }
 
+        public bool TryGetEntryWallSize(out Vector2 size)
+        {
+            size = Vector2.zero;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetEntryWall(out var wall))
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            return wall.IsValid && size.x > 0f && size.y > 0f;
+        }
+
+        public bool TryGetEntryWallGeometry(
+            out Vector2 size,
+            out Vector3 bottomCenter,
+            out Vector3 verticalAxis)
+        {
+            size = Vector2.zero;
+            bottomCenter = Vector3.zero;
+            verticalAxis = Vector3.up;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetEntryWall(out var wall) ||
+                !wall.IsValid)
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            bottomCenter =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+            verticalAxis = wall.VerticalAxis;
+            return size.x > 0f &&
+                size.y > 0f &&
+                verticalAxis.sqrMagnitude > 0.5f;
+        }
+
+        public bool TryGetExitWallSize(out Vector2 size)
+        {
+            size = Vector2.zero;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetExitWall(out var wall))
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            return wall.IsValid && size.x > 0f && size.y > 0f;
+        }
+
+        public bool TryGetExitWallGeometry(
+            out Vector2 size,
+            out Vector3 bottomCenter,
+            out Vector3 verticalAxis)
+        {
+            size = Vector2.zero;
+            bottomCenter = Vector3.zero;
+            verticalAxis = Vector3.up;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetExitWall(out var wall) ||
+                !wall.IsValid)
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            bottomCenter =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+            verticalAxis = wall.VerticalAxis;
+            return size.x > 0f &&
+                size.y > 0f &&
+                verticalAxis.sqrMagnitude > 0.5f;
+        }
+
+        public bool TryGetRoomFloorHeight(out float floorHeight)
+        {
+            floorHeight = 0f;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetEntryWall(out var entryWall) ||
+                !wallDiscovery.TryGetExitWall(out var exitWall) ||
+                !entryWall.IsValid ||
+                !exitWall.IsValid)
+            {
+                return false;
+            }
+
+            Vector3 entryBottom =
+                entryWall.Center +
+                entryWall.VerticalAxis * entryWall.MinVertical;
+            Vector3 exitBottom =
+                exitWall.Center +
+                exitWall.VerticalAxis * exitWall.MinVertical;
+            floorHeight = (entryBottom.y + exitBottom.y) * 0.5f;
+            return float.IsFinite(floorHeight);
+        }
+
         [ContextMenu("Capture Hero From Current View")]
         public void CaptureHeroFromCurrentView()
         {

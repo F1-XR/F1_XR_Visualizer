@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using F1XR.RestAPI.Api;
 using UnityEngine;
 
@@ -33,9 +34,18 @@ namespace F1XR.RestAPI.Replay
         private const float MinSegmentSourceDistance = 120f;
         private const float MaxSegmentSourceDistance = 900f;
         private const float SegmentSourceDistanceRatio = 0.12f;
+        private const int RuntimeAlignmentSampleCount = 128;
+        private const int RuntimeAlignmentMinimumSamples = 64;
+        private const float RuntimeAlignmentMaximumStepRatio = 0.025f;
+        private const float RuntimeAlignmentMaximumRmsRatio = 0.01f;
+        private const int RouteSegmentLookBehind = 2;
+        private const int RouteSegmentLookAhead = 8;
 
         public int circuitKey;
         public string circuitName;
+        public int referenceSessionKey;
+        public int sourceTranslationCorrectionSessionKey;
+        public Vector2 sourceTranslationCorrection;
         public bool active;
         public MappingMode mappingMode;
         [Range(0f, 1f)] public float segmentBlend = 1f;
@@ -53,15 +63,26 @@ namespace F1XR.RestAPI.Replay
         public bool loopPointHeightSegments = true;
         public bool useSourceHeightForRouteSegments;
         [Min(0f)] public float routeSourceHeightWeight = 1f;
+        [Min(0f)] public float maxRouteLateralOffset;
         public Point[] points;
 
         bool hasRuntimeSourceHeightOrigin;
         float runtimeSourceHeightOrigin;
         [NonSerialized] bool hasRouteOffsetScale;
         [NonSerialized] float routeOffsetScale;
+        [NonSerialized] Vector2 runtimeSourceTranslation;
 
         public float OutputScale =>
             outputScale > 0f ? outputScale : 1f;
+
+        public bool SupportsRuntimeSourceAlignment =>
+            active &&
+            mappingMode == MappingMode.Route &&
+            referenceSessionKey > 0 &&
+            GetConfiguredPointCount() >= 8;
+
+        public Vector2 RuntimeSourceTranslation =>
+            runtimeSourceTranslation;
 
         [Serializable]
         public struct Point
@@ -74,13 +95,30 @@ namespace F1XR.RestAPI.Replay
 
         public bool TryMap(LocationSample sample, out Vector3 localPosition)
         {
+            return TryMapContinuous(
+                sample,
+                -1,
+                out localPosition,
+                out _);
+        }
+
+        internal bool TryMapContinuous(
+            LocationSample sample,
+            int previousRouteSegmentIndex,
+            out Vector3 localPosition,
+            out int routeSegmentIndex)
+        {
+            routeSegmentIndex = -1;
+
             if (active &&
                 mappingMode == MappingMode.Route &&
                 TryMapRoute(
-                    MapSourceAxes(sample.x, sample.y),
+                    MapRuntimeSourceAxes(sample.x, sample.y),
                     sample.z,
+                    previousRouteSegmentIndex,
                     out var routePosition,
-                    out var routeHeight))
+                    out var routeHeight,
+                    out routeSegmentIndex))
             {
                 float scale = OutputScale;
                 localPosition = new Vector3(
@@ -107,9 +145,101 @@ namespace F1XR.RestAPI.Replay
             runtimeSourceHeightOrigin = 0f;
         }
 
+        public bool RequiresRuntimeSourceAlignment(int sessionKey)
+        {
+            return SupportsRuntimeSourceAlignment &&
+                sessionKey != referenceSessionKey;
+        }
+
+        public void ResetRuntimeSourceTranslation()
+        {
+            runtimeSourceTranslation = Vector2.zero;
+        }
+
+        public void SetRuntimeSourceTranslation(Vector2 translation)
+        {
+            runtimeSourceTranslation = translation;
+        }
+
+        public Vector2 GetSourceTranslationCorrection(int sessionKey)
+        {
+            return sessionKey == sourceTranslationCorrectionSessionKey
+                ? sourceTranslationCorrection
+                : Vector2.zero;
+        }
+
+        public bool TryEstimateRuntimeSourceTranslation(
+            Dictionary<int, List<LocationSample>> samplesByDriver,
+            float startTime,
+            out Vector2 translation,
+            out float rmsError,
+            out int driverNumber)
+        {
+            translation = Vector2.zero;
+            rmsError = float.MaxValue;
+            driverNumber = 0;
+
+            if (!SupportsRuntimeSourceAlignment ||
+                samplesByDriver == null ||
+                !TryBuildRuntimeAlignmentRoute(
+                    out List<Vector2> route,
+                    out float routeLength))
+            {
+                return false;
+            }
+
+            Vector2[] routeSamples =
+                ResampleClosedRoute(
+                    route,
+                    routeLength,
+                    RuntimeAlignmentSampleCount);
+            float maximumStep =
+                routeLength *
+                RuntimeAlignmentMaximumStepRatio;
+
+            foreach (KeyValuePair<int, List<LocationSample>> pair in samplesByDriver)
+            {
+                if (!TryBuildRuntimeAlignmentPath(
+                    pair.Value,
+                    startTime,
+                    routeLength,
+                    maximumStep,
+                    out List<Vector2> path,
+                    out float pathLength))
+                {
+                    continue;
+                }
+
+                Vector2[] pathSamples =
+                    ResampleOpenPath(
+                        path,
+                        routeLength,
+                        RuntimeAlignmentSampleCount);
+
+                FindBestTranslation(
+                    routeSamples,
+                    pathSamples,
+                    out Vector2 candidateTranslation,
+                    out float candidateError);
+
+                if (candidateError >= rmsError)
+                    continue;
+
+                translation = candidateTranslation;
+                rmsError = candidateError;
+                driverNumber = pair.Key;
+            }
+
+            return driverNumber != 0 &&
+                rmsError <=
+                    routeLength *
+                    RuntimeAlignmentMaximumRmsRatio;
+        }
+
         void OnEnable()
         {
             hasRouteOffsetScale = false;
+            runtimeSourceTranslation = Vector2.zero;
         }
 
         void OnValidate()
@@ -124,7 +254,8 @@ namespace F1XR.RestAPI.Replay
             if (!active)
                 return false;
 
-            var mappedSourcePosition = MapSourceAxes(sourcePosition);
+            var mappedSourcePosition =
+                MapRuntimeSourceAxes(sourcePosition);
             if (mappingMode == MappingMode.Route && TryMapRoute(
                 mappedSourcePosition,
                 null,
@@ -192,7 +323,9 @@ namespace F1XR.RestAPI.Replay
                 sourcePosition,
                 null,
                 limitSourceDistance: true,
+                preferredSegmentIndex: -1,
                 out targetPosition,
+                out _,
                 out _);
         }
 
@@ -202,65 +335,150 @@ namespace F1XR.RestAPI.Replay
             out Vector2 targetPosition,
             out float targetHeight)
         {
+            return TryMapRoute(
+                sourcePosition,
+                sourceHeight,
+                -1,
+                out targetPosition,
+                out targetHeight,
+                out _);
+        }
+
+        bool TryMapRoute(
+            Vector2 sourcePosition,
+            float? sourceHeight,
+            int preferredSegmentIndex,
+            out Vector2 targetPosition,
+            out float targetHeight,
+            out int routeSegmentIndex)
+        {
             return TryMapPolyline(
                 sourcePosition,
                 sourceHeight,
                 limitSourceDistance: false,
+                preferredSegmentIndex,
                 out targetPosition,
-                out targetHeight);
+                out targetHeight,
+                out routeSegmentIndex);
         }
 
         bool TryMapPolyline(
             Vector2 sourcePosition,
             float? sourceHeight,
             bool limitSourceDistance,
+            int preferredSegmentIndex,
             out Vector2 targetPosition,
-            out float targetHeight)
+            out float targetHeight,
+            out int segmentIndex)
         {
             targetPosition = default;
             targetHeight = localY;
+            segmentIndex = -1;
 
             if (points == null || GetConfiguredPointCount() < 2)
                 return false;
 
             var bestDistance = float.MaxValue;
             var found = false;
-            var lastConfiguredIndex = loopMappingSegments ? GetLastConfiguredPointIndex() : -1;
-            var firstConfiguredPoint = loopMappingSegments ? GetFirstConfiguredPoint() : null;
+
+            if (!limitSourceDistance &&
+                preferredSegmentIndex >= 0 &&
+                preferredSegmentIndex < points.Length)
+            {
+                for (int delta = -RouteSegmentLookBehind;
+                    delta <= RouteSegmentLookAhead;
+                    delta++)
+                {
+                    int candidateIndex = preferredSegmentIndex + delta;
+                    if (loopMappingSegments)
+                    {
+                        candidateIndex =
+                            (candidateIndex % points.Length + points.Length) %
+                            points.Length;
+                    }
+                    else if (candidateIndex < 0 || candidateIndex >= points.Length)
+                    {
+                        continue;
+                    }
+
+                    if (TryUsePointSegment(
+                        candidateIndex,
+                        sourcePosition,
+                        sourceHeight,
+                        limitSourceDistance,
+                        ref bestDistance,
+                        ref targetPosition,
+                        ref targetHeight,
+                        ref segmentIndex))
+                    {
+                        found = true;
+                    }
+                }
+
+                if (found)
+                    return true;
+            }
 
             for (int i = 0; i < points.Length; i++)
             {
-                var a = points[i];
-                if (!IsConfigured(a))
-                    continue;
-
-                if (TryGetNextConfiguredPoint(i, out var b) && TryUseMappingSegment(
+                if (TryUsePointSegment(
+                    i,
                     sourcePosition,
                     sourceHeight,
-                    a,
-                    b,
                     limitSourceDistance,
                     ref bestDistance,
                     ref targetPosition,
-                    ref targetHeight))
+                    ref targetHeight,
+                    ref segmentIndex))
+                {
                     found = true;
-
-                if (i != lastConfiguredIndex || !firstConfiguredPoint.HasValue)
-                    continue;
-
-                if (TryUseMappingSegment(
-                    sourcePosition,
-                    sourceHeight,
-                    a,
-                    firstConfiguredPoint.Value,
-                    limitSourceDistance,
-                    ref bestDistance,
-                    ref targetPosition,
-                    ref targetHeight))
-                    found = true;
+                }
             }
 
             return found;
+        }
+
+        bool TryUsePointSegment(
+            int pointIndex,
+            Vector2 sourcePosition,
+            float? sourceHeight,
+            bool limitSourceDistance,
+            ref float bestDistance,
+            ref Vector2 targetPosition,
+            ref float targetHeight,
+            ref int segmentIndex)
+        {
+            Point a = points[pointIndex];
+            if (!IsConfigured(a))
+                return false;
+
+            Point b;
+            if (!TryGetNextConfiguredPoint(pointIndex, out b))
+            {
+                if (!loopMappingSegments ||
+                    pointIndex != GetLastConfiguredPointIndex())
+                {
+                    return false;
+                }
+
+                Point? first = GetFirstConfiguredPoint();
+                if (!first.HasValue)
+                    return false;
+
+                b = first.Value;
+            }
+
+            return TryUseMappingSegment(
+                sourcePosition,
+                sourceHeight,
+                a,
+                b,
+                pointIndex,
+                limitSourceDistance,
+                ref bestDistance,
+                ref targetPosition,
+                ref targetHeight,
+                ref segmentIndex);
         }
 
         bool TryUseMappingSegment(
@@ -268,10 +486,12 @@ namespace F1XR.RestAPI.Replay
             float? sourceHeight,
             Point a,
             Point b,
+            int candidateSegmentIndex,
             bool limitSourceDistance,
             ref float bestDistance,
             ref Vector2 targetPosition,
-            ref float targetHeight
+            ref float targetHeight,
+            ref int segmentIndex
         )
         {
             var sourceA = MapSourceAxes(a.sourcePosition);
@@ -329,6 +549,15 @@ namespace F1XR.RestAPI.Replay
             var sourceNormal = new Vector2(-sourceDirection.y, sourceDirection.x);
             var targetNormal = new Vector2(-targetDirection.y, targetDirection.x);
             var signedOffset = Vector2.Dot(sourcePosition - projectedSource, sourceNormal);
+            if (mappingMode == MappingMode.Route &&
+                runtimeSourceTranslation.sqrMagnitude > 0.000001f &&
+                maxRouteLateralOffset > 0f)
+            {
+                signedOffset = Mathf.Clamp(
+                    signedOffset,
+                    -maxRouteLateralOffset,
+                    maxRouteLateralOffset);
+            }
             var segmentOffsetScale = targetLength / sourceLength;
             var offsetScale = mappingMode == MappingMode.Route
                 ? GetRouteOffsetScale(segmentOffsetScale)
@@ -340,6 +569,7 @@ namespace F1XR.RestAPI.Replay
                 a.targetLocalPosition.y,
                 b.targetLocalPosition.y,
                 t);
+            segmentIndex = candidateSegmentIndex;
             return true;
         }
 
@@ -378,6 +608,238 @@ namespace F1XR.RestAPI.Replay
                 : fallback;
             hasRouteOffsetScale = true;
             return routeOffsetScale;
+        }
+
+        bool TryBuildRuntimeAlignmentRoute(
+            out List<Vector2> route,
+            out float routeLength)
+        {
+            route = new List<Vector2>();
+            routeLength = 0f;
+
+            if (points == null)
+                return false;
+
+            foreach (Point point in points)
+            {
+                if (IsConfigured(point))
+                    route.Add(MapSourceAxes(point.sourcePosition));
+            }
+
+            if (route.Count < 8)
+                return false;
+
+            for (int i = 0; i < route.Count; i++)
+                routeLength +=
+                    Vector2.Distance(
+                        route[i],
+                        route[(i + 1) % route.Count]);
+
+            return routeLength > 0.0001f;
+        }
+
+        bool TryBuildRuntimeAlignmentPath(
+            List<LocationSample> samples,
+            float startTime,
+            float routeLength,
+            float maximumStep,
+            out List<Vector2> path,
+            out float pathLength)
+        {
+            path = new List<Vector2>();
+            pathLength = 0f;
+
+            if (samples == null)
+                return false;
+
+            foreach (LocationSample sample in samples)
+            {
+                if (sample == null || sample.t < startTime)
+                    continue;
+
+                Vector2 position =
+                    MapSourceAxes(sample.x, sample.y);
+
+                if (path.Count == 0)
+                {
+                    path.Add(position);
+                    continue;
+                }
+
+                float step =
+                    Vector2.Distance(
+                        path[path.Count - 1],
+                        position);
+
+                if (step <= 0.0001f)
+                    continue;
+
+                if (step > maximumStep)
+                    return false;
+
+                path.Add(position);
+                pathLength += step;
+
+                if (pathLength >= routeLength)
+                    break;
+            }
+
+            return path.Count >= RuntimeAlignmentMinimumSamples &&
+                pathLength >= routeLength &&
+                Vector2.Distance(path[0], path[path.Count - 1]) <=
+                    routeLength *
+                    RuntimeAlignmentMaximumStepRatio;
+        }
+
+        static Vector2[] ResampleClosedRoute(
+            List<Vector2> path,
+            float pathLength,
+            int sampleCount)
+        {
+            Vector2[] result =
+                new Vector2[sampleCount];
+            int segment = 0;
+            float segmentStartDistance = 0f;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float targetDistance =
+                    pathLength *
+                    i /
+                    sampleCount;
+
+                while (segment < path.Count - 1)
+                {
+                    float segmentLength =
+                        Vector2.Distance(
+                            path[segment],
+                            path[(segment + 1) % path.Count]);
+
+                    if (segmentStartDistance + segmentLength >= targetDistance)
+                        break;
+
+                    segmentStartDistance += segmentLength;
+                    segment++;
+                }
+
+                Vector2 from = path[segment];
+                Vector2 to =
+                    path[(segment + 1) % path.Count];
+                float length =
+                    Vector2.Distance(from, to);
+                float interpolation =
+                    length > 0.0001f
+                        ? (targetDistance - segmentStartDistance) / length
+                        : 0f;
+                result[i] =
+                    Vector2.Lerp(
+                        from,
+                        to,
+                        Mathf.Clamp01(interpolation));
+            }
+
+            return result;
+        }
+
+        static Vector2[] ResampleOpenPath(
+            List<Vector2> path,
+            float sampleLength,
+            int sampleCount)
+        {
+            Vector2[] result =
+                new Vector2[sampleCount];
+            int segment = 0;
+            float segmentStartDistance = 0f;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float targetDistance =
+                    sampleLength *
+                    i /
+                    sampleCount;
+
+                while (segment < path.Count - 2)
+                {
+                    float segmentLength =
+                        Vector2.Distance(
+                            path[segment],
+                            path[segment + 1]);
+
+                    if (segmentStartDistance + segmentLength >= targetDistance)
+                        break;
+
+                    segmentStartDistance += segmentLength;
+                    segment++;
+                }
+
+                Vector2 from = path[segment];
+                Vector2 to = path[segment + 1];
+                float length =
+                    Vector2.Distance(from, to);
+                float interpolation =
+                    length > 0.0001f
+                        ? (targetDistance - segmentStartDistance) / length
+                        : 0f;
+                result[i] =
+                    Vector2.Lerp(
+                        from,
+                        to,
+                        Mathf.Clamp01(interpolation));
+            }
+
+            return result;
+        }
+
+        static void FindBestTranslation(
+            Vector2[] route,
+            Vector2[] path,
+            out Vector2 translation,
+            out float rmsError)
+        {
+            translation = Vector2.zero;
+            rmsError = float.MaxValue;
+
+            for (int shift = 0; shift < route.Length; shift++)
+            {
+                Vector2 candidateTranslation =
+                    Vector2.zero;
+
+                for (int i = 0; i < route.Length; i++)
+                {
+                    int pathIndex =
+                        (i + shift) %
+                        path.Length;
+                    candidateTranslation +=
+                        route[i] -
+                        path[pathIndex];
+                }
+
+                candidateTranslation /= route.Length;
+                float squaredError = 0f;
+
+                for (int i = 0; i < route.Length; i++)
+                {
+                    int pathIndex =
+                        (i + shift) %
+                        path.Length;
+                    Vector2 error =
+                        path[pathIndex] +
+                        candidateTranslation -
+                        route[i];
+                    squaredError += error.sqrMagnitude;
+                }
+
+                float candidateError =
+                    Mathf.Sqrt(
+                        squaredError /
+                        route.Length);
+
+                if (candidateError >= rmsError)
+                    continue;
+
+                translation = candidateTranslation;
+                rmsError = candidateError;
+            }
         }
 
         void AddRouteSegmentLength(
@@ -753,6 +1215,18 @@ namespace F1XR.RestAPI.Replay
         Vector2 MapSourceAxes(Vector2 sourcePosition)
         {
             return MapSourceAxes(sourcePosition.x, sourcePosition.y);
+        }
+
+        Vector2 MapRuntimeSourceAxes(Vector2 sourcePosition)
+        {
+            return MapSourceAxes(sourcePosition) +
+                runtimeSourceTranslation;
+        }
+
+        Vector2 MapRuntimeSourceAxes(float x, float y)
+        {
+            return MapSourceAxes(x, y) +
+                runtimeSourceTranslation;
         }
 
         Vector2 MapSourceAxes(float x, float y)
