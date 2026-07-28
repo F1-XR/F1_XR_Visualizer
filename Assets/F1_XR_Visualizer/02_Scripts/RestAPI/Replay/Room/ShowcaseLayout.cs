@@ -318,6 +318,75 @@ namespace F1XR.RestAPI.Replay.Room
             return true;
         }
 
+        public bool TryCaptureAutomaticHero(Vector3 preferredForward)
+        {
+            ResolveReferences();
+            RebuildLayout();
+            if (xrMainCamera == null ||
+                !entryPoseValid ||
+                !exitPoseValid)
+            {
+                return false;
+            }
+
+            var up = transform.up.normalized;
+            var travel = Vector3.ProjectOnPlane(preferredForward, up);
+            if (travel.sqrMagnitude < 0.0001f)
+            {
+                travel = Vector3.ProjectOnPlane(
+                    exitPose.position - entryPose.position,
+                    up);
+            }
+
+            if (travel.sqrMagnitude < 0.0001f)
+                return false;
+
+            travel.Normalize();
+            var viewForward =
+                Vector3.ProjectOnPlane(xrMainCamera.forward, up);
+            if (viewForward.sqrMagnitude < 0.0001f)
+                viewForward = travel;
+            else
+                viewForward.Normalize();
+
+            var entryToExit = Vector3.ProjectOnPlane(
+                exitPose.position - entryPose.position,
+                up);
+            if (entryToExit.sqrMagnitude < 0.0001f)
+                return false;
+
+            var focusPoint =
+                xrMainCamera.position +
+                viewForward * heroForwardDistance;
+            var interpolation = Mathf.Clamp(
+                Vector3.Dot(
+                    focusPoint - entryPose.position,
+                    entryToExit) /
+                entryToExit.sqrMagnitude,
+                0.2f,
+                0.8f);
+            var right = Vector3.Cross(up, travel).normalized;
+            var worldPosition =
+                entryPose.position +
+                entryToExit * interpolation +
+                right * heroHorizontalOffset;
+            worldPosition.y =
+                xrMainCamera.position.y + heroVerticalOffset;
+
+            var capturedForward =
+                Quaternion.AngleAxis(heroYawOffset, up) * travel;
+            var worldRotation =
+                Quaternion.LookRotation(capturedForward, up);
+            heroLocalPosition =
+                transform.InverseTransformPoint(worldPosition);
+            heroLocalRotation =
+                Quaternion.Inverse(transform.rotation) * worldRotation;
+            heroPoseValid = true;
+            rebuildRequested = true;
+            RebuildLayout();
+            return true;
+        }
+
         [ContextMenu("Clear Hero Capture")]
         public void ClearHeroCapture()
         {

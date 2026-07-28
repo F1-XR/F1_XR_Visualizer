@@ -28,6 +28,11 @@ namespace F1XR.RestAPI.Replay.Room
         [Header("Room Stability")]
         [SerializeField, Min(0f)] private float candidateStableDuration = 0.75f;
 
+        [Header("Automatic Setup")]
+        [SerializeField] private bool automaticSetupEnabled = true;
+        [SerializeField, Min(0f)] private float containingRoomWaitDuration = 3f;
+        [SerializeField, Range(10f, 100f)] private float cornerTurnThreshold = 40f;
+
         private IShowcaseWallProvider wallProvider;
         private RoomShowcaseSetupState currentSetupState;
         private RoomShowcaseSetupState stateBeforeReacquisition;
@@ -39,6 +44,11 @@ namespace F1XR.RestAPI.Replay.Room
         private float candidatesStableSince;
         private readonly List<TrackableId> candidateMembership = new();
         private readonly List<TrackableId> candidateMembershipScratch = new();
+        private readonly List<WallCandidateInfo> automaticCandidates = new();
+        private readonly List<Vector3> eventPath = new();
+        private EventPopoutReplay observedEventReplay;
+        private int observedEventSourceRevision = -1;
+        private float automaticSetupWaitUntil;
         private bool sessionConfirmed;
         private bool initialized;
         private string lastUserMessage = string.Empty;
@@ -108,6 +118,12 @@ namespace F1XR.RestAPI.Replay.Room
                 SetState(
                     RoomShowcaseSetupState.Review,
                     "The room path is no longer valid. Review the setup.");
+            }
+
+            if (currentSetupState == RoomShowcaseSetupState.Ready &&
+                IsSetupReady)
+            {
+                TryApplyOpenEventWallSelection();
             }
         }
 
@@ -276,13 +292,20 @@ namespace F1XR.RestAPI.Replay.Room
             wallProvider?.ClearEntrySelection();
             wallProvider?.ClearExitSelection();
             showcaseLayout?.ClearHeroCapture();
+            observedEventSourceRevision = -1;
 
-            if (wallProvider == null || wallProvider.CandidateCount == 0)
+            if (wallProvider == null ||
+                wallProvider.CandidateCount == 0 ||
+                automaticSetupEnabled)
             {
                 candidatesStableSince = Time.unscaledTime;
+                automaticSetupWaitUntil =
+                    Time.unscaledTime + containingRoomWaitDuration;
                 SetState(
                     RoomShowcaseSetupState.WaitingForRoom,
-                    "Loading room wall candidates.");
+                    automaticSetupEnabled
+                        ? "Loading the current room walls."
+                        : "Loading room wall candidates.");
                 return;
             }
 
@@ -341,6 +364,9 @@ namespace F1XR.RestAPI.Replay.Room
                 wallProvider?.CandidateCount ?? 0;
             CaptureCandidateMembership(candidateMembership);
             candidatesStableSince = Time.unscaledTime;
+            automaticSetupWaitUntil =
+                Time.unscaledTime + containingRoomWaitDuration;
+            observedEventSourceRevision = -1;
             sessionConfirmed = false;
             ClearPreview();
             SetState(
@@ -436,10 +462,424 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             wallProvider.FinalizeUserFacingOrder();
+            if (automaticSetupEnabled &&
+                wallProvider.HasContainingRoomBoundary &&
+                TryApplyAutomaticDefaultSetup())
+            {
+                return;
+            }
+
+            if (automaticSetupEnabled &&
+                !wallProvider.HasContainingRoomBoundary &&
+                Time.unscaledTime < automaticSetupWaitUntil)
+            {
+                return;
+            }
+
             SetState(
                 RoomShowcaseSetupState.SelectEntry,
-                "Room walls are ready. Select the Entry wall.");
+                automaticSetupEnabled
+                    ? "Automatic room setup was unavailable. Select the Entry wall."
+                    : "Room walls are ready. Select the Entry wall.");
             SelectFirstAvailableCandidate(1);
+        }
+
+        private bool TryApplyAutomaticDefaultSetup()
+        {
+            if (!TryChooseDefaultWallPair(
+                    out var entry,
+                    out var exit))
+            {
+                return false;
+            }
+
+            wallProvider.ClearEntrySelection();
+            wallProvider.ClearExitSelection();
+            showcaseLayout.ClearHeroCapture();
+            if (!wallProvider.TrySelectEntryById(entry.Id) ||
+                !wallProvider.TrySelectExitById(exit.Id) ||
+                !showcaseLayout.TryCaptureAutomaticHero(
+                    ResolvePairTravel(entry, exit)))
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid ||
+                !showcasePath.IsPathValid)
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            sessionConfirmed = true;
+            ClearPreview();
+            SetState(
+                RoomShowcaseSetupState.Ready,
+                "Room setup was completed automatically.");
+            Debug.Log(
+                $"[RoomAutoSetup] Entry={entry.UserFacingNumber}, " +
+                $"Exit={exit.UserFacingNumber}, " +
+                $"roomWalls={automaticCandidates.Count}.",
+                this);
+            return true;
+        }
+
+        private bool TryChooseDefaultWallPair(
+            out WallCandidateInfo entry,
+            out WallCandidateInfo exit)
+        {
+            entry = default;
+            exit = default;
+            CaptureAutomaticCandidates();
+            if (automaticCandidates.Count < 2)
+                return false;
+
+            var bestScore = float.NegativeInfinity;
+            var bestFirst = -1;
+            var bestSecond = -1;
+            for (var firstIndex = 0;
+                 firstIndex < automaticCandidates.Count - 1;
+                 firstIndex++)
+            {
+                var first = automaticCandidates[firstIndex];
+                var firstNormal = Flat(first.InwardNormal);
+                if (firstNormal.sqrMagnitude < 0.0001f)
+                    continue;
+                firstNormal.Normalize();
+
+                for (var secondIndex = firstIndex + 1;
+                     secondIndex < automaticCandidates.Count;
+                     secondIndex++)
+                {
+                    var second = automaticCandidates[secondIndex];
+                    var secondNormal = Flat(second.InwardNormal);
+                    if (secondNormal.sqrMagnitude < 0.0001f)
+                        continue;
+                    secondNormal.Normalize();
+
+                    var normalDot =
+                        Vector3.Dot(firstNormal, secondNormal);
+                    if (normalDot > -0.35f)
+                        continue;
+
+                    var separation = Flat(
+                        second.Center - first.Center);
+                    var forwardSpan =
+                        (Mathf.Abs(
+                             Vector3.Dot(separation, firstNormal)) +
+                         Mathf.Abs(
+                             Vector3.Dot(separation, secondNormal))) *
+                        0.5f;
+                    var lateralOffset =
+                        (separation -
+                         firstNormal *
+                         Vector3.Dot(separation, firstNormal)).magnitude;
+                    var score =
+                        forwardSpan * 4f -
+                        lateralOffset +
+                        (-normalDot) * 2f +
+                        Mathf.Min(first.Width, second.Width) * 0.25f;
+                    if (score <= bestScore)
+                        continue;
+
+                    bestScore = score;
+                    bestFirst = firstIndex;
+                    bestSecond = secondIndex;
+                }
+            }
+
+            if (bestFirst < 0 || bestSecond < 0)
+                return false;
+
+            var firstWall = automaticCandidates[bestFirst];
+            var secondWall = automaticCandidates[bestSecond];
+            if (ViewAlignment(firstWall.Center) >=
+                ViewAlignment(secondWall.Center))
+            {
+                entry = firstWall;
+                exit = secondWall;
+            }
+            else
+            {
+                entry = secondWall;
+                exit = firstWall;
+            }
+
+            return true;
+        }
+
+        private void TryApplyOpenEventWallSelection()
+        {
+            if (!automaticSetupEnabled)
+                return;
+
+            if (observedEventReplay == null)
+            {
+                observedEventReplay =
+                    Object.FindAnyObjectByType<EventPopoutReplay>(
+                        FindObjectsInactive.Include);
+            }
+
+            if (observedEventReplay == null ||
+                !observedEventReplay.IsActive ||
+                observedEventReplay.SourceGeometryRevision ==
+                observedEventSourceRevision)
+            {
+                return;
+            }
+
+            if (!observedEventReplay.TryCopyEventLocalCenterPath(
+                    eventPath,
+                    out var overtakePosition,
+                    out _) ||
+                !TryGetEventDirections(
+                    eventPath,
+                    overtakePosition,
+                    out var sourceEntryDirection,
+                    out var sourceExitDirection,
+                    out var sourceHeroDirection))
+            {
+                return;
+            }
+
+            observedEventSourceRevision =
+                observedEventReplay.SourceGeometryRevision;
+            var turnAngle = Mathf.Abs(
+                Vector3.SignedAngle(
+                    sourceEntryDirection,
+                    sourceExitDirection,
+                    Vector3.up));
+            if (turnAngle < cornerTurnThreshold)
+                return;
+
+            if (!ConfirmedEntryId.HasValue ||
+                !wallProvider.TryGetCandidateById(
+                    ConfirmedEntryId.Value,
+                    out var entry) ||
+                !TryChooseAdjacentExit(
+                    entry,
+                    sourceEntryDirection,
+                    sourceExitDirection,
+                    out var adjacentExit,
+                    out var sourceToRoomRotation))
+            {
+                return;
+            }
+
+            var previousExitId = ConfirmedExitId;
+            if (!wallProvider.TrySelectExitById(adjacentExit.Id) ||
+                !showcaseLayout.TryCaptureAutomaticHero(
+                    sourceToRoomRotation * sourceHeroDirection))
+            {
+                RestorePreviousExit(previousExitId, entry);
+                return;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid ||
+                !showcasePath.IsPathValid)
+            {
+                RestorePreviousExit(previousExitId, entry);
+                return;
+            }
+
+            SetUserMessage(
+                $"Corner path detected ({turnAngle:0}°). " +
+                $"Exit changed to wall {adjacentExit.UserFacingNumber}.");
+            Debug.Log(
+                $"[RoomAutoSetup] Corner={turnAngle:0.#}deg, " +
+                $"Entry={entry.UserFacingNumber}, " +
+                $"Exit={adjacentExit.UserFacingNumber}.",
+                this);
+        }
+
+        private bool TryChooseAdjacentExit(
+            WallCandidateInfo entry,
+            Vector3 sourceEntryDirection,
+            Vector3 sourceExitDirection,
+            out WallCandidateInfo exit,
+            out Quaternion sourceToRoomRotation)
+        {
+            exit = default;
+            sourceToRoomRotation = Quaternion.identity;
+            if (!wallProvider.TryGetBoundaryNeighbors(
+                    entry.Id,
+                    out var previousId,
+                    out var nextId))
+            {
+                return false;
+            }
+
+            var entryTravel = Flat(entry.InwardNormal);
+            if (entryTravel.sqrMagnitude < 0.0001f)
+                return false;
+            entryTravel.Normalize();
+
+            sourceToRoomRotation = Quaternion.AngleAxis(
+                Vector3.SignedAngle(
+                    sourceEntryDirection,
+                    entryTravel,
+                    Vector3.up),
+                Vector3.up);
+            var desiredExitTravel =
+                sourceToRoomRotation * sourceExitDirection;
+            var bestAngle = float.PositiveInfinity;
+            foreach (var candidateId in
+                     new[] { previousId, nextId })
+            {
+                if (candidateId == entry.Id ||
+                    !wallProvider.TryGetCandidateById(
+                        candidateId,
+                        out var candidate) ||
+                    !candidate.IsAvailable)
+                {
+                    continue;
+                }
+
+                var candidateTravel = Flat(-candidate.InwardNormal);
+                if (candidateTravel.sqrMagnitude < 0.0001f)
+                    continue;
+                candidateTravel.Normalize();
+                var angle = Vector3.Angle(
+                    desiredExitTravel,
+                    candidateTravel);
+                if (angle >= bestAngle)
+                    continue;
+
+                bestAngle = angle;
+                exit = candidate;
+            }
+
+            return bestAngle < float.PositiveInfinity;
+        }
+
+        private void RestorePreviousExit(
+            TrackableId? previousExitId,
+            WallCandidateInfo entry)
+        {
+            if (previousExitId.HasValue &&
+                wallProvider.TrySelectExitById(previousExitId.Value) &&
+                wallProvider.TryGetCandidateById(
+                    previousExitId.Value,
+                    out var previousExit))
+            {
+                showcaseLayout.TryCaptureAutomaticHero(
+                    ResolvePairTravel(entry, previousExit));
+                showcasePath.RebuildPath();
+            }
+        }
+
+        private void ClearAutomaticSetup()
+        {
+            sessionConfirmed = false;
+            wallProvider.ClearEntrySelection();
+            wallProvider.ClearExitSelection();
+            showcaseLayout.ClearHeroCapture();
+        }
+
+        private void CaptureAutomaticCandidates()
+        {
+            automaticCandidates.Clear();
+            for (var i = 0; i < wallProvider.CandidateCount; i++)
+            {
+                if (wallProvider.TryGetCandidate(i, out var candidate) &&
+                    candidate.IsAvailable)
+                {
+                    automaticCandidates.Add(candidate);
+                }
+            }
+        }
+
+        private static bool TryGetEventDirections(
+            List<Vector3> path,
+            Vector3 overtakePosition,
+            out Vector3 entryDirection,
+            out Vector3 exitDirection,
+            out Vector3 heroDirection)
+        {
+            entryDirection = Vector3.zero;
+            exitDirection = Vector3.zero;
+            heroDirection = Vector3.zero;
+            if (path == null || path.Count < 3)
+                return false;
+
+            var endIndex = path.Count - 1;
+            var directionSpan =
+                Mathf.Clamp(path.Count / 10, 1, endIndex);
+            entryDirection = Flat(
+                path[directionSpan] - path[0]);
+            exitDirection = Flat(
+                path[endIndex] - path[endIndex - directionSpan]);
+
+            var transitionIndex = 0;
+            var closestDistance = float.PositiveInfinity;
+            for (var i = 0; i < path.Count; i++)
+            {
+                var distance =
+                    (path[i] - overtakePosition).sqrMagnitude;
+                if (distance >= closestDistance)
+                    continue;
+                closestDistance = distance;
+                transitionIndex = i;
+            }
+
+            var heroSpan =
+                Mathf.Clamp(path.Count / 20, 1, endIndex);
+            var heroStart =
+                Mathf.Max(0, transitionIndex - heroSpan);
+            var heroEnd =
+                Mathf.Min(endIndex, transitionIndex + heroSpan);
+            heroDirection = Flat(path[heroEnd] - path[heroStart]);
+            if (entryDirection.sqrMagnitude < 0.0001f ||
+                exitDirection.sqrMagnitude < 0.0001f ||
+                heroDirection.sqrMagnitude < 0.0001f)
+            {
+                return false;
+            }
+
+            entryDirection.Normalize();
+            exitDirection.Normalize();
+            heroDirection.Normalize();
+            return true;
+        }
+
+        private static Vector3 ResolvePairTravel(
+            WallCandidateInfo entry,
+            WallCandidateInfo exit)
+        {
+            var travel = Flat(entry.InwardNormal - exit.InwardNormal);
+            if (travel.sqrMagnitude < 0.0001f)
+                travel = Flat(exit.Center - entry.Center);
+            return travel.normalized;
+        }
+
+        private static Vector3 Flat(Vector3 value)
+        {
+            value.y = 0f;
+            return value;
+        }
+
+        private static float ViewAlignment(Vector3 worldPosition)
+        {
+            var camera = Camera.main != null
+                ? Camera.main.transform
+                : null;
+            if (camera == null)
+                return 0f;
+
+            var forward = Flat(camera.forward);
+            var direction = Flat(worldPosition - camera.position);
+            if (forward.sqrMagnitude < 0.0001f ||
+                direction.sqrMagnitude < 0.0001f)
+            {
+                return 0f;
+            }
+
+            return Vector3.Dot(
+                forward.normalized,
+                direction.normalized);
         }
 
         private bool HandleReacquisition()
