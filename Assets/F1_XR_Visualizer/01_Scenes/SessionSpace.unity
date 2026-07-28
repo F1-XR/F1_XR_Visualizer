@@ -5462,6 +5462,9 @@ MonoBehaviour:
   previewPositionSmoothTime: 0.06
   previewRotationSpeed: 18
   previewScaleSpeed: 10
+  fixedPosition: {x: 0, y: 0, z: 0}
+  fixedEulerAngles: {x: 0, y: 0, z: 0}
+  fixedScale: {x: 1, y: 1, z: 1}
   stabilizeAnchor: 1
   anchorPositionSpeed: 12
   anchorRotationSpeed: 10
