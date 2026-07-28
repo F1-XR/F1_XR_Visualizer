@@ -593,6 +593,31 @@ namespace F1XR.RestAPI.Replay.Room
                 Renderer source = sources[i];
                 if (source is MeshRenderer meshRenderer)
                 {
+                    TextMesh sourceText =
+                        source.GetComponent<TextMesh>();
+                    if (sourceText != null)
+                    {
+                        GameObject textProxy =
+                            CreateRendererProxyObject(source);
+                        TextMesh proxyText =
+                            textProxy.AddComponent<TextMesh>();
+                        SyncTextMesh(sourceText, proxyText);
+                        MeshRenderer textProxyRenderer =
+                            textProxy.GetComponent<MeshRenderer>();
+                        CopyRendererSettings(
+                            meshRenderer,
+                            textProxyRenderer);
+                        roomCarRenderers.Add(
+                            new RendererBinding(
+                                source,
+                                textProxyRenderer,
+                                vehicleRoot,
+                                sourceText,
+                                proxyText));
+                        created++;
+                        continue;
+                    }
+
                     MeshFilter sourceFilter =
                         source.GetComponent<MeshFilter>();
                     if (sourceFilter == null ||
@@ -1503,6 +1528,9 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 RendererBinding binding =
                     roomCarRenderers[i];
+                SyncTextMesh(
+                    binding.SourceText,
+                    binding.ProxyText);
                 bool visible =
                     binding.Source != null &&
                     binding.Proxy != null &&
@@ -1514,6 +1542,40 @@ namespace F1XR.RestAPI.Replay.Room
                 if (binding.Proxy != null)
                     binding.Proxy.enabled = visible;
             }
+        }
+
+        private static void SyncTextMesh(
+            TextMesh source,
+            TextMesh destination)
+        {
+            if (source == null ||
+                destination == null)
+            {
+                return;
+            }
+
+            if (destination.text != source.text)
+                destination.text = source.text;
+            if (destination.font != source.font)
+                destination.font = source.font;
+            if (destination.fontSize != source.fontSize)
+                destination.fontSize = source.fontSize;
+            if (destination.fontStyle != source.fontStyle)
+                destination.fontStyle = source.fontStyle;
+            if (destination.anchor != source.anchor)
+                destination.anchor = source.anchor;
+            if (destination.alignment != source.alignment)
+                destination.alignment = source.alignment;
+            if (destination.characterSize != source.characterSize)
+                destination.characterSize = source.characterSize;
+            if (destination.lineSpacing != source.lineSpacing)
+                destination.lineSpacing = source.lineSpacing;
+            if (destination.tabSize != source.tabSize)
+                destination.tabSize = source.tabSize;
+            if (destination.richText != source.richText)
+                destination.richText = source.richText;
+            if (destination.color != source.color)
+                destination.color = source.color;
         }
 
         private static void CopyRendererSettings(
@@ -1563,15 +1625,34 @@ namespace F1XR.RestAPI.Replay.Room
             public readonly Renderer Source;
             public readonly Renderer Proxy;
             public readonly Transform VehicleRoot;
+            public readonly TextMesh SourceText;
+            public readonly TextMesh ProxyText;
 
             public RendererBinding(
                 Renderer source,
                 Renderer proxy,
                 Transform vehicleRoot)
+                : this(
+                    source,
+                    proxy,
+                    vehicleRoot,
+                    null,
+                    null)
+            {
+            }
+
+            public RendererBinding(
+                Renderer source,
+                Renderer proxy,
+                Transform vehicleRoot,
+                TextMesh sourceText,
+                TextMesh proxyText)
             {
                 Source = source;
                 Proxy = proxy;
                 VehicleRoot = vehicleRoot;
+                SourceText = sourceText;
+                ProxyText = proxyText;
             }
         }
     }
