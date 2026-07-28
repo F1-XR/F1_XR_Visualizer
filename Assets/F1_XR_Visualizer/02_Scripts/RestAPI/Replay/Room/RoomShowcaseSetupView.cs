@@ -3,6 +3,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using F1XR.UI.WorldPanel;
 
 namespace F1XR.RestAPI.Replay.Room
 {
@@ -179,8 +181,10 @@ namespace F1XR.RestAPI.Replay.Room
             content.transform.SetParent(setupPanel, false);
             contentRoot = content.GetComponent<RectTransform>();
             Fill(contentRoot);
-            content.GetComponent<Image>().color =
+            Image contentImage = content.GetComponent<Image>();
+            contentImage.color =
                 new Color(0.015f, 0.018f, 0.026f, 0.94f);
+            contentImage.raycastTarget = false;
 
             titleText = CreateText(
                 "Title",
@@ -272,6 +276,133 @@ namespace F1XR.RestAPI.Replay.Room
                 "Recenter Panel",
                 "Recenter Panel",
                 controller.RecenterPanel);
+
+            ConfigurePanelGrab();
+        }
+
+        private void ConfigurePanelGrab()
+        {
+            Rigidbody body =
+                setupPanel.GetComponent<Rigidbody>();
+            if (body == null)
+                body = setupPanel.gameObject.AddComponent<Rigidbody>();
+
+            body.isKinematic = true;
+            body.useGravity = false;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.constraints = RigidbodyConstraints.FreezeRotation;
+
+            RectTransform handle = CreateGrabHandle();
+            BoxCollider handleCollider =
+                handle.GetComponent<BoxCollider>();
+
+            XRGrabInteractable grab =
+                setupPanel.GetComponent<XRGrabInteractable>();
+            if (grab == null)
+            {
+                grab =
+                    setupPanel.gameObject
+                        .AddComponent<XRGrabInteractable>();
+            }
+
+            grab.colliders.Clear();
+            grab.colliders.Add(handleCollider);
+            grab.useDynamicAttach = true;
+            grab.matchAttachPosition = true;
+            grab.matchAttachRotation = false;
+            grab.trackRotation = false;
+            grab.snapToColliderVolume = true;
+            grab.attachEaseInTime = 0.15f;
+            grab.throwOnDetach = false;
+
+            if (setupPanel.GetComponent<PanelYawGrabLock>() == null)
+            {
+                setupPanel.gameObject
+                    .AddComponent<PanelYawGrabLock>();
+            }
+        }
+
+        private RectTransform CreateGrabHandle()
+        {
+            const string handleName = "Room Setup Move Handle";
+            Transform existing = setupPanel.Find(handleName);
+            RectTransform handle;
+
+            if (existing != null)
+            {
+                handle = existing as RectTransform;
+            }
+            else
+            {
+                GameObject handleObject = new(
+                    handleName,
+                    typeof(RectTransform),
+                    typeof(Image),
+                    typeof(BoxCollider));
+                handleObject.layer = setupPanel.gameObject.layer;
+                handleObject.transform.SetParent(
+                    setupPanel,
+                    worldPositionStays: false);
+                handle =
+                    handleObject.GetComponent<RectTransform>();
+            }
+
+            handle.anchorMin = new Vector2(0.5f, 0f);
+            handle.anchorMax = new Vector2(0.5f, 0f);
+            handle.pivot = new Vector2(0.5f, 0f);
+            handle.anchoredPosition = new Vector2(0f, 8f);
+            handle.sizeDelta = new Vector2(680f, 34f);
+            handle.SetAsLastSibling();
+
+            Image image = handle.GetComponent<Image>();
+            image.color =
+                new Color(0.92f, 0.95f, 0.95f, 0.08f);
+            image.raycastTarget = false;
+
+            BoxCollider collider =
+                handle.GetComponent<BoxCollider>();
+            collider.center = Vector3.zero;
+            collider.size = new Vector3(680f, 34f, 20f);
+            collider.isTrigger = false;
+            CreateGrabHandleVisual(handle);
+            return handle;
+        }
+
+        private void CreateGrabHandleVisual(
+            RectTransform handle)
+        {
+            const string visualName = "Move Handle Bar";
+            Transform existing = handle.Find(visualName);
+            RectTransform visual;
+
+            if (existing != null)
+            {
+                visual = existing as RectTransform;
+            }
+            else
+            {
+                GameObject visualObject = new(
+                    visualName,
+                    typeof(RectTransform),
+                    typeof(Image));
+                visualObject.layer = setupPanel.gameObject.layer;
+                visualObject.transform.SetParent(
+                    handle,
+                    worldPositionStays: false);
+                visual =
+                    visualObject.GetComponent<RectTransform>();
+            }
+
+            visual.anchorMin = new Vector2(0.5f, 0.5f);
+            visual.anchorMax = new Vector2(0.5f, 0.5f);
+            visual.pivot = new Vector2(0.5f, 0.5f);
+            visual.anchoredPosition = Vector2.zero;
+            visual.sizeDelta = new Vector2(140f, 6f);
+
+            Image image = visual.GetComponent<Image>();
+            image.color =
+                new Color(0.92f, 0.95f, 0.95f, 0.72f);
+            image.raycastTarget = false;
         }
 
         private TMP_Text CreateText(
