@@ -3966,6 +3966,9 @@ MonoBehaviour:
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
+  useCachedDatasetFastStart: 1
+  cachedDatasetId: 2025_suzuka_race_10006_c2_o2_m20
+  cachedCircuitKey: 46
   useEventReplayTestSession: 0
 --- !u!4 &1705380157
 Transform:
@@ -5798,6 +5801,9 @@ MonoBehaviour:
   minimumWidth: 0.75
   minimumFallbackWidth: 1.2
   minimumHeight: 1.2
+  restrictToContainingFloor: 1
+  roomBoundaryTolerance: 0.45
+  maximumCameraHeightAboveFloor: 3.5
   entryCandidateIndex: -1
   exitCandidateIndex: -1
   reacquisitionEnabled: 1
@@ -5913,6 +5919,9 @@ MonoBehaviour:
   showcasePath: {fileID: 2086967220}
   setupView: {fileID: 2086967223}
   candidateStableDuration: 0.75
+  automaticSetupEnabled: 1
+  containingRoomWaitDuration: 3
+  cornerTurnThreshold: 40
 --- !u!114 &2086967223
 MonoBehaviour:
   m_ObjectHideFlags: 0
