@@ -348,6 +348,8 @@ namespace F1XR.RestAPI.Replay
             List<Vector2> uv2 = hasUv2 ? new List<Vector2>() : null;
             List<Color> colors = hasColors ? new List<Color>() : null;
             List<List<int>> submeshes = new(source.subMeshCount);
+            List<Material> materials = new(source.subMeshCount);
+            Material[] sourceMaterials = sourceRenderer.sharedMaterials;
             Dictionary<int, int> remap = new();
             int keptTriangles = 0;
             Vector2 maximumTriangleSpan = new Vector2(
@@ -357,7 +359,6 @@ namespace F1XR.RestAPI.Replay
             for (int submesh = 0; submesh < source.subMeshCount; submesh++)
             {
                 List<int> triangles = new();
-                submeshes.Add(triangles);
                 if (source.GetTopology(submesh) != MeshTopology.Triangles)
                     continue;
 
@@ -413,6 +414,18 @@ namespace F1XR.RestAPI.Replay
                     triangles.Add(CopyVertex(reverseWinding ? b : c));
                     keptTriangles++;
                 }
+
+                if (triangles.Count == 0)
+                    continue;
+
+                submeshes.Add(triangles);
+                materials.Add(
+                    sourceMaterials.Length > 0
+                        ? sourceMaterials[
+                            Mathf.Min(
+                                submesh,
+                                sourceMaterials.Length - 1)]
+                        : null);
             }
 
             if (keptTriangles == 0)
@@ -449,7 +462,7 @@ namespace F1XR.RestAPI.Replay
             copy.GetComponent<MeshFilter>().sharedMesh = mesh;
 
             MeshRenderer renderer = copy.GetComponent<MeshRenderer>();
-            renderer.sharedMaterials = sourceRenderer.sharedMaterials;
+            renderer.sharedMaterials = materials.ToArray();
             renderer.shadowCastingMode = sourceRenderer.shadowCastingMode;
             renderer.receiveShadows = sourceRenderer.receiveShadows;
             renderer.lightProbeUsage = LightProbeUsage.Off;
