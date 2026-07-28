@@ -100,7 +100,7 @@ namespace F1XR.RestAPI.Replay
         public bool IsTrackPlacementActive => buildPlacer != null && buildPlacer.IsPlacementActive;
         public bool HasValidTrackSurface => buildPlacer != null && buildPlacer.HasValidSurface;
         public bool IsAutomaticTrackPlacement => buildPlacer == null ||
-            buildPlacer.PlacementMode == TrackPlacementMode.TableAutomatic;
+            buildPlacer.PlacementMode != TrackPlacementMode.Free;
         public bool IsTrackEditMode => buildPlacer != null && buildPlacer.IsEditMode;
         public bool CanUndoTrackManipulation => buildPlacer != null && buildPlacer.CanUndo;
         public event Action<int> SelectedDriverChanged;

@@ -108,6 +108,28 @@ namespace F1XR.RestAPI.Replay
                 loop);
         }
 
+        public void SetActualOvertakeCorridor(
+            IReadOnlyList<Vector3> centerline,
+            IReadOnlyList<Vector3> leftBoundary,
+            IReadOnlyList<Vector3> rightBoundary,
+            bool loop)
+        {
+            overtakeMotion.SetTrackCorridor(
+                centerline,
+                leftBoundary,
+                rightBoundary,
+                loop);
+        }
+
+        public bool TryGetResolvedOvertakeSide(
+            ReplayEventDto replayEvent,
+            out int side)
+        {
+            return overtakeMotion.TryGetResolvedPassingSide(
+                replayEvent,
+                out side);
+        }
+
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
             Dictionary<int, int> indices,

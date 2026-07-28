@@ -34,6 +34,8 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<Mesh> runtimeMeshes = new();
         private readonly List<Material> runtimeMaterials = new();
         private readonly List<RenderTexture> renderTextures = new();
+        private readonly List<Vector3> roomTrackLeftBoundary = new();
+        private readonly List<Vector3> roomTrackRightBoundary = new();
 
         private Transform presentationRoot;
         private Transform firstVehicle;
@@ -179,6 +181,7 @@ namespace F1XR.RestAPI.Replay.Room
             viewerCamera.cullingMask &=
                 ~(1 << PortalSceneLayer);
 
+            CaptureRoomTrackCorridor(stage);
             CaptureAndHideSourceRenderers(stage);
             int roomTrackRendererCount =
                 CreateRoomTrackRenderers(stage);
@@ -261,6 +264,8 @@ namespace F1XR.RestAPI.Replay.Room
             sourceLayers.Clear();
             capturedLayerTransforms.Clear();
             roomCarRenderers.Clear();
+            roomTrackLeftBoundary.Clear();
+            roomTrackRightBoundary.Clear();
 
             for (int i = 0; i < rendererProxies.Count; i++)
             {
@@ -297,6 +302,46 @@ namespace F1XR.RestAPI.Replay.Room
                     Destroy(runtimeMeshes[i]);
             }
             runtimeMeshes.Clear();
+        }
+
+        private void CaptureRoomTrackCorridor(
+            Transform stage)
+        {
+            roomTrackLeftBoundary.Clear();
+            roomTrackRightBoundary.Clear();
+            if (stage == null)
+                return;
+
+            Transform apron =
+                stage.Find("EventRoadSafetyApron");
+            MeshFilter filter =
+                apron != null
+                    ? apron.GetComponent<MeshFilter>()
+                    : null;
+            Mesh mesh =
+                filter != null
+                    ? filter.sharedMesh
+                    : null;
+            if (mesh == null ||
+                mesh.vertexCount < 4)
+            {
+                return;
+            }
+
+            Vector3[] vertices = mesh.vertices;
+            for (int i = 0;
+                 i + 1 < vertices.Length;
+                 i += 2)
+            {
+                Vector3 left =
+                    filter.transform.TransformPoint(
+                        vertices[i]);
+                Vector3 right =
+                    filter.transform.TransformPoint(
+                        vertices[i + 1]);
+                roomTrackLeftBoundary.Add(left);
+                roomTrackRightBoundary.Add(right);
+            }
         }
 
         private void LateUpdate()
@@ -547,6 +592,10 @@ namespace F1XR.RestAPI.Replay.Room
                     if (!TriangleTouchesRoom(
                             worldA,
                             worldB,
+                            worldC) ||
+                        !TriangleTouchesTrackCorridor(
+                            worldA,
+                            worldB,
                             worldC))
                     {
                         continue;
@@ -574,6 +623,103 @@ namespace F1XR.RestAPI.Replay.Room
             copy.RecalculateBounds();
             runtimeMeshes.Add(copy);
             return copy;
+        }
+
+        private bool TriangleTouchesTrackCorridor(
+            Vector3 a,
+            Vector3 b,
+            Vector3 c)
+        {
+            if (roomTrackLeftBoundary.Count < 2 ||
+                roomTrackRightBoundary.Count !=
+                roomTrackLeftBoundary.Count)
+            {
+                return true;
+            }
+
+            Vector3 center = (a + b + c) / 3f;
+            return IsInsideTrackCorridor(a) ||
+                IsInsideTrackCorridor(b) ||
+                IsInsideTrackCorridor(c) ||
+                IsInsideTrackCorridor(center);
+        }
+
+        private bool IsInsideTrackCorridor(
+            Vector3 point)
+        {
+            point.y = 0f;
+            for (int i = 0;
+                 i < roomTrackLeftBoundary.Count - 1;
+                 i++)
+            {
+                Vector3 left =
+                    roomTrackLeftBoundary[i];
+                Vector3 right =
+                    roomTrackRightBoundary[i];
+                Vector3 nextLeft =
+                    roomTrackLeftBoundary[i + 1];
+                Vector3 nextRight =
+                    roomTrackRightBoundary[i + 1];
+                left.y = 0f;
+                right.y = 0f;
+                nextLeft.y = 0f;
+                nextRight.y = 0f;
+                if (PointInsideTriangleXZ(
+                        point,
+                        left,
+                        nextLeft,
+                        right) ||
+                    PointInsideTriangleXZ(
+                        point,
+                        right,
+                        nextLeft,
+                        nextRight))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool PointInsideTriangleXZ(
+            Vector3 point,
+            Vector3 a,
+            Vector3 b,
+            Vector3 c)
+        {
+            Vector2 v0 =
+                new Vector2(b.x - a.x, b.z - a.z);
+            Vector2 v1 =
+                new Vector2(c.x - a.x, c.z - a.z);
+            Vector2 v2 =
+                new Vector2(
+                    point.x - a.x,
+                    point.z - a.z);
+            float denominator =
+                v0.x * v1.y -
+                v1.x * v0.y;
+            if (Mathf.Abs(denominator) <=
+                0.00000001f)
+            {
+                return false;
+            }
+
+            float bWeight =
+                (v2.x * v1.y -
+                 v1.x * v2.y) /
+                denominator;
+            float cWeight =
+                (v0.x * v2.y -
+                 v2.x * v0.y) /
+                denominator;
+            float aWeight =
+                1f -
+                bWeight -
+                cWeight;
+            return aWeight >= 0f &&
+                bWeight >= 0f &&
+                cWeight >= 0f;
         }
 
         private static bool ShouldIncludeRoomTrackSubmesh(
