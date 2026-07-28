@@ -30,6 +30,9 @@ namespace F1XR.RestAPI.Replay
         public float stageHeightOffset = 0.25f;
         [Min(0.001f)] public float trackRegionPadding = 0.04f;
         [Min(0.001f)] public float roadWidth = 0.035f;
+        public Color safetyApronColor =
+            new(0.16f, 0.18f, 0.22f, 1f);
+        [Min(0f)] public float safetyApronSurfaceOffset = 0.0002f;
         [Min(0f)] public float roadEndPadding;
         [Min(0f)] public float trackPaddingSeconds = 1.5f;
         [Min(3)] public int maxTrackPoints = 192;
@@ -49,18 +52,27 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> mappedPath = new();
         private readonly List<float> mappedPathDistances = new();
         private readonly List<Vector3> fallbackCorridorPath = new();
+        private readonly List<Vector3> safetyApronPath = new();
+        private readonly List<Vector3> safetyApronLeftEdge = new();
+        private readonly List<Vector3> safetyApronRightEdge = new();
+        private readonly List<Vector3> drivableLeftEdge = new();
+        private readonly List<Vector3> drivableRightEdge = new();
         private readonly Dictionary<int, List<float>> eventLongitudinals = new();
 
         private ReplayPlayer player;
         private ReplayCarSet eventCars;
         private ReplayAudio eventAudio;
         private ReplayEventDto currentEvent;
+        private ReplayEventDto motionEvent;
+        private OvertakeMotionSettings eventOvertakeSettings;
         private GameObject stageRoot;
         private BoxCollider stageInteractionCollider;
         private EventTrackSegment trackSegment;
         private Mesh roadMesh;
         private Material roadMaterial;
         private Material edgeMaterial;
+        private Mesh safetyApronMesh;
+        private Material safetyApronMaterial;
         private Coroutine openRoutine;
         private ReplaySnapshot snapshot;
         private int referenceDriverNumber;
@@ -467,6 +479,7 @@ namespace F1XR.RestAPI.Replay
             isActive = true;
             openRoutine = null;
             ApplyCars();
+            CreateSafetyApron();
             Play();
         }
 
@@ -557,9 +570,11 @@ namespace F1XR.RestAPI.Replay
             eventCars.SetLabelsVisible(true);
             eventCars.SetLeaderHighlightVisible(false);
             eventCars.SetDrivers(player.Manifest != null ? player.Manifest.drivers : null);
-            eventCars.SetOvertakeSettings(
+            eventOvertakeSettings =
                 CreateEventOvertakeSettings(
-                    player.overtakeMotion));
+                    player.overtakeMotion);
+            eventCars.SetOvertakeSettings(
+                eventOvertakeSettings);
 
             List<LocationSample> referenceSamples = FindReferenceSamples();
             if (!BuildMappedPath(
@@ -574,13 +589,11 @@ namespace F1XR.RestAPI.Replay
                     definition,
                     definition.startTime,
                     definition.endTime);
+            motionEvent = CreateMotionEvent(
+                definition,
+                transitionTime);
             eventCars.SetReplayEvents(
-                new[]
-                {
-                    CreateMotionEvent(
-                        definition,
-                        transitionTime)
-                });
+                new[] { motionEvent });
             sourceGeometryRevision++;
 
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
@@ -590,6 +603,9 @@ namespace F1XR.RestAPI.Replay
                 BuildFallbackCorridorPath(
                     center,
                     sourceToLocalRotation);
+            BuildSafetyApronPath(
+                center,
+                sourceToLocalRotation);
             eventCars.SetFallbackOvertakeCorridor(
                 fallbackCorridorPath,
                 roadWidth,
@@ -1202,6 +1218,316 @@ namespace F1XR.RestAPI.Replay
             return false;
         }
 
+        private void BuildSafetyApronPath(
+            Vector3 center,
+            Quaternion sourceToLocalRotation)
+        {
+            safetyApronPath.Clear();
+            for (int i = 0; i < mappedPath.Count; i++)
+            {
+                safetyApronPath.Add(
+                    sourceToLocalRotation *
+                    (mappedPath[i] - center));
+            }
+        }
+
+        private void CreateSafetyApron()
+        {
+            if (stageRoot == null ||
+                trackSegment == null ||
+                safetyApronMesh != null ||
+                safetyApronPath.Count < 2 ||
+                eventCars == null)
+            {
+                return;
+            }
+
+            float vehicleWidth = 0f;
+            foreach (int driver in eventDrivers)
+            {
+                if (!eventCars.TryGetVisualTransform(
+                        driver,
+                        out Transform visual) ||
+                    visual == null ||
+                    !visual.TryGetComponent(
+                        out ReplayCarView car))
+                {
+                    continue;
+                }
+
+                vehicleWidth = Mathf.Max(
+                    vehicleWidth,
+                    car.GetVisualWidth());
+            }
+
+            if (vehicleWidth <= 0f)
+                return;
+
+            bool hasDrivableEdges =
+                trackSegment.TryBuildDrivableEdges(
+                    safetyApronPath,
+                    vehicleWidth,
+                    drivableLeftEdge,
+                    drivableRightEdge);
+            if (hasDrivableEdges)
+            {
+                eventCars.SetActualOvertakeCorridor(
+                    safetyApronPath,
+                    drivableLeftEdge,
+                    drivableRightEdge,
+                    false);
+                ApplyCars();
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "[EventReplay] Exact drivable boundaries were unavailable; overtake motion is using the event roadWidth fallback.",
+                    this);
+            }
+
+            bool hasRoadEdges =
+                trackSegment.TryBuildSafetyApronEdges(
+                    safetyApronPath,
+                    vehicleWidth,
+                    safetyApronLeftEdge,
+                    safetyApronRightEdge);
+            if (!hasRoadEdges)
+            {
+                Debug.LogWarning(
+                    "[EventReplay] Safety apron was skipped because actual road edges were unavailable.",
+                    this);
+                return;
+            }
+
+            if (motionEvent == null ||
+                !eventCars.TryGetResolvedOvertakeSide(
+                    motionEvent,
+                    out int passingSide) ||
+                !TryGetSafetyApronDistances(
+                    out float motionStartDistance,
+                    out float approachEndDistance,
+                    out float returnStartDistance,
+                    out float motionEndDistance))
+            {
+                Debug.LogWarning(
+                    "[EventReplay] Safety apron was skipped because the resolved overtake path was unavailable.",
+                    this);
+                return;
+            }
+
+            int count = safetyApronPath.Count;
+            Vector3[] vertices = new Vector3[count * 2];
+            Vector2[] uv = new Vector2[count * 2];
+            int[] triangles = new int[(count - 1) * 6];
+            Vector3 surfaceOffset =
+                Vector3.down *
+                Mathf.Max(
+                    0f,
+                    safetyApronSurfaceOffset);
+
+            for (int i = 0; i < count; i++)
+            {
+                Vector3 left =
+                    safetyApronLeftEdge[i];
+                Vector3 right =
+                    safetyApronRightEdge[i];
+                float extensionWeight =
+                    SafetyApronExtensionWeight(
+                        mappedPathDistances[i],
+                        motionStartDistance,
+                        approachEndDistance,
+                        returnStartDistance,
+                        motionEndDistance);
+                if (extensionWeight > 0f)
+                {
+                    Vector3 side = right - left;
+                    side.y = 0f;
+                    if (side.sqrMagnitude >
+                        0.000001f)
+                    {
+                        side.Normalize();
+                        if (passingSide > 0)
+                        {
+                            right +=
+                                side *
+                                vehicleWidth *
+                                extensionWeight;
+                        }
+                        else
+                        {
+                            left -=
+                                side *
+                                vehicleWidth *
+                                extensionWeight;
+                        }
+                    }
+                }
+
+                vertices[i * 2] =
+                    left + surfaceOffset;
+                vertices[i * 2 + 1] =
+                    right + surfaceOffset;
+                float v = i / (float)(count - 1);
+                uv[i * 2] = new Vector2(0f, v);
+                uv[i * 2 + 1] = new Vector2(1f, v);
+
+                if (i >= count - 1)
+                    continue;
+
+                int triangle = i * 6;
+                int vertex = i * 2;
+                triangles[triangle] = vertex;
+                triangles[triangle + 1] = vertex + 2;
+                triangles[triangle + 2] = vertex + 1;
+                triangles[triangle + 3] = vertex + 1;
+                triangles[triangle + 4] = vertex + 2;
+                triangles[triangle + 5] = vertex + 3;
+            }
+
+            safetyApronMesh = new Mesh
+            {
+                name = "EventSafetyApronMesh"
+            };
+            safetyApronMesh.vertices = vertices;
+            safetyApronMesh.uv = uv;
+            safetyApronMesh.triangles = triangles;
+            safetyApronMesh.RecalculateNormals();
+            safetyApronMesh.RecalculateBounds();
+
+            GameObject apron = new GameObject(
+                "EventRoadSafetyApron",
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            apron.transform.SetParent(
+                stageRoot.transform,
+                false);
+            apron.GetComponent<MeshFilter>()
+                .sharedMesh = safetyApronMesh;
+            safetyApronMaterial =
+                CreateMaterial(safetyApronColor);
+            MeshRenderer renderer =
+                apron.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial =
+                safetyApronMaterial;
+            renderer.shadowCastingMode =
+                ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
+        private bool TryGetSafetyApronDistances(
+            out float motionStart,
+            out float approachEnd,
+            out float returnStart,
+            out float motionEnd)
+        {
+            motionStart = 0f;
+            approachEnd = 0f;
+            returnStart = 0f;
+            motionEnd = 0f;
+            if (motionEvent == null ||
+                eventOvertakeSettings == null ||
+                referenceDriverNumber <= 0)
+            {
+                return false;
+            }
+
+            float duration =
+                motionEvent.endTime -
+                motionEvent.startTime;
+            if (duration <= 0f)
+                return false;
+
+            float totalPortion = Mathf.Max(
+                0.0001f,
+                eventOvertakeSettings.approachPortion +
+                eventOvertakeSettings.parallelPortion +
+                eventOvertakeSettings.returnPortion);
+            float approachProgress =
+                eventOvertakeSettings.approachPortion /
+                totalPortion;
+            float returnProgress =
+                (eventOvertakeSettings.approachPortion +
+                 eventOvertakeSettings.parallelPortion) /
+                totalPortion;
+            float anchorProgress = Mathf.Clamp01(
+                (motionEvent.anchorTime -
+                 motionEvent.startTime) /
+                duration);
+            approachProgress = Mathf.Clamp(
+                Mathf.Min(
+                    approachProgress,
+                    anchorProgress),
+                0.0001f,
+                0.9998f);
+            returnProgress = Mathf.Clamp(
+                Mathf.Max(
+                    returnProgress,
+                    anchorProgress),
+                approachProgress + 0.0001f,
+                0.9999f);
+
+            return TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    motionEvent.startTime,
+                    out motionStart) &&
+                TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    Mathf.Lerp(
+                        motionEvent.startTime,
+                        motionEvent.endTime,
+                        approachProgress),
+                    out approachEnd) &&
+                TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    Mathf.Lerp(
+                        motionEvent.startTime,
+                        motionEvent.endTime,
+                        returnProgress),
+                    out returnStart) &&
+                TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    motionEvent.endTime,
+                    out motionEnd) &&
+                motionEnd - motionStart >
+                0.0001f;
+        }
+
+        private static float SafetyApronExtensionWeight(
+            float distance,
+            float motionStart,
+            float approachEnd,
+            float returnStart,
+            float motionEnd)
+        {
+            if (distance <= motionStart ||
+                distance >= motionEnd)
+            {
+                return 0f;
+            }
+
+            if (distance < approachEnd)
+            {
+                return Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        motionStart,
+                        approachEnd,
+                        distance));
+            }
+
+            if (distance <= returnStart)
+                return 1f;
+
+            return Mathf.SmoothStep(
+                1f,
+                0f,
+                Mathf.InverseLerp(
+                    returnStart,
+                    motionEnd,
+                    distance));
+        }
+
         private float ResolveTrackRegionPadding()
         {
             float pathLength = 0f;
@@ -1342,6 +1668,10 @@ namespace F1XR.RestAPI.Replay
                 Destroy(roadMaterial);
             if (edgeMaterial != null)
                 Destroy(edgeMaterial);
+            if (safetyApronMesh != null)
+                Destroy(safetyApronMesh);
+            if (safetyApronMaterial != null)
+                Destroy(safetyApronMaterial);
 
             stageRoot = null;
             stageInteractionCollider = null;
@@ -1349,7 +1679,11 @@ namespace F1XR.RestAPI.Replay
             roadMesh = null;
             roadMaterial = null;
             edgeMaterial = null;
+            safetyApronMesh = null;
+            safetyApronMaterial = null;
             currentEvent = null;
+            motionEvent = null;
+            eventOvertakeSettings = null;
             eventSamples.Clear();
             eventIndices.Clear();
             eventDrivers.Clear();
@@ -1357,6 +1691,11 @@ namespace F1XR.RestAPI.Replay
             mappedPath.Clear();
             mappedPathDistances.Clear();
             fallbackCorridorPath.Clear();
+            safetyApronPath.Clear();
+            safetyApronLeftEdge.Clear();
+            safetyApronRightEdge.Clear();
+            drivableLeftEdge.Clear();
+            drivableRightEdge.Clear();
             eventLongitudinals.Clear();
             eventSpaceCenter = Vector3.zero;
             sourceToEventRotation = Quaternion.identity;
