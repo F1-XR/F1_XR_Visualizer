@@ -58,6 +58,7 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> drivableLeftEdge = new();
         private readonly List<Vector3> drivableRightEdge = new();
         private readonly Dictionary<int, List<float>> eventLongitudinals = new();
+        private readonly List<TableTrackRendererState> tableTrackRendererStates = new();
 
         private ReplayPlayer player;
         private ReplayCarSet eventCars;
@@ -434,6 +435,40 @@ namespace F1XR.RestAPI.Replay
 
             DestroyStage();
             RestoreReplay();
+        }
+
+        internal void SuspendTableTrackRendering()
+        {
+            RestoreTableTrackRendering();
+            if (player == null)
+                return;
+
+            Transform tableTrack = player.GetTrackPlacementTransform();
+            if (tableTrack == null)
+                return;
+
+            Renderer[] renderers =
+                tableTrack.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null)
+                    continue;
+
+                tableTrackRendererStates.Add(
+                    new TableTrackRendererState(renderer));
+                renderer.enabled = false;
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+        }
+
+        internal void RestoreTableTrackRendering()
+        {
+            for (int i = 0; i < tableTrackRendererStates.Count; i++)
+                tableTrackRendererStates[i].Restore();
+
+            tableTrackRendererStates.Clear();
         }
 
         private IEnumerator OpenRoutine(ReplayEventDto definition)
@@ -1651,6 +1686,7 @@ namespace F1XR.RestAPI.Replay
 
         private void DestroyStage()
         {
+            RestoreTableTrackRendering();
             isLoading = false;
             isActive = false;
             timeline.Pause();
@@ -2147,6 +2183,32 @@ namespace F1XR.RestAPI.Replay
                 Speed = source.playbackSpeed;
                 SelectedDriver = source.SelectedDriverNumber;
                 WasPlaying = source.IsPlaying;
+            }
+        }
+
+        private readonly struct TableTrackRendererState
+        {
+            private readonly Renderer renderer;
+            private readonly bool enabled;
+            private readonly ShadowCastingMode shadowCastingMode;
+            private readonly bool receiveShadows;
+
+            public TableTrackRendererState(Renderer renderer)
+            {
+                this.renderer = renderer;
+                enabled = renderer.enabled;
+                shadowCastingMode = renderer.shadowCastingMode;
+                receiveShadows = renderer.receiveShadows;
+            }
+
+            public void Restore()
+            {
+                if (renderer == null)
+                    return;
+
+                renderer.shadowCastingMode = shadowCastingMode;
+                renderer.receiveShadows = receiveShadows;
+                renderer.enabled = enabled;
             }
         }
 

@@ -116,23 +116,34 @@ namespace F1XR.UI.WorldPanel
 
         void Update()
         {
-            var hasPoint = TryGetPointerEdgePoint(out var localPoint, out var side);
             var selected = grab != null && grab.isSelected;
+            if (!selected)
+            {
+                if (wasSelected)
+                    hasLockedEdge = false;
 
-            if (selected && !wasSelected)
+                wasSelected = false;
+                if (lineAlpha > 0.001f ||
+                    edgeLine != null &&
+                    edgeLine.gameObject.activeSelf)
+                {
+                    UpdateHighlightVisual(false);
+                }
+                return;
+            }
+
+            var hasPoint = TryGetPointerEdgePoint(out var localPoint, out var side);
+
+            if (!wasSelected)
             {
                 hasLockedEdge = hasPoint;
                 if (hasLockedEdge)
                     lockedEdge = side;
             }
-            else if (!selected && wasSelected)
-            {
-                hasLockedEdge = false;
-            }
 
-            wasSelected = selected;
+            wasSelected = true;
 
-            if (selected && hasLockedEdge)
+            if (hasLockedEdge)
                 side = lockedEdge;
 
             if (hasPoint)
@@ -141,7 +152,7 @@ namespace F1XR.UI.WorldPanel
                 lastSide = side;
             }
 
-            var visible = selected && hasLockedEdge;
+            var visible = hasLockedEdge;
 
             if (scaleController != null && scaleController.IsScaling)
                 visible = false;
