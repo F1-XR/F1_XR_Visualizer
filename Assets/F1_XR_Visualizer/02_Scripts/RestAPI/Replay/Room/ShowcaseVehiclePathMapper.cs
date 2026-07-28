@@ -419,6 +419,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            eventReplay.SuspendTableTrackRendering();
             boundStage = stage;
             firstBinding = first;
             secondBinding = second;
@@ -1082,6 +1083,7 @@ namespace F1XR.RestAPI.Replay.Room
         {
             Transform stageToRestore = boundStage;
             portalPresentation?.Clear();
+            eventReplay?.RestoreTableTrackRendering();
 
             boundStage = null;
             firstBinding = null;

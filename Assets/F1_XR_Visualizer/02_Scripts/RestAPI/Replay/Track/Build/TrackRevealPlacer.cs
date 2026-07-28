@@ -9,7 +9,8 @@ namespace F1XR.RestAPI.Replay.Track.Build
     public enum TrackPlacementMode
     {
         TableAutomatic,
-        Free
+        Free,
+        Fixed
     }
 
     public sealed partial class TrackRevealPlacer : MonoBehaviour
@@ -49,6 +50,11 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField, Min(0f)] float previewPositionSmoothTime = 0.06f;
         [SerializeField, Min(0f)] float previewRotationSpeed = 18f;
         [SerializeField, Min(0f)] float previewScaleSpeed = 10f;
+
+        [Header("Fixed Placement")]
+        [SerializeField] Vector3 fixedPosition;
+        [SerializeField] Vector3 fixedEulerAngles;
+        [SerializeField] Vector3 fixedScale = Vector3.one;
 
         [Header("Anchor Stabilization")]
         [SerializeField] bool stabilizeAnchor = true;
@@ -149,6 +155,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
             if (HasSavedPlacement && !SavedGeometryMatches())
                 ClearSavedPlacement();
             TryRestoreSavedPlacement();
+
+            if (placementMode == TrackPlacementMode.Fixed)
+                TryPlaceFixed();
         }
 
         void Reset()
