@@ -3,9 +3,10 @@
 // 필요 패키지: (전송에 client 사용) NativeWebSocket. AIBRIDGE_READY 로 관리.
 #if AIBRIDGE_READY
 using UnityEngine;
+using Newtonsoft.Json;
 using F1XR.AIBridge.Net;
 using F1XR.AIBridge.Protocol;
-using F1XR.RestAPI.Replay;   // ReplayPlayer (현재 재생 시각)
+using F1XR.RestAPI.Replay;   // ReplayPlayer (현재 재생 시각·로드된 세션)
 
 namespace F1XR.AIBridge.Voice
 {
@@ -43,23 +44,32 @@ namespace F1XR.AIBridge.Voice
             _recording = false;
             if (pos <= 0) { Debug.LogWarning("[AIBridge] 녹음 비어있음"); return; }
 
+            // 현재 관람 맥락(at_time·session_key)을 리플레이에서 보강한다.
+            ReplayPlayer p = FindFirstObjectByType<ReplayPlayer>();
+
             // at_time 이 비어있으면 현재 리플레이 시각으로 채운다(스포일러 방지).
-            if (string.IsNullOrEmpty(currentAtTime))
-            {
-                ReplayPlayer p = FindFirstObjectByType<ReplayPlayer>();
-                if (p != null && p.HasDataset)
-                    currentAtTime = ReplayTimeMap.RelativeToIso(p, p.CurrentTime);
-            }
+            if (string.IsNullOrEmpty(currentAtTime) && p != null && p.HasDataset)
+                currentAtTime = ReplayTimeMap.RelativeToIso(p, p.CurrentTime);
+
+            // session_key: 로드된 리플레이가 있으면 그 세션을 우선(음성으로 경기 바꾼 뒤에도 정확).
+            // 없으면 필드값, 그래도 유효하지 않으면 null → 서버 기본 세션 폴백.
+            int? sessionKey = (p != null && p.HasDataset && p.Manifest != null && p.Manifest.sessionKey > 0)
+                ? p.Manifest.sessionKey
+                : (currentSessionKey > 0 ? currentSessionKey : (int?)null);
 
             byte[] wav = WavUtil.FromAudioClip(_clip, pos);
             string b64 = System.Convert.ToBase64String(wav);
             var msg = new AudioUtteranceMsg
             {
                 data = b64,
-                session_key = currentSessionKey,
+                session_key = sessionKey,
                 at_time = currentAtTime,
             };
-            client.Send(JsonUtility.ToJson(msg));
+            // 검증용: 음성 발화에 실려 올라가는 경기 번호·시각 확인(base64 data는 커서 제외)
+            Debug.Log($"[AIBridge→AI] audio_utterance session_key={sessionKey?.ToString() ?? \"null\"} " +
+                      $"at_time={currentAtTime ?? \"null\"} wavBytes={wav.Length}");
+            client.Send(JsonConvert.SerializeObject(
+                msg, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }));
         }
     }
 }

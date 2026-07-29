@@ -9,7 +9,7 @@ F1_XR_AI(에이전트 서버 :8001)와 WebSocket으로 통신해, 음성 발화�
 ---
 
 ## 브랜치
-- 이 작업은 `feature/ai-voice-bridge` 브랜치에서 진행 → 테스트 후 dev로 머지.
+- 이 작업은 `ai-voice-bridge` 브랜치에서 진행 → 테스트 후 `develop`으로 머지.
 
 ## 패키지 설치 + 활성화 (3단계)
 런타임 스크립트(Net/Voice/Commands/AgentBridge)는 `#if AIBRIDGE_READY`로 감싸져 있어,

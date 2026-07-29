@@ -4,7 +4,9 @@
 //
 // 이 파일은 외부 패키지 의존이 없어 단독으로 컴파일된다.
 // 실제 송수신(직렬화)은 Net/AgentWebSocketClient 에서 처리한다.
-//   - 전송(Unity→AI): JsonUtility.ToJson 로 충분
+//   - 전송(Unity→AI): Newtonsoft(JsonConvert) + NullValueHandling.Ignore.
+//     (JsonUtility 는 null 문자열을 ""로, 미설정 int를 0으로 내보내 protocol의 int|null·string|null 과
+//      어긋난다. session_key 를 int? 로 두고 null 은 생략해 서버가 기본 세션으로 폴백하게 한다.)
 //   - 수신(AI→Unity): 먼저 Envelope 로 type 만 읽고 타입별로 재파싱.
 //     command.args 는 name 마다 형이 달라 Newtonsoft(Json.NET) 사용을 권장.
 
@@ -33,7 +35,7 @@ namespace F1XR.AIBridge.Protocol
     {
         public string type = MsgType.Utterance;
         public string text;
-        public int session_key;     // 지금 보는 경기 ID (매 발화에 넣기)
+        public int? session_key;    // 지금 보는 경기 ID (매 발화에 넣기). null이면 서버 기본 세션
         public string at_time;      // 리플레이 현재 시각(ISO), 없으면 null
     }
 
@@ -43,7 +45,7 @@ namespace F1XR.AIBridge.Protocol
     {
         public string type = MsgType.AudioUtterance;
         public string data;         // base64 wav
-        public int session_key;
+        public int? session_key;    // null이면 서버 기본 세션
         public string at_time;
     }
 
