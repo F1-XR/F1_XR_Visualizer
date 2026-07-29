@@ -468,6 +468,119 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 417482157}
   m_CullTransparentMesh: 1
+--- !u!1001 &418891388
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1473409034299224219, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Name
+      value: XR Origin (VR)
+      objectReference: {fileID: 0}
+    - target: {fileID: 1785247857630340466, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4913151629264743781, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+--- !u!20 &418891389 stripped
+Camera:
+  m_CorrespondingSourceObject: {fileID: 5647931907121370637, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 418891388}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &418891390 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8645782292093347523, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 418891388}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &418891391 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 418891388}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &418891392 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8758587121800840445, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 418891388}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa17d122634046b4a8e23048891fafc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARRaycastManager
+--- !u!114 &418891393 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 3664281703862286721, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 418891388}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1760703bbd54c04488a8d10600262ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARPlaneManager
+--- !u!114 &418891394 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 347346111352918431, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 418891388}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 728ad7fae8e460a4ba41265c7308d757, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARAnchorManager
 --- !u!1 &444481597
 GameObject:
   m_ObjectHideFlags: 0
@@ -716,7 +829,7 @@ MonoBehaviour:
   m_Name: ShowcaseLayout
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcaseLayout
   wallDiscovery: {fileID: 493722805}
-  xrMainCamera: {fileID: 1918400212}
+  xrMainCamera: {fileID: 418891390}
   entryHorizontalOffset: 0
   entryVerticalOffset: 0
   entryDepthOffset: 0.05
@@ -746,8 +859,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
-  planeManager: {fileID: 2086967208}
-  orientationCamera: {fileID: 1918400212}
+  planeManager: {fileID: 418891393}
+  orientationCamera: {fileID: 418891390}
   allowVerticalFallback: 1
   minimumWidth: 0.75
   minimumFallbackWidth: 1.2
@@ -781,7 +894,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcasePathPreview
   showcaseLayout: {fileID: 493722804}
-  xrOrigin: {fileID: 2086967207}
+  xrOrigin: {fileID: 418891391}
   entryHandleLength: 1
   heroIncomingHandleLength: 1
   heroOutgoingHandleLength: 1
@@ -808,7 +921,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.RoomShowcaseSetupView
   setupPanel: {fileID: 2100327795}
-  xrMainCamera: {fileID: 1918400212}
+  xrMainCamera: {fileID: 418891390}
   panelDistance: 1.4
   panelHeightOffset: -0.05
 --- !u!114 &493722808
@@ -1062,7 +1175,7 @@ Canvas:
   m_Enabled: 1
   serializedVersion: 3
   m_RenderMode: 2
-  m_Camera: {fileID: 1918400217}
+  m_Camera: {fileID: 418891389}
   m_PlaneDistance: 100
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
@@ -1887,7 +2000,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ARBuildRevealPlacer
   placementController: {fileID: 1113257130}
-  anchorManager: {fileID: 2086967205}
+  anchorManager: {fileID: 418891394}
   placementPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
   trackMapScale: 1
@@ -1953,10 +2066,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0b61b32f92b86a04c8795d7232f1c648, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ARPlanePlacementController
-  raycastManager: {fileID: 2086967209}
-  planeManager: {fileID: 2086967208}
-  anchorManager: {fileID: 2086967205}
-  rayOrigin: {fileID: 1918400212}
+  raycastManager: {fileID: 418891392}
+  planeManager: {fileID: 418891393}
+  anchorManager: {fileID: 418891394}
+  rayOrigin: {fileID: 418891390}
   cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
   trackMapScale: 1
@@ -3218,16 +3331,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!4 &1918400212 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7157569610653896665, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-  m_PrefabInstance: {fileID: 1469385794158947758}
-  m_PrefabAsset: {fileID: 0}
---- !u!20 &1918400217 stripped
-Camera:
-  m_CorrespondingSourceObject: {fileID: 7683082654892366514, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-  m_PrefabInstance: {fileID: 1469385794158947758}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1948394329
 GameObject:
   m_ObjectHideFlags: 0
@@ -3791,44 +3894,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
---- !u!114 &2086967205 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 290393520368706036, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-  m_PrefabInstance: {fileID: 1469385794158947758}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 728ad7fae8e460a4ba41265c7308d757, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARAnchorManager
---- !u!4 &2086967207 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-  m_PrefabInstance: {fileID: 1469385794158947758}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &2086967208 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8296545333701613946, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-  m_PrefabInstance: {fileID: 1469385794158947758}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e1760703bbd54c04488a8d10600262ab, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARPlaneManager
---- !u!114 &2086967209 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3999937817964683539, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-  m_PrefabInstance: {fileID: 1469385794158947758}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fa17d122634046b4a8e23048891fafc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARRaycastManager
 --- !u!1 &2100327790
 GameObject:
   m_ObjectHideFlags: 0
@@ -3918,7 +3983,7 @@ Canvas:
   m_Enabled: 1
   serializedVersion: 3
   m_RenderMode: 2
-  m_Camera: {fileID: 1918400217}
+  m_Camera: {fileID: 418891389}
   m_PlaneDistance: 100
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
@@ -3951,127 +4016,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 1.35}
   m_SizeDelta: {x: 760, y: 650}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!1001 &1469385794158947758
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 490896846472576745, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: setupView
-      value: 
-      objectReference: {fileID: 493722807}
-    - target: {fileID: 490896846472576745, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: showcasePath
-      value: 
-      objectReference: {fileID: 493722806}
-    - target: {fileID: 490896846472576745, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: wallDiscovery
-      value: 
-      objectReference: {fileID: 493722805}
-    - target: {fileID: 490896846472576745, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: showcaseLayout
-      value: 
-      objectReference: {fileID: 493722804}
-    - target: {fileID: 1061349308097264894, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_Enabled
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1254352060012319179, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: placementController
-      value: 
-      objectReference: {fileID: 1113257130}
-    - target: {fileID: 1928117699478254318, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_Name
-      value: XR Origin (VR)
-      objectReference: {fileID: 0}
-    - target: {fileID: 2489798856294604272, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: placementController
-      value: 
-      objectReference: {fileID: 1113257130}
-    - target: {fileID: 2675823573100786693, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: showcaseLayout
-      value: 
-      objectReference: {fileID: 493722804}
-    - target: {fileID: 3279302969326376043, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: replayPlayer
-      value: 
-      objectReference: {fileID: 1705380154}
-    - target: {fileID: 3279302969326376043, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: showcasePath
-      value: 
-      objectReference: {fileID: 493722806}
-    - target: {fileID: 3279302969326376043, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: showcaseLayout
-      value: 
-      objectReference: {fileID: 493722804}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3759921475682325407, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5067969160658460655, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: setupPanel
-      value: 
-      objectReference: {fileID: 2100327795}
-    - target: {fileID: 6328499699256227681, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: setupPanel
-      value: 
-      objectReference: {fileID: 2100327795}
-    - target: {fileID: 7523365379609523146, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: replayPlayer
-      value: 
-      objectReference: {fileID: 1705380154}
-    - target: {fileID: 7814510688402563764, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: wallDiscovery
-      value: 
-      objectReference: {fileID: 493722805}
-    - target: {fileID: 8120828224831409988, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
-      propertyPath: m_IsActive
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 74117a349f9bcde418be85a3d7545f29, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -4082,7 +4026,7 @@ SceneRoots:
   - {fileID: 1954351460}
   - {fileID: 968411816}
   - {fileID: 1705380157}
-  - {fileID: 1469385794158947758}
+  - {fileID: 418891388}
   - {fileID: 1113257132}
   - {fileID: 493722811}
   - {fileID: 1127476783}

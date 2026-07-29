@@ -3,6 +3,13 @@
     "unity-mcp": {
       "command": "C:\\Users\\Admin\\.unity\\relay\\relay_win.exe",
       "args": ["--mcp", "--project-path", "C:\\F1_XR_Visualizer"]
+    },
+    "blender-mcp": {
+      "command": "C:\\Users\\Admin\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\blender-mcp.exe",
+      "args": [],
+      "env": {
+        "DISABLE_TELEMETRY": "1"
+      }
     }
   }
 }

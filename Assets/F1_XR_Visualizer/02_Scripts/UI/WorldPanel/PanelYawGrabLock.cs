@@ -7,11 +7,10 @@ namespace F1XR.UI.WorldPanel
     {
         [SerializeField] XRGrabInteractable grab;
         [SerializeField] Transform target;
+        [SerializeField] Transform user;
+        [SerializeField] bool faceOnlyWhileGrabbed;
+        [SerializeField] bool lockUpright = true;
         [SerializeField] float rotationLerpSpeed = 18f;
-
-        bool moving;
-        Quaternion startRotation;
-        Vector3 startDirection;
 
         void Awake()
         {
@@ -20,6 +19,8 @@ namespace F1XR.UI.WorldPanel
 
             if (grab == null)
                 grab = GetComponent<XRGrabInteractable>();
+
+            ResolveUser();
         }
 
         void LateUpdate()
@@ -29,28 +30,33 @@ namespace F1XR.UI.WorldPanel
 
         void UpdateRotation()
         {
-            if (grab == null || !grab.isSelected || grab.interactorsSelecting.Count == 0)
-            {
-                moving = false;
-                return;
-            }
+            if (user == null)
+                ResolveUser();
 
-            var interactor = grab.interactorsSelecting[0];
-            var direction = Vector3.ProjectOnPlane(interactor.transform.position - target.position, Vector3.up);
-            if (direction.sqrMagnitude <= Mathf.Epsilon)
+            if (user == null || target == null)
                 return;
 
-            if (!moving)
-            {
-                moving = true;
-                startRotation = target.rotation;
-                startDirection = direction.normalized;
+            if (faceOnlyWhileGrabbed && (grab == null || !grab.isSelected))
                 return;
-            }
 
-            var yaw = Vector3.SignedAngle(startDirection, direction.normalized, Vector3.up);
-            var rotation = Quaternion.AngleAxis(yaw, Vector3.up) * startRotation;
-            target.rotation = Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, Time.deltaTime));
+            var forward = target.position - user.position;
+            if (lockUpright)
+                forward = Vector3.ProjectOnPlane(forward, Vector3.up);
+
+            if (forward.sqrMagnitude <= Mathf.Epsilon)
+                return;
+
+            var rotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            target.rotation = rotationLerpSpeed <= 0f
+                ? rotation
+                : Quaternion.Slerp(target.rotation, rotation, GetLerpT(rotationLerpSpeed, Time.deltaTime));
+        }
+
+        void ResolveUser()
+        {
+            var mainCamera = Camera.main;
+            if (mainCamera != null)
+                user = mainCamera.transform;
         }
 
         static float GetLerpT(float speed, float deltaTime)
