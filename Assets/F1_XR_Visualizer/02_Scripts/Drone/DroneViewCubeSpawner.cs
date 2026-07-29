@@ -9,9 +9,10 @@ namespace F1XR.RestAPI.Replay.Track.Build
     {
         [SerializeField] TrackRevealPlacer trackPlacer;
         [SerializeField] Transform viewerCamera;
-        [SerializeField, Min(0.01f)] float cubeSize = 0.05f;
+        [SerializeField, Min(0.001f)] float cubeSize = 0.05f / 3f;
         [SerializeField, Min(0f)] float sideClearance = 0.06f;
         [SerializeField, Min(0f)] float surfaceClearance = 0.005f;
+        [SerializeField] Color cubeColor = new(0.9f, 0.05f, 0.05f, 1f);
 
         GameObject cube;
         Transform observedPlacement;
@@ -109,6 +110,10 @@ namespace F1XR.RestAPI.Replay.Track.Build
             cube.transform.SetPositionAndRotation(position, Quaternion.identity);
             cube.transform.localScale = Vector3.one * cubeSize;
             cube.transform.SetParent(placement, true);
+
+            Renderer renderer = cube.GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.material.color = cubeColor;
 
             Rigidbody body = cube.AddComponent<Rigidbody>();
             body.useGravity = false;
