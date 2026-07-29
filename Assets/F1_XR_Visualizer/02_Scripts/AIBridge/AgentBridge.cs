@@ -68,8 +68,9 @@ namespace F1XR.AIBridge
             };
             string json = JsonConvert.SerializeObject(msg, SendSettings);
             // 검증용: 발화에 실려 올라가는 경기 번호·시각 확인(화면과 일치하는지)
-            Debug.Log($"[AIBridge→AI] utterance session_key={msg.session_key?.ToString() ?? \"null\"} " +
-                      $"at_time={msg.at_time ?? \"null\"} | {json}");
+            string skLog = msg.session_key.HasValue ? msg.session_key.Value.ToString() : "null";
+            string atLog = msg.at_time ?? "null";
+            Debug.Log($"[AIBridge→AI] utterance session_key={skLog} at_time={atLog} | {json}");
             client.Send(json);
         }
 

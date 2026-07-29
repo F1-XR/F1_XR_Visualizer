@@ -66,8 +66,9 @@ namespace F1XR.AIBridge.Voice
                 at_time = currentAtTime,
             };
             // 검증용: 음성 발화에 실려 올라가는 경기 번호·시각 확인(base64 data는 커서 제외)
-            Debug.Log($"[AIBridge→AI] audio_utterance session_key={sessionKey?.ToString() ?? \"null\"} " +
-                      $"at_time={currentAtTime ?? \"null\"} wavBytes={wav.Length}");
+            string skLog = sessionKey.HasValue ? sessionKey.Value.ToString() : "null";
+            string atLog = currentAtTime ?? "null";
+            Debug.Log($"[AIBridge→AI] audio_utterance session_key={skLog} at_time={atLog} wavBytes={wav.Length}");
             client.Send(JsonConvert.SerializeObject(
                 msg, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }));
         }
