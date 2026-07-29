@@ -16,23 +16,27 @@ namespace F1XR.RestAPI.Replay.Room
         private const int PortalSurfaceLayer = 2;
         private const int TextureSize = 512;
         private const int TextureDepthBits = 16;
-        private const float FallbackPortalWidth = 2.4f;
-        private const float FallbackPortalHeight = 1.8f;
-        private const float MinimumPortalWidth = 1.8f;
-        private const float MinimumPortalHeight = 1.5f;
-        private const float MaximumPortalWidth = 4f;
-        private const float MaximumPortalHeight = 2.8f;
-        private const float PortalWallFill = 0.9f;
-        private const float PortalWallMargin = 0.1f;
+        private const float FallbackPortalWidth = 2.8f;
+        private const float FallbackPortalHeight = 2.1f;
+        private const float MinimumPortalWidth = 2f;
+        private const float MinimumPortalHeight = 1.7f;
+        private const float MaximumPortalWidth = 5.5f;
+        private const float MaximumPortalHeight = 3.5f;
+        private const float PortalWallFill = 1.1f;
+        private const float MaximumPortalSideOverflow = 0.35f;
+        private const float MaximumPortalTopOverflow = 0.5f;
         private const float PortalBottomOffset = 0.02f;
         private const float PortalClipTolerance = 0.12f;
         private const float PortalRoadOverlap = 0.08f;
         private const float PortalApertureCropDepth = 2f;
         private const float PortalApertureExpansion = 1f;
         private const float RoomPlaneTolerance = 0.06f;
+        internal const float ImmersiveMaximumScale = 3f;
+        private const float ImmersiveScaleRampDistance = 3f;
 
         private readonly List<LayerBinding> sourceLayers = new();
         private readonly HashSet<Transform> capturedLayerTransforms = new();
+        private readonly List<LabelRendererState> labelRendererStates = new();
         private readonly List<RendererBinding> roomCarRenderers = new();
         private readonly List<GameObject> rendererProxies = new();
         private readonly List<Mesh> runtimeMeshes = new();
@@ -70,6 +74,7 @@ namespace F1XR.RestAPI.Replay.Room
         private bool configured;
 
         public bool IsConfigured => configured;
+        public bool ImmersiveScaleEnabled { get; set; }
         public int AuthoritativeVehicleCount =>
             configured && firstVehicle != null && secondVehicle != null
                 ? 2
@@ -278,6 +283,11 @@ namespace F1XR.RestAPI.Replay.Room
             }
             sourceLayers.Clear();
             capturedLayerTransforms.Clear();
+
+            for (int i = 0; i < labelRendererStates.Count; i++)
+                labelRendererStates[i].Restore();
+
+            labelRendererStates.Clear();
             roomCarRenderers.Clear();
             roomTrackLeftBoundary.Clear();
             roomTrackRightBoundary.Clear();
@@ -407,6 +417,8 @@ namespace F1XR.RestAPI.Replay.Room
 
             Transform apron =
                 stage.Find("EventRoadSafetyApron");
+            if (apron == null)
+                apron = stage.Find("EventRoad");
             MeshFilter filter =
                 apron != null
                     ? apron.GetComponent<MeshFilter>()
@@ -520,6 +532,13 @@ namespace F1XR.RestAPI.Replay.Room
                     current,
                     current.gameObject.layer));
                 current.gameObject.layer = PortalSceneLayer;
+
+                if (IsDriverLabelRenderer(renderer))
+                {
+                    labelRendererStates.Add(
+                        new LabelRendererState(renderer));
+                    renderer.forceRenderingOff = true;
+                }
             }
         }
 
@@ -593,6 +612,31 @@ namespace F1XR.RestAPI.Replay.Room
                 Renderer source = sources[i];
                 if (source is MeshRenderer meshRenderer)
                 {
+                    TextMesh sourceText =
+                        source.GetComponent<TextMesh>();
+                    if (sourceText != null)
+                    {
+                        GameObject textProxy =
+                            CreateRendererProxyObject(source);
+                        TextMesh proxyText =
+                            textProxy.AddComponent<TextMesh>();
+                        SyncTextMesh(sourceText, proxyText);
+                        MeshRenderer textProxyRenderer =
+                            textProxy.GetComponent<MeshRenderer>();
+                        CopyRendererSettings(
+                            meshRenderer,
+                            textProxyRenderer);
+                        roomCarRenderers.Add(
+                            new RendererBinding(
+                                source,
+                                textProxyRenderer,
+                                vehicleRoot,
+                                sourceText,
+                                proxyText));
+                        created++;
+                        continue;
+                    }
+
                     MeshFilter sourceFilter =
                         source.GetComponent<MeshFilter>();
                     if (sourceFilter == null ||
@@ -617,6 +661,32 @@ namespace F1XR.RestAPI.Replay.Room
                             source,
                             proxyRenderer,
                             vehicleRoot));
+                    created++;
+                }
+                else if (source is LineRenderer sourceLine)
+                {
+                    GameObject proxy =
+                        CreateRendererProxyObject(source);
+                    LineRenderer proxyLine =
+                        proxy.AddComponent<LineRenderer>();
+                    CopyRendererSettings(
+                        sourceLine,
+                        proxyLine);
+                    CopyLineRendererSettings(
+                        sourceLine,
+                        proxyLine);
+                    SyncLineRenderer(
+                        sourceLine,
+                        proxyLine);
+                    roomCarRenderers.Add(
+                        new RendererBinding(
+                            source,
+                            proxyLine,
+                            vehicleRoot,
+                            null,
+                            null,
+                            sourceLine,
+                            proxyLine));
                     created++;
                 }
                 else if (source is SkinnedMeshRenderer skinned &&
@@ -683,6 +753,7 @@ namespace F1XR.RestAPI.Replay.Room
                 new(source.subMeshCount);
             List<Material> materials =
                 new(source.subMeshCount);
+            HashSet<int> keptVertices = new();
             Material[] sourceMaterials =
                 sourceRenderer.sharedMaterials;
             int keptTriangles = 0;
@@ -738,6 +809,9 @@ namespace F1XR.RestAPI.Replay.Room
                     kept.Add(a);
                     kept.Add(b);
                     kept.Add(c);
+                    keptVertices.Add(a);
+                    keptVertices.Add(b);
+                    keptVertices.Add(c);
                     keptTriangles++;
                 }
 
@@ -764,6 +838,10 @@ namespace F1XR.RestAPI.Replay.Room
                 return null;
             }
 
+            WidenRoomTrack(
+                copy,
+                sourceTransform,
+                keptVertices);
             copy.subMeshCount = submeshes.Count;
             for (int submesh = 0;
                  submesh < submeshes.Count;
@@ -779,6 +857,125 @@ namespace F1XR.RestAPI.Replay.Room
             clippedMaterials = materials.ToArray();
             runtimeMeshes.Add(copy);
             return copy;
+        }
+
+        private void WidenRoomTrack(
+            Mesh mesh,
+            Transform sourceTransform,
+            HashSet<int> keptVertices)
+        {
+            if (mesh == null ||
+                sourceTransform == null ||
+                keptVertices == null ||
+                keptVertices.Count == 0 ||
+                !ImmersiveScaleEnabled ||
+                ImmersiveMaximumScale <= 1f ||
+                roomTrackLeftBoundary.Count < 2 ||
+                roomTrackRightBoundary.Count !=
+                roomTrackLeftBoundary.Count)
+            {
+                return;
+            }
+
+            Vector3[] vertices = mesh.vertices;
+            foreach (int index in keptVertices)
+            {
+                if (index < 0 || index >= vertices.Length)
+                    continue;
+
+                Vector3 world =
+                    sourceTransform.TransformPoint(
+                        vertices[index]);
+                if (!TryGetTrackCrossSection(
+                        world,
+                        out Vector3 center,
+                        out Vector3 side))
+                {
+                    continue;
+                }
+
+                float lateral =
+                    Vector3.Dot(world - center, side);
+                float widthScale =
+                    EvaluateImmersiveScale(world);
+                world +=
+                    side *
+                    lateral *
+                    (widthScale - 1f);
+                vertices[index] =
+                    sourceTransform.InverseTransformPoint(
+                        world);
+            }
+
+            mesh.vertices = vertices;
+        }
+
+        private bool TryGetTrackCrossSection(
+            Vector3 world,
+            out Vector3 center,
+            out Vector3 side)
+        {
+            center = Vector3.zero;
+            side = Vector3.zero;
+            float bestDistance = float.PositiveInfinity;
+
+            for (int i = 0;
+                 i < roomTrackLeftBoundary.Count - 1;
+                 i++)
+            {
+                Vector3 start =
+                    (roomTrackLeftBoundary[i] +
+                     roomTrackRightBoundary[i]) *
+                    0.5f;
+                Vector3 end =
+                    (roomTrackLeftBoundary[i + 1] +
+                     roomTrackRightBoundary[i + 1]) *
+                    0.5f;
+                Vector3 flatSegment = Flat(end - start);
+                float lengthSquared =
+                    flatSegment.sqrMagnitude;
+                float t = lengthSquared > 0.000001f
+                    ? Mathf.Clamp01(
+                        Vector3.Dot(
+                            Flat(world - start),
+                            flatSegment) /
+                        lengthSquared)
+                    : 0f;
+                Vector3 candidateCenter =
+                    Vector3.Lerp(start, end, t);
+                float distance =
+                    Flat(world - candidateCenter)
+                        .sqrMagnitude;
+                if (distance >= bestDistance)
+                    continue;
+
+                Vector3 candidateSide = Flat(
+                    Vector3.Lerp(
+                        roomTrackRightBoundary[i] -
+                        roomTrackLeftBoundary[i],
+                        roomTrackRightBoundary[i + 1] -
+                        roomTrackLeftBoundary[i + 1],
+                        t));
+                if (candidateSide.sqrMagnitude <=
+                    0.000001f)
+                {
+                    candidateSide = Vector3.Cross(
+                        Vector3.up,
+                        flatSegment);
+                }
+
+                if (candidateSide.sqrMagnitude <=
+                    0.000001f)
+                {
+                    continue;
+                }
+
+                bestDistance = distance;
+                center = candidateCenter;
+                side = candidateSide.normalized;
+            }
+
+            return side.sqrMagnitude > 0.000001f;
         }
 
         private bool TriangleTouchesTrackCorridor(
@@ -968,6 +1165,35 @@ namespace F1XR.RestAPI.Replay.Room
                        position - exitPosition,
                        exitInward) >=
                    -RoomPlaneTolerance;
+        }
+
+        public float EvaluateImmersiveScale(
+            Vector3 worldPosition)
+        {
+            if (!ImmersiveScaleEnabled ||
+                !IsInsideRoom(worldPosition))
+                return 1f;
+
+            float entryDepth = Mathf.Max(
+                0f,
+                Vector3.Dot(
+                    worldPosition - entryPosition,
+                    entryInward));
+            float exitDepth = Mathf.Max(
+                0f,
+                Vector3.Dot(
+                    worldPosition - exitPosition,
+                    exitInward));
+            float blend = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.Clamp01(
+                    Mathf.Min(entryDepth, exitDepth) /
+                    ImmersiveScaleRampDistance));
+            return Mathf.Lerp(
+                1f,
+                ImmersiveMaximumScale,
+                blend);
         }
 
         private bool IsInsidePortalApertures(
@@ -1300,10 +1526,12 @@ namespace F1XR.RestAPI.Replay.Room
 
             float availableWidth = Mathf.Max(
                 0.1f,
-                wallSize.x - PortalWallMargin * 2f);
+                wallSize.x +
+                MaximumPortalSideOverflow * 2f);
             float availableHeight = Mathf.Max(
                 0.1f,
-                wallSize.y - PortalWallMargin * 2f);
+                wallSize.y +
+                MaximumPortalTopOverflow);
             float width = Mathf.Min(
                 availableWidth,
                 Mathf.Clamp(
@@ -1503,6 +1731,12 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 RendererBinding binding =
                     roomCarRenderers[i];
+                SyncTextMesh(
+                    binding.SourceText,
+                    binding.ProxyText);
+                SyncLineRenderer(
+                    binding.SourceLine,
+                    binding.ProxyLine);
                 bool visible =
                     binding.Source != null &&
                     binding.Proxy != null &&
@@ -1514,6 +1748,79 @@ namespace F1XR.RestAPI.Replay.Room
                 if (binding.Proxy != null)
                     binding.Proxy.enabled = visible;
             }
+        }
+
+        private static void SyncLineRenderer(
+            LineRenderer source,
+            LineRenderer destination)
+        {
+            if (source == null ||
+                destination == null)
+            {
+                return;
+            }
+
+            destination.startWidth = source.startWidth;
+            destination.endWidth = source.endWidth;
+            destination.startColor = source.startColor;
+            destination.endColor = source.endColor;
+
+            if (destination.positionCount != source.positionCount)
+                destination.positionCount = source.positionCount;
+
+            for (int i = 0; i < source.positionCount; i++)
+                destination.SetPosition(i, source.GetPosition(i));
+        }
+
+        private static void CopyLineRendererSettings(
+            LineRenderer source,
+            LineRenderer destination)
+        {
+            destination.useWorldSpace = source.useWorldSpace;
+            destination.loop = source.loop;
+            destination.widthMultiplier = source.widthMultiplier;
+            destination.widthCurve = source.widthCurve;
+            destination.colorGradient = source.colorGradient;
+            destination.numCornerVertices = source.numCornerVertices;
+            destination.numCapVertices = source.numCapVertices;
+            destination.alignment = source.alignment;
+            destination.textureMode = source.textureMode;
+            destination.generateLightingData =
+                source.generateLightingData;
+        }
+
+        private static void SyncTextMesh(
+            TextMesh source,
+            TextMesh destination)
+        {
+            if (source == null ||
+                destination == null)
+            {
+                return;
+            }
+
+            if (destination.text != source.text)
+                destination.text = source.text;
+            if (destination.font != source.font)
+                destination.font = source.font;
+            if (destination.fontSize != source.fontSize)
+                destination.fontSize = source.fontSize;
+            if (destination.fontStyle != source.fontStyle)
+                destination.fontStyle = source.fontStyle;
+            if (destination.anchor != source.anchor)
+                destination.anchor = source.anchor;
+            if (destination.alignment != source.alignment)
+                destination.alignment = source.alignment;
+            if (destination.characterSize != source.characterSize)
+                destination.characterSize = source.characterSize;
+            if (destination.lineSpacing != source.lineSpacing)
+                destination.lineSpacing = source.lineSpacing;
+            if (destination.tabSize != source.tabSize)
+                destination.tabSize = source.tabSize;
+            if (destination.richText != source.richText)
+                destination.richText = source.richText;
+            if (destination.color != source.color)
+                destination.color = source.color;
         }
 
         private static void CopyRendererSettings(
@@ -1538,6 +1845,15 @@ namespace F1XR.RestAPI.Replay.Room
             destination.SetPropertyBlock(block);
         }
 
+        private static bool IsDriverLabelRenderer(
+            Renderer renderer)
+        {
+            return renderer != null &&
+                renderer.gameObject.name.StartsWith(
+                    "DriverLabel",
+                    System.StringComparison.Ordinal);
+        }
+
         private static Vector3 Flat(Vector3 value)
         {
             value.y = 0f;
@@ -1558,20 +1874,85 @@ namespace F1XR.RestAPI.Replay.Room
             }
         }
 
+        private readonly struct LabelRendererState
+        {
+            private readonly Renderer renderer;
+            private readonly bool forceRenderingOff;
+
+            public LabelRendererState(Renderer source)
+            {
+                renderer = source;
+                forceRenderingOff =
+                    source != null &&
+                    source.forceRenderingOff;
+            }
+
+            public void Restore()
+            {
+                if (renderer != null)
+                    renderer.forceRenderingOff =
+                        forceRenderingOff;
+            }
+        }
+
         private readonly struct RendererBinding
         {
             public readonly Renderer Source;
             public readonly Renderer Proxy;
             public readonly Transform VehicleRoot;
+            public readonly TextMesh SourceText;
+            public readonly TextMesh ProxyText;
+            public readonly LineRenderer SourceLine;
+            public readonly LineRenderer ProxyLine;
 
             public RendererBinding(
                 Renderer source,
                 Renderer proxy,
                 Transform vehicleRoot)
+                : this(
+                    source,
+                    proxy,
+                    vehicleRoot,
+                    null,
+                    null,
+                    null,
+                    null)
+            {
+            }
+
+            public RendererBinding(
+                Renderer source,
+                Renderer proxy,
+                Transform vehicleRoot,
+                TextMesh sourceText,
+                TextMesh proxyText)
+                : this(
+                    source,
+                    proxy,
+                    vehicleRoot,
+                    sourceText,
+                    proxyText,
+                    null,
+                    null)
+            {
+            }
+
+            public RendererBinding(
+                Renderer source,
+                Renderer proxy,
+                Transform vehicleRoot,
+                TextMesh sourceText,
+                TextMesh proxyText,
+                LineRenderer sourceLine,
+                LineRenderer proxyLine)
             {
                 Source = source;
                 Proxy = proxy;
                 VehicleRoot = vehicleRoot;
+                SourceText = sourceText;
+                ProxyText = proxyText;
+                SourceLine = sourceLine;
+                ProxyLine = proxyLine;
             }
         }
     }
