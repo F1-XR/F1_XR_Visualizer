@@ -46,15 +46,15 @@ namespace F1XR.Interaction.World
         [SerializeField] Renderer iconRenderer;
         [SerializeField] Renderer hoverHalo;
 
-        [Header("Colours")]
-        [SerializeField] Color normalBackgroundColor = new Color(0f, 0f, 0f, 0.35f);
-        [SerializeField] Color selectedBackgroundColor = Color.white;
+        [Header("Colours (F1: carbon black card, red line / glow)")]
+        [SerializeField] Color normalBackgroundColor = new Color(0.043f, 0.043f, 0.051f, 0.62f);
+        [SerializeField] Color selectedBackgroundColor = new Color(0.882f, 0.024f, 0f, 1f);
         [SerializeField] Color normalIconColor = Color.white;
-        [SerializeField] Color selectedIconColor = new Color(0.06f, 0.06f, 0.06f, 1f);
-        [SerializeField] Color outlineColor = Color.white;
-        [SerializeField] Color haloColor = Color.white;
+        [SerializeField] Color selectedIconColor = Color.white;
+        [SerializeField] Color outlineColor = new Color(1f, 0.165f, 0.133f, 0.9f);
+        [SerializeField] Color haloColor = new Color(1f, 0.118f, 0.078f, 1f);
         [Tooltip("Halo alpha at full hover.")]
-        [SerializeField, Range(0f, 1f)] float haloHoverAlpha = 0.35f;
+        [SerializeField, Range(0f, 1f)] float haloHoverAlpha = 0.45f;
         [Tooltip("How much brighter the outline gets at full hover.")]
         [SerializeField, Range(1f, 3f)] float outlineHoverBoost = 1.6f;
         [Tooltip("Brightness of the non-hovered items while another item is hovered (0.5 - 0.7).")]
@@ -228,6 +228,9 @@ namespace F1XR.Interaction.World
                 return;
 
             c.a *= groupAlpha;
+            // Property blocks skip the sRGB->linear conversion a material asset gets, so the picker
+            // colour above would render washed out. Convert here (alpha is left alone).
+            c = c.linear;
             r.GetPropertyBlock(mpb);
             mpb.SetColor(baseColorId, c);
             mpb.SetColor(legacyColorId, c);
