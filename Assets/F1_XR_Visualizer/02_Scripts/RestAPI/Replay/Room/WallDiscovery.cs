@@ -242,7 +242,6 @@ namespace F1XR.RestAPI.Replay.Room
     }
 
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(ARPlaneManager))]
     public sealed class WallDiscovery : MonoBehaviour, IShowcaseWallProvider
     {
         private static readonly PlaneClassifications WallClassifications =

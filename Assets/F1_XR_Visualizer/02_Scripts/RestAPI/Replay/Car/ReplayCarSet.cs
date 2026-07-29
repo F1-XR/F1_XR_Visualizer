@@ -165,6 +165,7 @@ namespace F1XR.RestAPI.Replay
                     removeCarState,
                     setupCar);
                 FindCarMarker.End();
+                car.ClearRoomPresentation();
 
                 carAudio.EnsureCar(driver, car);
                 if (ranks != null && ranks.TryGetValue(driver, out int rank))
