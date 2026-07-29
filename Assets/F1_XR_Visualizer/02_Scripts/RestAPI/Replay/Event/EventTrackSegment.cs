@@ -10,6 +10,8 @@ namespace F1XR.RestAPI.Replay
         private const float MinimumSurfaceNormalY = 0.35f;
 
         private readonly List<Mesh> meshes = new();
+        private readonly List<RoadTriangle> roadTriangles = new();
+        private readonly List<RoadTriangle> drivableTriangles = new();
 
         public bool Build(
             Transform parent,
@@ -96,6 +98,181 @@ namespace F1XR.RestAPI.Replay
             }
 
             meshes.Clear();
+            roadTriangles.Clear();
+            drivableTriangles.Clear();
+        }
+
+        public bool TryBuildSafetyApronEdges(
+            IReadOnlyList<Vector3> path,
+            float vehicleWidth,
+            List<Vector3> leftEdges,
+            List<Vector3> rightEdges)
+        {
+            return TryBuildEdges(
+                path,
+                vehicleWidth,
+                roadTriangles,
+                "Safety apron",
+                false,
+                leftEdges,
+                rightEdges);
+        }
+
+        public bool TryBuildDrivableEdges(
+            IReadOnlyList<Vector3> path,
+            float vehicleWidth,
+            List<Vector3> leftEdges,
+            List<Vector3> rightEdges)
+        {
+            return TryBuildEdges(
+                path,
+                vehicleWidth,
+                drivableTriangles,
+                "Drivable",
+                true,
+                leftEdges,
+                rightEdges);
+        }
+
+        private bool TryBuildEdges(
+            IReadOnlyList<Vector3> path,
+            float vehicleWidth,
+            IReadOnlyList<RoadTriangle> triangles,
+            string label,
+            bool requireCompleteCoverage,
+            List<Vector3> leftEdges,
+            List<Vector3> rightEdges)
+        {
+            leftEdges.Clear();
+            rightEdges.Clear();
+            if (path == null ||
+                path.Count < 2 ||
+                vehicleWidth <= 0f ||
+                triangles == null ||
+                triangles.Count == 0)
+            {
+                return false;
+            }
+
+            int detected = 0;
+            float[] minimumOffsets =
+                new float[path.Count];
+            float[] maximumOffsets =
+                new float[path.Count];
+            for (int i = 0; i < path.Count; i++)
+            {
+                if (TryFindRoadSpan(
+                        path[i],
+                        GetPathSide(path, i),
+                        vehicleWidth,
+                        triangles,
+                        out float roadMinimum,
+                        out float roadMaximum))
+                {
+                    minimumOffsets[i] = roadMinimum;
+                    maximumOffsets[i] = roadMaximum;
+                    detected++;
+                }
+                else
+                {
+                    minimumOffsets[i] = float.NaN;
+                    maximumOffsets[i] = float.NaN;
+                }
+            }
+
+            Debug.Log(
+                $"[EventTrackSegment] {label} road-edge samples=" +
+                $"{detected}/{path.Count}.");
+            if (detected == 0 ||
+                requireCompleteCoverage &&
+                detected != path.Count)
+            {
+                leftEdges.Clear();
+                rightEdges.Clear();
+                return false;
+            }
+
+            FillMissingOffsets(minimumOffsets);
+            FillMissingOffsets(maximumOffsets);
+            for (int i = 0; i < path.Count; i++)
+            {
+                Vector3 side =
+                    GetPathSide(path, i);
+                leftEdges.Add(
+                    path[i] +
+                    side * minimumOffsets[i]);
+                rightEdges.Add(
+                    path[i] +
+                    side * maximumOffsets[i]);
+            }
+
+            return true;
+        }
+
+        private static Vector3 GetPathSide(
+            IReadOnlyList<Vector3> path,
+            int index)
+        {
+            Vector3 before =
+                path[Mathf.Max(0, index - 1)];
+            Vector3 after =
+                path[Mathf.Min(path.Count - 1, index + 1)];
+            Vector3 tangent = after - before;
+            tangent.y = 0f;
+            if (tangent.sqrMagnitude <= 0.000001f)
+                tangent = Vector3.forward;
+
+            return Vector3.Cross(
+                Vector3.up,
+                tangent.normalized);
+        }
+
+        private static void FillMissingOffsets(
+            float[] offsets)
+        {
+            int first = -1;
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                if (!float.IsNaN(offsets[i]))
+                {
+                    first = i;
+                    break;
+                }
+            }
+
+            if (first < 0)
+                return;
+
+            for (int i = 0; i < first; i++)
+                offsets[i] = offsets[first];
+
+            int previous = first;
+            for (int i = first + 1; i < offsets.Length; i++)
+            {
+                if (float.IsNaN(offsets[i]))
+                    continue;
+
+                int gap = i - previous;
+                for (int missing = previous + 1;
+                     missing < i;
+                     missing++)
+                {
+                    offsets[missing] = Mathf.Lerp(
+                        offsets[previous],
+                        offsets[i],
+                        (missing - previous) /
+                        (float)gap);
+                }
+
+                previous = i;
+            }
+
+            for (int i = previous + 1;
+                 i < offsets.Length;
+                 i++)
+            {
+                offsets[i] = offsets[previous];
+            }
         }
 
         private static bool CanCopy(
@@ -148,6 +325,8 @@ namespace F1XR.RestAPI.Replay
                 sourceFilter.transform.localToWorldMatrix;
             Matrix4x4 normalMatrix = sourceToEvent.inverse.transpose;
             bool reverseWinding = sourceToEvent.determinant < 0f;
+            MeshRenderer sourceRenderer =
+                sourceFilter.GetComponent<MeshRenderer>();
 
             Vector3[] positions = new Vector3[sourceVertices.Length];
             Vector3[] normals = hasNormals ? new Vector3[sourceVertices.Length] : null;
@@ -169,6 +348,8 @@ namespace F1XR.RestAPI.Replay
             List<Vector2> uv2 = hasUv2 ? new List<Vector2>() : null;
             List<Color> colors = hasColors ? new List<Color>() : null;
             List<List<int>> submeshes = new(source.subMeshCount);
+            List<Material> materials = new(source.subMeshCount);
+            Material[] sourceMaterials = sourceRenderer.sharedMaterials;
             Dictionary<int, int> remap = new();
             int keptTriangles = 0;
             Vector2 maximumTriangleSpan = new Vector2(
@@ -178,10 +359,17 @@ namespace F1XR.RestAPI.Replay
             for (int submesh = 0; submesh < source.subMeshCount; submesh++)
             {
                 List<int> triangles = new();
-                submeshes.Add(triangles);
                 if (source.GetTopology(submesh) != MeshTopology.Triangles)
                     continue;
 
+                bool isRoadSurface =
+                    IsRoadSurfaceSubmesh(
+                        sourceRenderer,
+                        submesh);
+                bool isDrivableSurface =
+                    IsDrivableSurfaceSubmesh(
+                        sourceRenderer,
+                        submesh);
                 int[] indices = source.GetIndices(submesh);
                 for (int index = 0; index + 2 < indices.Length; index += 3)
                 {
@@ -204,12 +392,40 @@ namespace F1XR.RestAPI.Replay
                         positions[c],
                         localPath,
                         highestSurfaceY);
+                    if (isRoadSurface)
+                    {
+                        RecordRoadTriangle(
+                            positions[a],
+                            positions[b],
+                            positions[c],
+                            roadTriangles);
+                    }
+                    if (isDrivableSurface)
+                    {
+                        RecordRoadTriangle(
+                            positions[a],
+                            positions[b],
+                            positions[c],
+                            drivableTriangles);
+                    }
 
                     triangles.Add(CopyVertex(a));
                     triangles.Add(CopyVertex(reverseWinding ? c : b));
                     triangles.Add(CopyVertex(reverseWinding ? b : c));
                     keptTriangles++;
                 }
+
+                if (triangles.Count == 0)
+                    continue;
+
+                submeshes.Add(triangles);
+                materials.Add(
+                    sourceMaterials.Length > 0
+                        ? sourceMaterials[
+                            Mathf.Min(
+                                submesh,
+                                sourceMaterials.Length - 1)]
+                        : null);
             }
 
             if (keptTriangles == 0)
@@ -245,9 +461,8 @@ namespace F1XR.RestAPI.Replay
             copy.transform.SetParent(parent, false);
             copy.GetComponent<MeshFilter>().sharedMesh = mesh;
 
-            MeshRenderer sourceRenderer = sourceFilter.GetComponent<MeshRenderer>();
             MeshRenderer renderer = copy.GetComponent<MeshRenderer>();
-            renderer.sharedMaterials = sourceRenderer.sharedMaterials;
+            renderer.sharedMaterials = materials.ToArray();
             renderer.shadowCastingMode = sourceRenderer.shadowCastingMode;
             renderer.receiveShadows = sourceRenderer.receiveShadows;
             renderer.lightProbeUsage = LightProbeUsage.Off;
@@ -273,6 +488,327 @@ namespace F1XR.RestAPI.Replay
                     colors.Add(sourceColors[sourceIndex]);
                 return copied;
             }
+        }
+
+        private bool TryFindRoadSpan(
+            Vector3 point,
+            Vector3 side,
+            float maximumCenterDistance,
+            IReadOnlyList<RoadTriangle> triangles,
+            out float minimum,
+            out float maximum)
+        {
+            List<RoadInterval> intervals = new();
+            for (int i = 0; i < triangles.Count; i++)
+            {
+                if (TryIntersectCrossSection(
+                        point,
+                        side,
+                        triangles[i],
+                        out RoadInterval interval))
+                {
+                    intervals.Add(interval);
+                }
+            }
+
+            minimum = 0f;
+            maximum = 0f;
+            if (intervals.Count == 0)
+                return false;
+
+            intervals.Sort(
+                (left, right) =>
+                    left.Minimum.CompareTo(
+                        right.Minimum));
+            List<RoadInterval> merged = new();
+            RoadInterval current = intervals[0];
+            for (int i = 1; i < intervals.Count; i++)
+            {
+                RoadInterval next = intervals[i];
+                if (next.Minimum <=
+                    current.Maximum + 0.00001f)
+                {
+                    current.Maximum = Mathf.Max(
+                        current.Maximum,
+                        next.Maximum);
+                    continue;
+                }
+
+                merged.Add(current);
+                current = next;
+            }
+            merged.Add(current);
+
+            float closestDistance =
+                float.PositiveInfinity;
+            bool found = false;
+            for (int i = 0; i < merged.Count; i++)
+            {
+                RoadInterval interval = merged[i];
+                float distance =
+                    interval.Minimum > 0f
+                        ? interval.Minimum
+                        : interval.Maximum < 0f
+                            ? -interval.Maximum
+                            : 0f;
+                if (distance >= closestDistance)
+                    continue;
+
+                closestDistance = distance;
+                minimum = interval.Minimum;
+                maximum = interval.Maximum;
+                found = true;
+            }
+
+            return found &&
+                closestDistance <= maximumCenterDistance;
+        }
+
+        private static bool TryIntersectCrossSection(
+            Vector3 point,
+            Vector3 side,
+            RoadTriangle triangle,
+            out RoadInterval interval)
+        {
+            Vector2 lateral =
+                new Vector2(side.x, side.z);
+            Vector2 longitudinal =
+                new Vector2(-side.z, side.x);
+            Vector2 origin =
+                new Vector2(point.x, point.z);
+            Vector2[] vertices =
+            {
+                new Vector2(
+                    triangle.A.x,
+                    triangle.A.z),
+                new Vector2(
+                    triangle.B.x,
+                    triangle.B.z),
+                new Vector2(
+                    triangle.C.x,
+                    triangle.C.z)
+            };
+            float[] along = new float[3];
+            float[] across = new float[3];
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector2 relative =
+                    vertices[i] - origin;
+                along[i] =
+                    Vector2.Dot(
+                        relative,
+                        longitudinal);
+                across[i] =
+                    Vector2.Dot(
+                        relative,
+                        lateral);
+            }
+
+            List<float> intersections = new(4);
+            for (int i = 0; i < 3; i++)
+            {
+                int next = (i + 1) % 3;
+                if (Mathf.Abs(along[i]) <= 0.000001f)
+                    intersections.Add(across[i]);
+
+                if ((along[i] < 0f &&
+                     along[next] > 0f) ||
+                    (along[i] > 0f &&
+                     along[next] < 0f))
+                {
+                    float interpolation =
+                        along[i] /
+                        (along[i] - along[next]);
+                    intersections.Add(
+                        Mathf.Lerp(
+                            across[i],
+                            across[next],
+                            interpolation));
+                }
+            }
+
+            if (intersections.Count < 2)
+            {
+                interval = default;
+                return false;
+            }
+
+            float minimum = intersections[0];
+            float maximum = intersections[0];
+            for (int i = 1;
+                 i < intersections.Count;
+                 i++)
+            {
+                minimum = Mathf.Min(
+                    minimum,
+                    intersections[i]);
+                maximum = Mathf.Max(
+                    maximum,
+                    intersections[i]);
+            }
+
+            interval = new RoadInterval(
+                minimum,
+                maximum);
+            return maximum - minimum > 0.000001f;
+        }
+
+        private void RecordRoadTriangle(
+            Vector3 a,
+            Vector3 b,
+            Vector3 c,
+            List<RoadTriangle> destination)
+        {
+            Vector3 normal =
+                Vector3.Cross(b - a, c - a);
+            float normalMagnitude = normal.magnitude;
+            if (normalMagnitude <= 0f ||
+                Mathf.Abs(normal.y) <
+                normalMagnitude *
+                MinimumSurfaceNormalY)
+            {
+                return;
+            }
+
+            destination.Add(
+                new RoadTriangle(a, b, c));
+        }
+
+        private static bool IsRoadSurfaceSubmesh(
+            MeshRenderer renderer,
+            int submesh)
+        {
+            if (renderer == null)
+                return false;
+
+            Material[] materials =
+                renderer.sharedMaterials;
+            if (materials == null ||
+                materials.Length == 0)
+            {
+                return false;
+            }
+
+            Material material =
+                materials[Mathf.Min(
+                    submesh,
+                    materials.Length - 1)];
+            if (material == null)
+                return false;
+
+            string name =
+                material.name.ToLowerInvariant();
+            if (name.Contains("pit") ||
+                name.Contains("grass") ||
+                name.Contains("ground") ||
+                name.Contains("grvl") ||
+                name.Contains("gravel") ||
+                name.Contains("terrain") ||
+                name.Contains("tree") ||
+                name.Contains("forest"))
+            {
+                return false;
+            }
+
+            return name.Contains("road") ||
+                name.Contains("asphalt") ||
+                name.Contains("tarmac") ||
+                name.Contains("track") ||
+                name.Contains("curb") ||
+                name.Contains("kerb") ||
+                name.Contains("rumble") ||
+                name.Contains("rmbl") ||
+                name.Contains("rdcp") ||
+                name.Contains("skid") ||
+                name.Contains("groove") ||
+                name.Contains("runoff") ||
+                name.Contains("pitexitline") ||
+                name == "grid" ||
+                name.StartsWith("line");
+        }
+
+        private static bool IsDrivableSurfaceSubmesh(
+            MeshRenderer renderer,
+            int submesh)
+        {
+            if (renderer == null)
+                return false;
+
+            Material[] materials =
+                renderer.sharedMaterials;
+            if (materials == null ||
+                materials.Length == 0)
+            {
+                return false;
+            }
+
+            Material material =
+                materials[Mathf.Min(
+                    submesh,
+                    materials.Length - 1)];
+            if (material == null)
+                return false;
+
+            string name =
+                material.name.ToLowerInvariant();
+            if (name.Contains("pit") ||
+                name.Contains("grass") ||
+                name.Contains("ground") ||
+                name.Contains("grvl") ||
+                name.Contains("gravel") ||
+                name.Contains("terrain") ||
+                name.Contains("tree") ||
+                name.Contains("forest") ||
+                name.Contains("curb") ||
+                name.Contains("kerb") ||
+                name.Contains("rumble") ||
+                name.Contains("rmbl") ||
+                name.Contains("rdcp") ||
+                name.Contains("runoff") ||
+                name.Contains("green") ||
+                name.Contains("skid") ||
+                name.Contains("groove") ||
+                name.Contains("line") ||
+                name == "grid")
+            {
+                return false;
+            }
+
+            return name.Contains("road") ||
+                name.Contains("asphalt") ||
+                name.Contains("tarmac") ||
+                name.Contains("track");
+        }
+
+        private readonly struct RoadTriangle
+        {
+            public RoadTriangle(
+                Vector3 a,
+                Vector3 b,
+                Vector3 c)
+            {
+                A = a;
+                B = b;
+                C = c;
+            }
+
+            public Vector3 A { get; }
+            public Vector3 B { get; }
+            public Vector3 C { get; }
+        }
+
+        private struct RoadInterval
+        {
+            public RoadInterval(
+                float minimum,
+                float maximum)
+            {
+                Minimum = minimum;
+                Maximum = maximum;
+            }
+
+            public float Minimum;
+            public float Maximum;
         }
 
         private static Bounds BuildStageBounds(

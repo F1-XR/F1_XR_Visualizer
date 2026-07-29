@@ -11,6 +11,9 @@ namespace F1XR.RestAPI.Replay
         private Transform logicalRoot;
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation = Quaternion.identity;
+        private Vector3 roomPresentationLocalPosition;
+        private Vector3 roomPresentationLocalScale;
+        private bool roomPresentationApplied;
 
         public Transform LogicalRoot => logicalRoot != null
             ? logicalRoot
@@ -50,6 +53,7 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
+            ClearRoomPresentation();
             transform.localPosition =
                 visualBasePosition + LogicalRoot.InverseTransformVector(worldOffset);
             transform.localRotation =
@@ -61,8 +65,45 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
+            ClearRoomPresentation();
             transform.localPosition = visualBasePosition;
             transform.localRotation = visualBaseRotation;
+        }
+
+        public void ApplyRoomPresentation(
+            Vector3 worldAnchor,
+            float scale)
+        {
+            ClearRoomPresentation();
+
+            scale = Mathf.Max(1f, scale);
+            if (scale <= 1.0001f)
+                return;
+
+            roomPresentationLocalPosition = transform.localPosition;
+            roomPresentationLocalScale = transform.localScale;
+            roomPresentationApplied = true;
+
+            Vector3 worldPosition = transform.position;
+            Vector3 planarOffset = worldPosition - worldAnchor;
+            planarOffset.y = 0f;
+            transform.position =
+                worldPosition +
+                planarOffset * (scale - 1f);
+            transform.localScale =
+                roomPresentationLocalScale * scale;
+        }
+
+        public void ClearRoomPresentation()
+        {
+            if (!roomPresentationApplied)
+                return;
+
+            transform.localPosition =
+                roomPresentationLocalPosition;
+            transform.localScale =
+                roomPresentationLocalScale;
+            roomPresentationApplied = false;
         }
 
         public void CollectOnboardHiddenRenderers(List<Renderer> renderers)

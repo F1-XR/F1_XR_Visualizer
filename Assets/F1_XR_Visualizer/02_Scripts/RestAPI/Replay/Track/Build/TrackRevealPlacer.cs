@@ -9,7 +9,8 @@ namespace F1XR.RestAPI.Replay.Track.Build
     public enum TrackPlacementMode
     {
         TableAutomatic,
-        Free
+        Free,
+        Fixed
     }
 
     public sealed partial class TrackRevealPlacer : MonoBehaviour
@@ -50,6 +51,11 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField, Min(0f)] float previewRotationSpeed = 18f;
         [SerializeField, Min(0f)] float previewScaleSpeed = 10f;
 
+        [Header("Fixed Placement")]
+        [SerializeField] Vector3 fixedPosition;
+        [SerializeField] Vector3 fixedEulerAngles;
+        [SerializeField] Vector3 fixedScale = Vector3.one;
+
         [Header("Anchor Stabilization")]
         [SerializeField] bool stabilizeAnchor = true;
         [SerializeField, Min(0f)] float anchorPositionSpeed = 12f;
@@ -73,7 +79,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         public bool HasPlacement => spawnedInstance != null;
         public bool IsPlacementActive => placementActive;
-        public bool HasValidSurface => hasCurrentHit;
+        public bool HasValidSurface =>
+            hasCurrentHit &&
+            IsPlacementVisualReady();
         public bool IsEditMode => editState != null && editState.IsEditMode;
         public bool CanUndo => editState != null && editState.CanUndo;
         public TrackPlacementMode PlacementMode => placementMode;
@@ -147,6 +155,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
             if (HasSavedPlacement && !SavedGeometryMatches())
                 ClearSavedPlacement();
             TryRestoreSavedPlacement();
+
+            if (placementMode == TrackPlacementMode.Fixed)
+                TryPlaceFixed();
         }
 
         void Reset()
@@ -301,7 +312,10 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         void TryRestoreSavedPlacement()
         {
-            if (!restoreSavedPlacement || spawnedInstance != null || placementPrefab == null || !HasSavedPlacement)
+            if (!restoreSavedPlacement ||
+                spawnedInstance != null ||
+                !IsPlacementVisualReady() ||
+                !HasSavedPlacement)
                 return;
 
             GameObject target = Instantiate(placementPrefab);
@@ -321,6 +335,26 @@ namespace F1XR.RestAPI.Replay.Track.Build
             placementActive = false;
             ConfigureEditState(target);
             ObserveCurrentTransform();
+        }
+
+        bool IsPlacementVisualReady()
+        {
+            if (placementPrefab == null)
+                return false;
+
+            if (placementPrefab
+                    .GetComponentsInChildren<Renderer>(
+                        includeInactive: true)
+                    .Length > 0)
+            {
+                return true;
+            }
+
+            return trackMapPrefab != null &&
+                trackMapPrefab
+                    .GetComponentsInChildren<Renderer>(
+                        includeInactive: true)
+                    .Length > 0;
         }
 
         void UpdatePlacementPersistence()
@@ -468,8 +502,25 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         void UpdatePlacementHit()
         {
-            hasCurrentHit = placementController != null &&
-                placementController.TryGetPlacementHit(out currentPose, out currentPlane);
+            hasCurrentHit = false;
+            if (placementController != null)
+            {
+                if (placementMode ==
+                    TrackPlacementMode.TableAutomatic)
+                {
+                    hasCurrentHit =
+                        placementController.TryGetAutomaticTableHit(
+                            out currentPose,
+                            out currentPlane);
+                }
+                else
+                {
+                    hasCurrentHit =
+                        placementController.TryGetPlacementHit(
+                            out currentPose,
+                            out currentPlane);
+                }
+            }
 
             if (hasCurrentHit)
             {

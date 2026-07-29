@@ -14,7 +14,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         void UpdatePreview()
         {
-            if (!hasCurrentHit || placementPrefab == null)
+            if (!hasCurrentHit || !IsPlacementVisualReady())
             {
                 HidePreview();
                 return;
