@@ -32,7 +32,7 @@ namespace F1XR.RestAPI.Replay.Room
         private const float PortalApertureExpansion = 1f;
         private const float RoomPlaneTolerance = 0.06f;
         internal const float ImmersiveMaximumScale = 3f;
-        private const float ImmersiveScaleRampDistance = 1.2f;
+        private const float ImmersiveScaleRampDistance = 3f;
 
         private readonly List<LayerBinding> sourceLayers = new();
         private readonly HashSet<Transform> capturedLayerTransforms = new();
@@ -74,6 +74,7 @@ namespace F1XR.RestAPI.Replay.Room
         private bool configured;
 
         public bool IsConfigured => configured;
+        public bool ImmersiveScaleEnabled { get; set; }
         public int AuthoritativeVehicleCount =>
             configured && firstVehicle != null && secondVehicle != null
                 ? 2
@@ -867,6 +868,7 @@ namespace F1XR.RestAPI.Replay.Room
                 sourceTransform == null ||
                 keptVertices == null ||
                 keptVertices.Count == 0 ||
+                !ImmersiveScaleEnabled ||
                 ImmersiveMaximumScale <= 1f ||
                 roomTrackLeftBoundary.Count < 2 ||
                 roomTrackRightBoundary.Count !=
@@ -1168,7 +1170,8 @@ namespace F1XR.RestAPI.Replay.Room
         public float EvaluateImmersiveScale(
             Vector3 worldPosition)
         {
-            if (!IsInsideRoom(worldPosition))
+            if (!ImmersiveScaleEnabled ||
+                !IsInsideRoom(worldPosition))
                 return 1f;
 
             float entryDepth = Mathf.Max(

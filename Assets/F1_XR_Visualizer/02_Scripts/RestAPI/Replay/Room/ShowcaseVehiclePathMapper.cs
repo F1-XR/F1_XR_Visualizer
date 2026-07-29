@@ -36,6 +36,7 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Range(1f, 2f)] private float entryContinuationMultiplier = 1.5f;
         [SerializeField, Min(0f)] private float heroForwardOffset = 0.25f;
         [SerializeField] private float roadFloorOffset = 0.02f;
+        [SerializeField] private bool immersiveScaleEnabled;
 
         [Header("Control")]
         [SerializeField] private bool mappingEnabled = true;
@@ -302,7 +303,7 @@ namespace F1XR.RestAPI.Replay.Room
             firstMappedProgress = firstSourceLongitudinal;
             secondMappedProgress = secondSourceLongitudinal;
 
-            ApplyRoomVehicleScale(
+            ApplyRoomVehiclePresentation(
                 firstBinding,
                 secondBinding);
             RevealStageAfterReplayMotion();
@@ -408,6 +409,8 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             CaptureVehicleScale(first, second);
+            portalPresentation.ImmersiveScaleEnabled =
+                immersiveScaleEnabled;
             if (!portalPresentation.Configure(
                     stage,
                     showcaseLayout,
@@ -421,20 +424,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            ApplyRoomVehicleScale(first, second);
-            if (!eventReplay.TrySetRoomLateralScale(
-                    portalPresentation
-                        .EvaluateImmersiveScale))
-            {
-                RestoreVehicleScale(first);
-                RestoreVehicleScale(second);
-                eventReplay.RestoreRoomLateralScale();
-                portalPresentation.Clear();
-                SetInactive(
-                    "PlacementInvalid",
-                    "The room overtake corridor could not be scaled with the vehicles.");
-                return false;
-            }
+            ApplyRoomVehiclePresentation(first, second);
 
             eventReplay.SuspendTableTrackRendering();
             boundStage = stage;
@@ -1013,17 +1003,36 @@ namespace F1XR.RestAPI.Replay.Room
             appliedPresentationScale = 1f;
         }
 
-        private void ApplyRoomVehicleScale(
+        private void ApplyRoomVehiclePresentation(
             VehicleBinding first,
             VehicleBinding second)
         {
-            float firstScale =
-                ApplyRoomVehicleScale(first);
-            float secondScale =
-                ApplyRoomVehicleScale(second);
+            ReplayCarView firstCar = ResolveCar(first);
+            ReplayCarView secondCar = ResolveCar(second);
+            if (firstCar == null || secondCar == null)
+                return;
 
-            appliedPresentationScale =
-                Mathf.Max(firstScale, secondScale);
+            firstCar.ClearRoomPresentation();
+            secondCar.ClearRoomPresentation();
+
+            Vector3 presentationAnchor =
+                (first.VisualMotionRoot.position +
+                 second.VisualMotionRoot.position) *
+                0.5f;
+            float scale =
+                immersiveScaleEnabled &&
+                portalPresentation != null
+                    ? portalPresentation.EvaluateImmersiveScale(
+                        presentationAnchor)
+                    : 1f;
+
+            firstCar.ApplyRoomPresentation(
+                presentationAnchor,
+                scale);
+            secondCar.ApplyRoomPresentation(
+                presentationAnchor,
+                scale);
+            appliedPresentationScale = scale;
             vehicleLengthAfter =
                 vehicleLengthBefore *
                 appliedPresentationScale;
@@ -1031,41 +1040,29 @@ namespace F1XR.RestAPI.Replay.Room
                 vehicleLengthAfter;
         }
 
-        private float ApplyRoomVehicleScale(
+        private static ReplayCarView ResolveCar(
             VehicleBinding binding)
         {
             if (binding == null ||
                 binding.VisualMotionRoot == null)
             {
-                return 1f;
+                return null;
             }
 
-            float scale =
-                portalPresentation != null
-                    ? portalPresentation
-                        .EvaluateImmersiveScale(
-                            binding.VehicleRoot.position)
-                    : 1f;
-            binding.VisualMotionRoot.localScale =
-                binding.OriginalVisualLocalScale *
-                scale;
-            eventReplay?.SetRoomVehiclePresentationScale(
-                binding.DriverNumber,
-                scale);
-            return scale;
+            return binding.VisualMotionRoot
+                .GetComponent<ReplayCarView>();
         }
 
-        private static void RestoreVehicleScale(
+        private static void RestoreVehiclePresentation(
             VehicleBinding binding)
         {
-            if (binding == null ||
-                binding.VisualMotionRoot == null)
-            {
-                return;
-            }
-
-            binding.VisualMotionRoot.localScale =
-                binding.OriginalVisualLocalScale;
+            ReplayCarView car = ResolveCar(binding);
+            if (car != null)
+                car.ClearRoomPresentation();
+            else if (binding != null &&
+                     binding.VisualMotionRoot != null)
+                binding.VisualMotionRoot.localScale =
+                    binding.OriginalVisualLocalScale;
         }
 
         private static float MeasureWorldVisualLength(
@@ -1155,9 +1152,8 @@ namespace F1XR.RestAPI.Replay.Room
         {
             Transform stageToRestore = boundStage;
             portalPresentation?.Clear();
-            RestoreVehicleScale(firstBinding);
-            RestoreVehicleScale(secondBinding);
-            eventReplay?.RestoreRoomLateralScale();
+            RestoreVehiclePresentation(firstBinding);
+            RestoreVehiclePresentation(secondBinding);
             eventReplay?.RestoreTableTrackRendering();
 
             boundStage = null;
