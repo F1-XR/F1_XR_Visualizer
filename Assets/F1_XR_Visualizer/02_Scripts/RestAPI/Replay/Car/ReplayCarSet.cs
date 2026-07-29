@@ -34,7 +34,6 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, ReplayCarPose> poses = new();
         private readonly Dictionary<int, float> visualWidths = new();
         private readonly Dictionary<int, float> visualLengths = new();
-        private readonly Dictionary<int, float> presentationScales = new();
         private readonly Dictionary<int, int> ranks = new();
         private readonly Dictionary<int, string> debugEventByDriver = new();
         private readonly Action<int> removeCarState;
@@ -90,28 +89,6 @@ namespace F1XR.RestAPI.Replay
         public void SetReplayEvents(ReplayEventDto[] events)
         {
             overtakeMotion.SetEvents(events);
-        }
-
-        public void SetPresentationScale(
-            int driverNumber,
-            float scale)
-        {
-            if (driverNumber <= 0)
-                return;
-
-            scale = Mathf.Max(1f, scale);
-            if (scale <= 1.0001f)
-                presentationScales.Remove(driverNumber);
-            else
-                presentationScales[driverNumber] = scale;
-        }
-
-        public bool ClearPresentationScales()
-        {
-            bool hadScales =
-                presentationScales.Count > 0;
-            presentationScales.Clear();
-            return hadScales;
         }
 
         public void SetOvertakeSettings(OvertakeMotionSettings settings)
@@ -188,6 +165,7 @@ namespace F1XR.RestAPI.Replay
                     removeCarState,
                     setupCar);
                 FindCarMarker.End();
+                car.ClearRoomPresentation();
 
                 carAudio.EnsureCar(driver, car);
                 if (ranks != null && ranks.TryGetValue(driver, out int rank))
@@ -225,18 +203,8 @@ namespace F1XR.RestAPI.Replay
                     interpolation,
                     duration));
                 poses[driver] = pose;
-                float presentationScale =
-                    presentationScales.TryGetValue(
-                        driver,
-                        out float scale)
-                        ? Mathf.Max(1f, scale)
-                        : 1f;
-                visualWidths[driver] =
-                    car.GetVisualWidth() *
-                    presentationScale;
-                visualLengths[driver] =
-                    car.GetVisualLength() *
-                    presentationScale;
+                visualWidths[driver] = car.GetVisualWidth();
+                visualLengths[driver] = car.GetVisualLength();
             }
             BuildFramesMarker.End();
 
@@ -294,14 +262,12 @@ namespace F1XR.RestAPI.Replay
         {
             selectedDriverNumber = 0;
             debugEventByDriver.Clear();
-            presentationScales.Clear();
             carPresentation.SetSelectedDriver(0);
             ResetPlacement();
         }
 
         public void ResetPlacement()
         {
-            presentationScales.Clear();
             carInstances.Clear();
             carMotion.Clear();
             gridStartAudio.Clear(selectedDriverNumber);

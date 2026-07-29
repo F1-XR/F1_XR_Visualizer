@@ -57,8 +57,6 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> safetyApronRightEdge = new();
         private readonly List<Vector3> drivableLeftEdge = new();
         private readonly List<Vector3> drivableRightEdge = new();
-        private readonly List<Vector3> roomDrivableLeftEdge = new();
-        private readonly List<Vector3> roomDrivableRightEdge = new();
         private readonly Dictionary<int, List<float>> eventLongitudinals = new();
         private readonly List<TableTrackRendererState> tableTrackRendererStates = new();
 
@@ -85,8 +83,6 @@ namespace F1XR.RestAPI.Replay
         private bool hasSnapshot;
         private bool isLoading;
         private bool isActive;
-        private bool fallbackCorridorLoops;
-        private bool roomLateralScaleApplied;
 
         public bool IsLoading => isLoading;
         public bool IsActive => isActive;
@@ -638,7 +634,7 @@ namespace F1XR.RestAPI.Replay
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
             eventSpaceCenter = center;
             sourceToEventRotation = sourceToLocalRotation;
-            fallbackCorridorLoops =
+            bool fallbackCorridorLoops =
                 BuildFallbackCorridorPath(
                     center,
                     sourceToLocalRotation);
@@ -909,190 +905,6 @@ namespace F1XR.RestAPI.Replay
                     localHeight,
                     localWidth);
             return true;
-        }
-
-        public void SetRoomVehiclePresentationScale(
-            int driverNumber,
-            float scale)
-        {
-            eventCars?.SetPresentationScale(
-                driverNumber,
-                scale);
-        }
-
-        public bool TrySetRoomLateralScale(
-            Func<Vector3, float> resolveWorldScale)
-        {
-            if (eventCars == null ||
-                PresentationRoot == null ||
-                resolveWorldScale == null)
-            {
-                return false;
-            }
-
-            IReadOnlyList<Vector3> centerline;
-            bool loop;
-            if (HasDrivableCorridor())
-            {
-                centerline = safetyApronPath;
-                loop = false;
-                ScaleCorridorEdges(
-                    safetyApronPath,
-                    drivableLeftEdge,
-                    drivableRightEdge,
-                    resolveWorldScale,
-                    roomDrivableLeftEdge,
-                    roomDrivableRightEdge);
-            }
-            else if (fallbackCorridorPath.Count >= 2)
-            {
-                centerline = fallbackCorridorPath;
-                loop = fallbackCorridorLoops;
-                BuildFallbackCorridorEdges(
-                    fallbackCorridorPath,
-                    resolveWorldScale,
-                    roomDrivableLeftEdge,
-                    roomDrivableRightEdge);
-            }
-            else
-            {
-                return false;
-            }
-
-            eventCars.SetActualOvertakeCorridor(
-                centerline,
-                roomDrivableLeftEdge,
-                roomDrivableRightEdge,
-                loop);
-            roomLateralScaleApplied = true;
-            ApplyCars();
-            return true;
-        }
-
-        public void RestoreRoomLateralScale()
-        {
-            if (eventCars == null)
-                return;
-
-            bool scaleRestored =
-                eventCars.ClearPresentationScales();
-            if (!roomLateralScaleApplied)
-            {
-                if (scaleRestored)
-                    ApplyCars();
-                return;
-            }
-
-            bool restored = false;
-            if (fallbackCorridorPath.Count >= 2)
-            {
-                eventCars.SetFallbackOvertakeCorridor(
-                    fallbackCorridorPath,
-                    roadWidth,
-                    fallbackCorridorLoops);
-                restored = true;
-            }
-
-            if (HasDrivableCorridor())
-            {
-                eventCars.SetActualOvertakeCorridor(
-                    safetyApronPath,
-                    drivableLeftEdge,
-                    drivableRightEdge,
-                    false);
-                restored = true;
-            }
-
-            roomDrivableLeftEdge.Clear();
-            roomDrivableRightEdge.Clear();
-            roomLateralScaleApplied = false;
-            if (restored || scaleRestored)
-                ApplyCars();
-        }
-
-        private bool HasDrivableCorridor()
-        {
-            return safetyApronPath.Count >= 2 &&
-                drivableLeftEdge.Count ==
-                safetyApronPath.Count &&
-                drivableRightEdge.Count ==
-                safetyApronPath.Count;
-        }
-
-        private void ScaleCorridorEdges(
-            IReadOnlyList<Vector3> centerline,
-            IReadOnlyList<Vector3> sourceLeft,
-            IReadOnlyList<Vector3> sourceRight,
-            Func<Vector3, float> resolveWorldScale,
-            List<Vector3> left,
-            List<Vector3> right)
-        {
-            left.Clear();
-            right.Clear();
-            for (int i = 0;
-                 i < centerline.Count;
-                 i++)
-            {
-                Vector3 center =
-                    centerline[i];
-                float scale = Mathf.Max(
-                    1f,
-                    resolveWorldScale(
-                        PresentationRoot.TransformPoint(
-                            center)));
-                left.Add(
-                    center +
-                    (sourceLeft[i] - center) *
-                    scale);
-                right.Add(
-                    center +
-                    (sourceRight[i] - center) *
-                    scale);
-            }
-        }
-
-        private void BuildFallbackCorridorEdges(
-            IReadOnlyList<Vector3> centerline,
-            Func<Vector3, float> resolveWorldScale,
-            List<Vector3> left,
-            List<Vector3> right)
-        {
-            left.Clear();
-            right.Clear();
-            for (int i = 0;
-                 i < centerline.Count;
-                 i++)
-            {
-                Vector3 center = centerline[i];
-                Vector3 before =
-                    centerline[Mathf.Max(0, i - 1)];
-                Vector3 after =
-                    centerline[
-                        Mathf.Min(
-                            centerline.Count - 1,
-                            i + 1)];
-                Vector3 tangent = after - before;
-                tangent.y = 0f;
-                if (tangent.sqrMagnitude <= 0.000001f)
-                    tangent = Vector3.forward;
-
-                Vector3 side = Vector3.Cross(
-                    Vector3.up,
-                    tangent.normalized);
-                float scale = Mathf.Max(
-                    1f,
-                    resolveWorldScale(
-                        PresentationRoot.TransformPoint(
-                            center)));
-                float halfWidth =
-                    roadWidth *
-                    scale *
-                    0.5f;
-                left.Add(
-                    center - side * halfWidth);
-                right.Add(
-                    center + side * halfWidth);
-            }
         }
 
         private float ResolveOrderingTransitionTime()
@@ -1920,13 +1732,9 @@ namespace F1XR.RestAPI.Replay
             safetyApronRightEdge.Clear();
             drivableLeftEdge.Clear();
             drivableRightEdge.Clear();
-            roomDrivableLeftEdge.Clear();
-            roomDrivableRightEdge.Clear();
             eventLongitudinals.Clear();
             eventSpaceCenter = Vector3.zero;
             sourceToEventRotation = Quaternion.identity;
-            fallbackCorridorLoops = false;
-            roomLateralScaleApplied = false;
             sourceGeometryRevision++;
         }
 
