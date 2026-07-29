@@ -18,6 +18,11 @@ namespace F1XR.RestAPI.Replay
         public int overlapSeconds = 2;
         public bool skipWarmupLap = true;
 
+        [Header("Cached Dataset Fast Start")]
+        public bool useCachedDatasetFastStart;
+        public string cachedDatasetId = "";
+        public int cachedCircuitKey;
+
         [Header("Development Event Replay")]
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         public bool useEventReplayTestSession = true;
@@ -68,6 +73,41 @@ namespace F1XR.RestAPI.Replay
                 yield break;
             }
 
+            bool loadedCachedDataset = false;
+            if (useCachedDatasetFastStart &&
+                !string.IsNullOrWhiteSpace(cachedDatasetId))
+            {
+                yield return api.GetManifest(
+                    cachedDatasetId,
+                    manifest =>
+                    {
+                        if (!IsReady(manifest))
+                        {
+                            Debug.LogWarning(
+                                $"Cached dataset is not ready: {cachedDatasetId}");
+                            return;
+                        }
+
+                        TrackOption cachedTrack = new()
+                        {
+                            circuitKey = cachedCircuitKey,
+                            circuitShortName = preferredCircuitShortName,
+                            meetingName = preferredCircuitShortName
+                        };
+
+                        Debug.Log(
+                            $"RestAPI scene cached dataset loaded: {manifest.datasetId}");
+                        player.LoadDataset(manifest, cachedTrack, true);
+                        loadedCachedDataset = true;
+                    },
+                    error => Debug.LogWarning(
+                        $"Cached dataset load failed. Falling back to catalog lookup: {error}")
+                );
+            }
+
+            if (loadedCachedDataset)
+                yield break;
+
             YearsResponse years = null;
             yield return api.GetYears(result => years = result, Debug.LogError);
 
@@ -114,6 +154,24 @@ namespace F1XR.RestAPI.Replay
                 },
                 error => Debug.LogError($"Create dataset failed: {error}")
             );
+        }
+
+        private static bool IsReady(DatasetManifestDto manifest)
+        {
+            if (manifest == null ||
+                manifest.status != "complete" ||
+                manifest.chunks == null)
+            {
+                return false;
+            }
+
+            foreach (ChunkInfoDto chunk in manifest.chunks)
+            {
+                if (chunk.status == "ready" && chunk.sampleCount > 0)
+                    return true;
+            }
+
+            return false;
         }
 
         private int PickYear(YearsResponse years)

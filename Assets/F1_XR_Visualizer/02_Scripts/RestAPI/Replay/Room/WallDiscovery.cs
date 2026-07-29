@@ -68,8 +68,13 @@ namespace F1XR.RestAPI.Replay.Room
         WallSelectionState ExitSelectionState { get; }
         TrackableId? EntrySelectedTrackableId { get; }
         TrackableId? ExitSelectedTrackableId { get; }
+        bool HasContainingRoomBoundary { get; }
         bool TryGetCandidate(int index, out WallCandidateInfo info);
         bool TryGetCandidateById(TrackableId id, out WallCandidateInfo info);
+        bool TryGetBoundaryNeighbors(
+            TrackableId id,
+            out TrackableId previous,
+            out TrackableId next);
         bool TrySelectEntryById(TrackableId id);
         bool TrySelectExitById(TrackableId id);
         bool TrySetPreviewById(TrackableId id);
@@ -237,7 +242,6 @@ namespace F1XR.RestAPI.Replay.Room
     }
 
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(ARPlaneManager))]
     public sealed class WallDiscovery : MonoBehaviour, IShowcaseWallProvider
     {
         private static readonly PlaneClassifications WallClassifications =
@@ -259,6 +263,11 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(0.1f)] private float minimumWidth = 0.75f;
         [SerializeField, Min(0.1f)] private float minimumFallbackWidth = 1.2f;
         [SerializeField, Min(0.1f)] private float minimumHeight = 1.2f;
+
+        [Header("Current Room Filter")]
+        [SerializeField] private bool restrictToContainingFloor = true;
+        [SerializeField, Min(0.05f)] private float roomBoundaryTolerance = 0.45f;
+        [SerializeField, Min(1f)] private float maximumCameraHeightAboveFloor = 3.5f;
 
         [Header("Manual Selection")]
         [SerializeField] private int entryCandidateIndex = -1;
@@ -283,7 +292,11 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly Dictionary<TrackableId, WallCandidate> candidatesById = new();
         private readonly Dictionary<TrackableId, int> userFacingNumbersById = new();
         private readonly Dictionary<TrackableId, WallDebugView> debugViews = new();
+        private readonly List<Vector2> containingRoomBoundary = new();
+        private readonly List<WallCandidate> boundaryOrderScratch = new();
         private ReadOnlyCollection<WallCandidate> readOnlyCandidates;
+        private ARPlane containingFloor;
+        private int containingRoomBoundarySignature;
         private TrackableId? entryWallId;
         private TrackableId? exitWallId;
         private Material debugMaterial;
@@ -329,6 +342,9 @@ namespace F1XR.RestAPI.Replay.Room
             GetDiagnosticTrackableId(entryWallId, entrySelection);
         public TrackableId? ExitSelectedTrackableId =>
             GetDiagnosticTrackableId(exitWallId, exitSelection);
+        public bool HasContainingRoomBoundary =>
+            containingFloor != null &&
+            containingRoomBoundary.Count >= 3;
         public int SelectionRevision => selectionRevision;
         public bool BothSelectionsValid =>
             TryGetEntryWall(out _) &&
@@ -364,13 +380,19 @@ namespace F1XR.RestAPI.Replay.Room
             RememberRootPose();
 
             if (managerWasActive)
+            {
+                RefreshContainingRoomBoundary();
                 SyncExistingPlanes();
+            }
         }
 
         private void OnDisable()
         {
             Unsubscribe();
             ClearCandidates("Wall discovery disabled.");
+            containingFloor = null;
+            containingRoomBoundary.Clear();
+            containingRoomBoundarySignature = 0;
             DestroyDebugMaterial();
         }
 
@@ -385,6 +407,7 @@ namespace F1XR.RestAPI.Replay.Room
             else if (!managerWasActive && managerIsActive)
             {
                 RequestWallAndTablePlanes();
+                RefreshContainingRoomBoundary();
                 SyncExistingPlanes();
             }
 
@@ -446,6 +469,10 @@ namespace F1XR.RestAPI.Replay.Room
                 Mathf.Clamp01(minimumMatchScore);
             ambiguityMargin =
                 Mathf.Clamp(ambiguityMargin, 0.01f, 1f);
+            roomBoundaryTolerance =
+                Mathf.Max(0.05f, roomBoundaryTolerance);
+            maximumCameraHeightAboveFloor =
+                Mathf.Max(1f, maximumCameraHeightAboveFloor);
             debugLineWidth = Mathf.Max(0.001f, debugLineWidth);
             normalLength = Mathf.Max(0.05f, normalLength);
         }
@@ -504,6 +531,38 @@ namespace F1XR.RestAPI.Replay.Room
                 candidate,
                 candidates.IndexOf(candidate));
             return true;
+        }
+
+        public bool TryGetBoundaryNeighbors(
+            TrackableId id,
+            out TrackableId previous,
+            out TrackableId next)
+        {
+            previous = default;
+            next = default;
+            if (candidates.Count < 2)
+                return false;
+
+            boundaryOrderScratch.Clear();
+            boundaryOrderScratch.AddRange(candidates);
+            if (HasContainingRoomBoundary)
+            {
+                boundaryOrderScratch.Sort(
+                    (first, second) =>
+                        GetBoundaryPosition(first).CompareTo(
+                            GetBoundaryPosition(second)));
+            }
+
+            var index = boundaryOrderScratch.FindIndex(
+                candidate => candidate.TrackableId == id);
+            if (index < 0)
+                return false;
+
+            previous = boundaryOrderScratch[
+                Wrap(index - 1, boundaryOrderScratch.Count)].TrackableId;
+            next = boundaryOrderScratch[
+                Wrap(index + 1, boundaryOrderScratch.Count)].TrackableId;
+            return previous != id || next != id;
         }
 
         public bool TrySelectEntryById(TrackableId id)
@@ -728,13 +787,8 @@ namespace F1XR.RestAPI.Replay.Room
             foreach (var removed in changes.removed)
                 RemoveCandidate(removed.Key, "Source AR plane was removed.");
 
-            foreach (var plane in changes.added)
-                AddOrUpdateCandidate(plane);
-
-            foreach (var plane in changes.updated)
-                AddOrUpdateCandidate(plane);
-
-            AttemptPendingReacquisitions();
+            RefreshContainingRoomBoundary();
+            SyncExistingPlanes();
         }
 
         private void SyncExistingPlanes()
@@ -747,18 +801,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void RefreshCandidatesAfterRootMove()
         {
-            for (var i = candidates.Count - 1; i >= 0; i--)
-            {
-                var plane = candidates[i].SourcePlane;
-                if (plane == null)
-                    RemoveCandidate(
-                        candidates[i].TrackableId,
-                        "Source AR plane is no longer available.");
-                else
-                    AddOrUpdateCandidate(plane);
-            }
-
-            AttemptPendingReacquisitions();
+            RefreshContainingRoomBoundary();
+            SyncExistingPlanes();
         }
 
         private bool HasRootPoseChanged()
@@ -807,6 +851,19 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
+            if (HasContainingRoomBoundary &&
+                !IsOnContainingRoomBoundary(candidate))
+            {
+                if (!isNewCandidate)
+                {
+                    RemoveCandidate(
+                        plane.trackableId,
+                        "Wall is outside the floor boundary containing the XR camera.");
+                }
+
+                return;
+            }
+
             if (isNewCandidate)
             {
                 candidate.AssignUserFacingNumber(
@@ -838,6 +895,243 @@ namespace F1XR.RestAPI.Replay.Room
 
             isSemanticWall = HasAny(classifications, WallClassifications);
             return isSemanticWall || allowVerticalFallback;
+        }
+
+        private void RefreshContainingRoomBoundary()
+        {
+            if (!restrictToContainingFloor ||
+                planeManager == null ||
+                orientationCamera == null)
+            {
+                SetContainingFloor(null);
+                return;
+            }
+
+            ARPlane bestFloor = null;
+            var bestArea = float.PositiveInfinity;
+            foreach (var plane in planeManager.trackables)
+            {
+                if (plane == null ||
+                    plane.subsumedBy != null ||
+                    !HasAny(
+                        plane.classifications,
+                        PlaneClassifications.Floor) ||
+                    plane.boundary.Length < 3)
+                {
+                    continue;
+                }
+
+                var cameraLocal =
+                    plane.transform.InverseTransformPoint(
+                        orientationCamera.position);
+                if (cameraLocal.y < -0.5f ||
+                    cameraLocal.y > maximumCameraHeightAboveFloor)
+                {
+                    continue;
+                }
+
+                var point = new Vector2(cameraLocal.x, cameraLocal.z);
+                if (!ContainsPoint(plane.boundary, point))
+                    continue;
+
+                var area = PolygonArea(plane.boundary);
+                if (area >= bestArea)
+                    continue;
+
+                bestArea = area;
+                bestFloor = plane;
+            }
+
+            SetContainingFloor(bestFloor);
+        }
+
+        private void SetContainingFloor(ARPlane floor)
+        {
+            var oldFloorId = containingFloor != null
+                ? containingFloor.trackableId
+                : (TrackableId?)null;
+            var oldSignature = containingRoomBoundarySignature;
+
+            containingFloor = floor;
+            containingRoomBoundary.Clear();
+            if (floor != null)
+            {
+                var boundary = floor.boundary;
+                for (var i = 0; i < boundary.Length; i++)
+                    containingRoomBoundary.Add(boundary[i]);
+            }
+
+            containingRoomBoundarySignature =
+                CalculateBoundarySignature(containingRoomBoundary);
+            var newFloorId = containingFloor != null
+                ? containingFloor.trackableId
+                : (TrackableId?)null;
+            if (oldFloorId == newFloorId &&
+                oldSignature == containingRoomBoundarySignature)
+            {
+                return;
+            }
+
+            userFacingOrderFinalized = false;
+            IncrementCandidateRevision();
+        }
+
+        private bool IsOnContainingRoomBoundary(WallCandidate candidate)
+        {
+            var start = candidate.Center +
+                candidate.HorizontalAxis * candidate.MinHorizontal;
+            var end = candidate.Center +
+                candidate.HorizontalAxis * candidate.MaxHorizontal;
+            return Mathf.Min(
+                    DistanceToContainingBoundary(candidate.Center),
+                    Mathf.Min(
+                        DistanceToContainingBoundary(start),
+                        DistanceToContainingBoundary(end))) <=
+                roomBoundaryTolerance;
+        }
+
+        private float DistanceToContainingBoundary(Vector3 worldPoint)
+        {
+            if (!HasContainingRoomBoundary)
+                return float.PositiveInfinity;
+
+            var local =
+                containingFloor.transform.InverseTransformPoint(worldPoint);
+            var point = new Vector2(local.x, local.z);
+            var bestDistance = float.PositiveInfinity;
+            for (var i = 0; i < containingRoomBoundary.Count; i++)
+            {
+                var next = (i + 1) % containingRoomBoundary.Count;
+                bestDistance = Mathf.Min(
+                    bestDistance,
+                    DistanceToSegment(
+                        point,
+                        containingRoomBoundary[i],
+                        containingRoomBoundary[next]));
+            }
+
+            return bestDistance;
+        }
+
+        private float GetBoundaryPosition(WallCandidate candidate)
+        {
+            if (!HasContainingRoomBoundary)
+                return candidate.UserFacingNumber;
+
+            var local =
+                containingFloor.transform.InverseTransformPoint(
+                    candidate.Center);
+            var point = new Vector2(local.x, local.z);
+            var bestDistance = float.PositiveInfinity;
+            var bestPosition = 0f;
+            var traversed = 0f;
+            for (var i = 0; i < containingRoomBoundary.Count; i++)
+            {
+                var next = (i + 1) % containingRoomBoundary.Count;
+                var start = containingRoomBoundary[i];
+                var end = containingRoomBoundary[next];
+                var edge = end - start;
+                var edgeLength = edge.magnitude;
+                var interpolation = edgeLength > 0.0001f
+                    ? Mathf.Clamp01(
+                        Vector2.Dot(point - start, edge) /
+                        (edgeLength * edgeLength))
+                    : 0f;
+                var projected = start + edge * interpolation;
+                var distance = Vector2.Distance(point, projected);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestPosition =
+                        traversed + edgeLength * interpolation;
+                }
+
+                traversed += edgeLength;
+            }
+
+            return bestPosition;
+        }
+
+        private static bool ContainsPoint(
+            Unity.Collections.NativeArray<Vector2> polygon,
+            Vector2 point)
+        {
+            var inside = false;
+            for (int i = 0, j = polygon.Length - 1;
+                 i < polygon.Length;
+                 j = i++)
+            {
+                var first = polygon[i];
+                var second = polygon[j];
+                if ((first.y > point.y) == (second.y > point.y))
+                    continue;
+
+                var intersectionX =
+                    (second.x - first.x) *
+                    (point.y - first.y) /
+                    (second.y - first.y) +
+                    first.x;
+                if (point.x < intersectionX)
+                    inside = !inside;
+            }
+
+            return inside;
+        }
+
+        private static float PolygonArea(
+            Unity.Collections.NativeArray<Vector2> polygon)
+        {
+            var twiceArea = 0f;
+            for (var i = 0; i < polygon.Length; i++)
+            {
+                var next = (i + 1) % polygon.Length;
+                twiceArea +=
+                    polygon[i].x * polygon[next].y -
+                    polygon[next].x * polygon[i].y;
+            }
+
+            return Mathf.Abs(twiceArea) * 0.5f;
+        }
+
+        private static float DistanceToSegment(
+            Vector2 point,
+            Vector2 start,
+            Vector2 end)
+        {
+            var edge = end - start;
+            var squareLength = edge.sqrMagnitude;
+            if (squareLength <= 0.000001f)
+                return Vector2.Distance(point, start);
+
+            var interpolation = Mathf.Clamp01(
+                Vector2.Dot(point - start, edge) / squareLength);
+            return Vector2.Distance(
+                point,
+                start + edge * interpolation);
+        }
+
+        private static int CalculateBoundarySignature(
+            List<Vector2> boundary)
+        {
+            unchecked
+            {
+                var hash = 17;
+                for (var i = 0; i < boundary.Count; i++)
+                {
+                    hash = hash * 31 +
+                        Mathf.RoundToInt(boundary[i].x * 100f);
+                    hash = hash * 31 +
+                        Mathf.RoundToInt(boundary[i].y * 100f);
+                }
+
+                return hash;
+            }
+        }
+
+        private static int Wrap(int value, int count)
+        {
+            var result = value % count;
+            return result < 0 ? result + count : result;
         }
 
         private void RemoveCandidate(TrackableId id, string reason)

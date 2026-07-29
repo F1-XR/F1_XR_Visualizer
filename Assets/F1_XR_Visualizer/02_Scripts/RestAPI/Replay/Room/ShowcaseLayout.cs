@@ -173,6 +173,104 @@ namespace F1XR.RestAPI.Replay.Room
             return exitPoseValid;
         }
 
+        public bool TryGetEntryWallSize(out Vector2 size)
+        {
+            size = Vector2.zero;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetEntryWall(out var wall))
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            return wall.IsValid && size.x > 0f && size.y > 0f;
+        }
+
+        public bool TryGetEntryWallGeometry(
+            out Vector2 size,
+            out Vector3 bottomCenter,
+            out Vector3 verticalAxis)
+        {
+            size = Vector2.zero;
+            bottomCenter = Vector3.zero;
+            verticalAxis = Vector3.up;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetEntryWall(out var wall) ||
+                !wall.IsValid)
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            bottomCenter =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+            verticalAxis = wall.VerticalAxis;
+            return size.x > 0f &&
+                size.y > 0f &&
+                verticalAxis.sqrMagnitude > 0.5f;
+        }
+
+        public bool TryGetExitWallSize(out Vector2 size)
+        {
+            size = Vector2.zero;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetExitWall(out var wall))
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            return wall.IsValid && size.x > 0f && size.y > 0f;
+        }
+
+        public bool TryGetExitWallGeometry(
+            out Vector2 size,
+            out Vector3 bottomCenter,
+            out Vector3 verticalAxis)
+        {
+            size = Vector2.zero;
+            bottomCenter = Vector3.zero;
+            verticalAxis = Vector3.up;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetExitWall(out var wall) ||
+                !wall.IsValid)
+            {
+                return false;
+            }
+
+            size = new Vector2(wall.Width, wall.Height);
+            bottomCenter =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+            verticalAxis = wall.VerticalAxis;
+            return size.x > 0f &&
+                size.y > 0f &&
+                verticalAxis.sqrMagnitude > 0.5f;
+        }
+
+        public bool TryGetRoomFloorHeight(out float floorHeight)
+        {
+            floorHeight = 0f;
+            if (wallDiscovery == null ||
+                !wallDiscovery.TryGetEntryWall(out var entryWall) ||
+                !wallDiscovery.TryGetExitWall(out var exitWall) ||
+                !entryWall.IsValid ||
+                !exitWall.IsValid)
+            {
+                return false;
+            }
+
+            Vector3 entryBottom =
+                entryWall.Center +
+                entryWall.VerticalAxis * entryWall.MinVertical;
+            Vector3 exitBottom =
+                exitWall.Center +
+                exitWall.VerticalAxis * exitWall.MinVertical;
+            floorHeight = (entryBottom.y + exitBottom.y) * 0.5f;
+            return float.IsFinite(floorHeight);
+        }
+
         [ContextMenu("Capture Hero From Current View")]
         public void CaptureHeroFromCurrentView()
         {
@@ -212,6 +310,75 @@ namespace F1XR.RestAPI.Replay.Room
             var worldRotation = Quaternion.LookRotation(capturedForward, up);
 
             heroLocalPosition = transform.InverseTransformPoint(worldPosition);
+            heroLocalRotation =
+                Quaternion.Inverse(transform.rotation) * worldRotation;
+            heroPoseValid = true;
+            rebuildRequested = true;
+            RebuildLayout();
+            return true;
+        }
+
+        public bool TryCaptureAutomaticHero(Vector3 preferredForward)
+        {
+            ResolveReferences();
+            RebuildLayout();
+            if (xrMainCamera == null ||
+                !entryPoseValid ||
+                !exitPoseValid)
+            {
+                return false;
+            }
+
+            var up = transform.up.normalized;
+            var travel = Vector3.ProjectOnPlane(preferredForward, up);
+            if (travel.sqrMagnitude < 0.0001f)
+            {
+                travel = Vector3.ProjectOnPlane(
+                    exitPose.position - entryPose.position,
+                    up);
+            }
+
+            if (travel.sqrMagnitude < 0.0001f)
+                return false;
+
+            travel.Normalize();
+            var viewForward =
+                Vector3.ProjectOnPlane(xrMainCamera.forward, up);
+            if (viewForward.sqrMagnitude < 0.0001f)
+                viewForward = travel;
+            else
+                viewForward.Normalize();
+
+            var entryToExit = Vector3.ProjectOnPlane(
+                exitPose.position - entryPose.position,
+                up);
+            if (entryToExit.sqrMagnitude < 0.0001f)
+                return false;
+
+            var focusPoint =
+                xrMainCamera.position +
+                viewForward * heroForwardDistance;
+            var interpolation = Mathf.Clamp(
+                Vector3.Dot(
+                    focusPoint - entryPose.position,
+                    entryToExit) /
+                entryToExit.sqrMagnitude,
+                0.2f,
+                0.8f);
+            var right = Vector3.Cross(up, travel).normalized;
+            var worldPosition =
+                entryPose.position +
+                entryToExit * interpolation +
+                right * heroHorizontalOffset;
+            worldPosition.y =
+                xrMainCamera.position.y + heroVerticalOffset;
+
+            var capturedForward =
+                Quaternion.AngleAxis(heroYawOffset, up) * travel;
+            var worldRotation =
+                Quaternion.LookRotation(capturedForward, up);
+            heroLocalPosition =
+                transform.InverseTransformPoint(worldPosition);
             heroLocalRotation =
                 Quaternion.Inverse(transform.rotation) * worldRotation;
             heroPoseValid = true;

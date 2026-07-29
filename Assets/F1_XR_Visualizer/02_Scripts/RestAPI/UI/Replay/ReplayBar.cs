@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -9,6 +11,10 @@ namespace F1XR.RestAPI.UI
 {
     public class ReplayBar : MonoBehaviour, IPointerDownHandler, IDragHandler
     {
+        private const float OvertakeMarkerOffset = 8f;
+        private static readonly Color OvertakeMarkerColor =
+            new(0.16f, 0.82f, 1f, 1f);
+
         public ReplayPlayer player;
 
         public RectTransform barRect;
@@ -21,6 +27,10 @@ namespace F1XR.RestAPI.UI
         private RectTransform raceEndMarker;
         private readonly List<RectTransform> yellowFlagMarkers = new();
         private readonly List<RectTransform> redFlagMarkers = new();
+        private readonly List<RectTransform> overtakeMarkers = new();
+        private TMP_Text nextOvertakeLabel;
+        private float displayedNextOvertakeTime = float.NaN;
+        private bool displayedOvertakesComplete;
 
         private void Awake()
         {
@@ -49,6 +59,7 @@ namespace F1XR.RestAPI.UI
             SetTimeMarker(ref raceEndMarker, "Race End Marker", Color.black, player.RaceEndTime);
             SetRaceControlMarkers(yellowFlagMarkers, "Yellow Flag Marker", new Color(1f, 0.85f, 0f), player.YellowFlags);
             SetRaceControlMarkers(redFlagMarkers, "Red Flag Marker", Color.red, player.RedFlags);
+            SetOvertakeMarkers(player.Events);
         }
 
         public void OnPointerDown(PointerEventData eventData)
@@ -150,6 +161,186 @@ namespace F1XR.RestAPI.UI
             marker.gameObject.SetActive(true);
         }
 
+        private void SetOvertakeMarkers(ReplayEventDto[] events)
+        {
+            int activeCount = 0;
+            ReplayEventDto nextOvertake = null;
+            float timelineStart = player.TimelineStartTime;
+            float timelineEnd = timelineStart + player.Duration;
+
+            if (events != null)
+            {
+                foreach (ReplayEventDto replayEvent in events)
+                {
+                    if (replayEvent == null ||
+                        !string.Equals(
+                            replayEvent.eventType,
+                            "Overtake",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        replayEvent.anchorTime < timelineStart ||
+                        replayEvent.anchorTime > timelineEnd)
+                    {
+                        continue;
+                    }
+
+                    RectTransform marker =
+                        EnsureOvertakeMarker(activeCount);
+                    ApplyOvertakeMarker(
+                        marker,
+                        player.TimelineToNormalized(
+                            replayEvent.anchorTime));
+                    activeCount++;
+
+                    if (replayEvent.anchorTime + 0.001f <
+                            player.CurrentTime ||
+                        nextOvertake != null &&
+                        replayEvent.anchorTime >=
+                            nextOvertake.anchorTime)
+                    {
+                        continue;
+                    }
+
+                    nextOvertake = replayEvent;
+                }
+            }
+
+            for (int i = activeCount;
+                 i < overtakeMarkers.Count;
+                 i++)
+            {
+                overtakeMarkers[i].gameObject.SetActive(false);
+            }
+
+            RefreshNextOvertakeLabel(
+                activeCount,
+                nextOvertake);
+        }
+
+        private RectTransform EnsureOvertakeMarker(int index)
+        {
+            while (overtakeMarkers.Count <= index)
+            {
+                GameObject markerObject = new(
+                    $"Overtake Marker {overtakeMarkers.Count + 1}",
+                    typeof(RectTransform),
+                    typeof(Image));
+                markerObject.layer = barRect.gameObject.layer;
+                markerObject.transform.SetParent(
+                    barRect,
+                    worldPositionStays: false);
+
+                RectTransform marker =
+                    markerObject.GetComponent<RectTransform>();
+                marker.pivot = new Vector2(0.5f, 0.5f);
+                marker.localRotation =
+                    Quaternion.Euler(0f, 0f, 45f);
+
+                Image image = markerObject.GetComponent<Image>();
+                image.color = OvertakeMarkerColor;
+                image.raycastTarget = false;
+                overtakeMarkers.Add(marker);
+            }
+
+            return overtakeMarkers[index];
+        }
+
+        private static void ApplyOvertakeMarker(
+            RectTransform marker,
+            float normalized)
+        {
+            float clamped = Mathf.Clamp01(normalized);
+            marker.anchorMin = new Vector2(clamped, 1f);
+            marker.anchorMax = new Vector2(clamped, 1f);
+            marker.anchoredPosition =
+                new Vector2(0f, OvertakeMarkerOffset);
+            marker.sizeDelta = new Vector2(8f, 8f);
+            marker.SetAsLastSibling();
+            marker.gameObject.SetActive(true);
+        }
+
+        private void RefreshNextOvertakeLabel(
+            int overtakeCount,
+            ReplayEventDto nextOvertake)
+        {
+            if (overtakeCount <= 0)
+            {
+                if (nextOvertakeLabel != null)
+                    nextOvertakeLabel.gameObject.SetActive(false);
+
+                displayedNextOvertakeTime = float.NaN;
+                displayedOvertakesComplete = false;
+                return;
+            }
+
+            EnsureNextOvertakeLabel();
+            nextOvertakeLabel.gameObject.SetActive(true);
+
+            if (nextOvertake == null)
+            {
+                if (!displayedOvertakesComplete)
+                    nextOvertakeLabel.text = "OVERTAKES COMPLETE";
+
+                displayedNextOvertakeTime = float.NaN;
+                displayedOvertakesComplete = true;
+                return;
+            }
+
+            if (!displayedOvertakesComplete &&
+                Mathf.Approximately(
+                    displayedNextOvertakeTime,
+                    nextOvertake.anchorTime))
+            {
+                return;
+            }
+
+            nextOvertakeLabel.text =
+                $"NEXT OVERTAKE {FormatTime(nextOvertake.anchorTime)}";
+            displayedNextOvertakeTime = nextOvertake.anchorTime;
+            displayedOvertakesComplete = false;
+        }
+
+        private void EnsureNextOvertakeLabel()
+        {
+            if (nextOvertakeLabel != null)
+                return;
+
+            GameObject labelObject = new(
+                "Next Overtake Label",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(TextMeshProUGUI));
+            labelObject.layer = barRect.gameObject.layer;
+            labelObject.transform.SetParent(
+                barRect,
+                worldPositionStays: false);
+
+            RectTransform rect =
+                labelObject.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.one;
+            rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(1f, 0f);
+            rect.anchoredPosition = new Vector2(0f, 17f);
+            rect.sizeDelta = new Vector2(240f, 20f);
+
+            nextOvertakeLabel =
+                labelObject.GetComponent<TextMeshProUGUI>();
+            nextOvertakeLabel.alignment =
+                TextAlignmentOptions.BottomRight;
+            nextOvertakeLabel.fontSize = 14f;
+            nextOvertakeLabel.fontStyle = FontStyles.Bold;
+            nextOvertakeLabel.color = OvertakeMarkerColor;
+            nextOvertakeLabel.raycastTarget = false;
+        }
+
+        private static string FormatTime(float seconds)
+        {
+            int totalSeconds =
+                Mathf.Max(0, Mathf.FloorToInt(seconds));
+            int minutes = totalSeconds / 60;
+            int remainingSeconds = totalSeconds % 60;
+            return $"{minutes:00}:{remainingSeconds:00}";
+        }
+
         private void EnsureMarker(ref RectTransform marker, string name, Color color)
         {
             if (marker != null)
@@ -194,6 +385,12 @@ namespace F1XR.RestAPI.UI
 
             foreach (RectTransform marker in redFlagMarkers)
                 marker.gameObject.SetActive(visible);
+
+            foreach (RectTransform marker in overtakeMarkers)
+                marker.gameObject.SetActive(visible);
+
+            if (nextOvertakeLabel != null)
+                nextOvertakeLabel.gameObject.SetActive(visible);
         }
     }
 }

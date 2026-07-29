@@ -97,6 +97,39 @@ namespace F1XR.RestAPI.Replay
             overtakeMotion.SetSettings(overtakeSettings);
         }
 
+        public void SetFallbackOvertakeCorridor(
+            IReadOnlyList<Vector3> centerline,
+            float roadWidth,
+            bool loop)
+        {
+            overtakeMotion.SetFallbackCorridor(
+                centerline,
+                roadWidth,
+                loop);
+        }
+
+        public void SetActualOvertakeCorridor(
+            IReadOnlyList<Vector3> centerline,
+            IReadOnlyList<Vector3> leftBoundary,
+            IReadOnlyList<Vector3> rightBoundary,
+            bool loop)
+        {
+            overtakeMotion.SetTrackCorridor(
+                centerline,
+                leftBoundary,
+                rightBoundary,
+                loop);
+        }
+
+        public bool TryGetResolvedOvertakeSide(
+            ReplayEventDto replayEvent,
+            out int side)
+        {
+            return overtakeMotion.TryGetResolvedPassingSide(
+                replayEvent,
+                out side);
+        }
+
         public void Show(
             Dictionary<int, List<LocationSample>> samples,
             Dictionary<int, int> indices,
@@ -104,6 +137,8 @@ namespace F1XR.RestAPI.Replay
             List<PositionSampleDto> positions = null,
             HashSet<int> driverFilter = null)
         {
+            carMotion.PrepareMappedPositions(samples);
+
             Dictionary<int, int> ranks = positions != null
                 ? GetRanksByDriver(positions)
                 : null;
@@ -130,6 +165,7 @@ namespace F1XR.RestAPI.Replay
                     removeCarState,
                     setupCar);
                 FindCarMarker.End();
+                car.ClearRoomPresentation();
 
                 carAudio.EnsureCar(driver, car);
                 if (ranks != null && ranks.TryGetValue(driver, out int rank))
@@ -321,9 +357,9 @@ namespace F1XR.RestAPI.Replay
 
         public void SetCalibration(
             TrackCalibration source,
-            bool resetRuntimeHeightOrigin = true)
+            bool resetRuntimeState = true)
         {
-            carMotion.SetCalibration(source, resetRuntimeHeightOrigin);
+            carMotion.SetCalibration(source, resetRuntimeState);
         }
 
         public void SetCustomSpace(

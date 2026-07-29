@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -10,6 +11,8 @@ namespace F1XR.RestAPI.Replay.Room
         private const int IgnoreRaycastLayer = 2;
         private const float SourcePositionTolerance = 0.0025f;
         private const float SourceAngleTolerance = 0.2f;
+        private const int SourceSampleCount = 61;
+        private const float ConnectorFraction = 0.22f;
         private static readonly Color PathColor =
             new(0.1f, 0.8f, 1f, 0.95f);
         private static readonly Color CapsuleColor =
@@ -49,8 +52,10 @@ namespace F1XR.RestAPI.Replay.Room
         private bool isPathValid;
         private bool isPreviewPlaying;
         private bool parametersDirty = true;
+        private ReplayPlayer replayPlayer;
         private bool hasSourceSnapshot;
         private int observedLayoutRevision = -1;
+        private int observedSourceRevision = -1;
         private Pose lastEntryPose;
         private Pose lastHeroPose;
         private Pose lastExitPose;
@@ -64,6 +69,9 @@ namespace F1XR.RestAPI.Replay.Room
         private MeshRenderer capsuleRenderer;
         private Material debugMaterial;
         private MaterialPropertyBlock capsuleProperties;
+        private readonly List<Vector3> sourcePositions = new();
+        private readonly List<Vector3> resampledSourcePositions = new();
+        private readonly List<Vector3> candidatePositions = new();
 
         public bool IsPathValid => isPathValid;
         public float PathLength => pathLength;
@@ -77,6 +85,12 @@ namespace F1XR.RestAPI.Replay.Room
             TryEvaluatePosition(1f, out var position)
                 ? position
                 : Vector3.zero;
+        public bool UsesSourceGeometry { get; private set; }
+        public string FallbackReason { get; private set; } = "";
+        public bool GeometrySafetyPassed { get; private set; }
+        public float TransitionPathProgress { get; private set; } = 0.5f;
+        public float TransitionReplayProgress { get; private set; } = 0.5f;
+        public float HeroMissDistance { get; private set; }
 
         private void Reset()
         {
@@ -108,6 +122,9 @@ namespace F1XR.RestAPI.Replay.Room
                 showcaseLayout != null
                     ? showcaseLayout.LayoutRevision
                     : -1;
+            var sourceRevision = GetSourceRevision();
+            if (sourceRevision != observedSourceRevision)
+                parametersDirty = true;
 
             if (!layoutReady)
             {
@@ -167,6 +184,7 @@ namespace F1XR.RestAPI.Replay.Room
                 showcaseLayout != null
                     ? showcaseLayout.LayoutRevision
                     : -1;
+            observedSourceRevision = GetSourceRevision();
 
             if (showcaseLayout == null ||
                 xrOrigin == null ||
@@ -178,40 +196,9 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             var wasValid = isPathValid;
-            var entry = ToLocalPosition(showcaseLayout.EntryPose.position);
-            var hero = ToLocalPosition(showcaseLayout.HeroPose.position);
-            var exit = ToLocalPosition(showcaseLayout.ExitPose.position);
-            var entryDirection =
-                ToLocalDirection(showcaseLayout.EntryTravelDirection);
-            var heroDirection = ToLocalDirection(
-                showcaseLayout.HeroPose.forward);
-            var exitDirection =
-                ToLocalDirection(showcaseLayout.ExitTravelDirection);
+            if (!TryBuildSourcePath(out string fallbackReason))
+                BuildBezierFallback(fallbackReason);
 
-            if (!DirectionsAreValid(
-                    entryDirection,
-                    heroDirection,
-                    exitDirection))
-            {
-                InvalidatePath();
-                return;
-            }
-
-            EnsureControlPointCapacity();
-            firstSegment[0] = entry;
-            firstSegment[1] =
-                entry + entryDirection * entryHandleLength;
-            firstSegment[2] =
-                hero - heroDirection * heroIncomingHandleLength;
-            firstSegment[3] = hero;
-            secondSegment[0] = hero;
-            secondSegment[1] =
-                hero + heroDirection * heroOutgoingHandleLength;
-            secondSegment[2] =
-                exit - exitDirection * exitHandleLength;
-            secondSegment[3] = exit;
-
-            SamplePath();
             if (sampledPositions == null ||
                 sampledPositions.Length < 2 ||
                 pathLength <= Mathf.Epsilon)
@@ -349,6 +336,9 @@ namespace F1XR.RestAPI.Replay.Room
             if (showcaseLayout == null)
                 showcaseLayout = GetComponent<ShowcaseLayout>();
 
+            if (replayPlayer == null)
+                replayPlayer = FindFirstObjectByType<ReplayPlayer>();
+
             if (xrOrigin == null)
                 xrOrigin = transform;
         }
@@ -375,7 +365,268 @@ namespace F1XR.RestAPI.Replay.Room
             SetPreviewProgress(next);
         }
 
-        private void SamplePath()
+        private bool TryBuildSourcePath(out string failure)
+        {
+            failure = "";
+            EventPopoutReplay eventReplay = replayPlayer != null
+                ? replayPlayer.EventReplay
+                : null;
+            if (eventReplay == null || !eventReplay.IsActive)
+            {
+                failure = "No active event replay source geometry is available.";
+                return false;
+            }
+
+            if (!eventReplay.TryCopySourceCenterPath(
+                    sourcePositions,
+                    out float transitionSourceProgress,
+                    out float transitionReplayProgress))
+            {
+                failure =
+                    $"Event source geometry is unusable " +
+                    $"({eventReplay.SourceGeometryPointCount} point(s)).";
+                return false;
+            }
+
+            if (!ResampleSourcePath(
+                    sourcePositions,
+                    SourceSampleCount,
+                    resampledSourcePositions))
+            {
+                failure = "Event source geometry could not be arc-length resampled.";
+                return false;
+            }
+
+            Vector3 entry =
+                ToLocalPosition(showcaseLayout.EntryPose.position);
+            Vector3 hero =
+                ToLocalPosition(showcaseLayout.HeroPose.position);
+            Vector3 exit =
+                ToLocalPosition(showcaseLayout.ExitPose.position);
+            Vector3 roomForward = exit - entry;
+            float roomDistance = roomForward.magnitude;
+            if (roomDistance <= 0.1f)
+            {
+                failure = "Entry and Exit are too close to map source geometry.";
+                return false;
+            }
+
+            Vector3 sourceForward =
+                resampledSourcePositions[resampledSourcePositions.Count - 1] -
+                resampledSourcePositions[0];
+            if (sourceForward.sqrMagnitude <= 0.0001f)
+            {
+                failure = "Source center path has no stable movement direction.";
+                return false;
+            }
+
+            float sourceLength = GetPolylineLength(
+                resampledSourcePositions);
+            float baseScale = roomDistance * 1.15f /
+                Mathf.Max(0.001f, sourceLength);
+            Vector3 preferredForward = roomForward.normalized;
+            Vector3 heroForward =
+                ToLocalDirection(showcaseLayout.HeroPose.forward);
+            if (Vector3.Dot(heroForward, preferredForward) > 0f)
+            {
+                preferredForward = Vector3.Slerp(
+                    preferredForward,
+                    heroForward,
+                    0.15f).normalized;
+            }
+
+            Quaternion sourceToRoom = Quaternion.FromToRotation(
+                sourceForward.normalized,
+                preferredForward);
+            int transitionIndex = Mathf.Clamp(
+                Mathf.RoundToInt(
+                    transitionSourceProgress *
+                    (resampledSourcePositions.Count - 1)),
+                1,
+                resampledSourcePositions.Count - 2);
+
+            float[] scaleFactors = { 1f, 0.82f, 0.65f };
+            float[] heroInfluences = { 0.7f, 0.5f, 0.3f };
+            for (int attempt = 0;
+                 attempt < scaleFactors.Length;
+                 attempt++)
+            {
+                BuildSourceCandidate(
+                    entry,
+                    hero,
+                    exit,
+                    sourceToRoom,
+                    baseScale * scaleFactors[attempt],
+                    transitionIndex,
+                    heroInfluences[attempt]);
+                if (!IsGeometrySafe(candidatePositions))
+                    continue;
+
+                BuildSamplesFromPolyline(candidatePositions);
+                UsesSourceGeometry = true;
+                FallbackReason = "";
+                GeometrySafetyPassed = true;
+                TransitionReplayProgress = transitionReplayProgress;
+                TransitionPathProgress =
+                    cumulativeDistances[transitionIndex] /
+                    Mathf.Max(0.001f, pathLength);
+                HeroMissDistance = Vector3.Distance(
+                    xrOrigin.TransformPoint(
+                        sampledPositions[transitionIndex]),
+                    showcaseLayout.HeroPose.position);
+                return true;
+            }
+
+            failure =
+                "Source geometry could not satisfy room endpoint geometry safety.";
+            return false;
+        }
+
+        private void BuildSourceCandidate(
+            Vector3 entry,
+            Vector3 hero,
+            Vector3 exit,
+            Quaternion sourceToRoom,
+            float scale,
+            int transitionIndex,
+            float heroInfluence)
+        {
+            candidatePositions.Clear();
+            Vector3 sourceTransition =
+                resampledSourcePositions[transitionIndex];
+            float transitionProgress =
+                transitionIndex /
+                (float)(resampledSourcePositions.Count - 1);
+            Vector3 linearTransition = Vector3.Lerp(
+                entry,
+                exit,
+                transitionProgress);
+            Vector3 heroOffset = hero - linearTransition;
+            float maximumHeroOffset =
+                Vector3.Distance(entry, exit) * 0.3f;
+            heroOffset = Vector3.ClampMagnitude(
+                heroOffset,
+                maximumHeroOffset);
+            Vector3 transitionTarget =
+                linearTransition + heroOffset * heroInfluence;
+
+            for (int i = 0; i < resampledSourcePositions.Count; i++)
+            {
+                Vector3 position =
+                    transitionTarget +
+                    sourceToRoom *
+                    (resampledSourcePositions[i] - sourceTransition) *
+                    scale;
+                candidatePositions.Add(position);
+            }
+
+            Vector3 entryCorrection = entry - candidatePositions[0];
+            Vector3 exitCorrection =
+                exit - candidatePositions[candidatePositions.Count - 1];
+            float entryConnectorFraction = Mathf.Clamp(
+                transitionProgress * 0.45f,
+                0.04f,
+                ConnectorFraction);
+            float exitConnectorFraction = Mathf.Clamp(
+                (1f - transitionProgress) * 0.45f,
+                0.04f,
+                ConnectorFraction);
+            for (int i = 0; i < candidatePositions.Count; i++)
+            {
+                float progress =
+                    i / (float)(candidatePositions.Count - 1);
+                float entryWeight =
+                    1f - Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        Mathf.Clamp01(
+                            progress / entryConnectorFraction));
+                float exitWeight =
+                    Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        Mathf.Clamp01(
+                            (progress -
+                             (1f - exitConnectorFraction)) /
+                            exitConnectorFraction));
+                candidatePositions[i] +=
+                    entryCorrection * entryWeight +
+                    exitCorrection * exitWeight;
+            }
+
+            candidatePositions[0] = entry;
+            candidatePositions[candidatePositions.Count - 1] =
+                exit;
+        }
+
+        private void BuildBezierFallback(string reason)
+        {
+            Vector3 entry =
+                ToLocalPosition(showcaseLayout.EntryPose.position);
+            Vector3 hero =
+                ToLocalPosition(showcaseLayout.HeroPose.position);
+            Vector3 exit =
+                ToLocalPosition(showcaseLayout.ExitPose.position);
+            Vector3 entryDirection =
+                ToLocalDirection(showcaseLayout.EntryTravelDirection);
+            Vector3 heroDirection =
+                ToLocalDirection(showcaseLayout.HeroPose.forward);
+            Vector3 exitDirection =
+                ToLocalDirection(showcaseLayout.ExitTravelDirection);
+
+            if (!DirectionsAreValid(
+                    entryDirection,
+                    heroDirection,
+                    exitDirection))
+            {
+                InvalidatePath();
+                return;
+            }
+
+            EnsureControlPointCapacity();
+            float firstHandleLimit =
+                Vector3.Distance(entry, hero) / 3f;
+            float secondHandleLimit =
+                Vector3.Distance(hero, exit) / 3f;
+            firstSegment[0] = entry;
+            firstSegment[1] =
+                entry +
+                entryDirection *
+                Mathf.Min(entryHandleLength, firstHandleLimit);
+            firstSegment[2] =
+                hero -
+                heroDirection *
+                Mathf.Min(heroIncomingHandleLength, firstHandleLimit);
+            firstSegment[3] = hero;
+            secondSegment[0] = hero;
+            secondSegment[1] =
+                hero +
+                heroDirection *
+                Mathf.Min(heroOutgoingHandleLength, secondHandleLimit);
+            secondSegment[2] =
+                exit -
+                exitDirection *
+                Mathf.Min(exitHandleLength, secondHandleLimit);
+            secondSegment[3] = exit;
+
+            SampleBezierFallback();
+            UsesSourceGeometry = false;
+            FallbackReason = reason;
+            GeometrySafetyPassed = IsGeometrySafe(sampledPositions);
+            TransitionPathProgress =
+                cumulativeDistances[samplesPerSegment] /
+                Mathf.Max(0.001f, pathLength);
+            TransitionReplayProgress = 0.5f;
+            HeroMissDistance = Vector3.Distance(
+                xrOrigin.TransformPoint(
+                    sampledPositions[samplesPerSegment]),
+                showcaseLayout.HeroPose.position);
+            Debug.LogWarning(
+                $"[ShowcasePathPreview] Using Bézier fallback: {reason}",
+                this);
+        }
+
+        private void SampleBezierFallback()
         {
             var count = samplesPerSegment * 2 + 1;
             EnsureSampleCapacity(count);
@@ -405,6 +656,205 @@ namespace F1XR.RestAPI.Replay.Room
                 cumulativeDistances[i] = pathLength;
                 previous = current;
             }
+        }
+
+        private void BuildSamplesFromPolyline(
+            List<Vector3> positions)
+        {
+            EnsureSampleCapacity(positions.Count);
+            for (int i = 0; i < positions.Count; i++)
+            {
+                sampledPositions[i] = positions[i];
+                Vector3 before = positions[Mathf.Max(0, i - 1)];
+                Vector3 after = positions[Mathf.Min(
+                    positions.Count - 1,
+                    i + 1)];
+                sampledTangents[i] = (after - before).normalized;
+            }
+
+            RebuildCumulativeDistances();
+        }
+
+        private void RebuildCumulativeDistances()
+        {
+            cumulativeDistances[0] = 0f;
+            pathLength = 0f;
+            Vector3 previous =
+                xrOrigin.TransformPoint(sampledPositions[0]);
+            for (int i = 1; i < sampledPositions.Length; i++)
+            {
+                Vector3 current =
+                    xrOrigin.TransformPoint(sampledPositions[i]);
+                pathLength += Vector3.Distance(previous, current);
+                cumulativeDistances[i] = pathLength;
+                previous = current;
+            }
+        }
+
+        private static bool ResampleSourcePath(
+            List<Vector3> source,
+            int sampleCount,
+            List<Vector3> destination)
+        {
+            destination.Clear();
+            if (source == null || source.Count < 3 || sampleCount < 3)
+                return false;
+
+            var clean = new List<Vector3>(source.Count);
+            for (int i = 0; i < source.Count; i++)
+            {
+                if (clean.Count == 0 ||
+                    Vector3.SqrMagnitude(
+                        source[i] - clean[clean.Count - 1]) >
+                    0.000001f)
+                {
+                    clean.Add(source[i]);
+                }
+            }
+
+            if (clean.Count < 3)
+                return false;
+
+            var distances = new float[clean.Count];
+            for (int i = 1; i < clean.Count; i++)
+            {
+                distances[i] =
+                    distances[i - 1] +
+                    Vector3.Distance(clean[i - 1], clean[i]);
+            }
+
+            float length = distances[distances.Length - 1];
+            if (length <= 0.001f)
+                return false;
+
+            int upper = 1;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float target =
+                    length * i / (sampleCount - 1f);
+                while (upper < distances.Length - 1 &&
+                       distances[upper] < target)
+                {
+                    upper++;
+                }
+
+                int lower = Mathf.Max(0, upper - 1);
+                float blend = Mathf.InverseLerp(
+                    distances[lower],
+                    distances[upper],
+                    target);
+                destination.Add(Vector3.Lerp(
+                    clean[lower],
+                    clean[upper],
+                    blend));
+            }
+
+            return destination.Count == sampleCount;
+        }
+
+        private static float GetPolylineLength(
+            IList<Vector3> positions)
+        {
+            float length = 0f;
+            for (int i = 1; i < positions.Count; i++)
+            {
+                length += Vector3.Distance(
+                    positions[i - 1],
+                    positions[i]);
+            }
+
+            return length;
+        }
+
+        private static bool IsGeometrySafe(
+            IList<Vector3> positions)
+        {
+            if (positions == null || positions.Count < 3)
+                return false;
+
+            Vector3 overall =
+                positions[positions.Count - 1] - positions[0];
+            if (overall.sqrMagnitude <= 0.0001f)
+                return false;
+
+            Vector3 previousDirection = Vector3.zero;
+            for (int i = 1; i < positions.Count; i++)
+            {
+                Vector3 segment = positions[i] - positions[i - 1];
+                if (segment.sqrMagnitude <= 0.000001f)
+                    return false;
+
+                Vector3 direction = segment.normalized;
+                if (Vector3.Dot(direction, overall.normalized) < -0.15f)
+                    return false;
+                if (previousDirection.sqrMagnitude > 0f &&
+                    Vector3.Dot(previousDirection, direction) < -0.2f)
+                {
+                    return false;
+                }
+
+                previousDirection = direction;
+            }
+
+            for (int first = 0;
+                 first < positions.Count - 3;
+                 first++)
+            {
+                for (int second = first + 2;
+                     second < positions.Count - 1;
+                     second++)
+                {
+                    if (SegmentsIntersectXZ(
+                            positions[first],
+                            positions[first + 1],
+                            positions[second],
+                            positions[second + 1]))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private static bool SegmentsIntersectXZ(
+            Vector3 a,
+            Vector3 b,
+            Vector3 c,
+            Vector3 d)
+        {
+            Vector2 firstStart = new(a.x, a.z);
+            Vector2 firstDelta = new(b.x - a.x, b.z - a.z);
+            Vector2 secondStart = new(c.x, c.z);
+            Vector2 secondDelta = new(d.x - c.x, d.z - c.z);
+            float denominator = Cross(firstDelta, secondDelta);
+            if (Mathf.Abs(denominator) <= 0.000001f)
+                return false;
+
+            Vector2 offset = secondStart - firstStart;
+            float firstT = Cross(offset, secondDelta) / denominator;
+            float secondT = Cross(offset, firstDelta) / denominator;
+            const float endpointTolerance = 0.001f;
+            return firstT > endpointTolerance &&
+                firstT < 1f - endpointTolerance &&
+                secondT > endpointTolerance &&
+                secondT < 1f - endpointTolerance;
+        }
+
+        private static float Cross(Vector2 a, Vector2 b)
+        {
+            return a.x * b.y - a.y * b.x;
+        }
+
+        private int GetSourceRevision()
+        {
+            EventPopoutReplay eventReplay = replayPlayer != null
+                ? replayPlayer.EventReplay
+                : null;
+            return eventReplay != null
+                ? eventReplay.SourceGeometryRevision
+                : -1;
         }
 
         private void EnsureControlPointCapacity()

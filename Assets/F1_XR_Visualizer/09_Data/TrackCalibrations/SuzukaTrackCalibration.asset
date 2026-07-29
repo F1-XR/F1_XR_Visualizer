@@ -14,6 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.TrackCalibration
   circuitKey: 46
   circuitName: Suzuka
+  referenceSessionKey: 9496
+  sourceTranslationCorrectionSessionKey: 10006
+  sourceTranslationCorrection: {x: -23.65277, y: 3.830907}
   active: 1
   mappingMode: 2
   segmentBlend: 1
@@ -31,6 +34,7 @@ MonoBehaviour:
   loopPointHeightSegments: 1
   useSourceHeightForRouteSegments: 1
   routeSourceHeightWeight: 4
+  maxRouteLateralOffset: 50
   points:
   - name: Route 000
     sourcePosition: {x: 2297.000000, y: -1542.000000}

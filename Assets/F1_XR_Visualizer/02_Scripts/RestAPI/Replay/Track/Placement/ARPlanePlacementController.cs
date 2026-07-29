@@ -344,6 +344,97 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return TryGetPlacementHit(ray, out pose, out plane);
         }
 
+        public bool TryGetAutomaticTableHit(out Pose pose, out ARPlane plane)
+        {
+            pose = default;
+            plane = null;
+
+            if (planeManager == null)
+                return false;
+
+            ARPlane bestPlane = null;
+            Pose bestPose = default;
+            float bestScore = float.NegativeInfinity;
+            foreach (ARPlane candidate in planeManager.trackables)
+            {
+                if (!TryUseAutomaticPlane(candidate, out Pose candidatePose))
+                    continue;
+
+                float score = ScoreAutomaticPlane(candidate);
+                if (preferredPlacementPlane != null &&
+                    candidate.trackableId ==
+                    preferredPlacementPlane.trackableId)
+                    score += 1f;
+
+                if (score <= bestScore)
+                    continue;
+
+                bestPlane = candidate;
+                bestPose = candidatePose;
+                bestScore = score;
+            }
+
+            if (bestPlane == null)
+                return false;
+
+            preferredPlacementPlane = bestPlane;
+            pose = bestPose;
+            plane = bestPlane;
+            return true;
+        }
+
+        private static float ScoreAutomaticPlane(ARPlane candidate)
+        {
+            float area =
+                candidate.size.x * candidate.size.y;
+            float score =
+                Mathf.Min(area, 4f) * 4f;
+            if (HasClassification(
+                    candidate.classifications,
+                    PlaneClassifications.Table))
+            {
+                score += 1000f;
+            }
+
+            Camera camera = Camera.main;
+            if (camera == null)
+                return score;
+
+            Vector3 offset =
+                candidate.center -
+                camera.transform.position;
+            score -= offset.magnitude * 4f;
+
+            Vector3 forward = Vector3.ProjectOnPlane(
+                camera.transform.forward,
+                Vector3.up);
+            Vector3 direction = Vector3.ProjectOnPlane(
+                offset,
+                Vector3.up);
+            if (forward.sqrMagnitude > 0.0001f &&
+                direction.sqrMagnitude > 0.0001f)
+            {
+                score -= Vector3.Angle(
+                    forward,
+                    direction) * 0.04f;
+            }
+
+            return score;
+        }
+
+        private bool TryUseAutomaticPlane(ARPlane candidate, out Pose pose)
+        {
+            pose = default;
+            if (candidate == null ||
+                !candidate.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            pose = new Pose(candidate.center, Quaternion.identity);
+            return ShouldAcceptPlane(pose, candidate);
+        }
+
         public bool TryGetControllerPlacementHit(InputDeviceCharacteristics handedness, out Pose pose, out ARPlane plane)
         {
             pose = default;

@@ -7,7 +7,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
     {
         public void ConfirmPlacement()
         {
-            if (!placementActive || !hasCurrentHit || placementPrefab == null)
+            if (!placementActive ||
+                !hasCurrentHit ||
+                !IsPlacementVisualReady())
                 return;
 
             if (spawnedInstance != null && !allowReplaceExisting)
@@ -65,6 +67,40 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 }
             }
 
+            FinishPlacement(target);
+        }
+
+        public bool TryPlaceFixed()
+        {
+            if (placementMode != TrackPlacementMode.Fixed ||
+                spawnedInstance != null ||
+                !IsPlacementVisualReady())
+            {
+                return false;
+            }
+
+            ClearPreview();
+
+            GameObject target = Instantiate(placementPrefab);
+            target.name = placementPrefab.name;
+            ApplyTrackMap(target);
+            ConfigurePhysics(target);
+
+            Vector3 scale = fixedScale;
+            if (scale.x <= 0f || scale.y <= 0f || scale.z <= 0f)
+                scale = Vector3.one;
+
+            target.transform.SetPositionAndRotation(
+                fixedPosition,
+                Quaternion.Euler(fixedEulerAngles));
+            target.transform.localScale = scale;
+
+            FinishPlacement(target);
+            return true;
+        }
+
+        void FinishPlacement(GameObject target)
+        {
             spawnedInstance = target;
             placementActive = false;
             ConfigureEditState(spawnedInstance);
