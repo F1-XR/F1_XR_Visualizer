@@ -37,10 +37,20 @@ namespace F1XR.AIBridge.Commands
                     p.SetSpeed(value != null ? value.Value<float>() : 1f);
                     break;
                 case "seek":
-                    if (value != null && value.Type == JTokenType.String)
+                    if (value == null)
+                        break;
+                    if (value.Type == JTokenType.Integer || value.Type == JTokenType.Float)
                     {
-                        // ISO 절대시각(jump_to_event) → 상대초로 변환 후 Seek
-                        string iso = (string)value;
+                        // 숫자 = 상대초 그대로 Seek
+                        p.Seek(value.Value<float>());
+                    }
+                    else
+                    {
+                        // ISO 절대시각(jump_to_event). ⚠️ Newtonsoft는 ISO 문자열을 Date 토큰으로
+                        // 자동 파싱하므로 String 뿐 아니라 Date 도 처리해야 한다(둘 다 절대시각).
+                        string iso = value.Type == JTokenType.Date
+                            ? value.Value<System.DateTime>().ToUniversalTime().ToString("o")
+                            : value.Value<string>();
                         if (ReplayTimeMap.IsoToRelative(p, iso, out float rel))
                         {
                             Debug.Log($"[AIBridge] seek ISO {iso} → 상대 {rel:0.0}s");
@@ -50,10 +60,6 @@ namespace F1XR.AIBridge.Commands
                         {
                             Debug.LogWarning($"[AIBridge] seek 시각 변환 실패(앵커 없음): {iso}");
                         }
-                    }
-                    else
-                    {
-                        p.Seek(value != null ? value.Value<float>() : 0f);
                     }
                     break;
                 default:
