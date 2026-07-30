@@ -1061,90 +1061,18 @@ namespace F1XR.RestAPI.Replay.Room
                     : Mathf.Max(
                         1f,
                         showcaseVehicleScale);
-            float firstParentScale = MaxAxis(
-                first.VehicleRoot.lossyScale);
-            float secondParentScale = MaxAxis(
-                second.VehicleRoot.lossyScale);
-            float minimumLateral =
-                Mathf.Max(
-                    firstCar.GetVisualWidth() *
-                        firstParentScale,
-                    secondCar.GetVisualWidth() *
-                        secondParentScale) *
-                scale *
-                1.08f;
-            float overlapLength =
-                Mathf.Max(
-                    firstCar.GetVisualLength() *
-                        firstParentScale,
-                    secondCar.GetVisualLength() *
-                        secondParentScale) *
-                scale *
-                0.82f;
-
             firstCar.ApplyRoomPresentation(
                 presentationAnchor,
                 scale);
             secondCar.ApplyRoomPresentation(
                 presentationAnchor,
                 scale);
-            ApplyVehicleClearance(
-                first,
-                second,
-                minimumLateral,
-                overlapLength);
             appliedPresentationScale = scale;
             vehicleLengthAfter =
                 vehicleLengthBefore *
                 appliedPresentationScale;
             appliedRoomVehicleLength =
                 vehicleLengthAfter;
-        }
-
-        private static void ApplyVehicleClearance(
-            VehicleBinding first,
-            VehicleBinding second,
-            float minimumLateral,
-            float overlapLength)
-        {
-            Vector3 averageForward = Flat(
-                first.VehicleRoot.forward +
-                second.VehicleRoot.forward);
-            if (averageForward.sqrMagnitude <= 0.000001f)
-                averageForward = Flat(first.VehicleRoot.forward);
-            if (averageForward.sqrMagnitude <= 0.000001f)
-                return;
-
-            averageForward.Normalize();
-            Vector3 side = Vector3.Cross(
-                Vector3.up,
-                averageForward).normalized;
-            Vector3 separation =
-                first.VisualMotionRoot.position -
-                second.VisualMotionRoot.position;
-            float longitudinal =
-                Mathf.Abs(Vector3.Dot(
-                    separation,
-                    averageForward));
-            float lateral = Vector3.Dot(separation, side);
-
-            if (longitudinal >= overlapLength ||
-                Mathf.Abs(lateral) >= minimumLateral)
-            {
-                return;
-            }
-
-            float direction = Mathf.Abs(lateral) > 0.001f
-                ? Mathf.Sign(lateral)
-                : first.DriverNumber <= second.DriverNumber
-                    ? 1f
-                    : -1f;
-            float correction =
-                (minimumLateral - Mathf.Abs(lateral)) *
-                0.5f;
-            Vector3 offset = side * direction * correction;
-            first.VisualMotionRoot.position += offset;
-            second.VisualMotionRoot.position -= offset;
         }
 
         private static ReplayCarView ResolveCar(

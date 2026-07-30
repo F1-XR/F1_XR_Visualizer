@@ -53,6 +53,10 @@ namespace F1XR.RestAPI.Replay
         public float leaderHighlightDelaySeconds = 10f;
         public CarEngineSoundSettings engineSound = new();
         public OvertakeMotionSettings overtakeMotion = new();
+        public OvertakeApproachRibbonSettings overtakeApproachRibbon =
+            new();
+        public OvertakeSideBySideVfxSettings overtakeSideBySideVfx =
+            new();
         
         public float positionScale = 0.01f;
 
@@ -703,6 +707,10 @@ namespace F1XR.RestAPI.Replay
         private void EnsureOvertakeMotion()
         {
             overtakeMotion ??= new OvertakeMotionSettings();
+            overtakeApproachRibbon ??=
+                new OvertakeApproachRibbonSettings();
+            overtakeSideBySideVfx ??=
+                new OvertakeSideBySideVfxSettings();
         }
 
         private static ReplayEventDto[] ResolveReplayEvents(DatasetManifestDto manifest)

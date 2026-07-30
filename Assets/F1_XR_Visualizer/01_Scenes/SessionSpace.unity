@@ -870,8 +870,8 @@ MonoBehaviour:
   entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
   roadFloorOffset: 0.02
-  showcaseVehicleScale: 1.7
-  showcasePlaybackSpeedMultiplier: 2.5
+  showcaseVehicleScale: 1.3
+  showcasePlaybackSpeedMultiplier: 2
   immersiveScaleEnabled: 0
   mappingEnabled: 1
 --- !u!4 &493722811
@@ -3189,6 +3189,75 @@ MonoBehaviour:
     maximumVisualYawDegrees: 14
     overlapBlendMode: 0
     debugOvertakeVisuals: 0
+  overtakeApproachRibbon:
+    enabled: 1
+    growth:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    overtakerTrailSeconds: 0.95
+    overtakerGlowWidthInCarWidths: 0.34
+    overtakerCoreWidthInCarWidths: 0.1
+    overtakerGlowColor: {r: 0.04, g: 0.68, b: 1, a: 0.82}
+    defenderTrailSeconds: 0.65
+    defenderGlowWidthInCarWidths: 0.22
+    defenderCoreWidthInCarWidths: 0.065
+    defenderGlowColor: {r: 0.2, g: 1, b: 0.62, a: 0.65}
+    coreColor: {r: 1, g: 1, b: 1, a: 0.96}
+    preRollSeconds: 1.25
+    startIntensity: 0.22
+    defenderIntensity: 0.68
+    minimumVertexDistanceInCarLengths: 0.065
+    rearOffsetInCarLengths: 0.42
+    verticalOffsetInCarHeights: 0.24
+    seekClearThresholdSeconds: 0.5
+  overtakeSideBySideVfx:
+    enabled: 1
+    startOffsetNormalized: 0
+    endOffsetNormalized: 0
+    transitionBlendSeconds: 0.35
+    overtakerTrailTimeMultiplier: 1.45
+    overtakerGlowWidthMultiplier: 1.25
+    overtakerCoreWidthMultiplier: 1.15
+    overtakerIntensityMultiplier: 1.3
+    defenderTrailTimeMultiplier: 1.1
+    defenderGlowWidthMultiplier: 1.05
+    defenderCoreWidthMultiplier: 1.03
+    defenderIntensityMultiplier: 1.05
+    lightSweepDuration: 0.45
+    lightSweepWidthInCarLengths: 0.12
+    lightSweepIntensity: 1.45
+    lightSweepColor: {r: 0.45, g: 0.9, b: 1.35, a: 0.82}
+    lightSweepTopOffsetInCarHeights: 0.08
+    sparkBurstCount: 8
+    sparkLifetime: 0.22
+    sparkSizeInCarWidths: 0.035
+    sparkSpeedInCarLengthsPerSecond: 1.5
+    sparkEmissionColor: {r: 1, g: 0.62, b: 0.16, a: 0.9}
+    sparkTriggerNormalized: 0.55
+    sparkRearOffsetInCarLengths: 0.28
+    sparkFloorOffsetInCarHeights: 0.08
+    seekResetThresholdSeconds: 0.5
   positionScale: 0.0001
 --- !u!114 &1705380155
 MonoBehaviour:

@@ -135,6 +135,8 @@ namespace F1XR.RestAPI.Replay
         private void OnDestroy()
         {
             DisposeRenderLod();
+            DisposeOvertakeRibbon();
+            DisposeOvertakeSideBySideVfx();
 
             if (selectionRingMaterial != null)
                 Destroy(selectionRingMaterial);
