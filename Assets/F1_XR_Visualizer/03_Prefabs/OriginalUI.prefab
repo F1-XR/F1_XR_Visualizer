@@ -71,7 +71,6 @@ GameObject:
   - component: {fileID: 2390469622525437698}
   - component: {fileID: 7333385622270808710}
   - component: {fileID: 6646066173375674570}
-  - component: {fileID: 2853840940160433121}
   - component: {fileID: 8867096456481602364}
   m_Layer: 0
   m_Name: OriginalUI
@@ -342,23 +341,6 @@ MonoBehaviour:
   grab: {fileID: 0}
   body: {fileID: 0}
   worldGrabPolicy: {fileID: 0}
---- !u!114 &2853840940160433121
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 974347948381446370}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: af5d98ee820abb6428bec8f44b8eee5c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Debugging.ScaleDebugLogger
-  scaleController: {fileID: 0}
-  target: {fileID: 0}
-  rayDistance: 20
-  logEveryNthFrame: 2
-  maxLines: 400
 --- !u!114 &8867096456481602364
 MonoBehaviour:
   m_ObjectHideFlags: 0
