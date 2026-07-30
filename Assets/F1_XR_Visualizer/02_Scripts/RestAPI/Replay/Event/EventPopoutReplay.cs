@@ -59,6 +59,8 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> drivableRightEdge = new();
         private readonly Dictionary<int, List<float>> eventLongitudinals = new();
         private readonly List<TableTrackRendererState> tableTrackRendererStates = new();
+        private readonly OvertakeCompletionDetector
+            completionDetector = new();
 
         private ReplayPlayer player;
         private ReplayCarSet eventCars;
@@ -670,6 +672,10 @@ namespace F1XR.RestAPI.Replay
             eventCars.SetOvertakeSideBySideVfx(
                 motionEvent,
                 player.overtakeSideBySideVfx);
+            completionDetector.Configure(
+                player.overtakeCompletionVfx);
+            eventCars.SetOvertakeCompletionVfx(
+                player.overtakeCompletionVfx);
             sourceGeometryRevision++;
 
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
@@ -1705,12 +1711,79 @@ namespace F1XR.RestAPI.Replay
             if (!isActive || eventCars == null)
                 return;
 
+            float replayTime = timeline.CurrentTime;
             eventCars.Show(
                 eventSamples,
                 eventIndices,
-                timeline.CurrentTime,
+                replayTime,
                 null,
                 eventDrivers);
+            UpdateOvertakeCompletion(replayTime);
+            eventCars.UpdateOvertakeCompletionVfx(
+                replayTime);
+        }
+
+        private void UpdateOvertakeCompletion(
+            float replayTime)
+        {
+            int[] drivers = motionEvent != null
+                ? motionEvent.driverNumbers
+                : null;
+            if (drivers == null ||
+                drivers.Length < 2 ||
+                !TryGetSourceLongitudinalAtTime(
+                    drivers[0],
+                    replayTime,
+                    out float overtakerProgress) ||
+                !TryGetSourceLongitudinalAtTime(
+                    drivers[1],
+                    replayTime,
+                    out float defenderProgress) ||
+                !eventCars.TryGetVisualLength(
+                    drivers[0],
+                    out float overtakerLength) ||
+                !eventCars.TryGetVisualLength(
+                    drivers[1],
+                    out float defenderLength))
+            {
+                return;
+            }
+
+            float clearanceDistance =
+                overtakerProgress -
+                defenderProgress -
+                (overtakerLength + defenderLength) *
+                0.5f;
+            float centerLeadDistance =
+                overtakerProgress -
+                defenderProgress;
+            float referenceVehicleLength =
+                Mathf.Max(
+                    overtakerLength,
+                    defenderLength);
+            bool orderingConfirmed =
+                currentEvent != null &&
+                replayTime >= currentEvent.anchorTime;
+            OvertakeCompletionResult result =
+                completionDetector.Update(
+                    replayTime,
+                    clearanceDistance,
+                    centerLeadDistance,
+                    referenceVehicleLength,
+                    orderingConfirmed);
+            if (result == OvertakeCompletionResult.Reset ||
+                result == OvertakeCompletionResult.Suppressed)
+            {
+                eventCars.ResetOvertakeCompletionVfx();
+            }
+            else if (
+                result ==
+                OvertakeCompletionResult.Triggered)
+            {
+                eventCars.TriggerOvertakeCompletionVfx(
+                    drivers[0],
+                    replayTime);
+            }
         }
 
         private void ResetIndices()
@@ -1746,6 +1819,7 @@ namespace F1XR.RestAPI.Replay
             isActive = false;
             timeline.Pause();
             eventAudio?.Clear();
+            completionDetector.Reset();
             eventCars?.Clear();
             eventAudio = null;
             eventCars = null;

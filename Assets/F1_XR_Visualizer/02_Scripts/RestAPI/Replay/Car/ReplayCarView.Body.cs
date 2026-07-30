@@ -100,7 +100,8 @@ namespace F1XR.RestAPI.Replay
                 IsSelectionEffectRenderer(renderer) ||
                 IsLeaderEffectRenderer(renderer) ||
                 IsOvertakeRibbonRenderer(renderer) ||
-                IsOvertakeSideBySideVfxRenderer(renderer);
+                IsOvertakeSideBySideVfxRenderer(renderer) ||
+                IsOvertakeCompletionVfxRenderer(renderer);
         }
 
         private bool TryGetCarBounds(out Bounds bounds)
