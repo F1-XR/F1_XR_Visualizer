@@ -716,7 +716,7 @@ MonoBehaviour:
   m_Name: ShowcaseLayout
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcaseLayout
   wallDiscovery: {fileID: 493722805}
-  xrMainCamera: {fileID: 1965219442}
+  xrMainCamera: {fileID: 1674081566}
   entryHorizontalOffset: 0
   entryVerticalOffset: 0
   entryDepthOffset: 0.05
@@ -746,8 +746,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
-  planeManager: {fileID: 1965219445}
-  orientationCamera: {fileID: 1965219442}
+  planeManager: {fileID: 1674081569}
+  orientationCamera: {fileID: 1674081566}
   allowVerticalFallback: 1
   minimumWidth: 1.3
   minimumFallbackWidth: 1.3
@@ -781,7 +781,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcasePathPreview
   showcaseLayout: {fileID: 493722804}
-  xrOrigin: {fileID: 1965219443}
+  xrOrigin: {fileID: 1674081567}
   entryHandleLength: 1
   heroIncomingHandleLength: 1
   heroOutgoingHandleLength: 1
@@ -808,7 +808,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.RoomShowcaseSetupView
   setupPanel: {fileID: 2100327795}
-  xrMainCamera: {fileID: 1965219442}
+  xrMainCamera: {fileID: 1674081566}
   panelDistance: 1.4
   panelHeightOffset: -0.05
 --- !u!114 &493722808
@@ -1065,7 +1065,7 @@ Canvas:
   m_Enabled: 1
   serializedVersion: 3
   m_RenderMode: 2
-  m_Camera: {fileID: 1965219441}
+  m_Camera: {fileID: 1674081565}
   m_PlaneDistance: 100
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
@@ -1890,7 +1890,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ARBuildRevealPlacer
   placementController: {fileID: 1113257130}
-  anchorManager: {fileID: 1965219446}
+  anchorManager: {fileID: 1674081570}
   placementPrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
   trackMapScale: 1
@@ -1956,10 +1956,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0b61b32f92b86a04c8795d7232f1c648, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.ARPlanePlacementController
-  raycastManager: {fileID: 1965219444}
-  planeManager: {fileID: 1965219445}
-  anchorManager: {fileID: 1965219446}
-  rayOrigin: {fileID: 1965219442}
+  raycastManager: {fileID: 1674081568}
+  planeManager: {fileID: 1674081569}
+  anchorManager: {fileID: 1674081570}
+  rayOrigin: {fileID: 1674081566}
   cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
   trackMapScale: 1
@@ -2572,6 +2572,135 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1617710085}
   m_CullTransparentMesh: 1
+--- !u!1001 &1674081564
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1473409034299224219, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Name
+      value: XR Origin (VR)
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4405907895061535674, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_SelectInput.m_InputActionReferenceValue
+      value: 
+      objectReference: {fileID: 2356269739022366052, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+    - target: {fileID: 4405907895061535674, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_SelectInput.m_InputActionReferencePerformed
+      value: 
+      objectReference: {fileID: 2952293240542986942, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+    - target: {fileID: 4913151629264743781, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: controllerOnly
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5076838884793477868, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_SelectInput.m_InputActionReferenceValue
+      value: 
+      objectReference: {fileID: -7989615598897241686, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+    - target: {fileID: 5076838884793477868, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_SelectInput.m_InputActionReferencePerformed
+      value: 
+      objectReference: {fileID: -7966444640328253993, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+    - target: {fileID: 5606601098552753620, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 10306, guid: 0000000000000000f000000000000000, type: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+--- !u!20 &1674081565 stripped
+Camera:
+  m_CorrespondingSourceObject: {fileID: 5647931907121370637, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 1674081564}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1674081566 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8645782292093347523, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 1674081564}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1674081567 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 1674081564}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1674081568 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8758587121800840445, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 1674081564}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa17d122634046b4a8e23048891fafc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARRaycastManager
+--- !u!114 &1674081569 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 3664281703862286721, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 1674081564}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1760703bbd54c04488a8d10600262ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARPlaneManager
+--- !u!114 &1674081570 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 347346111352918431, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+  m_PrefabInstance: {fileID: 1674081564}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 728ad7fae8e460a4ba41265c7308d757, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARAnchorManager
 --- !u!1 &1674990260
 GameObject:
   m_ObjectHideFlags: 0
@@ -3368,119 +3497,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &1965219440
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 1473409034299224219, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_Name
-      value: XR Origin (VR)
-      objectReference: {fileID: 0}
-    - target: {fileID: 1785247857630340466, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_Enabled
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4913151629264743781, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_Enabled
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
---- !u!20 &1965219441 stripped
-Camera:
-  m_CorrespondingSourceObject: {fileID: 5647931907121370637, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-  m_PrefabInstance: {fileID: 1965219440}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &1965219442 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 8645782292093347523, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-  m_PrefabInstance: {fileID: 1965219440}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &1965219443 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-  m_PrefabInstance: {fileID: 1965219440}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &1965219444 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8758587121800840445, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-  m_PrefabInstance: {fileID: 1965219440}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fa17d122634046b4a8e23048891fafc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARRaycastManager
---- !u!114 &1965219445 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3664281703862286721, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-  m_PrefabInstance: {fileID: 1965219440}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e1760703bbd54c04488a8d10600262ab, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARPlaneManager
---- !u!114 &1965219446 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 347346111352918431, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-  m_PrefabInstance: {fileID: 1965219440}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 728ad7fae8e460a4ba41265c7308d757, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARAnchorManager
 --- !u!1 &1976948600
 GameObject:
   m_ObjectHideFlags: 0
@@ -3988,7 +4004,7 @@ Canvas:
   m_Enabled: 1
   serializedVersion: 3
   m_RenderMode: 2
-  m_Camera: {fileID: 1965219441}
+  m_Camera: {fileID: 1674081565}
   m_PlaneDistance: 100
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
@@ -4031,7 +4047,7 @@ SceneRoots:
   - {fileID: 1954351460}
   - {fileID: 968411816}
   - {fileID: 1705380157}
-  - {fileID: 1965219440}
+  - {fileID: 1674081564}
   - {fileID: 1113257132}
   - {fileID: 493722811}
   - {fileID: 1127476783}
