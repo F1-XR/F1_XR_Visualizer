@@ -87,6 +87,15 @@ namespace F1XR.AIBridge
             return fallback > 0 ? fallback : (int?)null;
         }
 
+        /// <summary>능동 안내용: 짧은 문장을 음성만 빠르게 합성 요청(에이전트 안 거침).
+        /// 서버가 tts_audio 로 응답 → Route 에서 재생.</summary>
+        public void SendSpeak(string text)
+        {
+            if (string.IsNullOrEmpty(text) || client == null) return;
+            string json = JsonConvert.SerializeObject(new { type = "speak", text = text });
+            client.Send(json);
+        }
+
         /// <summary>현재 리플레이 시각을 ISO 절대시각으로. 리플레이 없으면 null.</summary>
         public string CurrentAtTime()
         {

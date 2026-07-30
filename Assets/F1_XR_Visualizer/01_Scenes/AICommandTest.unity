@@ -1678,8 +1678,45 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1247387138}
   m_SourcePrefab: {fileID: 100100000, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+--- !u!1 &1247387126 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+  m_PrefabInstance: {fileID: 1226495040}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1247387132 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1972968151036858088, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+  m_PrefabInstance: {fileID: 1226495040}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1247387126}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 289d17f687029d44e9fab8c8b724e6c6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.HighlightDriverHandler
+--- !u!114 &1247387138
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1247387126}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c61a476f81246104cae129ea138d78de, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.PointOutWatcher
+  player: {fileID: 1705380154}
+  highlight: {fileID: 1247387132}
+  bridge: {fileID: 0}
+  minConfidence: 0.6
+  cooldownSec: 18
+  leadSec: 2
 --- !u!1 &1304137257
 GameObject:
   m_ObjectHideFlags: 0
