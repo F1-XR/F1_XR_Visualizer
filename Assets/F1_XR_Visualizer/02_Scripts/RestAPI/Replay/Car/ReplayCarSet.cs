@@ -10,6 +10,9 @@ namespace F1XR.RestAPI.Replay
 {
     public class ReplayCarSet
     {
+        private const int MaxDetailedCarCount = 3;
+        private const float RenderLodBudgetInterval = 0.2f;
+
         private static readonly ProfilerMarker BuildFramesMarker =
             new("F1XR.Cars.BuildFrames");
         private static readonly ProfilerMarker ApplyLogicalPosesMarker =
@@ -36,12 +39,19 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, float> visualLengths = new();
         private readonly Dictionary<int, int> ranks = new();
         private readonly Dictionary<int, string> debugEventByDriver = new();
+        private readonly List<RenderLodCandidate>
+            renderLodCandidates = new();
+        private readonly HashSet<ReplayCarView>
+            renderLodDetailedCars = new();
         private readonly Action<int> removeCarState;
         private readonly Action<int, ReplayCarView> setupCar;
         private readonly ReplayPlayer player;
         private readonly bool allowInteraction;
         private OvertakeMotionSettings overtakeSettings = new();
         private int selectedDriverNumber;
+        private bool renderLodEnabled = true;
+        private Camera renderLodCamera;
+        private float nextRenderLodBudgetTime;
 
         public ReplayCarSet(
             GameObject carPrefab,
@@ -208,14 +218,26 @@ namespace F1XR.RestAPI.Replay
             }
             BuildFramesMarker.End();
 
+            UpdateRenderLodBudget();
+
             ApplyLogicalPosesMarker.Begin();
             foreach (CarFrame frame in frames)
-                carMotion.ApplyLogicalPose(frame.car, frame.pose);
+            {
+                if (frame.car.ShouldApplyMotionThisFrame())
+                {
+                    carMotion.ApplyLogicalPose(
+                        frame.car,
+                        frame.pose);
+                }
+            }
             ApplyLogicalPosesMarker.End();
 
             ApplyVisualsMarker.Begin();
             foreach (CarFrame frame in frames)
             {
+                if (!frame.car.ShouldApplyMotionThisFrame())
+                    continue;
+
                 VisualMotionPose visualPose = overtakeMotion.Resolve(
                     frame.driver,
                     time,
@@ -231,7 +253,8 @@ namespace F1XR.RestAPI.Replay
                     frame.a,
                     frame.b,
                     frame.interpolation,
-                    frame.duration);
+                    frame.duration,
+                    time);
             }
             ApplyVisualsMarker.End();
 
@@ -282,9 +305,52 @@ namespace F1XR.RestAPI.Replay
             carAudio.SetSelectedDriver(driverNumber);
         }
 
+        public void SetAudioFocusDriver(int driverNumber)
+        {
+            carAudio.SetMixFocusDriver(driverNumber);
+        }
+
+        public void SetShowcaseDrivingPresentation(
+            int firstDriver,
+            int secondDriver,
+            bool enabled)
+        {
+            foreach (KeyValuePair<int, ReplayCarView> pair
+                in carInstances.Cars)
+            {
+                if (pair.Value == null)
+                    continue;
+
+                bool emphasize =
+                    enabled &&
+                    (pair.Key == firstDriver ||
+                     pair.Key == secondDriver);
+                pair.Value.SetDrivingPresentationEmphasis(
+                    emphasize);
+            }
+        }
+
+        public void SetRenderLodEnabled(bool enabled)
+        {
+            if (renderLodEnabled == enabled)
+                return;
+
+            renderLodEnabled = enabled;
+            nextRenderLodBudgetTime = 0f;
+            foreach (ReplayCarView car
+                in carInstances.Cars.Values)
+            {
+                if (car != null)
+                    car.SetRenderLodEnabled(enabled);
+            }
+        }
+
         private void SetupCar(int driver, ReplayCarView car)
         {
             carPresentation.SetupCar(driver, car);
+            car.ConfigureDrivingPresentation();
+            car.ConfigureRenderLod();
+            car.SetRenderLodEnabled(renderLodEnabled);
             carAudio.ConfigureCar(driver, car);
 
             ReplayCarInteractable interaction = car.GetComponent<ReplayCarInteractable>();
@@ -302,11 +368,108 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
+        private void UpdateRenderLodBudget()
+        {
+            if (!renderLodEnabled)
+                return;
+
+            float now = Time.unscaledTime;
+            if (now < nextRenderLodBudgetTime)
+                return;
+
+            nextRenderLodBudgetTime =
+                now + RenderLodBudgetInterval;
+            if (renderLodCamera == null ||
+                !renderLodCamera.isActiveAndEnabled)
+            {
+                renderLodCamera = Camera.main;
+            }
+
+            if (renderLodCamera == null)
+                return;
+
+            renderLodCandidates.Clear();
+            renderLodDetailedCars.Clear();
+            int requiredDetailedCount = 0;
+            Vector3 cameraPosition =
+                renderLodCamera.transform.position;
+
+            foreach (CarFrame frame in frames)
+            {
+                if (frame.car == null)
+                    continue;
+
+                if (frame.car.RequiresDetailedRenderLod)
+                {
+                    requiredDetailedCount++;
+                    continue;
+                }
+
+                if (!frame.car.QualifiesForDetailedRenderLod(
+                        renderLodCamera))
+                {
+                    continue;
+                }
+
+                renderLodCandidates.Add(
+                    new RenderLodCandidate(
+                        frame.car,
+                        (frame.car.transform.position -
+                         cameraPosition).sqrMagnitude));
+            }
+
+            renderLodCandidates.Sort();
+            int availableSlots = Mathf.Max(
+                0,
+                MaxDetailedCarCount -
+                requiredDetailedCount);
+            int detailedCount = Mathf.Min(
+                availableSlots,
+                renderLodCandidates.Count);
+            for (int i = 0; i < detailedCount; i++)
+            {
+                renderLodDetailedCars.Add(
+                    renderLodCandidates[i].car);
+            }
+
+            foreach (ReplayCarView car
+                in carInstances.Cars.Values)
+            {
+                if (car != null)
+                {
+                    car.SetRenderLodBudgetDetailed(
+                        renderLodDetailedCars.Contains(car));
+                }
+            }
+        }
+
         private void RemoveCarState(int driver)
         {
             carMotion.RemoveCar(driver);
             carAudio.RemoveCar(driver);
             gridStartAudio.RemoveCar(driver);
+        }
+
+        private readonly struct RenderLodCandidate :
+            IComparable<RenderLodCandidate>
+        {
+            public readonly ReplayCarView car;
+            private readonly float distanceSquared;
+
+            public RenderLodCandidate(
+                ReplayCarView car,
+                float distanceSquared)
+            {
+                this.car = car;
+                this.distanceSquared = distanceSquared;
+            }
+
+            public int CompareTo(
+                RenderLodCandidate other)
+            {
+                return distanceSquared.CompareTo(
+                    other.distanceSquared);
+            }
         }
 
         public void SetPlacement(ARPlanePlacementController source)
@@ -380,7 +543,13 @@ namespace F1XR.RestAPI.Replay
             return carMotion.TryGetMappedPosition(sample, out position);
         }
 
-        private void UpdateEngineSound(ReplayCarView car, LocationSample a, LocationSample b, float u, float duration)
+        private void UpdateEngineSound(
+            ReplayCarView car,
+            LocationSample a,
+            LocationSample b,
+            float u,
+            float duration,
+            float replayTime)
         {
             float rpm = Mathf.Lerp(a.rpm, b.rpm, u);
             float throttle = Mathf.Lerp(a.throttle, b.throttle, u);
@@ -392,6 +561,10 @@ namespace F1XR.RestAPI.Replay
             if (speed <= 0.01f)
                 speed = EstimateSpeed(a, b, duration);
 
+            car.ApplyDrivingPresentation(
+                replayTime,
+                speed,
+                brake);
             carAudio.UpdateTelemetry(
                 car.driverNumber,
                 rpm,

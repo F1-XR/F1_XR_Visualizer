@@ -48,6 +48,7 @@ namespace F1XR.RestAPI.Replay
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
         public bool showCarLabels = true;
+        public bool enableCarLod = true;
         public bool hideLeaderHighlightAfterRaceStart = true;
         public float leaderHighlightDelaySeconds = 10f;
         public CarEngineSoundSettings engineSound = new();
@@ -134,6 +135,7 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetBuildPlacer(buildPlacer);
             replayCars.SetCalibration(trackCalibration);
             replayCars.SetLabelsVisible(showCarLabels);
+            replayCars.SetRenderLodEnabled(enableCarLod);
             replayCars.SetLeaderHighlightVisible(false);
             replayCars.SetOvertakeSettings(overtakeMotion);
             replayAudio = new ReplayAudio(replayCars);
@@ -383,6 +385,7 @@ namespace F1XR.RestAPI.Replay
         {
             EnsureEngineSound();
             replayCars.SetLabelsVisible(showCarLabels);
+            replayCars.SetRenderLodEnabled(enableCarLod);
             bool trackPlaced = HasPlacedTrack();
             bool replayCarsReady = AreReplayCarsReady();
             AudioStateMarker.Begin();

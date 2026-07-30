@@ -1741,13 +1741,34 @@ namespace F1XR.RestAPI.Replay.Room
                     binding.Source != null &&
                     binding.Proxy != null &&
                     binding.VehicleRoot != null &&
-                    IsInsideRoom(
-                        binding.VehicleRoot.position) &&
                     binding.Source.enabled &&
                     binding.Source.gameObject.activeInHierarchy;
+                if (visible)
+                    visible = BoundsTouchesRoom(
+                        binding.Source.bounds);
                 if (binding.Proxy != null)
                     binding.Proxy.enabled = visible;
             }
+        }
+
+        private bool BoundsTouchesRoom(Bounds bounds)
+        {
+            if (IsInsideRoom(bounds.center))
+                return true;
+
+            Vector3 min = bounds.min;
+            Vector3 max = bounds.max;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                Vector3 point = new(
+                    (corner & 1) == 0 ? min.x : max.x,
+                    (corner & 2) == 0 ? min.y : max.y,
+                    (corner & 4) == 0 ? min.z : max.z);
+                if (IsInsideRoom(point))
+                    return true;
+            }
+
+            return false;
         }
 
         private static void SyncLineRenderer(
