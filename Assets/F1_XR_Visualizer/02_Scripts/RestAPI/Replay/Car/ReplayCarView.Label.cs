@@ -10,7 +10,6 @@ namespace F1XR.RestAPI.Replay
         private const float LabelLineGapRatio = 0.08f;
         private const float LabelLineWidthRatio = 0.014f;
         private const float LabelBackgroundDepthRatio = 0.03f;
-
         private TextMesh label;
         private LineRenderer labelLine;
         private MeshRenderer labelBackground;
@@ -26,6 +25,7 @@ namespace F1XR.RestAPI.Replay
         private string driverLabel;
         private int rank;
         private bool labelVisible = true;
+        private bool labelLodVisible = true;
         private bool leaderHighlightVisible;
         private bool labelLayoutDirty = true;
 
@@ -48,27 +48,32 @@ namespace F1XR.RestAPI.Replay
 
             rank = value;
             RefreshLabelText();
+            labelLayoutDirty = true;
 
             if (rank != 1)
                 SetLeaderObjectsActive(false);
 
             SetLabelObjectsActive(ShouldShowLabel());
+            RefreshRuntimeUpdateState();
         }
 
         public void SetLabelVisible(bool visible)
         {
             labelVisible = visible;
             SetLabelObjectsActive(ShouldShowLabel());
+            RefreshRuntimeUpdateState();
         }
 
         public void SetLeaderHighlightVisible(bool visible)
         {
             leaderHighlightVisible = visible;
+            labelLayoutDirty = true;
 
             if (!leaderHighlightVisible)
                 SetLeaderObjectsActive(false);
 
             SetLabelObjectsActive(ShouldShowLabel());
+            RefreshRuntimeUpdateState();
         }
 
         public void SetColor(Color color)
@@ -81,6 +86,7 @@ namespace F1XR.RestAPI.Replay
             SetLabelDotColor(labelBottomDot);
             SetSelectionColor(color);
             ApplyBodyHighlight();
+            UpdateRenderLodColor();
         }
 
         private void RefreshLabelText()
@@ -88,9 +94,16 @@ namespace F1XR.RestAPI.Replay
             if (label == null)
                 return;
 
-            string text = rank > 0
-                ? $"{rank}  {driverLabel}"
-                : driverLabel;
+            bool compact =
+                !labelLodVisible &&
+                !hovered &&
+                !selected &&
+                rank != 1;
+            string text = compact
+                ? driverNumber.ToString()
+                : rank > 0
+                    ? $"{rank}  {driverLabel}"
+                    : driverLabel;
 
             if (label.text == text)
                 return;
@@ -164,7 +177,7 @@ namespace F1XR.RestAPI.Replay
             return renderer;
         }
 
-        private bool UpdateLabelLayout()
+        private bool UpdateLabelLayout(bool showDetails)
         {
             if (!TryGetCarBounds(out Bounds bounds))
                 return false;
@@ -185,6 +198,9 @@ namespace F1XR.RestAPI.Replay
             );
             label.transform.localPosition = transform.InverseTransformPoint(labelPosition);
 
+            if (!showDetails)
+                return true;
+
             Vector3 lineStart = new Vector3(
                 bounds.center.x,
                 bounds.max.y + dotSize * 0.8f,
@@ -203,8 +219,6 @@ namespace F1XR.RestAPI.Replay
 
             SetDot(labelBottomDot, lineStart, dotSize);
             SetDot(labelTopDot, lineEnd, dotSize);
-
-            label.transform.rotation = Camera.main.transform.rotation;
 
             GetTextBackgroundTransform(
                 label,
@@ -263,22 +277,43 @@ namespace F1XR.RestAPI.Replay
             if (label != null)
                 label.gameObject.SetActive(active);
 
+            bool detailsActive = active && ShouldShowLabelDetails();
+
             if (labelLine != null)
-                labelLine.gameObject.SetActive(active);
+                labelLine.gameObject.SetActive(detailsActive);
 
             if (labelBackground != null)
-                labelBackground.gameObject.SetActive(active);
+                labelBackground.gameObject.SetActive(detailsActive);
 
             if (labelTopDot != null)
-                labelTopDot.gameObject.SetActive(active);
+                labelTopDot.gameObject.SetActive(detailsActive);
 
             if (labelBottomDot != null)
-                labelBottomDot.gameObject.SetActive(active);
+                labelBottomDot.gameObject.SetActive(detailsActive);
         }
 
         private bool ShouldShowLabel()
         {
-            return labelVisible || hovered || selected || rank == 1;
+            return labelVisible ||
+                hovered ||
+                selected ||
+                rank == 1;
+        }
+
+        private bool ShouldShowLabelDetails()
+        {
+            return hovered || selected || rank == 1;
+        }
+
+        private void SetLabelLodVisible(bool visible)
+        {
+            if (labelLodVisible == visible)
+                return;
+
+            labelLodVisible = visible;
+            RefreshLabelText();
+            SetLabelObjectsActive(ShouldShowLabel());
+            RefreshRuntimeUpdateState();
         }
     }
 }

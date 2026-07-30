@@ -59,6 +59,53 @@ namespace F1XR.RestAPI.Replay.Room
         public bool IsAvailable { get; }
     }
 
+    public readonly struct ShowcaseWallFrame
+    {
+        public ShowcaseWallFrame(
+            TrackableId id,
+            Vector3 center,
+            Vector3 inwardNormal,
+            Vector3 horizontalAxis,
+            Vector3 verticalAxis,
+            float width,
+            float height,
+            float minHorizontal,
+            float maxHorizontal,
+            float minVertical,
+            float maxVertical)
+        {
+            Id = id;
+            Center = center;
+            InwardNormal = inwardNormal;
+            HorizontalAxis = horizontalAxis;
+            VerticalAxis = verticalAxis;
+            Width = width;
+            Height = height;
+            MinHorizontal = minHorizontal;
+            MaxHorizontal = maxHorizontal;
+            MinVertical = minVertical;
+            MaxVertical = maxVertical;
+        }
+
+        public TrackableId Id { get; }
+        public Vector3 Center { get; }
+        public Vector3 InwardNormal { get; }
+        public Vector3 HorizontalAxis { get; }
+        public Vector3 VerticalAxis { get; }
+        public float Width { get; }
+        public float Height { get; }
+        public float MinHorizontal { get; }
+        public float MaxHorizontal { get; }
+        public float MinVertical { get; }
+        public float MaxVertical { get; }
+        public bool IsValid =>
+            Width > 0f &&
+            Height > 0f &&
+            InwardNormal.sqrMagnitude > 0.5f &&
+            HorizontalAxis.sqrMagnitude > 0.5f &&
+            VerticalAxis.sqrMagnitude > 0.5f;
+    }
+
     public interface IShowcaseWallProvider
     {
         int CandidateCount { get; }
@@ -71,6 +118,9 @@ namespace F1XR.RestAPI.Replay.Room
         bool HasContainingRoomBoundary { get; }
         bool TryGetCandidate(int index, out WallCandidateInfo info);
         bool TryGetCandidateById(TrackableId id, out WallCandidateInfo info);
+        bool TryGetCandidateFrameById(
+            TrackableId id,
+            out ShowcaseWallFrame frame);
         bool TryGetBoundaryNeighbors(
             TrackableId id,
             out TrackableId previous,
@@ -260,8 +310,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         [Header("Wall Qualification")]
         [SerializeField] private bool allowVerticalFallback = true;
-        [SerializeField, Min(0.1f)] private float minimumWidth = 0.75f;
-        [SerializeField, Min(0.1f)] private float minimumFallbackWidth = 1.2f;
+        [SerializeField, Min(0.1f)] private float minimumWidth = 1.3f;
+        [SerializeField, Min(0.1f)] private float minimumFallbackWidth = 1.3f;
         [SerializeField, Min(0.1f)] private float minimumHeight = 1.2f;
 
         [Header("Current Room Filter")]
@@ -487,14 +537,20 @@ namespace F1XR.RestAPI.Replay.Room
             return TryGetSelectedWall(exitWallId, out wall);
         }
 
-        public bool TryGetEntryWallFrame(out WallCandidate wall)
+        public bool TryGetEntryWallFrame(out ShowcaseWallFrame frame)
         {
-            return TryGetEntryWall(out wall);
+            return TryGetSelectedWallFrame(
+                entryWallId,
+                entrySelection,
+                out frame);
         }
 
-        public bool TryGetExitWallFrame(out WallCandidate wall)
+        public bool TryGetExitWallFrame(out ShowcaseWallFrame frame)
         {
-            return TryGetExitWall(out wall);
+            return TryGetSelectedWallFrame(
+                exitWallId,
+                exitSelection,
+                out frame);
         }
 
         public bool TryGetCandidate(int index, out WallCandidateInfo info)
@@ -531,6 +587,21 @@ namespace F1XR.RestAPI.Replay.Room
                 candidate,
                 candidates.IndexOf(candidate));
             return true;
+        }
+
+        public bool TryGetCandidateFrameById(
+            TrackableId id,
+            out ShowcaseWallFrame frame)
+        {
+            frame = default;
+            if (!candidatesById.TryGetValue(id, out var candidate) ||
+                !candidate.IsValid)
+            {
+                return false;
+            }
+
+            frame = CreateWallFrame(candidate);
+            return frame.IsValid;
         }
 
         public bool TryGetBoundaryNeighbors(
@@ -1235,6 +1306,27 @@ namespace F1XR.RestAPI.Replay.Room
             return selectedId.HasValue &&
                 candidatesById.TryGetValue(selectedId.Value, out wall) &&
                 wall.IsValid;
+        }
+
+        private bool TryGetSelectedWallFrame(
+            TrackableId? selectedId,
+            SelectionData selection,
+            out ShowcaseWallFrame frame)
+        {
+            if (TryGetSelectedWall(selectedId, out var wall))
+            {
+                frame = CreateWallFrame(wall);
+                return frame.IsValid;
+            }
+
+            if (selection.Snapshot.IsValid)
+            {
+                frame = CreateWallFrame(selection.Snapshot);
+                return frame.IsValid;
+            }
+
+            frame = default;
+            return false;
         }
 
         private bool TryGetCandidate(
@@ -1993,6 +2085,40 @@ namespace F1XR.RestAPI.Replay.Room
                 IsSemanticWall = candidate.IsSemanticWall,
                 IsFallback = candidate.IsFallback
             };
+        }
+
+        private static ShowcaseWallFrame CreateWallFrame(
+            WallCandidate candidate)
+        {
+            return new ShowcaseWallFrame(
+                candidate.TrackableId,
+                candidate.Center,
+                candidate.InwardNormal,
+                candidate.HorizontalAxis,
+                candidate.VerticalAxis,
+                candidate.Width,
+                candidate.Height,
+                candidate.MinHorizontal,
+                candidate.MaxHorizontal,
+                candidate.MinVertical,
+                candidate.MaxVertical);
+        }
+
+        private static ShowcaseWallFrame CreateWallFrame(
+            WallSnapshot snapshot)
+        {
+            return new ShowcaseWallFrame(
+                snapshot.TrackableId,
+                snapshot.Center,
+                snapshot.InwardNormal,
+                snapshot.HorizontalAxis,
+                snapshot.VerticalAxis,
+                snapshot.Width,
+                snapshot.Height,
+                snapshot.MinHorizontal,
+                snapshot.MaxHorizontal,
+                snapshot.MinVertical,
+                snapshot.MaxVertical);
         }
 
         private static float SizeRatio(float first, float second)

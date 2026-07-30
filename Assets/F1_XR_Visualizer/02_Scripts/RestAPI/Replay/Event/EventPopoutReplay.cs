@@ -34,7 +34,7 @@ namespace F1XR.RestAPI.Replay
             new(0.16f, 0.18f, 0.22f, 1f);
         [Min(0f)] public float safetyApronSurfaceOffset = 0.0002f;
         [Min(0f)] public float roadEndPadding;
-        [Min(0f)] public float trackPaddingSeconds = 1.5f;
+        [Min(0f)] public float trackPaddingSeconds = 5f;
         [Min(3)] public int maxTrackPoints = 192;
         [Min(1f)] public float maxEventDuration = 30f;
         [Min(0.01f)] public float eventPlaybackSpeed = 1f;
@@ -63,6 +63,7 @@ namespace F1XR.RestAPI.Replay
         private ReplayPlayer player;
         private ReplayCarSet eventCars;
         private ReplayAudio eventAudio;
+        private int showcaseAudioFocusDriver;
         private ReplayEventDto currentEvent;
         private ReplayEventDto motionEvent;
         private OvertakeMotionSettings eventOvertakeSettings;
@@ -70,6 +71,8 @@ namespace F1XR.RestAPI.Replay
         private BoxCollider stageInteractionCollider;
         private EventTrackSegment trackSegment;
         private Mesh roadMesh;
+        private LineRenderer leftRoadEdge;
+        private LineRenderer rightRoadEdge;
         private Material roadMaterial;
         private Material edgeMaterial;
         private Mesh safetyApronMesh;
@@ -83,6 +86,7 @@ namespace F1XR.RestAPI.Replay
         private bool hasSnapshot;
         private bool isLoading;
         private bool isActive;
+        private float showcasePlaybackSpeedMultiplier = 1f;
 
         public bool IsLoading => isLoading;
         public bool IsActive => isActive;
@@ -376,7 +380,7 @@ namespace F1XR.RestAPI.Replay
             if (openRoutine != null)
                 StopCoroutine(openRoutine);
 
-            DestroyStage();
+            DestroyStage(false);
             currentEvent = presentation;
             openRoutine = StartCoroutine(OpenRoutine(presentation));
         }
@@ -394,6 +398,34 @@ namespace F1XR.RestAPI.Replay
         {
             timeline.Pause();
             eventAudio?.SetPlaying(false);
+        }
+
+        public void SetShowcaseAudioFocus(int driverNumber)
+        {
+            driverNumber = Mathf.Max(0, driverNumber);
+            if (showcaseAudioFocusDriver == driverNumber)
+                return;
+
+            showcaseAudioFocusDriver = driverNumber;
+            eventCars?.SetAudioFocusDriver(driverNumber);
+        }
+
+        public void SetShowcaseDrivingPresentation(
+            int firstDriver,
+            int secondDriver,
+            bool enabled)
+        {
+            eventCars?.SetShowcaseDrivingPresentation(
+                firstDriver,
+                secondDriver,
+                enabled);
+        }
+
+        public void SetShowcasePlaybackSpeedMultiplier(
+            float multiplier)
+        {
+            showcasePlaybackSpeedMultiplier =
+                Mathf.Max(1f, multiplier);
         }
 
         public void TogglePlay()
@@ -439,8 +471,8 @@ namespace F1XR.RestAPI.Replay
 
         internal void SuspendTableTrackRendering()
         {
-            RestoreTableTrackRendering();
-            if (player == null)
+            if (player == null ||
+                tableTrackRendererStates.Count > 0)
                 return;
 
             Transform tableTrack = player.GetTrackPlacementTransform();
@@ -457,7 +489,7 @@ namespace F1XR.RestAPI.Replay
 
                 tableTrackRendererStates.Add(
                     new TableTrackRendererState(renderer));
-                renderer.enabled = false;
+                renderer.forceRenderingOff = true;
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
                 renderer.receiveShadows = false;
             }
@@ -509,7 +541,7 @@ namespace F1XR.RestAPI.Replay
                 yield break;
             }
 
-            timeline.Reset(definition.startTime, definition.endTime);
+            timeline.Reset(loadStart, loadEnd);
             isLoading = false;
             isActive = true;
             openRoutine = null;
@@ -525,7 +557,10 @@ namespace F1XR.RestAPI.Replay
 
             if (timeline.IsPlaying)
             {
-                timeline.Advance(Time.deltaTime, eventPlaybackSpeed);
+                timeline.Advance(
+                    Time.deltaTime,
+                    eventPlaybackSpeed *
+                    showcasePlaybackSpeedMultiplier);
                 if (timeline.StopAtEnd())
                     eventAudio?.SetPlaying(false);
             }
@@ -1174,8 +1209,18 @@ namespace F1XR.RestAPI.Replay
             renderer.receiveShadows = false;
 
             edgeMaterial = CreateMaterial(new Color(0.8f, 0.08f, 0.04f, 1f));
-            CreateEdge("LeftEdge", vertices, 0, edgeMaterial);
-            CreateEdge("RightEdge", vertices, 1, edgeMaterial);
+            leftRoadEdge =
+                CreateEdge(
+                    "LeftEdge",
+                    vertices,
+                    0,
+                    edgeMaterial);
+            rightRoadEdge =
+                CreateEdge(
+                    "RightEdge",
+                    vertices,
+                    1,
+                    edgeMaterial);
 
         }
 
@@ -1596,7 +1641,7 @@ namespace F1XR.RestAPI.Replay
             localPath[last] += direction.normalized * roadEndPadding;
         }
 
-        private void CreateEdge(
+        private LineRenderer CreateEdge(
             string name,
             Vector3[] roadVertices,
             int side,
@@ -1615,6 +1660,8 @@ namespace F1XR.RestAPI.Replay
 
             for (int i = 0; i < mappedPath.Count; i++)
                 line.SetPosition(i, roadVertices[i * 2 + side] + Vector3.up * 0.001f);
+
+            return line;
         }
 
         private void ConfigureStageInteraction(Bounds bounds)
@@ -1684,9 +1731,11 @@ namespace F1XR.RestAPI.Replay
             return null;
         }
 
-        private void DestroyStage()
+        private void DestroyStage(
+            bool restoreTableTrack = true)
         {
-            RestoreTableTrackRendering();
+            if (restoreTableTrack)
+                RestoreTableTrackRendering();
             isLoading = false;
             isActive = false;
             timeline.Pause();
@@ -1694,6 +1743,8 @@ namespace F1XR.RestAPI.Replay
             eventCars?.Clear();
             eventAudio = null;
             eventCars = null;
+            showcaseAudioFocusDriver = 0;
+            showcasePlaybackSpeedMultiplier = 1f;
 
             if (stageRoot != null)
                 Destroy(stageRoot);
@@ -1713,6 +1764,8 @@ namespace F1XR.RestAPI.Replay
             stageInteractionCollider = null;
             trackSegment = null;
             roadMesh = null;
+            leftRoadEdge = null;
+            rightRoadEdge = null;
             roadMaterial = null;
             edgeMaterial = null;
             safetyApronMesh = null;
@@ -2189,14 +2242,15 @@ namespace F1XR.RestAPI.Replay
         private readonly struct TableTrackRendererState
         {
             private readonly Renderer renderer;
-            private readonly bool enabled;
+            private readonly bool forceRenderingOff;
             private readonly ShadowCastingMode shadowCastingMode;
             private readonly bool receiveShadows;
 
             public TableTrackRendererState(Renderer renderer)
             {
                 this.renderer = renderer;
-                enabled = renderer.enabled;
+                forceRenderingOff =
+                    renderer.forceRenderingOff;
                 shadowCastingMode = renderer.shadowCastingMode;
                 receiveShadows = renderer.receiveShadows;
             }
@@ -2208,7 +2262,8 @@ namespace F1XR.RestAPI.Replay
 
                 renderer.shadowCastingMode = shadowCastingMode;
                 renderer.receiveShadows = receiveShadows;
-                renderer.enabled = enabled;
+                renderer.forceRenderingOff =
+                    forceRenderingOff;
             }
         }
 

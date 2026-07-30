@@ -143,6 +143,8 @@ namespace F1XR.RestAPI.Replay
             if (!gameObject.activeInHierarchy || audioObject == null || !audioObject.activeInHierarchy)
                 return;
 
+            SetConfiguredSourcesEnabled(true);
+
             if (settings.mode == EngineAudioMode.Procedural)
             {
                 EnsureSourcePlaying("Procedural", proceduralSource);
@@ -201,18 +203,40 @@ namespace F1XR.RestAPI.Replay
 
         private void StopAll()
         {
-            Stop(shiftSource);
-            Stop(idleSource);
-            Stop(lowOnSource);
-            Stop(lowOffSource);
-            Stop(midOnSource);
-            Stop(midOffSource);
-            Stop(highOnSource);
-            Stop(highOffSource);
-            Stop(veryHighOnSource);
-            Stop(veryHighOffSource);
-            Stop(gearboxSource);
-            Stop(proceduralSource);
+            StopAndDisable(shiftSource);
+            StopAndDisable(idleSource);
+            StopAndDisable(lowOnSource);
+            StopAndDisable(lowOffSource);
+            StopAndDisable(midOnSource);
+            StopAndDisable(midOffSource);
+            StopAndDisable(highOnSource);
+            StopAndDisable(highOffSource);
+            StopAndDisable(veryHighOnSource);
+            StopAndDisable(veryHighOffSource);
+            StopAndDisable(gearboxSource);
+            StopAndDisable(proceduralSource);
+        }
+
+        private void SetConfiguredSourcesEnabled(bool value)
+        {
+            bool procedural =
+                settings != null &&
+                settings.mode == EngineAudioMode.Procedural;
+
+            SetEnabled(shiftSource, value);
+            SetEnabled(proceduralSource, value && procedural);
+
+            bool samplesEnabled = value && !procedural;
+            SetEnabled(idleSource, samplesEnabled);
+            SetEnabled(lowOnSource, samplesEnabled);
+            SetEnabled(lowOffSource, samplesEnabled);
+            SetEnabled(midOnSource, samplesEnabled);
+            SetEnabled(midOffSource, samplesEnabled);
+            SetEnabled(highOnSource, samplesEnabled);
+            SetEnabled(highOffSource, samplesEnabled);
+            SetEnabled(veryHighOnSource, samplesEnabled);
+            SetEnabled(veryHighOffSource, samplesEnabled);
+            SetEnabled(gearboxSource, samplesEnabled);
         }
 
         private void MuteSampleLoops(float responseValue)
@@ -233,6 +257,21 @@ namespace F1XR.RestAPI.Replay
         {
             if (source != null)
                 source.Stop();
+        }
+
+        private static void StopAndDisable(AudioSource source)
+        {
+            if (source == null)
+                return;
+
+            source.Stop();
+            source.enabled = false;
+        }
+
+        private static void SetEnabled(AudioSource source, bool value)
+        {
+            if (source != null && source.enabled != value)
+                source.enabled = value;
         }
 
         private static void SetPitch(AudioSource source, float pitch, float response)

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
 namespace F1XR.RestAPI.Replay.Room
@@ -27,13 +28,18 @@ namespace F1XR.RestAPI.Replay.Room
 
         [Header("Room Stability")]
         [SerializeField, Min(0f)] private float candidateStableDuration = 0.75f;
+        [SerializeField, Min(0f)] private float reacquisitionUiDelay = 0.6f;
 
         [Header("Automatic Setup")]
         [SerializeField] private bool automaticSetupEnabled = true;
         [SerializeField, Min(0f)] private float containingRoomWaitDuration = 3f;
-        [SerializeField, Range(10f, 100f)] private float cornerTurnThreshold = 40f;
+
+        [Header("Runtime Performance")]
+        [SerializeField] private bool suspendSceneTrackingWhenReady = true;
 
         private IShowcaseWallProvider wallProvider;
+        private ARPlaneManager planeManager;
+        private ARRaycastManager raycastManager;
         private RoomShowcaseSetupState currentSetupState;
         private RoomShowcaseSetupState stateBeforeReacquisition;
         private TrackableId? previewCandidateId;
@@ -45,13 +51,16 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<TrackableId> candidateMembership = new();
         private readonly List<TrackableId> candidateMembershipScratch = new();
         private readonly List<WallCandidateInfo> automaticCandidates = new();
-        private readonly List<Vector3> eventPath = new();
-        private EventPopoutReplay observedEventReplay;
-        private int observedEventSourceRevision = -1;
         private float automaticSetupWaitUntil;
+        private float reacquisitionStartedAt = -1f;
         private bool sessionConfirmed;
         private bool initialized;
         private string lastUserMessage = string.Empty;
+        private bool sceneTrackingSuspended;
+        private bool planeManagerWasEnabled;
+        private bool raycastManagerWasEnabled;
+        private readonly List<ARPlaneMeshVisualizer>
+            suspendedPlaneVisualizers = new();
 
         public RoomShowcaseSetupState CurrentSetupState => currentSetupState;
         public bool IsSetupReady =>
@@ -89,6 +98,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDisable()
         {
             wallProvider?.ClearPreview();
+            SetSceneTrackingSuspended(false);
         }
 
         private void Update()
@@ -105,9 +115,14 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            ObserveCandidates();
-            if (HandleReacquisition())
-                return;
+            if (!sessionConfirmed ||
+                showcaseLayout == null ||
+                !showcaseLayout.WallFramesFrozen)
+            {
+                ObserveCandidates();
+                if (HandleReacquisition())
+                    return;
+            }
 
             if (currentSetupState == RoomShowcaseSetupState.WaitingForRoom)
                 TryLeaveWaitingState();
@@ -120,11 +135,6 @@ namespace F1XR.RestAPI.Replay.Room
                     "The room path is no longer valid. Review the setup.");
             }
 
-            if (currentSetupState == RoomShowcaseSetupState.Ready &&
-                IsSetupReady)
-            {
-                TryApplyOpenEventWallSelection();
-            }
         }
 
         public void PreviousCandidate()
@@ -196,6 +206,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void BackToEntry()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearExitSelection();
             wallProvider.ClearEntrySelection();
             showcaseLayout.ClearHeroCapture();
@@ -226,6 +237,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void BackToExit()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             showcaseLayout.ClearHeroCapture();
             wallProvider.ClearExitSelection();
             SetState(
@@ -248,6 +260,22 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
+            if (!TryCaptureRoomSnapshot())
+            {
+                SetUserMessage(
+                    "The confirmed room walls could not be frozen. Try setup again.");
+                return;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid || !showcasePath.IsPathValid)
+            {
+                ClearRoomSnapshot();
+                SetUserMessage(
+                    "The frozen room path is not valid. Check Entry and Exit.");
+                return;
+            }
+
             sessionConfirmed = true;
             ClearPreview();
             SetState(
@@ -258,6 +286,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void RecaptureHero()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             showcaseLayout.ClearHeroCapture();
             SetState(
                 RoomShowcaseSetupState.CaptureHero,
@@ -267,6 +296,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void ReselectEntry()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearEntrySelection();
             SetState(
                 RoomShowcaseSetupState.SelectEntry,
@@ -277,6 +307,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void ReselectExit()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearExitSelection();
             SetState(
                 RoomShowcaseSetupState.SelectExit,
@@ -288,11 +319,11 @@ namespace F1XR.RestAPI.Replay.Room
         {
             CloseEventReplay();
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             ClearPreview();
             wallProvider?.ClearEntrySelection();
             wallProvider?.ClearExitSelection();
             showcaseLayout?.ClearHeroCapture();
-            observedEventSourceRevision = -1;
 
             if (wallProvider == null ||
                 wallProvider.CandidateCount == 0 ||
@@ -319,6 +350,7 @@ namespace F1XR.RestAPI.Replay.Room
         {
             CloseEventReplay();
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             ClearPreview();
 
             if (showcaseLayout != null &&
@@ -366,7 +398,6 @@ namespace F1XR.RestAPI.Replay.Room
             candidatesStableSince = Time.unscaledTime;
             automaticSetupWaitUntil =
                 Time.unscaledTime + containingRoomWaitDuration;
-            observedEventSourceRevision = -1;
             sessionConfirmed = false;
             ClearPreview();
             SetState(
@@ -513,6 +544,20 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            if (!TryCaptureRoomSnapshot())
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid ||
+                !showcasePath.IsPathValid)
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
             sessionConfirmed = true;
             ClearPreview();
             SetState(
@@ -610,170 +655,10 @@ namespace F1XR.RestAPI.Replay.Room
             return true;
         }
 
-        private void TryApplyOpenEventWallSelection()
-        {
-            if (!automaticSetupEnabled)
-                return;
-
-            if (observedEventReplay == null)
-            {
-                observedEventReplay =
-                    Object.FindAnyObjectByType<EventPopoutReplay>(
-                        FindObjectsInactive.Include);
-            }
-
-            if (observedEventReplay == null ||
-                !observedEventReplay.IsActive ||
-                observedEventReplay.SourceGeometryRevision ==
-                observedEventSourceRevision)
-            {
-                return;
-            }
-
-            if (!observedEventReplay.TryCopyEventLocalCenterPath(
-                    eventPath,
-                    out var overtakePosition,
-                    out _) ||
-                !TryGetEventDirections(
-                    eventPath,
-                    overtakePosition,
-                    out var sourceEntryDirection,
-                    out var sourceExitDirection,
-                    out var sourceHeroDirection))
-            {
-                return;
-            }
-
-            observedEventSourceRevision =
-                observedEventReplay.SourceGeometryRevision;
-            var turnAngle = Mathf.Abs(
-                Vector3.SignedAngle(
-                    sourceEntryDirection,
-                    sourceExitDirection,
-                    Vector3.up));
-            if (turnAngle < cornerTurnThreshold)
-                return;
-
-            if (!ConfirmedEntryId.HasValue ||
-                !wallProvider.TryGetCandidateById(
-                    ConfirmedEntryId.Value,
-                    out var entry) ||
-                !TryChooseAdjacentExit(
-                    entry,
-                    sourceEntryDirection,
-                    sourceExitDirection,
-                    out var adjacentExit,
-                    out var sourceToRoomRotation))
-            {
-                return;
-            }
-
-            var previousExitId = ConfirmedExitId;
-            if (!wallProvider.TrySelectExitById(adjacentExit.Id) ||
-                !showcaseLayout.TryCaptureAutomaticHero(
-                    sourceToRoomRotation * sourceHeroDirection))
-            {
-                RestorePreviousExit(previousExitId, entry);
-                return;
-            }
-
-            showcasePath.RebuildPath();
-            if (!showcaseLayout.IsLayoutValid ||
-                !showcasePath.IsPathValid)
-            {
-                RestorePreviousExit(previousExitId, entry);
-                return;
-            }
-
-            SetUserMessage(
-                $"Corner path detected ({turnAngle:0}°). " +
-                $"Exit changed to wall {adjacentExit.UserFacingNumber}.");
-            Debug.Log(
-                $"[RoomAutoSetup] Corner={turnAngle:0.#}deg, " +
-                $"Entry={entry.UserFacingNumber}, " +
-                $"Exit={adjacentExit.UserFacingNumber}.",
-                this);
-        }
-
-        private bool TryChooseAdjacentExit(
-            WallCandidateInfo entry,
-            Vector3 sourceEntryDirection,
-            Vector3 sourceExitDirection,
-            out WallCandidateInfo exit,
-            out Quaternion sourceToRoomRotation)
-        {
-            exit = default;
-            sourceToRoomRotation = Quaternion.identity;
-            if (!wallProvider.TryGetBoundaryNeighbors(
-                    entry.Id,
-                    out var previousId,
-                    out var nextId))
-            {
-                return false;
-            }
-
-            var entryTravel = Flat(entry.InwardNormal);
-            if (entryTravel.sqrMagnitude < 0.0001f)
-                return false;
-            entryTravel.Normalize();
-
-            sourceToRoomRotation = Quaternion.AngleAxis(
-                Vector3.SignedAngle(
-                    sourceEntryDirection,
-                    entryTravel,
-                    Vector3.up),
-                Vector3.up);
-            var desiredExitTravel =
-                sourceToRoomRotation * sourceExitDirection;
-            var bestAngle = float.PositiveInfinity;
-            foreach (var candidateId in
-                     new[] { previousId, nextId })
-            {
-                if (candidateId == entry.Id ||
-                    !wallProvider.TryGetCandidateById(
-                        candidateId,
-                        out var candidate) ||
-                    !candidate.IsAvailable)
-                {
-                    continue;
-                }
-
-                var candidateTravel = Flat(-candidate.InwardNormal);
-                if (candidateTravel.sqrMagnitude < 0.0001f)
-                    continue;
-                candidateTravel.Normalize();
-                var angle = Vector3.Angle(
-                    desiredExitTravel,
-                    candidateTravel);
-                if (angle >= bestAngle)
-                    continue;
-
-                bestAngle = angle;
-                exit = candidate;
-            }
-
-            return bestAngle < float.PositiveInfinity;
-        }
-
-        private void RestorePreviousExit(
-            TrackableId? previousExitId,
-            WallCandidateInfo entry)
-        {
-            if (previousExitId.HasValue &&
-                wallProvider.TrySelectExitById(previousExitId.Value) &&
-                wallProvider.TryGetCandidateById(
-                    previousExitId.Value,
-                    out var previousExit))
-            {
-                showcaseLayout.TryCaptureAutomaticHero(
-                    ResolvePairTravel(entry, previousExit));
-                showcasePath.RebuildPath();
-            }
-        }
-
         private void ClearAutomaticSetup()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearEntrySelection();
             wallProvider.ClearExitSelection();
             showcaseLayout.ClearHeroCapture();
@@ -792,57 +677,35 @@ namespace F1XR.RestAPI.Replay.Room
             }
         }
 
-        private static bool TryGetEventDirections(
-            List<Vector3> path,
-            Vector3 overtakePosition,
-            out Vector3 entryDirection,
-            out Vector3 exitDirection,
-            out Vector3 heroDirection)
+        private bool TryCaptureRoomSnapshot()
         {
-            entryDirection = Vector3.zero;
-            exitDirection = Vector3.zero;
-            heroDirection = Vector3.zero;
-            if (path == null || path.Count < 3)
-                return false;
-
-            var endIndex = path.Count - 1;
-            var directionSpan =
-                Mathf.Clamp(path.Count / 10, 1, endIndex);
-            entryDirection = Flat(
-                path[directionSpan] - path[0]);
-            exitDirection = Flat(
-                path[endIndex] - path[endIndex - directionSpan]);
-
-            var transitionIndex = 0;
-            var closestDistance = float.PositiveInfinity;
-            for (var i = 0; i < path.Count; i++)
-            {
-                var distance =
-                    (path[i] - overtakePosition).sqrMagnitude;
-                if (distance >= closestDistance)
-                    continue;
-                closestDistance = distance;
-                transitionIndex = i;
-            }
-
-            var heroSpan =
-                Mathf.Clamp(path.Count / 20, 1, endIndex);
-            var heroStart =
-                Mathf.Max(0, transitionIndex - heroSpan);
-            var heroEnd =
-                Mathf.Min(endIndex, transitionIndex + heroSpan);
-            heroDirection = Flat(path[heroEnd] - path[heroStart]);
-            if (entryDirection.sqrMagnitude < 0.0001f ||
-                exitDirection.sqrMagnitude < 0.0001f ||
-                heroDirection.sqrMagnitude < 0.0001f)
+            ClearRoomSnapshot();
+            if (!ConfirmedEntryId.HasValue ||
+                !ConfirmedExitId.HasValue ||
+                !wallProvider.TryGetCandidateFrameById(
+                    ConfirmedEntryId.Value,
+                    out var entryFrame) ||
+                !wallProvider.TryGetCandidateFrameById(
+                    ConfirmedExitId.Value,
+                    out var exitFrame))
             {
                 return false;
             }
 
-            entryDirection.Normalize();
-            exitDirection.Normalize();
-            heroDirection.Normalize();
+            if (!showcaseLayout.TrySetFrozenWallFrames(
+                    entryFrame,
+                    exitFrame))
+            {
+                ClearRoomSnapshot();
+                return false;
+            }
+
             return true;
+        }
+
+        private void ClearRoomSnapshot()
+        {
+            showcaseLayout?.ClearFrozenWallFrames();
         }
 
         private static Vector3 ResolvePairTravel(
@@ -892,6 +755,15 @@ namespace F1XR.RestAPI.Replay.Room
 
             if (reacquiring)
             {
+                if (reacquisitionStartedAt < 0f)
+                    reacquisitionStartedAt = Time.unscaledTime;
+
+                if (Time.unscaledTime - reacquisitionStartedAt <
+                    reacquisitionUiDelay)
+                {
+                    return true;
+                }
+
                 if (currentSetupState !=
                     RoomShowcaseSetupState.TemporarilyReacquiring)
                 {
@@ -904,6 +776,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return true;
             }
 
+            reacquisitionStartedAt = -1f;
             if (currentSetupState !=
                 RoomShowcaseSetupState.TemporarilyReacquiring)
             {
@@ -1188,8 +1061,87 @@ namespace F1XR.RestAPI.Replay.Room
 
             currentSetupState = state;
             lastUserMessage = message;
+            SetSceneTrackingSuspended(
+                suspendSceneTrackingWhenReady &&
+                state == RoomShowcaseSetupState.Ready &&
+                sessionConfirmed &&
+                showcaseLayout != null &&
+                showcaseLayout.WallFramesFrozen);
             ApplyDebugVisibility();
             RefreshView();
+        }
+
+        private void SetSceneTrackingSuspended(bool suspended)
+        {
+            if (sceneTrackingSuspended == suspended)
+                return;
+
+            if (suspended)
+            {
+                ResolveSceneManagers();
+                suspendedPlaneVisualizers.Clear();
+                ARPlaneMeshVisualizer[] visualizers =
+                    FindObjectsByType<ARPlaneMeshVisualizer>(
+                        FindObjectsInactive.Include);
+                for (int i = 0; i < visualizers.Length; i++)
+                {
+                    ARPlaneMeshVisualizer visualizer = visualizers[i];
+                    if (visualizer == null || !visualizer.enabled)
+                        continue;
+
+                    suspendedPlaneVisualizers.Add(visualizer);
+                    visualizer.enabled = false;
+                }
+
+                planeManagerWasEnabled =
+                    planeManager != null && planeManager.enabled;
+                raycastManagerWasEnabled =
+                    raycastManager != null && raycastManager.enabled;
+                if (planeManagerWasEnabled)
+                    planeManager.enabled = false;
+                if (raycastManagerWasEnabled)
+                    raycastManager.enabled = false;
+
+                sceneTrackingSuspended = true;
+                return;
+            }
+
+            if (planeManager != null && planeManagerWasEnabled)
+                planeManager.enabled = true;
+            if (raycastManager != null && raycastManagerWasEnabled)
+                raycastManager.enabled = true;
+
+            for (int i = 0;
+                 i < suspendedPlaneVisualizers.Count;
+                 i++)
+            {
+                ARPlaneMeshVisualizer visualizer =
+                    suspendedPlaneVisualizers[i];
+                if (visualizer != null)
+                    visualizer.enabled = true;
+            }
+
+            suspendedPlaneVisualizers.Clear();
+            planeManagerWasEnabled = false;
+            raycastManagerWasEnabled = false;
+            sceneTrackingSuspended = false;
+        }
+
+        private void ResolveSceneManagers()
+        {
+            if (planeManager == null)
+            {
+                planeManager =
+                    FindAnyObjectByType<ARPlaneManager>(
+                        FindObjectsInactive.Include);
+            }
+
+            if (raycastManager == null)
+            {
+                raycastManager =
+                    FindAnyObjectByType<ARRaycastManager>(
+                        FindObjectsInactive.Include);
+            }
         }
 
         private void SetUserMessage(string message)
@@ -1240,5 +1192,6 @@ namespace F1XR.RestAPI.Replay.Room
             var result = value % count;
             return result < 0 ? result + count : result;
         }
+
     }
 }
