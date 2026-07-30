@@ -736,6 +736,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.HandInputModeSwitcher
   showInputVisualMeshes: 1
+  controllerOnly: 0
   handVisualizerRoot: {fileID: 7423414552379797408}
   leftHandRoot: {fileID: 4256438188014756007}
   leftHandRay: {fileID: 6427898023038653582}
@@ -2204,7 +2205,7 @@ PrefabInstance:
     - target: {fileID: 3053154067257784704, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 10306, guid: 0000000000000000f000000000000000, type: 0}
     - target: {fileID: 3755238779732181253, guid: 3df3e1220f2164f448701a6de8084f92, type: 3}
       propertyPath: m_SnapToSnapVolumeIfAvailable
       value: 0

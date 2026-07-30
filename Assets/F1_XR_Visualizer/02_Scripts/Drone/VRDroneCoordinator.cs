@@ -15,7 +15,7 @@ namespace F1XR.Drone
     [DisallowMultipleComponent]
     public sealed class VRDroneCoordinator : MonoBehaviour
     {
-        const string SessionSceneName = "SessionSpace 1";
+        const string SessionSceneName = "SessionSpace";
         const string VrSceneName = "VRDroneSpace";
         const string EnvironmentName = "VRDroneEnvironment";
 
