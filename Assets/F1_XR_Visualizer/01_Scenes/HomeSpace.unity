@@ -315,19 +315,6 @@ Texture2D:
     offset: 0
     size: 0
     path: 
---- !u!134 &139704346
-PhysicsMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: ' (Instance)'
-  serializedVersion: 2
-  m_DynamicFriction: 0.6
-  m_StaticFriction: 0.6
-  m_Bounciness: 0
-  m_FrictionCombine: 0
-  m_BounceCombine: 0
 --- !u!1 &144980165 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2379162011098851042, guid: a5811b14c178237409fd78d43bc1dabf, type: 3}
@@ -1158,6 +1145,19 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4456029767688208039, guid: a5811b14c178237409fd78d43bc1dabf, type: 3}
   m_PrefabInstance: {fileID: 1582476765}
   m_PrefabAsset: {fileID: 0}
+--- !u!134 &572397714
+PhysicsMaterial:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: ' (Instance) (Instance)'
+  serializedVersion: 2
+  m_DynamicFriction: 0.6
+  m_StaticFriction: 0.6
+  m_Bounciness: 0
+  m_FrictionCombine: 0
+  m_BounceCombine: 0
 --- !u!21 &573713000
 Material:
   serializedVersion: 8
@@ -1306,7 +1306,7 @@ PrefabInstance:
     - target: {fileID: -7726355871538274465, guid: 06f7ca9482c3f50428badfc7a03d8843, type: 3}
       propertyPath: m_Material
       value: 
-      objectReference: {fileID: 139704346}
+      objectReference: {fileID: 572397714}
     - target: {fileID: 918273645912837467, guid: 06f7ca9482c3f50428badfc7a03d8843, type: 3}
       propertyPath: glowRing
       value: 
