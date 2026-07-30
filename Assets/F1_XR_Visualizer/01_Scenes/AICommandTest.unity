@@ -1631,6 +1631,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 1512278900930449566, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: uiFont
+      value: 
+      objectReference: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+    - target: {fileID: 1512278900930449566, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: roundedSprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 6d2f9ed8b9384f44b9d9b83ed59d2a31, type: 3}
+    - target: {fileID: 1512278900930449566, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: defaultQuestion
+      value: Default Question
+      objectReference: {fileID: 0}
     - target: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       propertyPath: m_Name
       value: AIBridge

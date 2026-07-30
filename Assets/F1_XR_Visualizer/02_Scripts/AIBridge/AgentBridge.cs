@@ -43,7 +43,10 @@ namespace F1XR.AIBridge
                     // TODO: 답변 자막 UI
                     break;
                 case "tts_audio":
-                    ttsPlayer?.Play((string)o["data"]);
+                    ttsPlayer?.Play((string)o["data"]);          // 답변: 최신 우선(이전 끊음)
+                    break;
+                case "tts_announce":
+                    ttsPlayer?.Play((string)o["data"], false);   // 능동 안내: 재생 중이면 건너뜀
                     break;
                 case "command":
                     dispatcher?.Dispatch(json);

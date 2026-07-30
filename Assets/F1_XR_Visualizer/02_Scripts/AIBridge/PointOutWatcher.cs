@@ -77,14 +77,15 @@ namespace F1XR.AIBridge
                 Moment m = _moments[_next];
                 _next++;
                 if (m.t < now - 1f) continue;              // 너무 늦게 지난 건 스킵
-                if (now - _lastFireT < cooldownSec) continue; // 쿨다운
-                Fire(m, now);
+                // 쿨다운은 '실시간' 기준(Time.unscaledTime). 배속 재생해도 귀에 자주 안 들리게.
+                if (Time.unscaledTime - _lastFireT < cooldownSec) continue;
+                Fire(m);
             }
         }
 
-        void Fire(Moment m, float now)
+        void Fire(Moment m)
         {
-            _lastFireT = now;
+            _lastFireT = Time.unscaledTime;
             Debug.Log($"[PointOut] {m.message} (t={m.t:0.0}s, driver={m.driver})");
             if (m.driver > 0) Highlight?.Handle(m.driver);   // 그 선수 강조
             Bridge?.SendSpeak(m.message);                     // 음성 안내(TTS 전용, 빠름)
