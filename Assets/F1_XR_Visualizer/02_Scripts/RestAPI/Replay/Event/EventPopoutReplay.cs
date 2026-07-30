@@ -664,6 +664,12 @@ namespace F1XR.RestAPI.Replay
                 transitionTime);
             eventCars.SetReplayEvents(
                 new[] { motionEvent });
+            eventCars.SetOvertakeApproachRibbon(
+                motionEvent,
+                player.overtakeApproachRibbon);
+            eventCars.SetOvertakeSideBySideVfx(
+                motionEvent,
+                player.overtakeSideBySideVfx);
             sourceGeometryRevision++;
 
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);

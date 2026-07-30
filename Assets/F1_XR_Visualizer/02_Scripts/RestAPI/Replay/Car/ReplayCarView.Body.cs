@@ -98,7 +98,9 @@ namespace F1XR.RestAPI.Replay
                 drivingPresentation != null &&
                     drivingPresentation.OwnsRenderer(renderer) ||
                 IsSelectionEffectRenderer(renderer) ||
-                IsLeaderEffectRenderer(renderer);
+                IsLeaderEffectRenderer(renderer) ||
+                IsOvertakeRibbonRenderer(renderer) ||
+                IsOvertakeSideBySideVfxRenderer(renderer);
         }
 
         private bool TryGetCarBounds(out Bounds bounds)

@@ -610,7 +610,38 @@ namespace F1XR.RestAPI.Replay.Room
             for (int i = 0; i < sources.Length; i++)
             {
                 Renderer source = sources[i];
-                if (source is MeshRenderer meshRenderer)
+                if (source is ParticleSystemRenderer sourceParticlesRenderer)
+                {
+                    ParticleSystem sourceParticles =
+                        sourceParticlesRenderer
+                            .GetComponent<ParticleSystem>();
+                    if (sourceParticles == null)
+                        continue;
+
+                    GameObject proxy =
+                        CreateRendererProxyObject(source);
+                    ParticleSystem proxyParticles =
+                        proxy.AddComponent<ParticleSystem>();
+                    ParticleSystemRenderer proxyParticlesRenderer =
+                        proxy.GetComponent<ParticleSystemRenderer>();
+                    CopyRendererSettings(
+                        sourceParticlesRenderer,
+                        proxyParticlesRenderer);
+                    CopyParticleSystemSettings(
+                        sourceParticles,
+                        sourceParticlesRenderer,
+                        proxyParticles,
+                        proxyParticlesRenderer);
+                    roomCarRenderers.Add(
+                        new RendererBinding(
+                            sourceParticlesRenderer,
+                            proxyParticlesRenderer,
+                            vehicleRoot,
+                            sourceParticles,
+                            proxyParticles));
+                    created++;
+                }
+                else if (source is MeshRenderer meshRenderer)
                 {
                     TextMesh sourceText =
                         source.GetComponent<TextMesh>();
@@ -660,6 +691,28 @@ namespace F1XR.RestAPI.Replay.Room
                         new RendererBinding(
                             source,
                             proxyRenderer,
+                            vehicleRoot));
+                    created++;
+                }
+                else if (source is TrailRenderer sourceTrail)
+                {
+                    GameObject proxy =
+                        CreateRendererProxyObject(source);
+                    TrailRenderer proxyTrail =
+                        proxy.AddComponent<TrailRenderer>();
+                    CopyRendererSettings(
+                        sourceTrail,
+                        proxyTrail);
+                    CopyTrailRendererSettings(
+                        sourceTrail,
+                        proxyTrail);
+                    SyncTrailRenderer(
+                        sourceTrail,
+                        proxyTrail);
+                    roomCarRenderers.Add(
+                        new RendererBinding(
+                            sourceTrail,
+                            proxyTrail,
                             vehicleRoot));
                     created++;
                 }
@@ -1737,6 +1790,13 @@ namespace F1XR.RestAPI.Replay.Room
                 SyncLineRenderer(
                     binding.SourceLine,
                     binding.ProxyLine);
+                SyncTrailRenderer(
+                    binding.SourceTrail,
+                    binding.ProxyTrail);
+                SyncParticleSystem(
+                    binding.SourceParticles,
+                    binding.ProxyParticles,
+                    binding.ParticleBuffer);
                 bool visible =
                     binding.Source != null &&
                     binding.Proxy != null &&
@@ -1808,6 +1868,119 @@ namespace F1XR.RestAPI.Replay.Room
             destination.textureMode = source.textureMode;
             destination.generateLightingData =
                 source.generateLightingData;
+        }
+
+        private static void SyncTrailRenderer(
+            TrailRenderer source,
+            TrailRenderer destination)
+        {
+            if (source == null ||
+                destination == null)
+            {
+                return;
+            }
+
+            destination.Clear();
+            destination.widthMultiplier =
+                source.widthMultiplier;
+            destination.time = source.time;
+            destination.emitting = false;
+
+            for (int i = 0; i < source.positionCount; i++)
+                destination.AddPosition(source.GetPosition(i));
+        }
+
+        private static void CopyTrailRendererSettings(
+            TrailRenderer source,
+            TrailRenderer destination)
+        {
+            destination.autodestruct = false;
+            destination.emitting = false;
+            destination.time = source.time;
+            destination.minVertexDistance =
+                source.minVertexDistance;
+            destination.widthMultiplier =
+                source.widthMultiplier;
+            destination.widthCurve = source.widthCurve;
+            destination.colorGradient =
+                source.colorGradient;
+            destination.numCornerVertices =
+                source.numCornerVertices;
+            destination.numCapVertices =
+                source.numCapVertices;
+            destination.alignment = source.alignment;
+            destination.textureMode =
+                source.textureMode;
+            destination.generateLightingData =
+                source.generateLightingData;
+        }
+
+        private static void SyncParticleSystem(
+            ParticleSystem source,
+            ParticleSystem destination,
+            ParticleSystem.Particle[] buffer)
+        {
+            if (source == null ||
+                destination == null ||
+                buffer == null)
+            {
+                return;
+            }
+
+            int count = source.GetParticles(buffer);
+            if (count > 0)
+                destination.SetParticles(buffer, count);
+            else
+                destination.Clear(false);
+        }
+
+        private static void CopyParticleSystemSettings(
+            ParticleSystem source,
+            ParticleSystemRenderer sourceRenderer,
+            ParticleSystem destination,
+            ParticleSystemRenderer destinationRenderer)
+        {
+            ParticleSystem.MainModule sourceMain =
+                source.main;
+            ParticleSystem.MainModule destinationMain =
+                destination.main;
+            destinationMain.loop = false;
+            destinationMain.playOnAwake = false;
+            destinationMain.simulationSpace =
+                sourceMain.simulationSpace;
+            destinationMain.simulationSpeed = 0f;
+            destinationMain.maxParticles =
+                sourceMain.maxParticles;
+            destinationMain.stopAction =
+                ParticleSystemStopAction.None;
+
+            ParticleSystem.EmissionModule emission =
+                destination.emission;
+            emission.enabled = false;
+            ParticleSystem.ShapeModule shape =
+                destination.shape;
+            shape.enabled = false;
+            ParticleSystem.CollisionModule collision =
+                destination.collision;
+            collision.enabled = false;
+            ParticleSystem.TrailModule trails =
+                destination.trails;
+            trails.enabled = false;
+            ParticleSystem.LightsModule lights =
+                destination.lights;
+            lights.enabled = false;
+
+            destinationRenderer.renderMode =
+                sourceRenderer.renderMode;
+            destinationRenderer.velocityScale =
+                sourceRenderer.velocityScale;
+            destinationRenderer.lengthScale =
+                sourceRenderer.lengthScale;
+            destinationRenderer.cameraVelocityScale =
+                sourceRenderer.cameraVelocityScale;
+            destinationRenderer.sortingFudge =
+                sourceRenderer.sortingFudge;
+            destination.Play(false);
         }
 
         private static void SyncTextMesh(
@@ -1925,6 +2098,11 @@ namespace F1XR.RestAPI.Replay.Room
             public readonly TextMesh ProxyText;
             public readonly LineRenderer SourceLine;
             public readonly LineRenderer ProxyLine;
+            public readonly TrailRenderer SourceTrail;
+            public readonly TrailRenderer ProxyTrail;
+            public readonly ParticleSystem SourceParticles;
+            public readonly ParticleSystem ProxyParticles;
+            public readonly ParticleSystem.Particle[] ParticleBuffer;
 
             public RendererBinding(
                 Renderer source,
@@ -1937,7 +2115,51 @@ namespace F1XR.RestAPI.Replay.Room
                     null,
                     null,
                     null,
+                    null,
+                    null,
+                    null,
+                    null,
                     null)
+            {
+            }
+
+            public RendererBinding(
+                TrailRenderer source,
+                TrailRenderer proxy,
+                Transform vehicleRoot)
+                : this(
+                    source,
+                    proxy,
+                    vehicleRoot,
+                    null,
+                    null,
+                    null,
+                    null,
+                    source,
+                    proxy,
+                    null,
+                    null)
+            {
+            }
+
+            public RendererBinding(
+                ParticleSystemRenderer source,
+                ParticleSystemRenderer proxy,
+                Transform vehicleRoot,
+                ParticleSystem sourceParticles,
+                ParticleSystem proxyParticles)
+                : this(
+                    source,
+                    proxy,
+                    vehicleRoot,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    sourceParticles,
+                    proxyParticles)
             {
             }
 
@@ -1954,6 +2176,10 @@ namespace F1XR.RestAPI.Replay.Room
                     sourceText,
                     proxyText,
                     null,
+                    null,
+                    null,
+                    null,
+                    null,
                     null)
             {
             }
@@ -1965,7 +2191,11 @@ namespace F1XR.RestAPI.Replay.Room
                 TextMesh sourceText,
                 TextMesh proxyText,
                 LineRenderer sourceLine,
-                LineRenderer proxyLine)
+                LineRenderer proxyLine,
+                TrailRenderer sourceTrail = null,
+                TrailRenderer proxyTrail = null,
+                ParticleSystem sourceParticles = null,
+                ParticleSystem proxyParticles = null)
             {
                 Source = source;
                 Proxy = proxy;
@@ -1974,6 +2204,18 @@ namespace F1XR.RestAPI.Replay.Room
                 ProxyText = proxyText;
                 SourceLine = sourceLine;
                 ProxyLine = proxyLine;
+                SourceTrail = sourceTrail;
+                ProxyTrail = proxyTrail;
+                SourceParticles = sourceParticles;
+                ProxyParticles = proxyParticles;
+                ParticleBuffer =
+                    sourceParticles != null
+                        ? new ParticleSystem.Particle[
+                            Mathf.Max(
+                                1,
+                                sourceParticles.main
+                                    .maxParticles)]
+                        : null;
             }
         }
     }
