@@ -551,6 +551,7 @@ GameObject:
   - component: {fileID: 6330110639462832939}
   - component: {fileID: 3537247095881267611}
   - component: {fileID: 548895129337450989}
+  - component: {fileID: 903512340123456790}
   m_Layer: 0
   m_Name: Leaderboard Panel2
   m_TagString: Untagged
@@ -567,7 +568,7 @@ Transform:
   m_GameObject: {fileID: 6207666677043022096}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.73, y: -0.006, z: 0.009}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 0.002, y: 0.002, z: 0.002}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -601,6 +602,20 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 112
   m_CollisionDetection: 0
+--- !u!114 &903512340123456790
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6207666677043022096}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a6d6f82e0b4c4a96883cfa84495012a1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.UI.WorldPanel.PanelInitialHeadsetPlacement
+  viewOffset: {x: 0.8, y: -0.05, z: 1.2}
+  requireTrackedHead: 1
 --- !u!114 &247938919322969705
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -746,7 +761,7 @@ MonoBehaviour:
   grab: {fileID: 0}
   target: {fileID: 0}
   user: {fileID: 0}
-  faceOnlyWhileGrabbed: 0
+  faceOnlyWhileGrabbed: 1
   lockUpright: 1
   rotationLerpSpeed: 18
 --- !u!114 &1722074521725254428

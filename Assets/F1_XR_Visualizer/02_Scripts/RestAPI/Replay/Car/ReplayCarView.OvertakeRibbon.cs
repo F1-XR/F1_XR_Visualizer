@@ -26,7 +26,8 @@ namespace F1XR.RestAPI.Replay
             float replayTime,
             float trailTimeMultiplier = 1f,
             float glowWidthMultiplier = 1f,
-            float coreWidthMultiplier = 1f)
+            float coreWidthMultiplier = 1f,
+            bool allowEmission = true)
         {
             if (settings == null || !settings.enabled)
             {
@@ -87,13 +88,19 @@ namespace F1XR.RestAPI.Replay
             glowColor.g *= brightnessBoost;
             glowColor.b *= brightnessBoost;
             glowColor.a = Mathf.Clamp01(
-                glowColor.a * brightnessBoost);
+                glowColor.a *
+                (allowEmission
+                    ? brightnessBoost
+                    : Mathf.Clamp01(intensity)));
             Color coreColor = settings.coreColor;
             coreColor.r *= brightnessBoost;
             coreColor.g *= brightnessBoost;
             coreColor.b *= brightnessBoost;
             coreColor.a = Mathf.Clamp01(
-                coreColor.a * brightnessBoost);
+                coreColor.a *
+                (allowEmission
+                    ? brightnessBoost
+                    : Mathf.Clamp01(intensity)));
             SetMaterialColor(
                 overtakeRibbonGlowMaterial,
                 glowColor);
@@ -101,7 +108,9 @@ namespace F1XR.RestAPI.Replay
                 overtakeRibbonCoreMaterial,
                 coreColor);
 
-            bool emitting = intensity > 0.001f;
+            bool emitting =
+                allowEmission &&
+                intensity > 0.001f;
             overtakeRibbonGlow.emitting = emitting;
             overtakeRibbonCore.emitting = emitting;
             overtakeRibbonGlow.time = trailSeconds;

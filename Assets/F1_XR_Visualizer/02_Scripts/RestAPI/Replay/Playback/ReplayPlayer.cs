@@ -57,6 +57,8 @@ namespace F1XR.RestAPI.Replay
             new();
         public OvertakeSideBySideVfxSettings overtakeSideBySideVfx =
             new();
+        public OvertakeCompletionVfxSettings overtakeCompletionVfx =
+            new();
         
         public float positionScale = 0.01f;
 
