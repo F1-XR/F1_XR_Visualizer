@@ -36,6 +36,8 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Range(1f, 2f)] private float entryContinuationMultiplier = 1.5f;
         [SerializeField, Min(0f)] private float heroForwardOffset = 0.25f;
         [SerializeField] private float roadFloorOffset = 0.02f;
+        [SerializeField, Min(1f)] private float showcaseVehicleScale = 1.7f;
+        [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 2.5f;
         [SerializeField] private bool immersiveScaleEnabled;
 
         [Header("Control")]
@@ -187,6 +189,10 @@ namespace F1XR.RestAPI.Replay.Room
                 1f,
                 2f);
             heroForwardOffset = Mathf.Max(0f, heroForwardOffset);
+            showcasePlaybackSpeedMultiplier =
+                Mathf.Max(
+                    1f,
+                    showcasePlaybackSpeedMultiplier);
 
             if (sourceProgressEnd <= sourceProgressStart)
             {
@@ -221,14 +227,27 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            if (eventReplay == null || !eventReplay.IsActive)
+            if (eventReplay == null)
             {
                 ReleaseBinding();
                 SetInactive(
                     "WaitingForEvent",
-                    eventReplay == null
-                        ? "Replay event controller is unavailable."
-                        : "");
+                    "Replay event controller is unavailable.");
+                return;
+            }
+
+            if (eventReplay.IsLoading)
+            {
+                ReleaseBinding(false, false);
+                eventReplay.SuspendTableTrackRendering();
+                SetInactive("LoadingEvent", "");
+                return;
+            }
+
+            if (!eventReplay.IsActive)
+            {
+                ReleaseBinding();
+                SetInactive("WaitingForEvent", "");
                 return;
             }
 
@@ -409,6 +428,12 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             CaptureVehicleScale(first, second);
+            eventReplay.SetShowcaseDrivingPresentation(
+                first.DriverNumber,
+                second.DriverNumber,
+                true);
+            eventReplay.SetShowcasePlaybackSpeedMultiplier(
+                showcasePlaybackSpeedMultiplier);
             portalPresentation.ImmersiveScaleEnabled =
                 immersiveScaleEnabled;
             if (!portalPresentation.Configure(
@@ -418,6 +443,11 @@ namespace F1XR.RestAPI.Replay.Room
                     second.VehicleRoot,
                     out string portalFailure))
             {
+                eventReplay.SetShowcaseDrivingPresentation(
+                    first.DriverNumber,
+                    second.DriverNumber,
+                    false);
+                eventReplay.SetShowcasePlaybackSpeedMultiplier(1f);
                 SetInactive(
                     "PortalInvalid",
                     portalFailure);
@@ -430,6 +460,8 @@ namespace F1XR.RestAPI.Replay.Room
             boundStage = stage;
             firstBinding = first;
             secondBinding = second;
+            eventReplay.SetShowcaseAudioFocus(
+                first.DriverNumber);
             boundSourceRevision = eventReplay.SourceGeometryRevision;
             stageRevealPending = true;
             stageRevealStartTime = eventReplay.CurrentTime;
@@ -1022,9 +1054,33 @@ namespace F1XR.RestAPI.Replay.Room
             float scale =
                 immersiveScaleEnabled &&
                 portalPresentation != null
-                    ? portalPresentation.EvaluateImmersiveScale(
-                        presentationAnchor)
-                    : 1f;
+                    ? Mathf.Max(
+                        Mathf.Max(1f, showcaseVehicleScale),
+                        portalPresentation.EvaluateImmersiveScale(
+                            presentationAnchor))
+                    : Mathf.Max(
+                        1f,
+                        showcaseVehicleScale);
+            float firstParentScale = MaxAxis(
+                first.VehicleRoot.lossyScale);
+            float secondParentScale = MaxAxis(
+                second.VehicleRoot.lossyScale);
+            float minimumLateral =
+                Mathf.Max(
+                    firstCar.GetVisualWidth() *
+                        firstParentScale,
+                    secondCar.GetVisualWidth() *
+                        secondParentScale) *
+                scale *
+                1.08f;
+            float overlapLength =
+                Mathf.Max(
+                    firstCar.GetVisualLength() *
+                        firstParentScale,
+                    secondCar.GetVisualLength() *
+                        secondParentScale) *
+                scale *
+                0.82f;
 
             firstCar.ApplyRoomPresentation(
                 presentationAnchor,
@@ -1032,12 +1088,63 @@ namespace F1XR.RestAPI.Replay.Room
             secondCar.ApplyRoomPresentation(
                 presentationAnchor,
                 scale);
+            ApplyVehicleClearance(
+                first,
+                second,
+                minimumLateral,
+                overlapLength);
             appliedPresentationScale = scale;
             vehicleLengthAfter =
                 vehicleLengthBefore *
                 appliedPresentationScale;
             appliedRoomVehicleLength =
                 vehicleLengthAfter;
+        }
+
+        private static void ApplyVehicleClearance(
+            VehicleBinding first,
+            VehicleBinding second,
+            float minimumLateral,
+            float overlapLength)
+        {
+            Vector3 averageForward = Flat(
+                first.VehicleRoot.forward +
+                second.VehicleRoot.forward);
+            if (averageForward.sqrMagnitude <= 0.000001f)
+                averageForward = Flat(first.VehicleRoot.forward);
+            if (averageForward.sqrMagnitude <= 0.000001f)
+                return;
+
+            averageForward.Normalize();
+            Vector3 side = Vector3.Cross(
+                Vector3.up,
+                averageForward).normalized;
+            Vector3 separation =
+                first.VisualMotionRoot.position -
+                second.VisualMotionRoot.position;
+            float longitudinal =
+                Mathf.Abs(Vector3.Dot(
+                    separation,
+                    averageForward));
+            float lateral = Vector3.Dot(separation, side);
+
+            if (longitudinal >= overlapLength ||
+                Mathf.Abs(lateral) >= minimumLateral)
+            {
+                return;
+            }
+
+            float direction = Mathf.Abs(lateral) > 0.001f
+                ? Mathf.Sign(lateral)
+                : first.DriverNumber <= second.DriverNumber
+                    ? 1f
+                    : -1f;
+            float correction =
+                (minimumLateral - Mathf.Abs(lateral)) *
+                0.5f;
+            Vector3 offset = side * direction * correction;
+            first.VisualMotionRoot.position += offset;
+            second.VisualMotionRoot.position -= offset;
         }
 
         private static ReplayCarView ResolveCar(
@@ -1148,13 +1255,26 @@ namespace F1XR.RestAPI.Replay.Room
             overtakeTransitionDetected = false;
         }
 
-        private void ReleaseBinding(bool restoreStage = false)
+        private void ReleaseBinding(
+            bool restoreStage = false,
+            bool restoreTableTrack = true)
         {
             Transform stageToRestore = boundStage;
             portalPresentation?.Clear();
             RestoreVehiclePresentation(firstBinding);
             RestoreVehiclePresentation(secondBinding);
-            eventReplay?.RestoreTableTrackRendering();
+            eventReplay?.SetShowcaseDrivingPresentation(
+                firstBinding != null
+                    ? firstBinding.DriverNumber
+                    : 0,
+                secondBinding != null
+                    ? secondBinding.DriverNumber
+                    : 0,
+                false);
+            eventReplay?.SetShowcasePlaybackSpeedMultiplier(1f);
+            eventReplay?.SetShowcaseAudioFocus(0);
+            if (restoreTableTrack)
+                eventReplay?.RestoreTableTrackRendering();
 
             boundStage = null;
             firstBinding = null;
