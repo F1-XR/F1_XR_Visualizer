@@ -84,6 +84,7 @@ namespace F1XR.RestAPI.Replay
             if (settings == null || !settings.useEngineSound)
             {
                 StopAll();
+                enabled = false;
                 return;
             }
 
@@ -141,8 +142,12 @@ namespace F1XR.RestAPI.Replay
         {
             playing = value;
 
-            if (playing)
+            enabled = playing && audible;
+
+            if (enabled)
                 EnsureConfiguredSourcesPlaying();
+            else
+                StopAll();
         }
 
         private void OnEnable()
@@ -153,14 +158,28 @@ namespace F1XR.RestAPI.Replay
 
         public void SetAudible(bool value)
         {
-            audible = value;
-            audibility = value ? 1f : 0f;
+            SetAudibility(value ? 1f : 0f);
         }
 
         public void SetAudibility(float value)
         {
-            audibility = Mathf.Clamp01(value);
-            audible = audibility > 0f;
+            float nextAudibility = Mathf.Clamp01(value);
+            bool nextAudible = nextAudibility > 0f;
+            bool nextEnabled = playing && nextAudible;
+
+            if (Mathf.Approximately(audibility, nextAudibility) &&
+                audible == nextAudible &&
+                enabled == nextEnabled)
+                return;
+
+            audibility = nextAudibility;
+            audible = nextAudible;
+            enabled = nextEnabled;
+
+            if (enabled)
+                EnsureConfiguredSourcesPlaying();
+            else
+                StopAll();
         }
 
         private void Update()

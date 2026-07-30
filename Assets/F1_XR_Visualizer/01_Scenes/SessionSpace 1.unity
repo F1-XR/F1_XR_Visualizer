@@ -5792,8 +5792,8 @@ MonoBehaviour:
   planeManager: {fileID: 2086967208}
   orientationCamera: {fileID: 1918400212}
   allowVerticalFallback: 1
-  minimumWidth: 0.75
-  minimumFallbackWidth: 1.2
+  minimumWidth: 1.3
+  minimumFallbackWidth: 1.3
   minimumHeight: 1.2
   entryCandidateIndex: -1
   exitCandidateIndex: -1
@@ -5906,6 +5906,8 @@ MonoBehaviour:
   showcasePath: {fileID: 2086967220}
   setupView: {fileID: 2086967223}
   candidateStableDuration: 0.75
+  reacquisitionUiDelay: 0.6
+  automaticCornerWallSelectionEnabled: 0
 --- !u!114 &2086967223
 MonoBehaviour:
   m_ObjectHideFlags: 0
