@@ -326,17 +326,14 @@ namespace F1XR.RestAPI.Replay.Room
             showcaseLayout?.ClearHeroCapture();
 
             if (wallProvider == null ||
-                wallProvider.CandidateCount == 0 ||
-                automaticSetupEnabled)
+                wallProvider.CandidateCount == 0)
             {
                 candidatesStableSince = Time.unscaledTime;
                 automaticSetupWaitUntil =
                     Time.unscaledTime + containingRoomWaitDuration;
                 SetState(
                     RoomShowcaseSetupState.WaitingForRoom,
-                    automaticSetupEnabled
-                        ? "Loading the current room walls."
-                        : "Loading room wall candidates.");
+                    "Loading room wall candidates.");
                 return;
             }
 

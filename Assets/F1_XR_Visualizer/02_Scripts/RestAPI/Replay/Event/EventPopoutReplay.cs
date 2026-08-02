@@ -94,6 +94,9 @@ namespace F1XR.RestAPI.Replay
         public bool IsActive => isActive;
         public bool IsPlaying => isActive && timeline.IsPlaying;
         public float CurrentTime => isActive ? timeline.CurrentTime : 0f;
+        public bool OvertakeCompletionConfirmed =>
+            isActive &&
+            completionDetector.HasTriggered;
         public float StartTime => isActive ? timeline.StartTime : 0f;
         public float EndTime => isActive ? timeline.RaceEndTime : 0f;
         public float NormalizedTime => isActive

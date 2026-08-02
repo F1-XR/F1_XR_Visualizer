@@ -40,6 +40,11 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 2.5f;
         [SerializeField] private bool immersiveScaleEnabled;
 
+        [Header("Overtake Exit Portal VFX")]
+        [SerializeField]
+        private OvertakePortalTransitionVfxSettings
+            overtakePortalTransitionVfx = new();
+
         [Header("Control")]
         [SerializeField] private bool mappingEnabled = true;
 
@@ -193,6 +198,9 @@ namespace F1XR.RestAPI.Replay.Room
                 Mathf.Max(
                     1f,
                     showcasePlaybackSpeedMultiplier);
+            overtakePortalTransitionVfx ??=
+                new OvertakePortalTransitionVfxSettings();
+            overtakePortalTransitionVfx.ClampValues();
 
             if (sourceProgressEnd <= sourceProgressStart)
             {
@@ -327,6 +335,12 @@ namespace F1XR.RestAPI.Replay.Room
                 secondBinding);
             RevealStageAfterReplayMotion();
             UpdateOrderDiagnostics();
+            portalPresentation
+                .UpdateOvertakePortalTransition(
+                    eventReplay.CurrentTime,
+                    eventReplay.IsPlaying,
+                    eventReplay
+                        .OvertakeCompletionConfirmed);
             bindingState = "GlobalEventPlacement";
             lastFailureReason = "";
         }
@@ -453,6 +467,21 @@ namespace F1XR.RestAPI.Replay.Room
                     portalFailure);
                 return false;
             }
+
+            ResolvePortalTransitionVehicles(
+                first,
+                second,
+                out Transform overtakingVehicle,
+                out Transform defendingVehicle);
+            overtakePortalTransitionVfx ??=
+                new OvertakePortalTransitionVfxSettings();
+            overtakePortalTransitionVfx.ClampValues();
+            portalPresentation
+                .ConfigureOvertakePortalTransition(
+                    overtakePortalTransitionVfx,
+                    overtakingVehicle,
+                    defendingVehicle,
+                    eventReplay.CurrentTime);
 
             ApplyRoomVehiclePresentation(first, second);
 
@@ -960,6 +989,45 @@ namespace F1XR.RestAPI.Replay.Room
                 secondTargetDriverNumber,
                 firstDriver);
             return secondDriver > 0 && secondDriver != firstDriver;
+        }
+
+        private void ResolvePortalTransitionVehicles(
+            VehicleBinding first,
+            VehicleBinding second,
+            out Transform overtakingVehicle,
+            out Transform defendingVehicle)
+        {
+            overtakingVehicle = null;
+            defendingVehicle = null;
+            int[] drivers =
+                eventReplay.CurrentEvent != null
+                    ? eventReplay.CurrentEvent.driverNumbers
+                    : null;
+            int overtakingDriver =
+                drivers != null && drivers.Length > 0
+                    ? drivers[0]
+                    : 0;
+            if (first != null &&
+                first.DriverNumber == overtakingDriver)
+            {
+                overtakingVehicle =
+                    first.VisualMotionRoot;
+                defendingVehicle =
+                    second != null
+                        ? second.VisualMotionRoot
+                        : null;
+            }
+            else if (
+                second != null &&
+                second.DriverNumber == overtakingDriver)
+            {
+                overtakingVehicle =
+                    second.VisualMotionRoot;
+                defendingVehicle =
+                    first != null
+                        ? first.VisualMotionRoot
+                        : null;
+            }
         }
 
         private static int ResolveConfiguredDriver(

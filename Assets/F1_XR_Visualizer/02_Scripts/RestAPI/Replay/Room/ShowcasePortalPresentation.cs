@@ -10,7 +10,7 @@ namespace F1XR.RestAPI.Replay.Room
 {
     [DefaultExecutionOrder(1100)]
     [DisallowMultipleComponent]
-    public sealed class ShowcasePortalPresentation : MonoBehaviour
+    public sealed partial class ShowcasePortalPresentation : MonoBehaviour
     {
         private const int PortalSceneLayer = 30;
         private const int PortalSurfaceLayer = 2;
@@ -254,6 +254,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void Clear()
         {
+            ClearOvertakePortalTransition();
             configured = false;
             RestorePlaneMeshVisualizers();
 

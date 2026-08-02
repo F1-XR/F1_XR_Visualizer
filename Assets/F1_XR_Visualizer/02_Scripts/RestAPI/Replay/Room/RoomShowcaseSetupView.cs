@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using F1XR.Interaction.World;
 using F1XR.UI.WorldPanel;
 
 namespace F1XR.RestAPI.Replay.Room
@@ -57,6 +58,9 @@ namespace F1XR.RestAPI.Replay.Room
         private Button resetButton;
         private Button reconfigureButton;
         private Button recenterButton;
+        private BoxCollider panelGrabCollider;
+        private PanelEdgeGrab panelEdgeGrab;
+        private PanelCornerResize panelCornerResize;
         private readonly List<Button> buttons = new();
         private bool initialPanelPlacementPending;
 
@@ -144,6 +148,7 @@ namespace F1XR.RestAPI.Replay.Room
                 presentation.State == RoomShowcaseSetupState.Ready
                     ? new Vector2(760f, 410f)
                     : new Vector2(760f, 650f);
+            RefreshPanelGrabGeometry();
         }
 
         public void SetVisible(bool visible)
@@ -315,10 +320,105 @@ namespace F1XR.RestAPI.Replay.Room
             grab.attachEaseInTime = 0.15f;
             grab.throwOnDetach = false;
 
+            panelGrabCollider = CreatePanelGrabCollider();
+            panelEdgeGrab =
+                setupPanel.GetComponent<PanelEdgeGrab>() ??
+                setupPanel.gameObject.AddComponent<PanelEdgeGrab>();
+            panelEdgeGrab.Configure(
+                grab,
+                panelGrabCollider,
+                setupPanel);
+            handleCollider.enabled = false;
+
+            var scaleController =
+                setupPanel.GetComponent<ScaleController>() ??
+                setupPanel.gameObject.AddComponent<ScaleController>();
+            scaleController.Configure(
+                setupPanel,
+                grab,
+                body,
+                0.00025f,
+                0.0025f);
+
+            var cornerVisual =
+                setupPanel.GetComponent<PanelResizeCorners>() ??
+                setupPanel.gameObject.AddComponent<PanelResizeCorners>();
+            panelCornerResize =
+                setupPanel.GetComponent<PanelCornerResize>() ??
+                setupPanel.gameObject.AddComponent<PanelCornerResize>();
+            panelEdgeGrab.Configure(
+                grab,
+                panelGrabCollider,
+                setupPanel);
+            panelCornerResize.Configure(
+                grab,
+                scaleController,
+                panelGrabCollider,
+                cornerVisual);
+
             if (setupPanel.GetComponent<PanelYawGrabLock>() == null)
             {
                 setupPanel.gameObject
                     .AddComponent<PanelYawGrabLock>();
+            }
+        }
+
+        private BoxCollider CreatePanelGrabCollider()
+        {
+            const string colliderName = "Room Setup Interaction";
+            Transform existing = setupPanel.Find(colliderName);
+            GameObject colliderObject;
+
+            if (existing != null)
+            {
+                colliderObject = existing.gameObject;
+            }
+            else
+            {
+                colliderObject = new GameObject(
+                    colliderName,
+                    typeof(RectTransform),
+                    typeof(BoxCollider));
+                colliderObject.transform.SetParent(
+                    setupPanel,
+                    worldPositionStays: false);
+            }
+
+            colliderObject.layer = setupPanel.gameObject.layer;
+            colliderObject.transform.SetAsFirstSibling();
+            var colliderRect =
+                colliderObject.GetComponent<RectTransform>();
+            Fill(colliderRect);
+
+            var collider =
+                colliderObject.GetComponent<BoxCollider>();
+            collider.center = Vector3.zero;
+            collider.isTrigger = false;
+            panelGrabCollider = collider;
+            RefreshPanelGrabGeometry();
+            return collider;
+        }
+
+        private void RefreshPanelGrabGeometry()
+        {
+            if (panelGrabCollider == null || setupPanel == null)
+                return;
+
+            panelGrabCollider.size = new Vector3(
+                setupPanel.rect.width,
+                setupPanel.rect.height,
+                20f);
+            panelEdgeGrab?.Configure(
+                setupPanel.GetComponent<XRGrabInteractable>(),
+                panelGrabCollider,
+                setupPanel);
+            if (panelCornerResize != null)
+            {
+                panelCornerResize.Configure(
+                    setupPanel.GetComponent<XRGrabInteractable>(),
+                    setupPanel.GetComponent<ScaleController>(),
+                    panelGrabCollider,
+                    setupPanel.GetComponent<PanelResizeCorners>());
             }
         }
 

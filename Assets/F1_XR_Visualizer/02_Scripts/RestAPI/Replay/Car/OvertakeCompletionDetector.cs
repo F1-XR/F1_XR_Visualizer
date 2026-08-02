@@ -18,6 +18,8 @@ namespace F1XR.RestAPI.Replay
         private bool observedBeforeCompletion;
         private bool triggered;
 
+        public bool HasTriggered => triggered;
+
         public void Configure(
             OvertakeCompletionVfxSettings completionSettings)
         {

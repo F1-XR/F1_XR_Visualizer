@@ -395,6 +395,9 @@ namespace F1XR.RaceFlags
 
         private void ApplyStateTransition(RaceFlagRuntimeState oldState, RaceFlagRuntimeState newState)
         {
+            if (raceFlagAlert == null)
+                return;
+
             switch (newState)
             {
                 case RaceFlagRuntimeState.Checkered:
