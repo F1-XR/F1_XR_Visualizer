@@ -69,6 +69,21 @@ namespace F1XR.Interaction.World
         public bool IsHandleScaling => handleScaling;
         public event Action ScaleStarted;
 
+        public void Configure(
+            Transform scaleTarget,
+            XRGrabInteractable panelGrab,
+            Rigidbody panelBody,
+            float minimumScale,
+            float maximumScale)
+        {
+            target = scaleTarget;
+            grab = panelGrab;
+            body = panelBody;
+            minScale = minimumScale;
+            maxScale = maximumScale;
+            RefreshTargetColliders();
+        }
+
         /// <summary>
         /// Starts a one-handed scale driven by a single grab point (a corner handle) around a fixed
         /// pivot. The two-handed path stays untouched and simply yields while this is active.

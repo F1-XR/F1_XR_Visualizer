@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
@@ -32,6 +33,7 @@ namespace F1XR.UI.WorldPanel
         [SerializeField] bool resizeAroundCenter = true;
 
         static readonly List<XRBaseInputInteractor> Interactors = new();
+        static readonly List<InputDevice> InputDevices = new();
 
         // 0 = top left, 1 = top right, 2 = bottom left, 3 = bottom right (matches PanelResizeCorners).
         static readonly Vector2[] CornerSigns =
@@ -52,6 +54,10 @@ namespace F1XR.UI.WorldPanel
         bool trackPositionWas;
         bool trackRotationWas;
         bool throwOnDetachWas;
+        bool cornerCollidersRegistered;
+        bool directTriggerDrag;
+        bool leftTriggerWasPressed;
+        bool rightTriggerWasPressed;
 
         public bool IsResizing => dragging;
         public bool IsCornerHovered => hoveredCorner >= 0;
@@ -75,28 +81,7 @@ namespace F1XR.UI.WorldPanel
 
         void Start()
         {
-            // The handles reach past the panel collider, so a ray aimed at a corner mark would otherwise
-            // hit nothing the interaction manager knows about and no select would ever start. Registering
-            // happens in Start because PanelEdgeGrab clears grab.colliders in its own Awake.
-            if (grab == null)
-                return;
-
-            var added = false;
-
-            foreach (var corner in cornerColliders)
-            {
-                if (corner == null || grab.colliders.Contains(corner))
-                    continue;
-
-                grab.colliders.Add(corner);
-                added = true;
-            }
-
-            if (!added || grab.interactionManager == null)
-                return;
-
-            grab.interactionManager.UnregisterInteractable((IXRInteractable)grab);
-            grab.interactionManager.RegisterInteractable((IXRInteractable)grab);
+            EnsureCornerCollidersRegistered();
         }
 
         void OnEnable()
@@ -122,6 +107,9 @@ namespace F1XR.UI.WorldPanel
 
         void Update()
         {
+            EnsureCornerCollidersRegistered();
+            TryBeginTriggerResize();
+
             if (dragging)
             {
                 UpdateDrag();
@@ -161,7 +149,80 @@ namespace F1XR.UI.WorldPanel
             return TryGetCorner(interactor, out _, out _);
         }
 
+        public void Configure(
+            XRGrabInteractable panelGrab,
+            ScaleController panelScale,
+            Collider bodyCollider,
+            PanelResizeCorners visual)
+        {
+            grab = panelGrab;
+            scaleController = panelScale;
+            panelCollider = bodyCollider;
+            cornerVisual = visual;
+            CreateCornerColliders();
+            EnsureCornerCollidersRegistered();
+        }
+
+        void TryBeginTriggerResize()
+        {
+            var leftPressed =
+                IsTriggerPressed(InteractorHandedness.Left);
+            var rightPressed =
+                IsTriggerPressed(InteractorHandedness.Right);
+            var leftDown = leftPressed && !leftTriggerWasPressed;
+            var rightDown = rightPressed && !rightTriggerWasPressed;
+            leftTriggerWasPressed = leftPressed;
+            rightTriggerWasPressed = rightPressed;
+
+            if (dragging || (!leftDown && !rightDown))
+                return;
+
+            Interactors.Clear();
+            Interactors.AddRange(
+                FindObjectsByType<XRBaseInputInteractor>(
+                    FindObjectsInactive.Exclude));
+
+            foreach (var interactor in Interactors)
+            {
+                var pressedThisFrame = interactor.handedness switch
+                {
+                    InteractorHandedness.Left => leftDown,
+                    InteractorHandedness.Right => rightDown,
+                    _ => false
+                };
+
+                if (!pressedThisFrame ||
+                    !TryGetCorner(
+                        interactor,
+                        out var corner,
+                        out var point))
+                {
+                    continue;
+                }
+
+                BeginDrag(
+                    interactor,
+                    corner,
+                    point,
+                    isDirectTrigger: true);
+                return;
+            }
+        }
+
         void BeginDrag(IXRSelectInteractor interactor, int corner, Vector3 grabPoint)
+        {
+            BeginDrag(
+                interactor,
+                corner,
+                grabPoint,
+                isDirectTrigger: false);
+        }
+
+        void BeginDrag(
+            IXRSelectInteractor interactor,
+            int corner,
+            Vector3 grabPoint,
+            bool isDirectTrigger)
         {
             if (panelCollider == null)
                 return;
@@ -176,6 +237,7 @@ namespace F1XR.UI.WorldPanel
 
             dragging = true;
             dragInteractor = interactor;
+            directTriggerDrag = isDirectTrigger;
 
             // Keep the select alive (it is what tells us when the trigger is released) but stop it from
             // dragging the panel around, otherwise move and resize fight over the transform.
@@ -194,7 +256,13 @@ namespace F1XR.UI.WorldPanel
 
         void UpdateDrag()
         {
-            if (dragInteractor == null || !dragInteractor.IsSelecting(grab) || !TryGetDragPoint(out var point))
+            var inputHeld = dragInteractor != null &&
+                (directTriggerDrag
+                    ? IsTriggerPressed(
+                        ((XRBaseInputInteractor)dragInteractor)
+                            .handedness)
+                    : dragInteractor.IsSelecting(grab));
+            if (!inputHeld || !TryGetDragPoint(out var point))
             {
                 EndDrag();
                 return;
@@ -210,6 +278,7 @@ namespace F1XR.UI.WorldPanel
 
             dragging = false;
             dragInteractor = null;
+            directTriggerDrag = false;
 
             if (grab != null)
             {
@@ -225,6 +294,36 @@ namespace F1XR.UI.WorldPanel
                 cornerVisual.SetExternalVisible(false);
 
             SetHover(-1);
+        }
+
+        static bool IsTriggerPressed(
+            InteractorHandedness handedness)
+        {
+            var node = handedness switch
+            {
+                InteractorHandedness.Left => XRNode.LeftHand,
+                InteractorHandedness.Right => XRNode.RightHand,
+                _ => XRNode.HardwareTracker
+            };
+            if (node == XRNode.HardwareTracker)
+                return false;
+
+            InputDevices.Clear();
+            UnityEngine.XR.InputDevices.GetDevicesAtXRNode(
+                node,
+                InputDevices);
+            foreach (var device in InputDevices)
+            {
+                if (device.TryGetFeatureValue(
+                        CommonUsages.triggerButton,
+                        out var pressed) &&
+                    pressed)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         bool TryGetDragPoint(out Vector3 point)
@@ -259,6 +358,7 @@ namespace F1XR.UI.WorldPanel
             if (box == null)
                 return;
 
+            cornerCollidersRegistered = false;
             var size = box.size;
             var parent = panelCollider.transform;
 
@@ -272,6 +372,27 @@ namespace F1XR.UI.WorldPanel
 
                 cornerColliders[i] = CreateCornerCollider(parent, $"Resize Corner {i + 1}", center);
             }
+        }
+
+        void EnsureCornerCollidersRegistered()
+        {
+            if (cornerCollidersRegistered || grab == null)
+                return;
+
+            foreach (var corner in cornerColliders)
+            {
+                if (corner != null && !grab.colliders.Contains(corner))
+                    grab.colliders.Add(corner);
+            }
+
+            if (grab.interactionManager == null)
+                return;
+
+            grab.interactionManager.UnregisterInteractable(
+                (IXRInteractable)grab);
+            grab.interactionManager.RegisterInteractable(
+                (IXRInteractable)grab);
+            cornerCollidersRegistered = true;
         }
 
         BoxCollider CreateCornerCollider(Transform parent, string objectName, Vector3 center)

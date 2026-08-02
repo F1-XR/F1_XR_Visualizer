@@ -182,6 +182,25 @@ namespace F1XR.UI.WorldPanel
 
         public bool canProcess => isActiveAndEnabled;
 
+        public void Configure(
+            XRGrabInteractable panelGrab,
+            Collider bodyCollider,
+            RectTransform bodyRect,
+            bool allowBodyGrab = true,
+            bool allowGripGrabAnywhere = true)
+        {
+            grab = panelGrab;
+            panelCollider = bodyCollider;
+            panelRect = bodyRect;
+            grabPanelBody = allowBodyGrab;
+            gripGrabAnywhere = allowGripGrabAnywhere;
+            if (scaleController == null)
+                scaleController = GetComponent<ScaleController>();
+            if (cornerResize == null)
+                cornerResize = GetComponent<PanelCornerResize>();
+            CreateEdgeColliders();
+        }
+
         public bool Process(IXRSelectInteractor interactor, IXRSelectInteractable interactable)
         {
             if (!grabPanelBody || !ReferenceEquals(interactable, grab))
@@ -276,11 +295,15 @@ namespace F1XR.UI.WorldPanel
 
             foreach (var hit in hits)
             {
-                if (hit.distance >= bestDistance)
+                if ((hit.collider != panelCollider &&
+                    !edgeColliders.Contains(hit.collider)) ||
+                    hit.distance >= bestDistance)
+                {
                     continue;
+                }
 
                 bestDistance = hit.distance;
-                onPanel = hit.collider == panelCollider || edgeColliders.Contains(hit.collider);
+                onPanel = true;
             }
 
             return onPanel;
@@ -329,6 +352,7 @@ namespace F1XR.UI.WorldPanel
         {
             var existing = parent.Find(objectName);
             var edge = existing != null ? existing.gameObject : new GameObject(objectName);
+            edge.layer = panelCollider.gameObject.layer;
             edge.transform.SetParent(parent, false);
             edge.transform.localPosition = center;
             edge.transform.localRotation = Quaternion.identity;

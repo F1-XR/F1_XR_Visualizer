@@ -873,6 +873,55 @@ MonoBehaviour:
   showcaseVehicleScale: 1.3
   showcasePlaybackSpeedMultiplier: 2
   immersiveScaleEnabled: 0
+  overtakePortalTransitionVfx:
+    enabled: 1
+    overtakingCarOnly: 1
+    crossingDirection: 0
+    crossingHysteresis: 0.02
+    rippleDurationReplaySeconds: 0.55
+    rippleStartRadius: 0.08
+    rippleEndRadius: 0.7
+    rippleWidth: 0.055
+    rippleIntensity: 1.6
+    rippleCoreColor: {r: 1.35, g: 1.45, b: 1.55, a: 0.95}
+    rippleGlowColor: {r: 0.12, g: 0.82, b: 1.4, a: 0.72}
+    wakeDurationReplaySeconds: 0.46
+    wakeLength: 0.8
+    wakeWidth: 0.24
+    wakeIntensity: 1.5
+    wakeFadeCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    surfaceSweepDurationReplaySeconds: 0.36
+    surfaceSweepWidth: 0.045
+    surfaceSweepIntensity: 1.15
+    edgePulseDurationReplaySeconds: 0.52
+    edgePulseIntensity: 0.9
+    edgePulseColor: {r: 0.18, g: 0.72, b: 1.15, a: 0.68}
+    largeForwardSeekThresholdSeconds: 0.75
+    largeForwardSeekPolicy: 0
+    seekResetThresholdSeconds: 0.5
   mappingEnabled: 1
 --- !u!4 &493722811
 Transform:
@@ -4092,7 +4141,7 @@ SceneRoots:
   - {fileID: 493722811}
   - {fileID: 1127476783}
   - {fileID: 1304137258}
-  - {fileID: 778030370}
   - {fileID: 1751285736}
+  - {fileID: 778030370}
   - {fileID: 803093117}
   - {fileID: 2100327795}
