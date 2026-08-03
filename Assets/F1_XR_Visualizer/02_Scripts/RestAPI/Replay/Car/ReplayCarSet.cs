@@ -63,6 +63,7 @@ namespace F1XR.RestAPI.Replay
         private bool renderLodEnabled = true;
         private Camera renderLodCamera;
         private float nextRenderLodBudgetTime;
+        private float overtakeVehicleSizeScale = 1f;
 
         public ReplayCarSet(
             GameObject carPrefab,
@@ -202,6 +203,22 @@ namespace F1XR.RestAPI.Replay
             overtakeMotion.SetSettings(overtakeSettings);
         }
 
+        internal void SetOvertakePresentationMode(
+            OvertakePresentationMode mode)
+        {
+            overtakeMotion.SetPresentationMode(mode);
+        }
+
+        internal void SetOvertakeVehicleSizeScale(float scale)
+        {
+            overtakeVehicleSizeScale = Mathf.Max(0.01f, scale);
+        }
+
+        internal void ResetResolvedOvertakeSides()
+        {
+            overtakeMotion.ResetResolvedPassingSides();
+        }
+
         public void SetFallbackOvertakeCorridor(
             IReadOnlyList<Vector3> centerline,
             float roadWidth,
@@ -308,8 +325,12 @@ namespace F1XR.RestAPI.Replay
                     interpolation,
                     duration));
                 poses[driver] = pose;
-                visualWidths[driver] = car.GetVisualWidth();
-                visualLengths[driver] = car.GetVisualLength();
+                visualWidths[driver] =
+                    car.GetVisualWidth() *
+                    overtakeVehicleSizeScale;
+                visualLengths[driver] =
+                    car.GetVisualLength() *
+                    overtakeVehicleSizeScale;
             }
             BuildFramesMarker.End();
 
@@ -326,6 +347,12 @@ namespace F1XR.RestAPI.Replay
                 }
             }
             ApplyLogicalPosesMarker.End();
+
+            overtakeMotion.PrepareFrame(
+                time,
+                poses,
+                visualWidths,
+                visualLengths);
 
             ApplyVisualsMarker.Begin();
             foreach (CarFrame frame in frames)

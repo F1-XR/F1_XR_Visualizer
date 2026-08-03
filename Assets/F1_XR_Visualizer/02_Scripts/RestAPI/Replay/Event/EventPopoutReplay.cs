@@ -38,8 +38,8 @@ namespace F1XR.RestAPI.Replay
         [Min(3)] public int maxTrackPoints = 192;
         [Min(1f)] public float maxEventDuration = 30f;
         [Min(0.01f)] public float eventPlaybackSpeed = 1f;
-        [Min(0f)] public float eventLeadSeconds = 8f;
-        [Min(0f)] public float eventTailSeconds = 5f;
+        [Min(0f)] public float eventLeadSeconds = 6f;
+        [Min(0f)] public float eventTailSeconds = 3f;
         [Min(0f)] public float overtakeMotionLeadSeconds = 3f;
         [Min(0f)] public float raceStartMotionGraceSeconds = 1f;
         [Min(0f)] public float minimumMovingLeadSeconds = 4f;
@@ -89,6 +89,7 @@ namespace F1XR.RestAPI.Replay
         private bool isLoading;
         private bool isActive;
         private float showcasePlaybackSpeedMultiplier = 1f;
+        private float overtakeVehicleSizeScale = 1f;
 
         public bool IsLoading => isLoading;
         public bool IsActive => isActive;
@@ -433,6 +434,13 @@ namespace F1XR.RestAPI.Replay
                 Mathf.Max(1f, multiplier);
         }
 
+        public void SetOvertakeVehicleSizeScale(float scale)
+        {
+            overtakeVehicleSizeScale = Mathf.Max(0.01f, scale);
+            eventCars?.SetOvertakeVehicleSizeScale(
+                overtakeVehicleSizeScale);
+        }
+
         public void TogglePlay()
         {
             if (IsPlaying)
@@ -638,6 +646,10 @@ namespace F1XR.RestAPI.Replay
                 player.carPrefab,
                 null,
                 false);
+            eventCars.SetOvertakePresentationMode(
+                OvertakePresentationMode.Showcase);
+            eventCars.SetOvertakeVehicleSizeScale(
+                overtakeVehicleSizeScale);
             eventCars.SetMapScaleRatio(
                 player.GetTrackMapScaleRatio());
             eventCars.SetTeamPrefabs(player.teamCarPrefabs);
@@ -1364,14 +1376,29 @@ namespace F1XR.RestAPI.Replay
                     vehicleWidth,
                     drivableLeftEdge,
                     drivableRightEdge);
-            if (hasDrivableEdges)
+            bool hasReliableRoadEdges =
+                !hasDrivableEdges &&
+                trackSegment.TryBuildReliableRoadEdges(
+                    safetyApronPath,
+                    vehicleWidth,
+                    drivableLeftEdge,
+                    drivableRightEdge);
+            if (hasDrivableEdges ||
+                hasReliableRoadEdges)
             {
                 eventCars.SetActualOvertakeCorridor(
                     safetyApronPath,
                     drivableLeftEdge,
                     drivableRightEdge,
                     false);
+                eventCars.ResetResolvedOvertakeSides();
                 ApplyCars();
+                if (hasReliableRoadEdges)
+                {
+                    Debug.LogWarning(
+                        "[EventReplay] Drivable-only boundaries were incomplete; overtake motion is using detected road-surface boundaries.",
+                        this);
+                }
             }
             else
             {
