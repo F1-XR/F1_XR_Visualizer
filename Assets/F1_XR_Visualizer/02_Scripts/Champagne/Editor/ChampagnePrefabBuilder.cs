@@ -8,13 +8,14 @@ namespace F1XR.Champagne.Editor
 {
     public static class ChampagnePrefabBuilder
     {
-        const string RootFolder = "Assets/F1_XR_Visualizer/Champagne";
-        const string PrefabPath = RootFolder + "/Prefabs/ChampagneBottle.prefab";
-        const string BottleMaterialPath = RootFolder + "/Materials/ChampagneBottle_Green.mat";
-        const string CorkMaterialPath = RootFolder + "/Materials/ChampagneCork.mat";
-        const string FoilMaterialPath = RootFolder + "/Materials/ChampagneFoil_Gold.mat";
-        const string LiquidMaterialPath = RootFolder + "/Materials/ChampagneLiquid_Particle.mat";
-        const string FoamMaterialPath = RootFolder + "/Materials/ChampagneFoam_Particle.mat";
+        const string PrefabsFolder = "Assets/F1_XR_Visualizer/03_Prefabs/Champagne";
+        const string MaterialsFolder = "Assets/F1_XR_Visualizer/08_Materials/Champagne/Materials";
+        const string PrefabPath = PrefabsFolder + "/ChampagneBottle.prefab";
+        const string BottleMaterialPath = MaterialsFolder + "/ChampagneBottle_Green.mat";
+        const string CorkMaterialPath = MaterialsFolder + "/ChampagneCork.mat";
+        const string FoilMaterialPath = MaterialsFolder + "/ChampagneFoil_Gold.mat";
+        const string LiquidMaterialPath = MaterialsFolder + "/ChampagneLiquid_Particle.mat";
+        const string FoamMaterialPath = MaterialsFolder + "/ChampagneFoam_Particle.mat";
         const string BottleTestName = "ChampagneBottle_Test";
         const string TableTestName = "ChampagneTempTable";
         const string SpawnerTestName = "ChampagneCelebrationSpawner_Test";
@@ -255,12 +256,9 @@ namespace F1XR.Champagne.Editor
 
         static void EnsureFolders()
         {
-            CreateFolder("Assets/F1_XR_Visualizer", "Champagne");
-            CreateFolder(RootFolder, "Prefabs");
-            CreateFolder(RootFolder, "Materials");
-            CreateFolder(RootFolder, "VFX");
-            CreateFolder(RootFolder, "Audio");
-            CreateFolder(RootFolder, "Models");
+            CreateFolder("Assets/F1_XR_Visualizer/03_Prefabs", "Champagne");
+            CreateFolder("Assets/F1_XR_Visualizer/08_Materials", "Champagne");
+            CreateFolder("Assets/F1_XR_Visualizer/08_Materials/Champagne", "Materials");
         }
 
         static void CreateFolder(string parent, string child)
