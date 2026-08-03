@@ -32,15 +32,34 @@ namespace F1XR.RestAPI.Replay
         private OvertakeCompletionVfxSettings completionVfxSettings;
         private float completionVfxStartTime = float.NaN;
         private float completionVfxLastReplayTime = float.NaN;
+        private string completionHudOverride;
+        private float completionIntensityScale = 1f;
 
         public void TriggerOvertakeCompletionVfx(
             OvertakeCompletionVfxSettings settings,
             float replayTime)
         {
+            TriggerOvertakeCompletionVfx(
+                settings,
+                replayTime,
+                null,
+                1f);
+        }
+
+        public void TriggerOvertakeCompletionVfx(
+            OvertakeCompletionVfxSettings settings,
+            float replayTime,
+            string hudText,
+            float intensityScale)
+        {
             if (settings == null || !settings.enabled)
                 return;
 
             completionVfxSettings = settings;
+            completionHudOverride = hudText;
+            completionIntensityScale = Mathf.Max(
+                0.1f,
+                intensityScale);
             EnsureCompletionVfx();
             completionVfxStartTime = replayTime;
             completionVfxLastReplayTime = replayTime;
@@ -51,9 +70,12 @@ namespace F1XR.RestAPI.Replay
             if (completionHudText != null)
             {
                 string text = string.IsNullOrWhiteSpace(
-                        settings.hudText)
-                    ? "OVERTAKE"
-                    : settings.hudText;
+                        completionHudOverride)
+                    ? string.IsNullOrWhiteSpace(
+                            settings.hudText)
+                        ? "OVERTAKE"
+                        : settings.hudText
+                    : completionHudOverride;
                 if (completionHudText.text != text)
                     completionHudText.text = text;
 
@@ -112,6 +134,8 @@ namespace F1XR.RestAPI.Replay
             completionVfxStartTime = float.NaN;
             completionVfxLastReplayTime = float.NaN;
             completionVfxSettings = null;
+            completionHudOverride = null;
+            completionIntensityScale = 1f;
 
             if (completionPulseRenderer != null)
                 completionPulseRenderer.enabled = false;
@@ -368,7 +392,8 @@ namespace F1XR.RestAPI.Replay
             float intensity = Mathf.Max(
                 0f,
                 completionVfxSettings
-                    .pulseIntensity);
+                    .pulseIntensity) *
+                completionIntensityScale;
             Color color =
                 completionVfxSettings.pulseColor;
             color.r *= intensity;
@@ -449,6 +474,7 @@ namespace F1XR.RestAPI.Replay
                     0f,
                     completionVfxSettings
                         .sweepIntensity) *
+                completionIntensityScale *
                 envelope;
             color.r *= intensity;
             color.g *= intensity;
@@ -563,6 +589,9 @@ namespace F1XR.RestAPI.Replay
                 Mathf.Sin(Mathf.PI * progress);
             Color color =
                 completionVfxSettings.streakColor;
+            color.r *= completionIntensityScale;
+            color.g *= completionIntensityScale;
+            color.b *= completionIntensityScale;
             color.a *= envelope;
             SetMaterialColor(
                 completionStreakMaterial,

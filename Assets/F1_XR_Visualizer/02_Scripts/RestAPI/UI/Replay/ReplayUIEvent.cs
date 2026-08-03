@@ -1,6 +1,7 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Room;
 
@@ -13,6 +14,7 @@ namespace F1XR.RestAPI.UI
         private Button eventOpenButton;
         private Button eventPlayButton;
         private Button eventRestartButton;
+        private Button eventNextButton;
         private Button eventCloseButton;
         private Slider eventSlider;
         private bool refreshingEventSlider;
@@ -42,12 +44,19 @@ namespace F1XR.RestAPI.UI
                 14,
                 FontStyles.Bold,
                 TextAlignmentOptions.Center);
+            eventStatus.richText = true;
             SetRect(eventStatus.rectTransform, 8f, -8f, 284f, 26f);
 
             eventOpenButton = CreateEventButton("Open", 8f, -42f, 284f, OpenTestEvent);
             eventPlayButton = CreateEventButton("Play", 8f, -42f, 86f, ToggleEventPlay);
             eventRestartButton = CreateEventButton("Restart", 104f, -42f, 86f, RestartEvent);
             eventCloseButton = CreateEventButton("Close", 200f, -42f, 92f, CloseEvent);
+            eventNextButton = CreateEventButton(
+                "Next Overtake",
+                8f,
+                -84f,
+                284f,
+                OpenNextOvertake);
             eventSlider = CreateEventSlider();
             eventSlider.onValueChanged.AddListener(SeekEvent);
             RefreshEventControls();
@@ -94,7 +103,7 @@ namespace F1XR.RestAPI.UI
                 typeof(Slider))
                 .GetComponent<Slider>();
             slider.transform.SetParent(eventControls, false);
-            SetRect(slider.GetComponent<RectTransform>(), 12f, -92f, 276f, 30f);
+            SetRect(slider.GetComponent<RectTransform>(), 12f, -134f, 276f, 30f);
             slider.minValue = 0f;
             slider.maxValue = 1f;
             slider.direction = Slider.Direction.LeftToRight;
@@ -174,8 +183,12 @@ namespace F1XR.RestAPI.UI
             eventOpenButton.gameObject.SetActive(!active && !loading);
             eventPlayButton.gameObject.SetActive(active);
             eventRestartButton.gameObject.SetActive(active);
+            eventNextButton.gameObject.SetActive(active);
             eventCloseButton.gameObject.SetActive(active || loading);
             eventSlider.gameObject.SetActive(active);
+            eventControls.sizeDelta = new Vector2(
+                300f,
+                active ? 184f : 142f);
 
             if (loading)
             {
@@ -195,16 +208,110 @@ namespace F1XR.RestAPI.UI
                 return;
             }
 
-            string title = eventReplay.CurrentEvent != null &&
-                !string.IsNullOrWhiteSpace(eventReplay.CurrentEvent.displayTitle)
-                    ? eventReplay.CurrentEvent.displayTitle
-                    : "Overtake Event";
+            string title = FormatEventTitle(
+                eventReplay.CurrentEvent);
             eventStatus.text = $"{title}  {FormatTime(eventReplay.CurrentTime)}";
             SetButton(eventPlayButton, eventReplay.IsPlaying ? "Pause" : "Play", true);
+            bool hasNext = eventReplay.HasNextOvertake;
+            SetButton(
+                eventNextButton,
+                hasNext
+                    ? "Next Overtake"
+                    : "No More Overtakes",
+                hasNext);
 
             refreshingEventSlider = true;
             eventSlider.SetValueWithoutNotify(eventReplay.NormalizedTime);
             refreshingEventSlider = false;
+        }
+
+        private string FormatEventTitle(
+            ReplayEventDto replayEvent)
+        {
+            string title = replayEvent != null &&
+                           !string.IsNullOrWhiteSpace(
+                               replayEvent.displayTitle)
+                ? replayEvent.displayTitle
+                : "Overtake Event";
+            int[] drivers = replayEvent != null
+                ? replayEvent.driverNumbers
+                : null;
+            if (drivers == null || drivers.Length == 0)
+                return title;
+
+            bool colored = false;
+            int count = Mathf.Min(2, drivers.Length);
+            for (int i = 0; i < count; i++)
+            {
+                int driver = drivers[i];
+                string color = ColorUtility.ToHtmlStringRGB(
+                    player.GetDriverColor(driver));
+                var info = player.GetDriverInfo(driver);
+                if (info != null &&
+                    !string.IsNullOrWhiteSpace(info.fullName))
+                {
+                    title = ColorizeTitleToken(
+                        title,
+                        info.fullName,
+                        color,
+                        ref colored);
+                }
+
+                title = ColorizeTitleToken(
+                    title,
+                    player.GetDriverLabel(driver),
+                    color,
+                    ref colored);
+            }
+
+            if (colored || count < 2)
+                return title;
+
+            return $"{ColorizeDriverLabel(drivers[0])}  VS  " +
+                   ColorizeDriverLabel(drivers[1]);
+        }
+
+        private string ColorizeDriverLabel(int driver)
+        {
+            string color = ColorUtility.ToHtmlStringRGB(
+                player.GetDriverColor(driver));
+            return $"<color=#{color}>" +
+                   $"{player.GetDriverLabel(driver)}</color>";
+        }
+
+        private static string ColorizeTitleToken(
+            string title,
+            string token,
+            string color,
+            ref bool colored)
+        {
+            if (string.IsNullOrWhiteSpace(title) ||
+                string.IsNullOrWhiteSpace(token))
+            {
+                return title;
+            }
+
+            int index = title.IndexOf(
+                token,
+                System.StringComparison.OrdinalIgnoreCase);
+            while (index >= 0)
+            {
+                string visibleText = title.Substring(
+                    index,
+                    token.Length);
+                string replacement =
+                    $"<color=#{color}>{visibleText}</color>";
+                title = title.Substring(0, index) +
+                        replacement +
+                        title.Substring(index + token.Length);
+                colored = true;
+                index = title.IndexOf(
+                    token,
+                    index + replacement.Length,
+                    System.StringComparison.OrdinalIgnoreCase);
+            }
+
+            return title;
         }
 
         private void OpenTestEvent()
@@ -240,6 +347,12 @@ namespace F1XR.RestAPI.UI
         private void RestartEvent()
         {
             player?.EventReplay?.Restart();
+            RefreshEventControls();
+        }
+
+        private void OpenNextOvertake()
+        {
+            player?.EventReplay?.OpenNextOvertake();
             RefreshEventControls();
         }
 

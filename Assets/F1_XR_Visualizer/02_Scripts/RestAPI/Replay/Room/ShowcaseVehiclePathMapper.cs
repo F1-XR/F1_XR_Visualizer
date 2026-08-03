@@ -798,21 +798,6 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             eventCoordinateScale = bestScale;
-            if (!eventReplay.TrySetPresentationPose(
-                    bestPosition,
-                    bestRotation,
-                    eventCoordinateScale))
-            {
-                failure = "The EventReplayStage rejected the global placement.";
-                return false;
-            }
-            if (!eventReplay.TryConfigureRoomStageInteraction(
-                    overtakePosition))
-            {
-                failure = "The EventReplayStage rejected the interaction focus.";
-                return false;
-            }
-
             entryContinuation =
                 cumulativeDistances[bestEntryIndex] *
                 eventCoordinateScale;
@@ -832,6 +817,22 @@ namespace F1XR.RestAPI.Replay.Room
                 exitWallAngle <= MaximumCompatibleWallAngle &&
                 portalCrossingMiss <= 0.75f &&
                 heroMissDistance <= Mathf.Max(0.75f, roomSpan * 0.35f);
+
+            if (!eventReplay.TrySetPresentationPose(
+                    bestPosition,
+                    bestRotation,
+                    eventCoordinateScale))
+            {
+                failure = "The EventReplayStage rejected the global placement.";
+                return false;
+            }
+            if (!eventReplay.TryConfigureRoomStageInteraction(
+                    overtakePosition))
+            {
+                failure = "The EventReplayStage rejected the interaction focus.";
+                return false;
+            }
+
             return true;
         }
 
@@ -1003,14 +1004,8 @@ namespace F1XR.RestAPI.Replay.Room
         {
             overtakingVehicle = null;
             defendingVehicle = null;
-            int[] drivers =
-                eventReplay.CurrentEvent != null
-                    ? eventReplay.CurrentEvent.driverNumbers
-                    : null;
             int overtakingDriver =
-                drivers != null && drivers.Length > 0
-                    ? drivers[0]
-                    : 0;
+                eventReplay.OvertakeFinalLeader;
             if (first != null &&
                 first.DriverNumber == overtakingDriver)
             {

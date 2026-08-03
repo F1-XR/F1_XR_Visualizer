@@ -54,10 +54,12 @@ namespace F1XR.RestAPI.Replay
         private ReplayEventDto sideBySideVfxEvent;
         private OvertakeSideBySideVfxSettings sideBySideVfxSettings;
         private OvertakeCompletionVfxSettings completionVfxSettings;
+        private OvertakeBattleSequence showcaseBattle;
         private float sideBySideLastReplayTime = float.NaN;
         private bool sideBySideWasActive;
         private bool sideBySideSweepTriggered;
         private bool sideBySideSparksTriggered;
+        private int sideBySideExchangeIndex = -1;
         private int completionVfxDriver;
         private int selectedDriverNumber;
         private bool renderLodEnabled = true;
@@ -118,6 +120,32 @@ namespace F1XR.RestAPI.Replay
                 visualLength > 0f;
         }
 
+        internal bool TryEnsureVisualSize(
+            int driverNumber,
+            out float visualWidth,
+            out float visualLength)
+        {
+            visualWidth = 0f;
+            visualLength = 0f;
+            if (driverNumber <= 0)
+                return false;
+
+            ReplayCarView car = carInstances.GetOrCreate(
+                driverNumber,
+                removeCarState,
+                setupCar);
+            if (car == null)
+                return false;
+
+            visualWidth =
+                car.GetVisualWidth() *
+                overtakeVehicleSizeScale;
+            visualLength =
+                car.GetVisualLength() *
+                overtakeVehicleSizeScale;
+            return visualWidth > 0f && visualLength > 0f;
+        }
+
         public void SetReplayEvents(ReplayEventDto[] events)
         {
             overtakeMotion.SetEvents(events);
@@ -154,6 +182,19 @@ namespace F1XR.RestAPI.Replay
             int driver,
             float replayTime)
         {
+            TriggerOvertakeCompletionVfx(
+                driver,
+                replayTime,
+                null,
+                1f);
+        }
+
+        public void TriggerOvertakeCompletionVfx(
+            int driver,
+            float replayTime,
+            string hudText,
+            float intensityScale)
+        {
             if (completionVfxSettings == null ||
                 !completionVfxSettings.enabled ||
                 !carInstances.Cars.TryGetValue(
@@ -168,7 +209,9 @@ namespace F1XR.RestAPI.Replay
             completionVfxDriver = driver;
             car.TriggerOvertakeCompletionVfx(
                 completionVfxSettings,
-                replayTime);
+                replayTime,
+                hudText,
+                intensityScale);
         }
 
         public void UpdateOvertakeCompletionVfx(
@@ -207,6 +250,16 @@ namespace F1XR.RestAPI.Replay
             OvertakePresentationMode mode)
         {
             overtakeMotion.SetPresentationMode(mode);
+        }
+
+        internal void SetShowcaseBattle(
+            OvertakeBattleSequence sequence)
+        {
+            showcaseBattle = sequence != null && sequence.IsValid
+                ? sequence
+                : null;
+            sideBySideExchangeIndex = -1;
+            overtakeMotion.SetShowcaseBattle(sequence);
         }
 
         internal void SetOvertakeVehicleSizeScale(float scale)
@@ -411,6 +464,8 @@ namespace F1XR.RestAPI.Replay
             ClearOvertakeApproachRibbon();
             ClearOvertakeSideBySideVfx();
             ResetOvertakeCompletionVfx();
+            showcaseBattle = null;
+            overtakeMotion.SetShowcaseBattle(null);
             completionVfxSettings = null;
             selectedDriverNumber = 0;
             debugEventByDriver.Clear();
@@ -499,6 +554,12 @@ namespace F1XR.RestAPI.Replay
 
         private void UpdateOvertakeApproachRibbon(float time)
         {
+            if (showcaseBattle != null && showcaseBattle.IsValid)
+            {
+                UpdateBattleApproachRibbon(time);
+                return;
+            }
+
             if (approachRibbonEvent == null ||
                 approachRibbonSettings == null ||
                 approachRibbonEvent.driverNumbers == null ||
@@ -640,8 +701,107 @@ namespace F1XR.RestAPI.Replay
             approachRibbonSettings = null;
         }
 
+        private void UpdateBattleApproachRibbon(float time)
+        {
+            if (approachRibbonSettings == null ||
+                !approachRibbonSettings.enabled)
+            {
+                ClearBattleRibbons();
+                return;
+            }
+
+            int exchangeIndex = FindUpcomingBattleExchange(time);
+            if (exchangeIndex < 0)
+            {
+                ClearBattleRibbons();
+                return;
+            }
+
+            OvertakeBattleExchange exchange =
+                showcaseBattle.Exchanges[exchangeIndex];
+            float approachStart = Mathf.Max(
+                showcaseBattle.StartTime,
+                exchange.anchorTime -
+                approachRibbonSettings.preRollSeconds);
+            float fadeEnd =
+                exchange.anchorTime +
+                ApproachRibbonFadeOutSeconds;
+            if (time < approachStart || time >= fadeEnd)
+            {
+                ClearBattleRibbons();
+                return;
+            }
+
+            bool approaching = time < exchange.anchorTime;
+            float progress = approaching
+                ? Mathf.InverseLerp(
+                    approachStart,
+                    exchange.anchorTime,
+                    time)
+                : 1f;
+            float intensity = approaching
+                ? Mathf.Lerp(
+                    approachRibbonSettings.startIntensity,
+                    1f,
+                    Mathf.Clamp01(
+                        approachRibbonSettings.growth != null
+                            ? approachRibbonSettings.growth
+                                .Evaluate(progress)
+                            : progress))
+                : 1f - Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        exchange.anchorTime,
+                        fadeEnd,
+                        time));
+            SetApproachRibbonForDriver(
+                exchange.overtaker,
+                true,
+                intensity,
+                time,
+                approaching);
+            SetApproachRibbonForDriver(
+                exchange.defender,
+                false,
+                intensity,
+                time,
+                approaching);
+        }
+
+        private int FindUpcomingBattleExchange(float time)
+        {
+            for (int i = 0;
+                 i < showcaseBattle.Exchanges.Count;
+                 i++)
+            {
+                if (time <
+                    showcaseBattle.Exchanges[i].anchorTime +
+                    ApproachRibbonFadeOutSeconds)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private void ClearBattleRibbons()
+        {
+            ClearApproachRibbonForDriver(
+                showcaseBattle.FirstDriver);
+            ClearApproachRibbonForDriver(
+                showcaseBattle.SecondDriver);
+        }
+
         private void UpdateOvertakeSideBySideVfx(float time)
         {
+            if (showcaseBattle != null && showcaseBattle.IsValid)
+            {
+                UpdateBattleSideBySideVfx(time);
+                return;
+            }
+
             if (sideBySideVfxEvent == null ||
                 sideBySideVfxSettings == null ||
                 approachRibbonSettings == null ||
@@ -858,6 +1018,104 @@ namespace F1XR.RestAPI.Replay
             sideBySideWasActive = false;
             sideBySideSweepTriggered = false;
             sideBySideSparksTriggered = false;
+            sideBySideExchangeIndex = -1;
+        }
+
+        private void UpdateBattleSideBySideVfx(float time)
+        {
+            if (sideBySideVfxSettings == null ||
+                approachRibbonSettings == null ||
+                !sideBySideVfxSettings.enabled)
+            {
+                ResetSideBySideRuntimeEffects();
+                return;
+            }
+
+            bool timeDiscontinuity =
+                !float.IsNaN(sideBySideLastReplayTime) &&
+                (time < sideBySideLastReplayTime ||
+                 time - sideBySideLastReplayTime >
+                 sideBySideVfxSettings
+                     .seekResetThresholdSeconds);
+            if (timeDiscontinuity)
+            {
+                sideBySideExchangeIndex = -1;
+                ResetSideBySideOneShotState();
+            }
+
+            sideBySideLastReplayTime = time;
+            int exchangeIndex = FindActiveBattleExchange(time);
+            if (exchangeIndex < 0)
+            {
+                sideBySideWasActive = false;
+                return;
+            }
+
+            OvertakeBattleExchange exchange =
+                showcaseBattle.Exchanges[exchangeIndex];
+            if (sideBySideExchangeIndex != exchangeIndex)
+            {
+                ResetSideBySideOneShotState();
+                sideBySideExchangeIndex = exchangeIndex;
+            }
+
+            PrepareSideBySideVfx(exchange.overtaker, true);
+            PrepareSideBySideVfx(exchange.defender, false);
+            float stageStart =
+                exchange.anchorTime -
+                sideBySideVfxSettings.transitionBlendSeconds;
+            float stageEnd = Mathf.Max(
+                    exchange.anchorTime,
+                    exchange.confirmedTime) +
+                sideBySideVfxSettings.transitionBlendSeconds;
+            if (!sideBySideWasActive)
+            {
+                TriggerSideBySideLightSweep(
+                    exchange.overtaker,
+                    time);
+            }
+
+            if (!sideBySideSparksTriggered &&
+                time >= Mathf.Lerp(
+                    stageStart,
+                    stageEnd,
+                    sideBySideVfxSettings
+                        .sparkTriggerNormalized))
+            {
+                TriggerSideBySideSparks(
+                    exchange.overtaker);
+            }
+
+            sideBySideWasActive = true;
+            UpdateSideBySideLightSweep(
+                exchange.overtaker,
+                time);
+        }
+
+        private int FindActiveBattleExchange(float time)
+        {
+            float blend = sideBySideVfxSettings != null
+                ? Mathf.Max(
+                    0f,
+                    sideBySideVfxSettings
+                        .transitionBlendSeconds)
+                : 0f;
+            for (int i = 0;
+                 i < showcaseBattle.Exchanges.Count;
+                 i++)
+            {
+                OvertakeBattleExchange exchange =
+                    showcaseBattle.Exchanges[i];
+                float start = exchange.anchorTime - blend;
+                float end = Mathf.Max(
+                        exchange.anchorTime,
+                        exchange.confirmedTime) +
+                    blend;
+                if (time >= start && time < end)
+                    return i;
+            }
+
+            return -1;
         }
 
         private void UpdateRenderLodBudget()
