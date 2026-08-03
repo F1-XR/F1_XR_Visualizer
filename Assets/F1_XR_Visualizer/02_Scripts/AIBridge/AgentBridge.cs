@@ -68,6 +68,7 @@ namespace F1XR.AIBridge
                 text = text,
                 session_key = ResolveSessionKey(sessionKey),
                 at_time = atTime,
+                interaction_context = BuildInteractionContext(),   // "이 선수" = 지금 선택된 차
             };
             string json = JsonConvert.SerializeObject(msg, SendSettings);
             // 검증용: 발화에 실려 올라가는 경기 번호·시각 확인(화면과 일치하는지)
@@ -105,6 +106,22 @@ namespace F1XR.AIBridge
             ReplayPlayer p = Player;
             if (p == null || !p.HasDataset) return null;
             return ReplayTimeMap.RelativeToIso(p, p.CurrentTime);
+        }
+
+        /// <summary>지금 화면에서 선택(클릭·XR Ray)된 차량을 '지목 맥락'으로 만든다.
+        /// 선택이 없으면(0) null → 발화에서 통째로 생략된다(서버는 지시어를 되묻게 됨).
+        /// 이 번호를 채우면 서버가 "이 선수/이 차/얘"를 이 번호로 해석한다.</summary>
+        public InteractionContext BuildInteractionContext()
+        {
+            ReplayPlayer p = Player;
+            int sel = (p != null) ? p.SelectedDriverNumber : 0;
+            if (sel <= 0) return null;
+            return new InteractionContext
+            {
+                target_type = "driver",
+                driver_number = sel,
+                input_modality = "click",   // 데스크톱 클릭 선택. Quest에선 "controller_ray"로 교체
+            };
         }
     }
 }

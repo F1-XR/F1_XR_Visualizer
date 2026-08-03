@@ -29,6 +29,17 @@ namespace F1XR.AIBridge.Protocol
 
     // ───────── Unity → AI (전송용) ─────────
 
+    /// <summary>공간 맥락 — 사용자가 클릭/XR Ray로 지목한 대상(Battle Lens Phase 1).
+    /// protocol.py 의 InteractionContext 와 1:1. 지목이 없으면 발화에 이 필드를 통째로 생략한다
+    /// (NullValueHandling.Ignore). driver_number 를 채우면 서버가 "이 선수/이 차"를 그 번호로 해석한다.</summary>
+    [Serializable]
+    public class InteractionContext
+    {
+        public string target_type;      // 예: "driver"
+        public int? driver_number;      // 선택/지목된 차량 번호
+        public string input_modality;   // "click" | "controller_ray" 등
+    }
+
     /// <summary>텍스트 발화(디버그·키보드 입력).</summary>
     [Serializable]
     public class UtteranceMsg
@@ -37,6 +48,7 @@ namespace F1XR.AIBridge.Protocol
         public string text;
         public int? session_key;    // 지금 보는 경기 ID (매 발화에 넣기). null이면 서버 기본 세션
         public string at_time;      // 리플레이 현재 시각(ISO), 없으면 null
+        public InteractionContext interaction_context;   // 지목 대상(없으면 null → 생략)
     }
 
     /// <summary>음성 발화 — base64 인코딩한 wav(헤더 포함).</summary>
@@ -47,6 +59,7 @@ namespace F1XR.AIBridge.Protocol
         public string data;         // base64 wav
         public int? session_key;    // null이면 서버 기본 세션
         public string at_time;
+        public InteractionContext interaction_context;   // 지목 대상(없으면 null → 생략)
     }
 
     // ───────── AI → Unity (수신용) ─────────

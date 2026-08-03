@@ -57,6 +57,16 @@ namespace F1XR.AIBridge.Voice
                 ? p.Manifest.sessionKey
                 : (currentSessionKey > 0 ? currentSessionKey : (int?)null);
 
+            // 공간 맥락: 지금 선택된 차량이 있으면 "이 선수"의 대상으로 실어 보낸다(없으면 생략).
+            InteractionContext ictx = null;
+            if (p != null && p.SelectedDriverNumber > 0)
+                ictx = new InteractionContext
+                {
+                    target_type = "driver",
+                    driver_number = p.SelectedDriverNumber,
+                    input_modality = "click",
+                };
+
             byte[] wav = WavUtil.FromAudioClip(_clip, pos);
             string b64 = System.Convert.ToBase64String(wav);
             var msg = new AudioUtteranceMsg
@@ -64,6 +74,7 @@ namespace F1XR.AIBridge.Voice
                 data = b64,
                 session_key = sessionKey,
                 at_time = currentAtTime,
+                interaction_context = ictx,
             };
             // 검증용: 음성 발화에 실려 올라가는 경기 번호·시각 확인(base64 data는 커서 제외)
             string skLog = sessionKey.HasValue ? sessionKey.Value.ToString() : "null";
