@@ -8,6 +8,7 @@ namespace F1XR.RestAPI.Replay
     {
         private const int MaxPathSamples = 48;
         private const float MinimumSurfaceNormalY = 0.35f;
+        private const float MinimumReliableEdgeCoverage = 0.7f;
 
         private readonly List<Mesh> meshes = new();
         private readonly List<RoadTriangle> roadTriangles = new();
@@ -134,6 +135,22 @@ namespace F1XR.RestAPI.Replay
                 rightEdges);
         }
 
+        public bool TryBuildReliableRoadEdges(
+            IReadOnlyList<Vector3> path,
+            float vehicleWidth,
+            List<Vector3> leftEdges,
+            List<Vector3> rightEdges)
+        {
+            return TryBuildEdges(
+                path,
+                vehicleWidth,
+                roadTriangles,
+                "Reliable road surface",
+                true,
+                leftEdges,
+                rightEdges);
+        }
+
         private bool TryBuildEdges(
             IReadOnlyList<Vector3> path,
             float vehicleWidth,
@@ -183,9 +200,12 @@ namespace F1XR.RestAPI.Replay
             Debug.Log(
                 $"[EventTrackSegment] {label} road-edge samples=" +
                 $"{detected}/{path.Count}.");
+            float coverage =
+                detected /
+                (float)path.Count;
             if (detected == 0 ||
                 requireCompleteCoverage &&
-                detected != path.Count)
+                coverage < MinimumReliableEdgeCoverage)
             {
                 leftEdges.Clear();
                 rightEdges.Clear();

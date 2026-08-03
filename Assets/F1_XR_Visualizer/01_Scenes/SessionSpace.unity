@@ -870,8 +870,9 @@ MonoBehaviour:
   entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
   roadFloorOffset: 0.02
-  showcaseVehicleScale: 1.3
-  showcasePlaybackSpeedMultiplier: 2
+  showcaseTrackScaleMultiplier: 1.15
+  showcaseVehicleScale: 0.7
+  showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
   overtakePortalTransitionVfx:
     enabled: 1

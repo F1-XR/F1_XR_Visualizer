@@ -36,8 +36,9 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Range(1f, 2f)] private float entryContinuationMultiplier = 1.5f;
         [SerializeField, Min(0f)] private float heroForwardOffset = 0.25f;
         [SerializeField] private float roadFloorOffset = 0.02f;
-        [SerializeField, Min(1f)] private float showcaseVehicleScale = 1.7f;
-        [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 2.5f;
+        [SerializeField, Range(1f, 1.5f)] private float showcaseTrackScaleMultiplier = 1.15f;
+        [SerializeField, Range(0.5f, 1.5f)] private float showcaseVehicleScale = 0.7f;
+        [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 1.5f;
         [SerializeField] private bool immersiveScaleEnabled;
 
         [Header("Overtake Exit Portal VFX")]
@@ -227,6 +228,8 @@ namespace F1XR.RestAPI.Replay.Room
         {
             isApplyingRoomPoses = false;
             ResolveEventReplay();
+            eventReplay?.SetOvertakeVehicleSizeScale(
+                showcaseVehicleScale);
 
             if (!mappingEnabled)
             {
@@ -628,7 +631,8 @@ namespace F1XR.RestAPI.Replay.Room
                 wallContinuationTarget *
                 Mathf.Max(1f, entryContinuationMultiplier);
             float targetPresentationLength =
-                roomSpan + wallContinuationTarget * 2f;
+                (roomSpan + wallContinuationTarget * 2f) *
+                showcaseTrackScaleMultiplier;
             float resolvedScale =
                 targetPresentationLength /
                 Mathf.Max(0.0001f, totalDistance);
@@ -1122,13 +1126,12 @@ namespace F1XR.RestAPI.Replay.Room
             float scale =
                 immersiveScaleEnabled &&
                 portalPresentation != null
-                    ? Mathf.Max(
-                        Mathf.Max(1f, showcaseVehicleScale),
-                        portalPresentation.EvaluateImmersiveScale(
-                            presentationAnchor))
-                    : Mathf.Max(
-                        1f,
-                        showcaseVehicleScale);
+                    ? showcaseVehicleScale *
+                      Mathf.Max(
+                          1f,
+                          portalPresentation.EvaluateImmersiveScale(
+                              presentationAnchor))
+                    : showcaseVehicleScale;
             firstCar.ApplyRoomPresentation(
                 presentationAnchor,
                 scale);
