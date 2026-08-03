@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR;
 using UnityEngine.XR.Hands;
+using UnityEngine.XR.Interaction.Toolkit.Filtering;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using F1XR.Interaction.Input;
@@ -10,12 +11,15 @@ using F1XR.Interaction.World;
 
 namespace F1XR.UI.WorldPanel
 {
-    public sealed class PanelEdgeGrab : MonoBehaviour
+    public sealed class PanelEdgeGrab : MonoBehaviour, IXRSelectFilter
     {
         [SerializeField] XRGrabInteractable grab;
         [SerializeField] ScaleController scaleController;
+        [SerializeField] PanelCornerResize cornerResize;
         [SerializeField] Collider panelCollider;
         [SerializeField] RectTransform panelRect;
+        [SerializeField] bool grabPanelBody;
+        [SerializeField] bool gripGrabAnywhere = true;
         [SerializeField] float edgeWidth = 35f;
         [SerializeField] float edgeDepth = 12f;
         [SerializeField] float rayDistance = 20f;
@@ -35,6 +39,7 @@ namespace F1XR.UI.WorldPanel
         [SerializeField, Min(0.01f)] float visualFadeTime = 0.08f;
 
         static readonly List<XRBaseInputInteractor> Interactors = new();
+        static readonly List<InputDevice> InputDeviceBuffer = new();
 
         enum EdgeSide
         {
@@ -63,6 +68,9 @@ namespace F1XR.UI.WorldPanel
         bool wasSelected;
         bool hasLockedEdge;
         EdgeSide lockedEdge;
+        XRBaseInputInteractor gripInteractor;
+        bool leftGripWasPressed;
+        bool rightGripWasPressed;
 
         void Awake()
         {
@@ -71,6 +79,9 @@ namespace F1XR.UI.WorldPanel
 
             if (scaleController == null)
                 scaleController = GetComponent<ScaleController>();
+
+            if (cornerResize == null)
+                cornerResize = GetComponent<PanelCornerResize>();
 
             if (panelCollider == null)
                 panelCollider = GetComponentInChildren<Collider>();
@@ -86,6 +97,17 @@ namespace F1XR.UI.WorldPanel
         void OnEnable()
         {
             handSubsystem = XRHandInput.FindRunningSubsystem();
+
+            if (grab != null)
+                grab.selectFilters.Add(this);
+        }
+
+        void OnDisable()
+        {
+            EndGripGrab();
+
+            if (grab != null)
+                grab.selectFilters.Remove(this);
         }
 
         void OnDestroy()
@@ -116,6 +138,8 @@ namespace F1XR.UI.WorldPanel
 
         void Update()
         {
+            UpdateGripGrab();
+
             var hasPoint = TryGetPointerEdgePoint(out var localPoint, out var side);
             var selected = grab != null && grab.isSelected;
 
@@ -141,15 +165,162 @@ namespace F1XR.UI.WorldPanel
                 lastSide = side;
             }
 
-            var visible = selected && hasLockedEdge;
+            var visible = hasPoint || (selected && hasLockedEdge);
 
             if (scaleController != null && scaleController.IsScaling)
+                visible = false;
+
+            // Corner marks take over near the corners; showing both reads as two conflicting affordances.
+            if (cornerResize != null && (cornerResize.IsCornerHovered || cornerResize.IsResizing))
                 visible = false;
 
             if (visible)
                 SetHighlightTarget(lastLocalPoint, lastSide);
 
             UpdateHighlightVisual(visible);
+        }
+
+        public bool canProcess => isActiveAndEnabled;
+
+        public void Configure(
+            XRGrabInteractable panelGrab,
+            Collider bodyCollider,
+            RectTransform bodyRect,
+            bool allowBodyGrab = true,
+            bool allowGripGrabAnywhere = true)
+        {
+            grab = panelGrab;
+            panelCollider = bodyCollider;
+            panelRect = bodyRect;
+            grabPanelBody = allowBodyGrab;
+            gripGrabAnywhere = allowGripGrabAnywhere;
+            if (scaleController == null)
+                scaleController = GetComponent<ScaleController>();
+            if (cornerResize == null)
+                cornerResize = GetComponent<PanelCornerResize>();
+            CreateEdgeColliders();
+        }
+
+        public bool Process(IXRSelectInteractor interactor, IXRSelectInteractable interactable)
+        {
+            if (!grabPanelBody || !ReferenceEquals(interactable, grab))
+                return true;
+
+            // Only gate the start of a grab. The manager re-runs select filters every frame while
+            // selected, so without this the grab would drop as soon as the ray leaves the edge.
+            if (interactor.IsSelecting(interactable))
+                return true;
+
+            if (interactor is XRBaseInteractor baseInteractor && baseInteractor.isPerformingManualInteraction)
+                return true;
+
+            if (interactor is not XRBaseInputInteractor inputInteractor)
+                return false;
+
+            // Corner handles stick out past the edges, so they need admitting explicitly; the grab is
+            // converted into a one-handed resize by PanelCornerResize once it starts.
+            if (cornerResize != null && cornerResize.IsRayOnCorner(inputInteractor))
+                return true;
+
+            return TryGetRayEdgePoint(inputInteractor, out _, out _);
+        }
+
+        void UpdateGripGrab()
+        {
+            var leftPressed = IsGripPressed(XRNode.LeftHand);
+            var rightPressed = IsGripPressed(XRNode.RightHand);
+            var leftDown = leftPressed && !leftGripWasPressed;
+            var rightDown = rightPressed && !rightGripWasPressed;
+            leftGripWasPressed = leftPressed;
+            rightGripWasPressed = rightPressed;
+
+            if (gripInteractor != null)
+            {
+                var held = gripInteractor.handedness == InteractorHandedness.Left ? leftPressed : rightPressed;
+                if (!held || !gripInteractor.isPerformingManualInteraction || !gripInteractor.isActiveAndEnabled)
+                    EndGripGrab();
+
+                return;
+            }
+
+            if (!gripGrabAnywhere || grab == null || grab.isSelected || (!leftDown && !rightDown))
+                return;
+
+            Interactors.Clear();
+            Interactors.AddRange(FindObjectsByType<XRBaseInputInteractor>(FindObjectsInactive.Exclude));
+
+            foreach (var interactor in Interactors)
+            {
+                var pressedThisFrame = interactor.handedness switch
+                {
+                    InteractorHandedness.Left => leftDown,
+                    InteractorHandedness.Right => rightDown,
+                    _ => false
+                };
+
+                if (!pressedThisFrame || interactor.hasSelection || !IsRayOnPanel(interactor))
+                    continue;
+
+                interactor.StartManualInteraction((IXRSelectInteractable)grab);
+                if (interactor.isPerformingManualInteraction)
+                    gripInteractor = interactor;
+
+                return;
+            }
+        }
+
+        void EndGripGrab()
+        {
+            if (gripInteractor == null)
+                return;
+
+            if (gripInteractor.isPerformingManualInteraction)
+                gripInteractor.EndManualInteraction();
+
+            gripInteractor = null;
+        }
+
+        bool IsRayOnPanel(XRBaseInputInteractor interactor)
+        {
+            if (interactor is not IXRRayProvider rayProvider)
+                return false;
+
+            var origin = rayProvider.GetOrCreateRayOrigin();
+            if (origin == null)
+                return false;
+
+            var hits = Physics.RaycastAll(origin.position, origin.forward, rayDistance, ~0, QueryTriggerInteraction.Ignore);
+            var bestDistance = float.MaxValue;
+            var onPanel = false;
+
+            foreach (var hit in hits)
+            {
+                if ((hit.collider != panelCollider &&
+                    !edgeColliders.Contains(hit.collider)) ||
+                    hit.distance >= bestDistance)
+                {
+                    continue;
+                }
+
+                bestDistance = hit.distance;
+                onPanel = true;
+            }
+
+            return onPanel;
+        }
+
+        static bool IsGripPressed(XRNode node)
+        {
+            InputDeviceBuffer.Clear();
+            UnityEngine.XR.InputDevices.GetDevicesAtXRNode(node, InputDeviceBuffer);
+
+            foreach (var device in InputDeviceBuffer)
+            {
+                if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out var pressed) && pressed)
+                    return true;
+            }
+
+            return false;
         }
 
         void CreateEdgeColliders()
@@ -168,6 +339,9 @@ namespace F1XR.UI.WorldPanel
             edgeColliders.Clear();
             edgeSides.Clear();
 
+            if (grabPanelBody)
+                colliders.Add(panelCollider);
+
             AddEdgeCollider(parent, "Move Edge Top", EdgeSide.Top, new Vector3(0f, size.y * 0.5f - edgeWidth * 0.5f, 0f), new Vector3(size.x, edgeWidth, edgeDepth), colliders);
             AddEdgeCollider(parent, "Move Edge Bottom", EdgeSide.Bottom, new Vector3(0f, -size.y * 0.5f + edgeWidth * 0.5f, 0f), new Vector3(size.x, edgeWidth, edgeDepth), colliders);
             AddEdgeCollider(parent, "Move Edge Left", EdgeSide.Left, new Vector3(-size.x * 0.5f + edgeWidth * 0.5f, 0f, 0f), new Vector3(edgeWidth, size.y, edgeDepth), colliders);
@@ -178,6 +352,7 @@ namespace F1XR.UI.WorldPanel
         {
             var existing = parent.Find(objectName);
             var edge = existing != null ? existing.gameObject : new GameObject(objectName);
+            edge.layer = panelCollider.gameObject.layer;
             edge.transform.SetParent(parent, false);
             edge.transform.localPosition = center;
             edge.transform.localRotation = Quaternion.identity;
@@ -378,9 +553,33 @@ namespace F1XR.UI.WorldPanel
 
             foreach (var interactor in Interactors)
             {
-                if (interactor is not IXRRayProvider rayProvider)
-                    continue;
+                if (TryGetEdgePoint(interactor, out localPoint, out side))
+                    return true;
+            }
 
+            localPoint = default;
+            side = default;
+            return false;
+        }
+
+        bool TryGetRayEdgePoint(XRBaseInputInteractor interactor, out Vector2 localPoint, out EdgeSide side)
+        {
+            if (interactor is IXRRayProvider rayProvider)
+            {
+                var origin = rayProvider.GetOrCreateRayOrigin();
+                if (origin != null)
+                    return TryRayEdgePoint(origin.position, origin.forward, out localPoint, out side);
+            }
+
+            localPoint = default;
+            side = default;
+            return false;
+        }
+
+        bool TryGetEdgePoint(XRBaseInputInteractor interactor, out Vector2 localPoint, out EdgeSide side)
+        {
+            if (interactor is IXRRayProvider rayProvider)
+            {
                 var origin = rayProvider.GetOrCreateRayOrigin();
                 if (origin != null && TryRayEdgePoint(origin.position, origin.forward, out localPoint, out side))
                     return true;

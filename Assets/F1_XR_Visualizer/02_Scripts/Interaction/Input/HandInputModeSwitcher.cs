@@ -9,6 +9,7 @@ namespace F1XR.Interaction.Input
     public sealed class HandInputModeSwitcher : MonoBehaviour
     {
         [SerializeField] bool showInputVisualMeshes;
+        [SerializeField] bool controllerOnly;
         [SerializeField] GameObject handVisualizerRoot;
         [SerializeField] GameObject leftHandRoot;
         [SerializeField] GameObject leftHandRay;
@@ -32,14 +33,29 @@ namespace F1XR.Interaction.Input
             ResolveSceneObjects();
             SetActive(leftHandRay, false);
             SetActive(rightHandRay, false);
-            SetActive(handVisualizerRoot, true);
+            SetActive(handVisualizerRoot, !controllerOnly);
             ApplyInputVisualMeshes();
+
+            if (controllerOnly)
+            {
+                ApplyControllerOnly();
+                enabled = false;
+                return;
+            }
+
             ResolveHandSubsystem();
             ApplyModes();
         }
 
         void Update()
         {
+            if (controllerOnly)
+            {
+                ApplyControllerOnly();
+                enabled = false;
+                return;
+            }
+
             if (!HasSceneReferences() && Time.unscaledTime >= nextResolveTime)
             {
                 ResolveSceneObjects();
@@ -156,6 +172,13 @@ namespace F1XR.Interaction.Input
 
             Apply(leftHandRoot, leftHandRay, leftController, leftHandTracked, !leftHandTracked && leftControllerTracked);
             Apply(rightHandRoot, rightHandRay, rightController, rightHandTracked, !rightHandTracked && rightControllerTracked);
+        }
+
+        void ApplyControllerOnly()
+        {
+            SetActive(handVisualizerRoot, false);
+            Apply(leftHandRoot, leftHandRay, leftController, false, true);
+            Apply(rightHandRoot, rightHandRay, rightController, false, true);
         }
 
         bool IsControllerTracked(InputDeviceCharacteristics handedness)

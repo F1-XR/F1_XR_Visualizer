@@ -8,6 +8,7 @@ namespace F1XR.RestAPI.Replay
     public class CarAudio
     {
         private const float ConfigLogInterval = 1f;
+        private const float AudibilityUpdateInterval = 0.1f;
 
         private readonly IReadOnlyDictionary<int, ReplayCarView> cars;
         private readonly IReadOnlyDictionary<int, string> driverTeams;
@@ -28,6 +29,10 @@ namespace F1XR.RestAPI.Replay
         private bool loggedDriverTeams;
         private int configLogBurst = 8;
         private float nextConfigLogTime;
+        private float nextAudibilityUpdateTime;
+        private bool audibilityDirty = true;
+        private AudioListener audioListener;
+        private Camera listenerCamera;
 
         public CarAudio(
             IReadOnlyDictionary<int, ReplayCarView> cars,
@@ -44,6 +49,7 @@ namespace F1XR.RestAPI.Replay
         public void SetSettings(CarEngineSoundSettings value)
         {
             settings = value ?? new CarEngineSoundSettings();
+            audibilityDirty = true;
             CacheNativeProfiles();
         }
 
@@ -62,10 +68,18 @@ namespace F1XR.RestAPI.Replay
         public void SetSelectedDriver(int driver)
         {
             selectedDriver = driver;
+            audibilityDirty = true;
 
             if (settings != null && settings.useEngineSound)
                 ConfigureCars();
 
+            UpdateAudibility();
+        }
+
+        public void SetMixFocusDriver(int driver)
+        {
+            selectedDriver = Mathf.Max(0, driver);
+            audibilityDirty = true;
             UpdateAudibility();
         }
 
@@ -131,6 +145,7 @@ namespace F1XR.RestAPI.Replay
                 sound.SetPlaying(IsActive);
                 engineSounds[driver] = sound;
                 runtimeSettings[driver] = appliedSettings;
+                audibilityDirty = true;
                 LogConfig(driver, "enabled");
 
                 if (!loggedEngineSound)
@@ -159,6 +174,7 @@ namespace F1XR.RestAPI.Replay
 
                 engineSounds.Remove(driver);
                 runtimeSettings.Remove(driver);
+                audibilityDirty = true;
                 LogConfig(driver, "removed");
             }
         }
@@ -181,6 +197,7 @@ namespace F1XR.RestAPI.Replay
         {
             engineSounds.Remove(driver);
             runtimeSettings.Remove(driver);
+            audibilityDirty = true;
         }
 
         public void UpdateTelemetry(
@@ -201,17 +218,17 @@ namespace F1XR.RestAPI.Replay
             if (settings == null)
                 return;
 
+            float now = Time.unscaledTime;
+            if (!audibilityDirty && now < nextAudibilityUpdateTime)
+                return;
+
+            audibilityDirty = false;
+            nextAudibilityUpdateTime = now + AudibilityUpdateInterval;
             CollectSounds();
 
             if (selectedDriver > 0)
             {
                 ApplySelectedAudibility();
-                return;
-            }
-
-            if (settings.useTeamBasedEngineAudio)
-            {
-                SetAllAudible();
                 return;
             }
 
@@ -248,6 +265,10 @@ namespace F1XR.RestAPI.Replay
             loggedDriverTeams = false;
             configLogBurst = 8;
             nextConfigLogTime = 0f;
+            nextAudibilityUpdateTime = 0f;
+            audibilityDirty = true;
+            audioListener = null;
+            listenerCamera = null;
         }
 
         private void ApplyPlayingState()
@@ -399,24 +420,23 @@ namespace F1XR.RestAPI.Replay
                 sound.SetAudibility(IsSelectedSound(sound) ? 1f : 0f);
         }
 
-        private void SetAllAudible()
-        {
-            foreach (CarEngineSound sound in soundOrder)
-                sound.SetAudibility(1f);
-        }
-
         private bool TryGetListenerPosition(out Vector3 listenerPosition)
         {
-            AudioListener listener = Object.FindAnyObjectByType<AudioListener>();
-            if (listener != null)
+            if (audioListener == null || !audioListener.isActiveAndEnabled)
+                audioListener = Object.FindAnyObjectByType<AudioListener>();
+
+            if (audioListener != null)
             {
-                listenerPosition = listener.transform.position;
+                listenerPosition = audioListener.transform.position;
                 return true;
             }
 
-            if (Camera.main != null)
+            if (listenerCamera == null || !listenerCamera.isActiveAndEnabled)
+                listenerCamera = Camera.main;
+
+            if (listenerCamera != null)
             {
-                listenerPosition = Camera.main.transform.position;
+                listenerPosition = listenerCamera.transform.position;
                 return true;
             }
 

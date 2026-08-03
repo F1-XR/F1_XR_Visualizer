@@ -65,6 +65,9 @@ namespace F1XR.RestAPI.Replay.Room
         private bool exitBoundsWarningActive;
         private TrackableId entryBoundsWarningWallId;
         private TrackableId exitBoundsWarningWallId;
+        private ShowcaseWallFrame frozenEntryWall;
+        private ShowcaseWallFrame frozenExitWall;
+        private bool wallFramesFrozen;
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation;
         private Vector3 lastRootScale;
@@ -94,6 +97,7 @@ namespace F1XR.RestAPI.Replay.Room
         public TrackableId EntryWallId => entryWallId;
         public TrackableId ExitWallId => exitWallId;
         public int LayoutRevision => layoutRevision;
+        public bool WallFramesFrozen => wallFramesFrozen;
 
         private void Reset()
         {
@@ -176,8 +180,7 @@ namespace F1XR.RestAPI.Replay.Room
         public bool TryGetEntryWallSize(out Vector2 size)
         {
             size = Vector2.zero;
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetEntryWall(out var wall))
+            if (!TryGetEntryWallFrame(out var wall))
             {
                 return false;
             }
@@ -194,8 +197,7 @@ namespace F1XR.RestAPI.Replay.Room
             size = Vector2.zero;
             bottomCenter = Vector3.zero;
             verticalAxis = Vector3.up;
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetEntryWall(out var wall) ||
+            if (!TryGetEntryWallFrame(out var wall) ||
                 !wall.IsValid)
             {
                 return false;
@@ -214,8 +216,7 @@ namespace F1XR.RestAPI.Replay.Room
         public bool TryGetExitWallSize(out Vector2 size)
         {
             size = Vector2.zero;
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetExitWall(out var wall))
+            if (!TryGetExitWallFrame(out var wall))
             {
                 return false;
             }
@@ -232,8 +233,7 @@ namespace F1XR.RestAPI.Replay.Room
             size = Vector2.zero;
             bottomCenter = Vector3.zero;
             verticalAxis = Vector3.up;
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetExitWall(out var wall) ||
+            if (!TryGetExitWallFrame(out var wall) ||
                 !wall.IsValid)
             {
                 return false;
@@ -252,9 +252,8 @@ namespace F1XR.RestAPI.Replay.Room
         public bool TryGetRoomFloorHeight(out float floorHeight)
         {
             floorHeight = 0f;
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetEntryWall(out var entryWall) ||
-                !wallDiscovery.TryGetExitWall(out var exitWall) ||
+            if (!TryGetEntryWallFrame(out var entryWall) ||
+                !TryGetExitWallFrame(out var exitWall) ||
                 !entryWall.IsValid ||
                 !exitWall.IsValid)
             {
@@ -318,6 +317,75 @@ namespace F1XR.RestAPI.Replay.Room
             return true;
         }
 
+        public bool TryCaptureAutomaticHero(Vector3 preferredForward)
+        {
+            ResolveReferences();
+            RebuildLayout();
+            if (xrMainCamera == null ||
+                !entryPoseValid ||
+                !exitPoseValid)
+            {
+                return false;
+            }
+
+            var up = transform.up.normalized;
+            var travel = Vector3.ProjectOnPlane(preferredForward, up);
+            if (travel.sqrMagnitude < 0.0001f)
+            {
+                travel = Vector3.ProjectOnPlane(
+                    exitPose.position - entryPose.position,
+                    up);
+            }
+
+            if (travel.sqrMagnitude < 0.0001f)
+                return false;
+
+            travel.Normalize();
+            var viewForward =
+                Vector3.ProjectOnPlane(xrMainCamera.forward, up);
+            if (viewForward.sqrMagnitude < 0.0001f)
+                viewForward = travel;
+            else
+                viewForward.Normalize();
+
+            var entryToExit = Vector3.ProjectOnPlane(
+                exitPose.position - entryPose.position,
+                up);
+            if (entryToExit.sqrMagnitude < 0.0001f)
+                return false;
+
+            var focusPoint =
+                xrMainCamera.position +
+                viewForward * heroForwardDistance;
+            var interpolation = Mathf.Clamp(
+                Vector3.Dot(
+                    focusPoint - entryPose.position,
+                    entryToExit) /
+                entryToExit.sqrMagnitude,
+                0.2f,
+                0.8f);
+            var right = Vector3.Cross(up, travel).normalized;
+            var worldPosition =
+                entryPose.position +
+                entryToExit * interpolation +
+                right * heroHorizontalOffset;
+            worldPosition.y =
+                xrMainCamera.position.y + heroVerticalOffset;
+
+            var capturedForward =
+                Quaternion.AngleAxis(heroYawOffset, up) * travel;
+            var worldRotation =
+                Quaternion.LookRotation(capturedForward, up);
+            heroLocalPosition =
+                transform.InverseTransformPoint(worldPosition);
+            heroLocalRotation =
+                Quaternion.Inverse(transform.rotation) * worldRotation;
+            heroPoseValid = true;
+            rebuildRequested = true;
+            RebuildLayout();
+            return true;
+        }
+
         [ContextMenu("Clear Hero Capture")]
         public void ClearHeroCapture()
         {
@@ -331,6 +399,15 @@ namespace F1XR.RestAPI.Replay.Room
         public void RebuildLayout()
         {
             ResolveReferences();
+            if (!wallFramesFrozen &&
+                wallDiscovery != null &&
+                (wallDiscovery.IsEntryReacquiring ||
+                 wallDiscovery.IsExitReacquiring))
+            {
+                rebuildRequested = true;
+                return;
+            }
+
             rebuildRequested = false;
             layoutRevision++;
             observedSelectionRevision =
@@ -340,6 +417,37 @@ namespace F1XR.RestAPI.Replay.Room
             RebuildHeroPose();
             RebuildExitPose();
             RefreshDebug();
+        }
+
+        public bool TrySetFrozenWallFrames(
+            ShowcaseWallFrame entry,
+            ShowcaseWallFrame exit)
+        {
+            if (!entry.IsValid ||
+                !exit.IsValid ||
+                entry.Id == exit.Id)
+            {
+                return false;
+            }
+
+            frozenEntryWall = entry;
+            frozenExitWall = exit;
+            wallFramesFrozen = true;
+            rebuildRequested = true;
+            RebuildLayout();
+            return entryPoseValid && exitPoseValid;
+        }
+
+        public void ClearFrozenWallFrames()
+        {
+            if (!wallFramesFrozen)
+                return;
+
+            wallFramesFrozen = false;
+            frozenEntryWall = default;
+            frozenExitWall = default;
+            rebuildRequested = true;
+            RebuildLayout();
         }
 
         public void SetDebugVisible(bool visible)
@@ -379,14 +487,13 @@ namespace F1XR.RestAPI.Replay.Room
             entryTravelDirection = Vector3.zero;
             entryWallId = default;
 
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetEntryWall(out var wall))
+            if (!TryGetEntryWallFrame(out var wall))
             {
                 entryBoundsWarningActive = false;
                 return;
             }
 
-            entryWallId = wall.TrackableId;
+            entryWallId = wall.Id;
             entryTravelDirection = wall.InwardNormal;
             if (!ValidateWallBounds(
                     wall,
@@ -435,14 +542,13 @@ namespace F1XR.RestAPI.Replay.Room
             exitTravelDirection = Vector3.zero;
             exitWallId = default;
 
-            if (wallDiscovery == null ||
-                !wallDiscovery.TryGetExitWall(out var wall))
+            if (!TryGetExitWallFrame(out var wall))
             {
                 exitBoundsWarningActive = false;
                 return;
             }
 
-            exitWallId = wall.TrackableId;
+            exitWallId = wall.Id;
             exitTravelDirection = -wall.InwardNormal;
             if (!ValidateWallBounds(
                     wall,
@@ -472,7 +578,7 @@ namespace F1XR.RestAPI.Replay.Room
         }
 
         private bool ValidateWallBounds(
-            WallCandidate wall,
+            ShowcaseWallFrame wall,
             float horizontalOffset,
             float verticalOffset,
             string poseName,
@@ -493,7 +599,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return true;
             }
 
-            if (!warningActive || warningWallId != wall.TrackableId)
+            if (!warningActive || warningWallId != wall.Id)
             {
                 Debug.LogWarning(
                     $"[ShowcaseLayout] {poseName} Pose is outside the usable wall bounds. " +
@@ -503,8 +609,34 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             warningActive = true;
-            warningWallId = wall.TrackableId;
+            warningWallId = wall.Id;
             return false;
+        }
+
+        private bool TryGetEntryWallFrame(out ShowcaseWallFrame frame)
+        {
+            if (wallFramesFrozen)
+            {
+                frame = frozenEntryWall;
+                return frame.IsValid;
+            }
+
+            frame = default;
+            return wallDiscovery != null &&
+                wallDiscovery.TryGetEntryWallFrame(out frame);
+        }
+
+        private bool TryGetExitWallFrame(out ShowcaseWallFrame frame)
+        {
+            if (wallFramesFrozen)
+            {
+                frame = frozenExitWall;
+                return frame.IsValid;
+            }
+
+            frame = default;
+            return wallDiscovery != null &&
+                wallDiscovery.TryGetExitWallFrame(out frame);
         }
 
         private void RefreshDebug()

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
 namespace F1XR.RestAPI.Replay.Room
@@ -27,8 +28,18 @@ namespace F1XR.RestAPI.Replay.Room
 
         [Header("Room Stability")]
         [SerializeField, Min(0f)] private float candidateStableDuration = 0.75f;
+        [SerializeField, Min(0f)] private float reacquisitionUiDelay = 0.6f;
+
+        [Header("Automatic Setup")]
+        [SerializeField] private bool automaticSetupEnabled = true;
+        [SerializeField, Min(0f)] private float containingRoomWaitDuration = 3f;
+
+        [Header("Runtime Performance")]
+        [SerializeField] private bool suspendSceneTrackingWhenReady = true;
 
         private IShowcaseWallProvider wallProvider;
+        private ARPlaneManager planeManager;
+        private ARRaycastManager raycastManager;
         private RoomShowcaseSetupState currentSetupState;
         private RoomShowcaseSetupState stateBeforeReacquisition;
         private TrackableId? previewCandidateId;
@@ -39,9 +50,17 @@ namespace F1XR.RestAPI.Replay.Room
         private float candidatesStableSince;
         private readonly List<TrackableId> candidateMembership = new();
         private readonly List<TrackableId> candidateMembershipScratch = new();
+        private readonly List<WallCandidateInfo> automaticCandidates = new();
+        private float automaticSetupWaitUntil;
+        private float reacquisitionStartedAt = -1f;
         private bool sessionConfirmed;
         private bool initialized;
         private string lastUserMessage = string.Empty;
+        private bool sceneTrackingSuspended;
+        private bool planeManagerWasEnabled;
+        private bool raycastManagerWasEnabled;
+        private readonly List<ARPlaneMeshVisualizer>
+            suspendedPlaneVisualizers = new();
 
         public RoomShowcaseSetupState CurrentSetupState => currentSetupState;
         public bool IsSetupReady =>
@@ -79,6 +98,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDisable()
         {
             wallProvider?.ClearPreview();
+            SetSceneTrackingSuspended(false);
         }
 
         private void Update()
@@ -95,9 +115,14 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            ObserveCandidates();
-            if (HandleReacquisition())
-                return;
+            if (!sessionConfirmed ||
+                showcaseLayout == null ||
+                !showcaseLayout.WallFramesFrozen)
+            {
+                ObserveCandidates();
+                if (HandleReacquisition())
+                    return;
+            }
 
             if (currentSetupState == RoomShowcaseSetupState.WaitingForRoom)
                 TryLeaveWaitingState();
@@ -109,6 +134,7 @@ namespace F1XR.RestAPI.Replay.Room
                     RoomShowcaseSetupState.Review,
                     "The room path is no longer valid. Review the setup.");
             }
+
         }
 
         public void PreviousCandidate()
@@ -180,6 +206,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void BackToEntry()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearExitSelection();
             wallProvider.ClearEntrySelection();
             showcaseLayout.ClearHeroCapture();
@@ -210,6 +237,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void BackToExit()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             showcaseLayout.ClearHeroCapture();
             wallProvider.ClearExitSelection();
             SetState(
@@ -232,6 +260,22 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
+            if (!TryCaptureRoomSnapshot())
+            {
+                SetUserMessage(
+                    "The confirmed room walls could not be frozen. Try setup again.");
+                return;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid || !showcasePath.IsPathValid)
+            {
+                ClearRoomSnapshot();
+                SetUserMessage(
+                    "The frozen room path is not valid. Check Entry and Exit.");
+                return;
+            }
+
             sessionConfirmed = true;
             ClearPreview();
             SetState(
@@ -242,6 +286,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void RecaptureHero()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             showcaseLayout.ClearHeroCapture();
             SetState(
                 RoomShowcaseSetupState.CaptureHero,
@@ -251,6 +296,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void ReselectEntry()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearEntrySelection();
             SetState(
                 RoomShowcaseSetupState.SelectEntry,
@@ -261,6 +307,7 @@ namespace F1XR.RestAPI.Replay.Room
         public void ReselectExit()
         {
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             wallProvider.ClearExitSelection();
             SetState(
                 RoomShowcaseSetupState.SelectExit,
@@ -272,14 +319,18 @@ namespace F1XR.RestAPI.Replay.Room
         {
             CloseEventReplay();
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             ClearPreview();
             wallProvider?.ClearEntrySelection();
             wallProvider?.ClearExitSelection();
             showcaseLayout?.ClearHeroCapture();
 
-            if (wallProvider == null || wallProvider.CandidateCount == 0)
+            if (wallProvider == null ||
+                wallProvider.CandidateCount == 0)
             {
                 candidatesStableSince = Time.unscaledTime;
+                automaticSetupWaitUntil =
+                    Time.unscaledTime + containingRoomWaitDuration;
                 SetState(
                     RoomShowcaseSetupState.WaitingForRoom,
                     "Loading room wall candidates.");
@@ -296,6 +347,7 @@ namespace F1XR.RestAPI.Replay.Room
         {
             CloseEventReplay();
             sessionConfirmed = false;
+            ClearRoomSnapshot();
             ClearPreview();
 
             if (showcaseLayout != null &&
@@ -341,6 +393,8 @@ namespace F1XR.RestAPI.Replay.Room
                 wallProvider?.CandidateCount ?? 0;
             CaptureCandidateMembership(candidateMembership);
             candidatesStableSince = Time.unscaledTime;
+            automaticSetupWaitUntil =
+                Time.unscaledTime + containingRoomWaitDuration;
             sessionConfirmed = false;
             ClearPreview();
             SetState(
@@ -436,10 +490,256 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             wallProvider.FinalizeUserFacingOrder();
+            if (automaticSetupEnabled &&
+                wallProvider.HasContainingRoomBoundary &&
+                TryApplyAutomaticDefaultSetup())
+            {
+                return;
+            }
+
+            if (automaticSetupEnabled &&
+                !wallProvider.HasContainingRoomBoundary &&
+                Time.unscaledTime < automaticSetupWaitUntil)
+            {
+                return;
+            }
+
             SetState(
                 RoomShowcaseSetupState.SelectEntry,
-                "Room walls are ready. Select the Entry wall.");
+                automaticSetupEnabled
+                    ? "Automatic room setup was unavailable. Select the Entry wall."
+                    : "Room walls are ready. Select the Entry wall.");
             SelectFirstAvailableCandidate(1);
+        }
+
+        private bool TryApplyAutomaticDefaultSetup()
+        {
+            if (!TryChooseDefaultWallPair(
+                    out var entry,
+                    out var exit))
+            {
+                return false;
+            }
+
+            wallProvider.ClearEntrySelection();
+            wallProvider.ClearExitSelection();
+            showcaseLayout.ClearHeroCapture();
+            if (!wallProvider.TrySelectEntryById(entry.Id) ||
+                !wallProvider.TrySelectExitById(exit.Id) ||
+                !showcaseLayout.TryCaptureAutomaticHero(
+                    ResolvePairTravel(entry, exit)))
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid ||
+                !showcasePath.IsPathValid)
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            if (!TryCaptureRoomSnapshot())
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            showcasePath.RebuildPath();
+            if (!showcaseLayout.IsLayoutValid ||
+                !showcasePath.IsPathValid)
+            {
+                ClearAutomaticSetup();
+                return false;
+            }
+
+            sessionConfirmed = true;
+            ClearPreview();
+            SetState(
+                RoomShowcaseSetupState.Ready,
+                "Room setup was completed automatically.");
+            Debug.Log(
+                $"[RoomAutoSetup] Entry={entry.UserFacingNumber}, " +
+                $"Exit={exit.UserFacingNumber}, " +
+                $"roomWalls={automaticCandidates.Count}.",
+                this);
+            return true;
+        }
+
+        private bool TryChooseDefaultWallPair(
+            out WallCandidateInfo entry,
+            out WallCandidateInfo exit)
+        {
+            entry = default;
+            exit = default;
+            CaptureAutomaticCandidates();
+            if (automaticCandidates.Count < 2)
+                return false;
+
+            var bestScore = float.NegativeInfinity;
+            var bestFirst = -1;
+            var bestSecond = -1;
+            for (var firstIndex = 0;
+                 firstIndex < automaticCandidates.Count - 1;
+                 firstIndex++)
+            {
+                var first = automaticCandidates[firstIndex];
+                var firstNormal = Flat(first.InwardNormal);
+                if (firstNormal.sqrMagnitude < 0.0001f)
+                    continue;
+                firstNormal.Normalize();
+
+                for (var secondIndex = firstIndex + 1;
+                     secondIndex < automaticCandidates.Count;
+                     secondIndex++)
+                {
+                    var second = automaticCandidates[secondIndex];
+                    var secondNormal = Flat(second.InwardNormal);
+                    if (secondNormal.sqrMagnitude < 0.0001f)
+                        continue;
+                    secondNormal.Normalize();
+
+                    var normalDot =
+                        Vector3.Dot(firstNormal, secondNormal);
+                    if (normalDot > -0.35f)
+                        continue;
+
+                    var separation = Flat(
+                        second.Center - first.Center);
+                    var forwardSpan =
+                        (Mathf.Abs(
+                             Vector3.Dot(separation, firstNormal)) +
+                         Mathf.Abs(
+                             Vector3.Dot(separation, secondNormal))) *
+                        0.5f;
+                    var lateralOffset =
+                        (separation -
+                         firstNormal *
+                         Vector3.Dot(separation, firstNormal)).magnitude;
+                    var score =
+                        forwardSpan * 4f -
+                        lateralOffset +
+                        (-normalDot) * 2f +
+                        Mathf.Min(first.Width, second.Width) * 0.25f;
+                    if (score <= bestScore)
+                        continue;
+
+                    bestScore = score;
+                    bestFirst = firstIndex;
+                    bestSecond = secondIndex;
+                }
+            }
+
+            if (bestFirst < 0 || bestSecond < 0)
+                return false;
+
+            var firstWall = automaticCandidates[bestFirst];
+            var secondWall = automaticCandidates[bestSecond];
+            if (ViewAlignment(firstWall.Center) >=
+                ViewAlignment(secondWall.Center))
+            {
+                entry = firstWall;
+                exit = secondWall;
+            }
+            else
+            {
+                entry = secondWall;
+                exit = firstWall;
+            }
+
+            return true;
+        }
+
+        private void ClearAutomaticSetup()
+        {
+            sessionConfirmed = false;
+            ClearRoomSnapshot();
+            wallProvider.ClearEntrySelection();
+            wallProvider.ClearExitSelection();
+            showcaseLayout.ClearHeroCapture();
+        }
+
+        private void CaptureAutomaticCandidates()
+        {
+            automaticCandidates.Clear();
+            for (var i = 0; i < wallProvider.CandidateCount; i++)
+            {
+                if (wallProvider.TryGetCandidate(i, out var candidate) &&
+                    candidate.IsAvailable)
+                {
+                    automaticCandidates.Add(candidate);
+                }
+            }
+        }
+
+        private bool TryCaptureRoomSnapshot()
+        {
+            ClearRoomSnapshot();
+            if (!ConfirmedEntryId.HasValue ||
+                !ConfirmedExitId.HasValue ||
+                !wallProvider.TryGetCandidateFrameById(
+                    ConfirmedEntryId.Value,
+                    out var entryFrame) ||
+                !wallProvider.TryGetCandidateFrameById(
+                    ConfirmedExitId.Value,
+                    out var exitFrame))
+            {
+                return false;
+            }
+
+            if (!showcaseLayout.TrySetFrozenWallFrames(
+                    entryFrame,
+                    exitFrame))
+            {
+                ClearRoomSnapshot();
+                return false;
+            }
+
+            return true;
+        }
+
+        private void ClearRoomSnapshot()
+        {
+            showcaseLayout?.ClearFrozenWallFrames();
+        }
+
+        private static Vector3 ResolvePairTravel(
+            WallCandidateInfo entry,
+            WallCandidateInfo exit)
+        {
+            var travel = Flat(entry.InwardNormal - exit.InwardNormal);
+            if (travel.sqrMagnitude < 0.0001f)
+                travel = Flat(exit.Center - entry.Center);
+            return travel.normalized;
+        }
+
+        private static Vector3 Flat(Vector3 value)
+        {
+            value.y = 0f;
+            return value;
+        }
+
+        private static float ViewAlignment(Vector3 worldPosition)
+        {
+            var camera = Camera.main != null
+                ? Camera.main.transform
+                : null;
+            if (camera == null)
+                return 0f;
+
+            var forward = Flat(camera.forward);
+            var direction = Flat(worldPosition - camera.position);
+            if (forward.sqrMagnitude < 0.0001f ||
+                direction.sqrMagnitude < 0.0001f)
+            {
+                return 0f;
+            }
+
+            return Vector3.Dot(
+                forward.normalized,
+                direction.normalized);
         }
 
         private bool HandleReacquisition()
@@ -452,6 +752,15 @@ namespace F1XR.RestAPI.Replay.Room
 
             if (reacquiring)
             {
+                if (reacquisitionStartedAt < 0f)
+                    reacquisitionStartedAt = Time.unscaledTime;
+
+                if (Time.unscaledTime - reacquisitionStartedAt <
+                    reacquisitionUiDelay)
+                {
+                    return true;
+                }
+
                 if (currentSetupState !=
                     RoomShowcaseSetupState.TemporarilyReacquiring)
                 {
@@ -464,6 +773,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return true;
             }
 
+            reacquisitionStartedAt = -1f;
             if (currentSetupState !=
                 RoomShowcaseSetupState.TemporarilyReacquiring)
             {
@@ -748,8 +1058,87 @@ namespace F1XR.RestAPI.Replay.Room
 
             currentSetupState = state;
             lastUserMessage = message;
+            SetSceneTrackingSuspended(
+                suspendSceneTrackingWhenReady &&
+                state == RoomShowcaseSetupState.Ready &&
+                sessionConfirmed &&
+                showcaseLayout != null &&
+                showcaseLayout.WallFramesFrozen);
             ApplyDebugVisibility();
             RefreshView();
+        }
+
+        private void SetSceneTrackingSuspended(bool suspended)
+        {
+            if (sceneTrackingSuspended == suspended)
+                return;
+
+            if (suspended)
+            {
+                ResolveSceneManagers();
+                suspendedPlaneVisualizers.Clear();
+                ARPlaneMeshVisualizer[] visualizers =
+                    FindObjectsByType<ARPlaneMeshVisualizer>(
+                        FindObjectsInactive.Include);
+                for (int i = 0; i < visualizers.Length; i++)
+                {
+                    ARPlaneMeshVisualizer visualizer = visualizers[i];
+                    if (visualizer == null || !visualizer.enabled)
+                        continue;
+
+                    suspendedPlaneVisualizers.Add(visualizer);
+                    visualizer.enabled = false;
+                }
+
+                planeManagerWasEnabled =
+                    planeManager != null && planeManager.enabled;
+                raycastManagerWasEnabled =
+                    raycastManager != null && raycastManager.enabled;
+                if (planeManagerWasEnabled)
+                    planeManager.enabled = false;
+                if (raycastManagerWasEnabled)
+                    raycastManager.enabled = false;
+
+                sceneTrackingSuspended = true;
+                return;
+            }
+
+            if (planeManager != null && planeManagerWasEnabled)
+                planeManager.enabled = true;
+            if (raycastManager != null && raycastManagerWasEnabled)
+                raycastManager.enabled = true;
+
+            for (int i = 0;
+                 i < suspendedPlaneVisualizers.Count;
+                 i++)
+            {
+                ARPlaneMeshVisualizer visualizer =
+                    suspendedPlaneVisualizers[i];
+                if (visualizer != null)
+                    visualizer.enabled = true;
+            }
+
+            suspendedPlaneVisualizers.Clear();
+            planeManagerWasEnabled = false;
+            raycastManagerWasEnabled = false;
+            sceneTrackingSuspended = false;
+        }
+
+        private void ResolveSceneManagers()
+        {
+            if (planeManager == null)
+            {
+                planeManager =
+                    FindAnyObjectByType<ARPlaneManager>(
+                        FindObjectsInactive.Include);
+            }
+
+            if (raycastManager == null)
+            {
+                raycastManager =
+                    FindAnyObjectByType<ARRaycastManager>(
+                        FindObjectsInactive.Include);
+            }
         }
 
         private void SetUserMessage(string message)
@@ -800,5 +1189,6 @@ namespace F1XR.RestAPI.Replay.Room
             var result = value % count;
             return result < 0 ? result + count : result;
         }
+
     }
 }

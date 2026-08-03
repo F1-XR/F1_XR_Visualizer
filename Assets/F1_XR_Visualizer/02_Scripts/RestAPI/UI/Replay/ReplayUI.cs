@@ -30,6 +30,8 @@ namespace F1XR.RestAPI.UI
         public float standingsRowHeight = 19f;
         public float positionChangeFlashSeconds = 1.2f;
         public float standingsMoveSpeed = 10f;
+        [SerializeField, Min(0.02f)]
+        private float refreshInterval = 0.1f;
 
         private RectTransform standingsRoot;
         private RectTransform driverDetailRoot;
@@ -52,6 +54,7 @@ namespace F1XR.RestAPI.UI
         private int selectedDriverNumber;
         private bool controlsStyled;
         private float lastPlayPauseTime = float.NegativeInfinity;
+        private float nextRefreshTime;
 
         private void Awake()
         {
@@ -83,6 +86,8 @@ namespace F1XR.RestAPI.UI
 
         private void OnEnable()
         {
+            nextRefreshTime = 0f;
+
             if (playPauseButton != null)
                 playPauseButton.onClick.AddListener(TogglePlayPause);
 
@@ -119,6 +124,12 @@ namespace F1XR.RestAPI.UI
 
         private void Update()
         {
+            if (Time.unscaledTime < nextRefreshTime)
+                return;
+
+            nextRefreshTime =
+                Time.unscaledTime +
+                Mathf.Max(0.02f, refreshInterval);
             Refresh();
         }
 

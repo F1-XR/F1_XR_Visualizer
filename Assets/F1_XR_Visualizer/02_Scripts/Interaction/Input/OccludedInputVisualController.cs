@@ -177,8 +177,11 @@ namespace F1XR.Interaction.Input
             CreateControllerVisual(leftController, leftControllerSources, leftControllerVisual, "Left Occluded Controller Visual");
             CreateControllerVisual(rightController, rightControllerSources, rightControllerVisual, "Right Occluded Controller Visual");
 
-            return leftHandVisual.renderer != null &&
-                rightHandVisual.renderer != null &&
+            bool handVisualsReady =
+                (leftHandRoot == null || leftHandVisual.renderer != null) &&
+                (rightHandRoot == null || rightHandVisual.renderer != null);
+
+            return handVisualsReady &&
                 leftControllerVisual.renderer != null &&
                 rightControllerVisual.renderer != null;
         }

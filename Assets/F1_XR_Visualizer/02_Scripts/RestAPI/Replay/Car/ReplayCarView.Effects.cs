@@ -42,8 +42,12 @@ namespace F1XR.RestAPI.Replay
         private Vector3[] leaderRingVertices;
         private Color selectionColor = Color.white;
         private float leaderAge;
+        private bool leaderLayoutDirty = true;
         private float selectionAge;
         private float selectionPulseAge = SelectionPulseDuration;
+        private float selectionRadius;
+        private Vector3 selectionLocalCenter;
+        private bool selectionLayoutDirty = true;
         private bool selected;
         private bool hovered;
 
@@ -53,11 +57,15 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             hovered = value;
+            UpdateRenderLod(true);
+            labelLayoutDirty = true;
+            selectionLayoutDirty = true;
             if (!selected && !hovered)
                 SetSelectionObjectsActive(false);
 
             SetLabelObjectsActive(ShouldShowLabel());
             ApplySelectionColor();
+            RefreshRuntimeUpdateState();
         }
 
         public void SetSelected(bool value)
@@ -72,11 +80,15 @@ namespace F1XR.RestAPI.Replay
                 SetSelectionColor(color);
                 SetLabelObjectsActive(ShouldShowLabel());
                 ApplyBodyHighlight();
+                RefreshRuntimeUpdateState();
                 return;
             }
 
             SetSelectionColor(color);
             selected = value;
+            UpdateRenderLod(true);
+            labelLayoutDirty = true;
+            selectionLayoutDirty = true;
 
             if (selected)
                 selectionPulseAge = 0f;
@@ -84,6 +96,7 @@ namespace F1XR.RestAPI.Replay
             SetSelectionObjectsActive(false);
             SetLabelObjectsActive(ShouldShowLabel());
             ApplyBodyHighlight();
+            RefreshRuntimeUpdateState();
         }
 
         private void EnsureSelectionEffect()
@@ -130,7 +143,10 @@ namespace F1XR.RestAPI.Replay
             }
 
             if (created)
+            {
                 bodyRenderersDirty = true;
+                selectionLayoutDirty = true;
+            }
 
             ApplySelectionColor();
         }
@@ -171,30 +187,37 @@ namespace F1XR.RestAPI.Replay
             EnsureLeaderEffect();
             SetLeaderObjectsActive(true);
 
+            leaderAge += Time.deltaTime;
+            float alpha = LeaderRingAlpha + Mathf.Sin(leaderAge * Mathf.PI * 2f) * LeaderRingPulseAlpha;
+
+            SetMaterialColor(leaderRingMaterial, WithAlpha(LeaderFxColor, alpha));
+            leaderRing.transform.localRotation =
+                Quaternion.Euler(0f, leaderAge * LeaderRingRotationSpeed, 0f);
+
+            if (!leaderLayoutDirty)
+                return;
+
             if (!TryGetCarBounds(out Bounds bounds))
                 return;
 
-            leaderAge += Time.deltaTime;
             float radius = Mathf.Max(bounds.size.x, bounds.size.z) * LeaderRingOuterRatio;
-            float alpha = LeaderRingAlpha + Mathf.Sin(leaderAge * Mathf.PI * 2f) * LeaderRingPulseAlpha;
             Vector3 worldCenter = new Vector3(
                 bounds.center.x,
                 bounds.min.y + Mathf.Max(radius * LeaderRingHeightRatio, 0.0012f),
                 bounds.center.z
             );
-            Vector3 localCenter = transform.InverseTransformPoint(worldCenter);
-
-            SetMaterialColor(leaderRingMaterial, WithAlpha(LeaderFxColor, alpha));
+            leaderRing.transform.position = worldCenter;
             UpdateRingMesh(
                 transform,
                 leaderRingMesh,
                 leaderRingVertices,
                 SelectionRingSegments,
-                localCenter,
+                Vector3.zero,
                 radius,
                 LeaderRingInnerRatio,
-                leaderAge * LeaderRingRotationSpeed
+                0f
             );
+            leaderLayoutDirty = false;
         }
 
         private void SetSelectionColor(Color color)
@@ -218,29 +241,40 @@ namespace F1XR.RestAPI.Replay
                 selectionPulse.gameObject.SetActive(false);
             ApplyBodyHighlight();
 
-            if (!TryGetCarBounds(out Bounds bounds))
-                return;
-
             selectionAge += Time.deltaTime;
-            float radius = Mathf.Max(bounds.size.x, bounds.size.z) * SelectionRingOuterRatio;
-            Vector3 worldCenter = new Vector3(
-                bounds.center.x,
-                bounds.min.y + Mathf.Max(radius * SelectionRingHeightRatio, 0.001f),
-                bounds.center.z
-            );
-            Vector3 localCenter = transform.InverseTransformPoint(worldCenter);
+            selectionRing.transform.localRotation =
+                Quaternion.Euler(0f, selectionAge * SelectionRingRotationSpeed, 0f);
 
-            UpdateRingMesh(
-                transform,
-                selectionRingMesh,
-                selectionRingVertices,
-                SelectionRingSegments,
-                localCenter,
-                radius,
-                SelectionRingInnerRatio,
-                selectionAge * SelectionRingRotationSpeed
-            );
-            UpdateSelectionPulse(localCenter, radius);
+            if (selectionLayoutDirty)
+            {
+                if (!TryGetCarBounds(out Bounds bounds))
+                    return;
+
+                selectionRadius =
+                    Mathf.Max(bounds.size.x, bounds.size.z) *
+                    SelectionRingOuterRatio;
+                Vector3 worldCenter = new Vector3(
+                    bounds.center.x,
+                    bounds.min.y + Mathf.Max(selectionRadius * SelectionRingHeightRatio, 0.001f),
+                    bounds.center.z
+                );
+                selectionLocalCenter = transform.InverseTransformPoint(worldCenter);
+                selectionRing.transform.position = worldCenter;
+
+                UpdateRingMesh(
+                    transform,
+                    selectionRingMesh,
+                    selectionRingVertices,
+                    SelectionRingSegments,
+                    Vector3.zero,
+                    selectionRadius,
+                    SelectionRingInnerRatio,
+                    0f
+                );
+                selectionLayoutDirty = false;
+            }
+
+            UpdateSelectionPulse(selectionLocalCenter, selectionRadius);
         }
 
         private void UpdateSelectionPulse(Vector3 localCenter, float radius)

@@ -7,7 +7,8 @@ Read this file only after making an implementation change or when asking the use
 - Match validation to the changed behavior.
 - Do not launch Unity or enter Play Mode for documentation, analysis, or read-only tasks.
 - For C# changes, check compilation when Unity is available.
-- Use Play Mode once in the relevant scene only when runtime behavior changed.
+- 사용자가 Play Mode를 켰다고 명시하지 않으면 Play Mode 상태를 확인하거나 실행하지 않고, 짧은 컴파일 검증만 수행한다.
+- 사용자가 Play Mode를 켰다고 명시한 경우에만 관련 씬에서 런타임 동작을 검증한다.
 - Repeat Play Mode only after another change or when new evidence justifies it.
 - Require a Quest headset check only for behavior that cannot be validated adequately in the Editor.
 - Review only relevant new Console errors and warnings; do not dump the full log.
@@ -50,7 +51,7 @@ For engine-audio work, additionally check only the relevant audio source clip, v
 
 ### Unity execution order
 
-런타임 변경은 원칙적으로 다음 순서로 처리한다.
+사용자가 Play Mode를 켰다고 명시한 런타임 변경은 원칙적으로 다음 순서로 처리한다.
 
 1. Play Mode를 종료한다.
 2. 관련 코드와 에셋을 수정한다.

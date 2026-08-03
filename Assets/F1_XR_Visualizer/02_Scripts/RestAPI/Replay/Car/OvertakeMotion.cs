@@ -158,6 +158,9 @@ namespace F1XR.RestAPI.Replay
                         out bool overtaker))
                     continue;
 
+                if (time > replayEvent.endTime)
+                    continue;
+
                 int side = ResolvePassingSide(
                     replayEvent,
                     poses,

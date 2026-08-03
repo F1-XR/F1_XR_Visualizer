@@ -18,6 +18,7 @@ namespace F1XR.Interaction.World
         [SerializeField] float minScaleStartDistance = 0.08f;
         [SerializeField] float minScale = 0.02f;
         [SerializeField] float maxScale = 5f;
+        [SerializeField, Min(0.01f)] float minHandleScaleRatio = 0.05f;
         [SerializeField] bool smoothWorldTransform = true;
         [SerializeField] float positionLerpSpeed = 18f;
         [SerializeField] float rotationLerpSpeed = 18f;
@@ -47,6 +48,10 @@ namespace F1XR.Interaction.World
         bool wasGrabEnabled;
         bool waitForPinchRelease;
         bool controllerScaling;
+        bool handleScaling;
+        bool handlePivotFixed;
+        float handleStartDistance;
+        Vector3 handleStartDirection;
         bool moving;
         float startHandDistance;
         Vector3 startHandVector;
@@ -61,7 +66,75 @@ namespace F1XR.Interaction.World
         RigidbodyConstraints startConstraints;
 
         public bool IsScaling => scaling;
+        public bool IsHandleScaling => handleScaling;
         public event Action ScaleStarted;
+
+        public void Configure(
+            Transform scaleTarget,
+            XRGrabInteractable panelGrab,
+            Rigidbody panelBody,
+            float minimumScale,
+            float maximumScale)
+        {
+            target = scaleTarget;
+            grab = panelGrab;
+            body = panelBody;
+            minScale = minimumScale;
+            maxScale = maximumScale;
+            RefreshTargetColliders();
+        }
+
+        /// <summary>
+        /// Starts a one-handed scale driven by a single grab point (a corner handle) around a fixed
+        /// pivot. The two-handed path stays untouched and simply yields while this is active.
+        /// </summary>
+        public bool BeginHandleScale(Vector3 grabPoint, Vector3 pivot, bool keepPivot = true)
+        {
+            if (scaling || target == null)
+                return false;
+
+            var offset = grabPoint - pivot;
+            handleStartDistance = offset.magnitude;
+            if (handleStartDistance <= Mathf.Epsilon)
+                return false;
+
+            handleStartDirection = offset / handleStartDistance;
+            scaling = true;
+            handleScaling = true;
+            handlePivotFixed = keepPivot;
+            controllerScaling = false;
+            ScaleStarted?.Invoke();
+
+            startPivotWorld = pivot;
+            startPivotLocal = target.InverseTransformPoint(pivot);
+            startScale = target.localScale;
+            startPosition = target.position;
+            startRotation = target.rotation;
+            startEulerAngles = target.eulerAngles;
+
+            // The grab that started this stays selected so the caller can tell when it ends, so unlike
+            // the two-hand path the XRGrabInteractable is left enabled here.
+            return true;
+        }
+
+        public void UpdateHandleScale(Vector3 grabPoint)
+        {
+            if (!handleScaling)
+                return;
+
+            // Project onto the diagonal captured at grab time so the scale tracks the pull linearly and
+            // sideways drift does not inflate it the way a raw distance would.
+            var reach = Vector3.Dot(grabPoint - startPivotWorld, handleStartDirection);
+            ApplyScale(Mathf.Max(reach / handleStartDistance, minHandleScaleRatio));
+        }
+
+        public void EndHandleScale()
+        {
+            if (!handleScaling)
+                return;
+
+            StopScaling();
+        }
 
         void Awake()
         {
@@ -95,6 +168,9 @@ namespace F1XR.Interaction.World
 
         void Update()
         {
+            if (handleScaling)
+                return;
+
             if (handSubsystem == null || !handSubsystem.running)
                 handSubsystem = XRHandInput.FindRunningSubsystem();
 
@@ -188,6 +264,7 @@ namespace F1XR.Interaction.World
 
             scaling = false;
             controllerScaling = false;
+            handleScaling = false;
             SetGrabEnabled(true);
         }
 
@@ -280,8 +357,8 @@ namespace F1XR.Interaction.World
                 !IsInteractorNear(rightInteractor, rightDevicePoint))
                 FindControllerInteractors(leftDevicePoint, rightDevicePoint);
 
-            if (!TryGetRayHit(leftInteractor, out var leftPoint) ||
-                !TryGetRayHit(rightInteractor, out var rightPoint))
+            if (!TryGetRayOriginPoint(leftInteractor, out var leftPoint) ||
+                !TryGetRayOriginPoint(rightInteractor, out var rightPoint))
             {
                 if (controllerScaling)
                     StopScaling();
@@ -297,6 +374,9 @@ namespace F1XR.Interaction.World
             if (!scaling)
             {
                 if (controllerDistance < minScaleStartDistance)
+                    return true;
+
+                if (!TryGetRayHit(leftInteractor, out _) || !TryGetRayHit(rightInteractor, out _))
                     return true;
 
                 scaling = true;
@@ -388,6 +468,28 @@ namespace F1XR.Interaction.World
 
             point = default;
             return false;
+        }
+
+        static bool TryGetRayOriginPoint(XRBaseInputInteractor interactor, out Vector3 point)
+        {
+            if (interactor == null)
+            {
+                point = default;
+                return false;
+            }
+
+            if (interactor is IXRRayProvider rayProvider)
+            {
+                var origin = rayProvider.GetOrCreateRayOrigin();
+                if (origin != null)
+                {
+                    point = origin.position;
+                    return true;
+                }
+            }
+
+            point = interactor.transform.position;
+            return true;
         }
 
         bool TryGetRayHit(XRBaseInputInteractor interactor, out Vector3 point)
@@ -528,9 +630,13 @@ namespace F1XR.Interaction.World
             else if (keepOnlyYRotationWhileScaling)
                 target.rotation = Quaternion.Euler(startEulerAngles.x, target.eulerAngles.y, startEulerAngles.z);
 
-            if (keepPositionWhileScaling)
+            // The handle path pins the opposite corner instead of obeying the two-hand pivot options,
+            // so the grabbed corner tracks the hand while the rest of the panel stays put.
+            var pivotFixed = handleScaling ? handlePivotFixed : keepPivotFixed;
+
+            if (!handleScaling && keepPositionWhileScaling)
                 target.position = startPosition;
-            else if (keepPivotFixed)
+            else if (pivotFixed)
                 target.position += startPivotWorld - target.TransformPoint(startPivotLocal);
         }
 

@@ -10,6 +10,10 @@ namespace F1XR.RestAPI.Replay
 {
     public class ReplayCarSet
     {
+        private const int MaxDetailedCarCount = 3;
+        private const float RenderLodBudgetInterval = 0.2f;
+        private const float ApproachRibbonFadeOutSeconds = 0.3f;
+
         private static readonly ProfilerMarker BuildFramesMarker =
             new("F1XR.Cars.BuildFrames");
         private static readonly ProfilerMarker ApplyLogicalPosesMarker =
@@ -36,12 +40,29 @@ namespace F1XR.RestAPI.Replay
         private readonly Dictionary<int, float> visualLengths = new();
         private readonly Dictionary<int, int> ranks = new();
         private readonly Dictionary<int, string> debugEventByDriver = new();
+        private readonly List<RenderLodCandidate>
+            renderLodCandidates = new();
+        private readonly HashSet<ReplayCarView>
+            renderLodDetailedCars = new();
         private readonly Action<int> removeCarState;
         private readonly Action<int, ReplayCarView> setupCar;
         private readonly ReplayPlayer player;
         private readonly bool allowInteraction;
         private OvertakeMotionSettings overtakeSettings = new();
+        private ReplayEventDto approachRibbonEvent;
+        private OvertakeApproachRibbonSettings approachRibbonSettings;
+        private ReplayEventDto sideBySideVfxEvent;
+        private OvertakeSideBySideVfxSettings sideBySideVfxSettings;
+        private OvertakeCompletionVfxSettings completionVfxSettings;
+        private float sideBySideLastReplayTime = float.NaN;
+        private bool sideBySideWasActive;
+        private bool sideBySideSweepTriggered;
+        private bool sideBySideSparksTriggered;
+        private int completionVfxDriver;
         private int selectedDriverNumber;
+        private bool renderLodEnabled = true;
+        private Camera renderLodCamera;
+        private float nextRenderLodBudgetTime;
 
         public ReplayCarSet(
             GameObject carPrefab,
@@ -86,9 +107,93 @@ namespace F1XR.RestAPI.Replay
             return carInstances.TryGetVisualTransform(driverNumber, out carTransform);
         }
 
+        public bool TryGetVisualLength(
+            int driverNumber,
+            out float visualLength)
+        {
+            return visualLengths.TryGetValue(
+                    driverNumber,
+                    out visualLength) &&
+                visualLength > 0f;
+        }
+
         public void SetReplayEvents(ReplayEventDto[] events)
         {
             overtakeMotion.SetEvents(events);
+        }
+
+        public void SetOvertakeApproachRibbon(
+            ReplayEventDto replayEvent,
+            OvertakeApproachRibbonSettings settings)
+        {
+            approachRibbonEvent = replayEvent;
+            approachRibbonSettings = settings;
+        }
+
+        public void SetOvertakeSideBySideVfx(
+            ReplayEventDto replayEvent,
+            OvertakeSideBySideVfxSettings settings)
+        {
+            sideBySideVfxEvent = replayEvent;
+            sideBySideVfxSettings = settings;
+            sideBySideLastReplayTime = float.NaN;
+            sideBySideWasActive = false;
+            sideBySideSweepTriggered = false;
+            sideBySideSparksTriggered = false;
+        }
+
+        public void SetOvertakeCompletionVfx(
+            OvertakeCompletionVfxSettings settings)
+        {
+            ResetOvertakeCompletionVfx();
+            completionVfxSettings = settings;
+        }
+
+        public void TriggerOvertakeCompletionVfx(
+            int driver,
+            float replayTime)
+        {
+            if (completionVfxSettings == null ||
+                !completionVfxSettings.enabled ||
+                !carInstances.Cars.TryGetValue(
+                    driver,
+                    out ReplayCarView car) ||
+                car == null)
+            {
+                return;
+            }
+
+            ResetOvertakeCompletionVfx();
+            completionVfxDriver = driver;
+            car.TriggerOvertakeCompletionVfx(
+                completionVfxSettings,
+                replayTime);
+        }
+
+        public void UpdateOvertakeCompletionVfx(
+            float replayTime)
+        {
+            if (completionVfxDriver <= 0 ||
+                !carInstances.Cars.TryGetValue(
+                    completionVfxDriver,
+                    out ReplayCarView car) ||
+                car == null)
+            {
+                return;
+            }
+
+            car.UpdateOvertakeCompletionVfx(replayTime);
+        }
+
+        public void ResetOvertakeCompletionVfx()
+        {
+            foreach (ReplayCarView car
+                in carInstances.Cars.Values)
+            {
+                car?.ResetOvertakeCompletionVfx();
+            }
+
+            completionVfxDriver = 0;
         }
 
         public void SetOvertakeSettings(OvertakeMotionSettings settings)
@@ -165,6 +270,7 @@ namespace F1XR.RestAPI.Replay
                     removeCarState,
                     setupCar);
                 FindCarMarker.End();
+                car.ClearRoomPresentation();
 
                 carAudio.EnsureCar(driver, car);
                 if (ranks != null && ranks.TryGetValue(driver, out int rank))
@@ -207,14 +313,26 @@ namespace F1XR.RestAPI.Replay
             }
             BuildFramesMarker.End();
 
+            UpdateRenderLodBudget();
+
             ApplyLogicalPosesMarker.Begin();
             foreach (CarFrame frame in frames)
-                carMotion.ApplyLogicalPose(frame.car, frame.pose);
+            {
+                if (frame.car.ShouldApplyMotionThisFrame())
+                {
+                    carMotion.ApplyLogicalPose(
+                        frame.car,
+                        frame.pose);
+                }
+            }
             ApplyLogicalPosesMarker.End();
 
             ApplyVisualsMarker.Begin();
             foreach (CarFrame frame in frames)
             {
+                if (!frame.car.ShouldApplyMotionThisFrame())
+                    continue;
+
                 VisualMotionPose visualPose = overtakeMotion.Resolve(
                     frame.driver,
                     time,
@@ -230,9 +348,13 @@ namespace F1XR.RestAPI.Replay
                     frame.a,
                     frame.b,
                     frame.interpolation,
-                    frame.duration);
+                    frame.duration,
+                    time);
             }
             ApplyVisualsMarker.End();
+
+            UpdateOvertakeApproachRibbon(time);
+            UpdateOvertakeSideBySideVfx(time);
 
             AudioAudibilityMarker.Begin();
             carAudio.UpdateAudibility();
@@ -259,6 +381,10 @@ namespace F1XR.RestAPI.Replay
 
         public void Clear()
         {
+            ClearOvertakeApproachRibbon();
+            ClearOvertakeSideBySideVfx();
+            ResetOvertakeCompletionVfx();
+            completionVfxSettings = null;
             selectedDriverNumber = 0;
             debugEventByDriver.Clear();
             carPresentation.SetSelectedDriver(0);
@@ -281,9 +407,52 @@ namespace F1XR.RestAPI.Replay
             carAudio.SetSelectedDriver(driverNumber);
         }
 
+        public void SetAudioFocusDriver(int driverNumber)
+        {
+            carAudio.SetMixFocusDriver(driverNumber);
+        }
+
+        public void SetShowcaseDrivingPresentation(
+            int firstDriver,
+            int secondDriver,
+            bool enabled)
+        {
+            foreach (KeyValuePair<int, ReplayCarView> pair
+                in carInstances.Cars)
+            {
+                if (pair.Value == null)
+                    continue;
+
+                bool emphasize =
+                    enabled &&
+                    (pair.Key == firstDriver ||
+                     pair.Key == secondDriver);
+                pair.Value.SetDrivingPresentationEmphasis(
+                    emphasize);
+            }
+        }
+
+        public void SetRenderLodEnabled(bool enabled)
+        {
+            if (renderLodEnabled == enabled)
+                return;
+
+            renderLodEnabled = enabled;
+            nextRenderLodBudgetTime = 0f;
+            foreach (ReplayCarView car
+                in carInstances.Cars.Values)
+            {
+                if (car != null)
+                    car.SetRenderLodEnabled(enabled);
+            }
+        }
+
         private void SetupCar(int driver, ReplayCarView car)
         {
             carPresentation.SetupCar(driver, car);
+            car.ConfigureDrivingPresentation();
+            car.ConfigureRenderLod();
+            car.SetRenderLodEnabled(renderLodEnabled);
             carAudio.ConfigureCar(driver, car);
 
             ReplayCarInteractable interaction = car.GetComponent<ReplayCarInteractable>();
@@ -301,11 +470,474 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
+        private void UpdateOvertakeApproachRibbon(float time)
+        {
+            if (approachRibbonEvent == null ||
+                approachRibbonSettings == null ||
+                approachRibbonEvent.driverNumbers == null ||
+                approachRibbonEvent.driverNumbers.Length < 2)
+            {
+                return;
+            }
+
+            if (!approachRibbonSettings.enabled)
+            {
+                foreach (ReplayCarView car in carInstances.Cars.Values)
+                    car?.ClearOvertakeApproachRibbon();
+                return;
+            }
+
+            float totalPortion = Mathf.Max(
+                0.0001f,
+                overtakeSettings.approachPortion +
+                overtakeSettings.parallelPortion +
+                overtakeSettings.returnPortion);
+            float duration =
+                approachRibbonEvent.endTime -
+                approachRibbonEvent.startTime;
+            if (duration <= 0f)
+                return;
+
+            float anchorProgress = Mathf.Clamp01(
+                (approachRibbonEvent.anchorTime -
+                 approachRibbonEvent.startTime) /
+                duration);
+            float approachProgress = Mathf.Clamp(
+                Mathf.Min(
+                    overtakeSettings.approachPortion /
+                    totalPortion,
+                    anchorProgress),
+                0.0001f,
+                0.9998f);
+            float approachEnd =
+                approachRibbonEvent.startTime +
+                duration * approachProgress;
+            float approachStart =
+                approachRibbonEvent.startTime -
+                approachRibbonSettings.preRollSeconds;
+            bool isApproaching =
+                time >= approachStart &&
+                time < approachEnd;
+            float fadeEnd =
+                approachEnd +
+                ApproachRibbonFadeOutSeconds;
+            bool isFading =
+                time >= approachEnd &&
+                time < fadeEnd;
+
+            if (!isApproaching && !isFading)
+            {
+                ClearApproachRibbonForDriver(
+                    approachRibbonEvent.driverNumbers[0]);
+                ClearApproachRibbonForDriver(
+                    approachRibbonEvent.driverNumbers[1]);
+                return;
+            }
+
+            float progress = isApproaching
+                ? Mathf.InverseLerp(
+                    approachStart,
+                    approachEnd,
+                    time)
+                : 0f;
+            float intensity = isApproaching
+                ? Mathf.Lerp(
+                    approachRibbonSettings.startIntensity,
+                    1f,
+                    Mathf.Clamp01(
+                        approachRibbonSettings.growth != null
+                        ? approachRibbonSettings.growth.Evaluate(progress)
+                        : progress))
+                : 1f -
+                  Mathf.SmoothStep(
+                      0f,
+                      1f,
+                      Mathf.InverseLerp(
+                          approachEnd,
+                          fadeEnd,
+                          time));
+
+            SetApproachRibbonForDriver(
+                approachRibbonEvent.driverNumbers[0],
+                true,
+                intensity,
+                time,
+                isApproaching);
+            SetApproachRibbonForDriver(
+                approachRibbonEvent.driverNumbers[1],
+                false,
+                intensity,
+                time,
+                isApproaching);
+        }
+
+        private void SetApproachRibbonForDriver(
+            int driver,
+            bool overtaker,
+            float intensity,
+            float time,
+            bool allowEmission)
+        {
+            if (!carInstances.Cars.TryGetValue(
+                    driver,
+                    out ReplayCarView car) ||
+                car == null)
+            {
+                return;
+            }
+
+            car.SetOvertakeApproachRibbon(
+                approachRibbonSettings,
+                overtaker,
+                intensity,
+                time,
+                allowEmission: allowEmission);
+        }
+
+        private void ClearApproachRibbonForDriver(int driver)
+        {
+            if (carInstances.Cars.TryGetValue(
+                    driver,
+                    out ReplayCarView car))
+            {
+                car?.ClearOvertakeApproachRibbon();
+            }
+        }
+
+        private void ClearOvertakeApproachRibbon()
+        {
+            foreach (ReplayCarView car in carInstances.Cars.Values)
+                car?.ClearOvertakeApproachRibbon();
+
+            approachRibbonEvent = null;
+            approachRibbonSettings = null;
+        }
+
+        private void UpdateOvertakeSideBySideVfx(float time)
+        {
+            if (sideBySideVfxEvent == null ||
+                sideBySideVfxSettings == null ||
+                approachRibbonSettings == null ||
+                sideBySideVfxEvent.driverNumbers == null ||
+                sideBySideVfxEvent.driverNumbers.Length < 2)
+            {
+                return;
+            }
+
+            if (!sideBySideVfxSettings.enabled)
+            {
+                ResetSideBySideRuntimeEffects();
+                return;
+            }
+
+            int overtakerDriver =
+                sideBySideVfxEvent.driverNumbers[0];
+            int defenderDriver =
+                sideBySideVfxEvent.driverNumbers[1];
+            PrepareSideBySideVfx(
+                overtakerDriver,
+                true);
+            PrepareSideBySideVfx(
+                defenderDriver,
+                false);
+
+            bool timeDiscontinuity =
+                !float.IsNaN(sideBySideLastReplayTime) &&
+                (time < sideBySideLastReplayTime ||
+                 time - sideBySideLastReplayTime >
+                 sideBySideVfxSettings
+                     .seekResetThresholdSeconds);
+            if (timeDiscontinuity)
+                ResetSideBySideOneShotState();
+
+            sideBySideLastReplayTime = time;
+            if (!TryGetSideBySideInterval(
+                    out float stageStart,
+                    out float stageEnd))
+            {
+                return;
+            }
+
+            bool stageActive =
+                time >= stageStart &&
+                time < stageEnd;
+            if (stageActive && !sideBySideWasActive)
+            {
+                TriggerSideBySideLightSweep(
+                    overtakerDriver,
+                    time);
+            }
+
+            float sparkTime = Mathf.Lerp(
+                stageStart,
+                stageEnd,
+                sideBySideVfxSettings
+                    .sparkTriggerNormalized);
+            if (stageActive &&
+                !sideBySideSparksTriggered &&
+                time >= sparkTime)
+            {
+                TriggerSideBySideSparks(
+                    overtakerDriver);
+            }
+
+            sideBySideWasActive = stageActive;
+            UpdateSideBySideLightSweep(
+                overtakerDriver,
+                time);
+        }
+
+        private bool TryGetSideBySideInterval(
+            out float stageStart,
+            out float stageEnd)
+        {
+            stageStart = 0f;
+            stageEnd = 0f;
+            float duration =
+                sideBySideVfxEvent.endTime -
+                sideBySideVfxEvent.startTime;
+            if (duration <= 0f)
+                return false;
+
+            float totalPortion = Mathf.Max(
+                0.0001f,
+                overtakeSettings.approachPortion +
+                overtakeSettings.parallelPortion +
+                overtakeSettings.returnPortion);
+            float startProgress =
+                overtakeSettings.approachPortion /
+                totalPortion;
+            float endProgress =
+                (overtakeSettings.approachPortion +
+                 overtakeSettings.parallelPortion) /
+                totalPortion;
+            float anchorProgress = Mathf.Clamp01(
+                (sideBySideVfxEvent.anchorTime -
+                 sideBySideVfxEvent.startTime) /
+                duration);
+            startProgress = Mathf.Clamp(
+                Mathf.Min(
+                    startProgress,
+                    anchorProgress) +
+                sideBySideVfxSettings
+                    .startOffsetNormalized,
+                0.0001f,
+                0.9998f);
+            endProgress = Mathf.Clamp(
+                Mathf.Max(
+                    endProgress,
+                    anchorProgress) +
+                sideBySideVfxSettings
+                    .endOffsetNormalized,
+                startProgress + 0.0001f,
+                0.9999f);
+            stageStart =
+                sideBySideVfxEvent.startTime +
+                duration *
+                startProgress;
+            stageEnd =
+                sideBySideVfxEvent.startTime +
+                duration *
+                endProgress;
+            return stageEnd > stageStart;
+        }
+
+        private void PrepareSideBySideVfx(
+            int driver,
+            bool overtaker)
+        {
+            if (!carInstances.Cars.TryGetValue(
+                    driver,
+                    out ReplayCarView car) ||
+                car == null)
+            {
+                return;
+            }
+
+            car.PrepareOvertakeSideBySideVfx(
+                approachRibbonSettings,
+                sideBySideVfxSettings,
+                overtaker);
+        }
+
+        private void TriggerSideBySideLightSweep(
+            int overtakerDriver,
+            float time)
+        {
+            if (sideBySideSweepTriggered)
+                return;
+
+            sideBySideSweepTriggered = true;
+            if (carInstances.Cars.TryGetValue(
+                    overtakerDriver,
+                    out ReplayCarView car) &&
+                car != null)
+            {
+                car.TriggerOvertakeLightSweep(
+                    sideBySideVfxSettings,
+                    time);
+            }
+        }
+
+        private void UpdateSideBySideLightSweep(
+            int overtakerDriver,
+            float time)
+        {
+            if (carInstances.Cars.TryGetValue(
+                    overtakerDriver,
+                    out ReplayCarView car) &&
+                car != null)
+            {
+                car.UpdateOvertakeLightSweep(
+                    sideBySideVfxSettings,
+                    time);
+            }
+        }
+
+        private void TriggerSideBySideSparks(
+            int overtakerDriver)
+        {
+            sideBySideSparksTriggered = true;
+            if (carInstances.Cars.TryGetValue(
+                    overtakerDriver,
+                    out ReplayCarView car) &&
+                car != null)
+            {
+                car.TriggerOvertakeUnderfloorSparks(
+                    sideBySideVfxSettings);
+            }
+        }
+
+        private void ResetSideBySideOneShotState()
+        {
+            sideBySideWasActive = false;
+            sideBySideSweepTriggered = false;
+            sideBySideSparksTriggered = false;
+            ResetSideBySideRuntimeEffects();
+        }
+
+        private void ResetSideBySideRuntimeEffects()
+        {
+            foreach (ReplayCarView car in carInstances.Cars.Values)
+                car?.ResetOvertakeSideBySideVfx();
+        }
+
+        private void ClearOvertakeSideBySideVfx()
+        {
+            ResetSideBySideRuntimeEffects();
+            sideBySideVfxEvent = null;
+            sideBySideVfxSettings = null;
+            sideBySideLastReplayTime = float.NaN;
+            sideBySideWasActive = false;
+            sideBySideSweepTriggered = false;
+            sideBySideSparksTriggered = false;
+        }
+
+        private void UpdateRenderLodBudget()
+        {
+            if (!renderLodEnabled)
+                return;
+
+            float now = Time.unscaledTime;
+            if (now < nextRenderLodBudgetTime)
+                return;
+
+            nextRenderLodBudgetTime =
+                now + RenderLodBudgetInterval;
+            if (renderLodCamera == null ||
+                !renderLodCamera.isActiveAndEnabled)
+            {
+                renderLodCamera = Camera.main;
+            }
+
+            if (renderLodCamera == null)
+                return;
+
+            renderLodCandidates.Clear();
+            renderLodDetailedCars.Clear();
+            int requiredDetailedCount = 0;
+            Vector3 cameraPosition =
+                renderLodCamera.transform.position;
+
+            foreach (CarFrame frame in frames)
+            {
+                if (frame.car == null)
+                    continue;
+
+                if (frame.car.RequiresDetailedRenderLod)
+                {
+                    requiredDetailedCount++;
+                    continue;
+                }
+
+                if (!frame.car.QualifiesForDetailedRenderLod(
+                        renderLodCamera))
+                {
+                    continue;
+                }
+
+                renderLodCandidates.Add(
+                    new RenderLodCandidate(
+                        frame.car,
+                        (frame.car.transform.position -
+                         cameraPosition).sqrMagnitude));
+            }
+
+            renderLodCandidates.Sort();
+            int availableSlots = Mathf.Max(
+                0,
+                MaxDetailedCarCount -
+                requiredDetailedCount);
+            int detailedCount = Mathf.Min(
+                availableSlots,
+                renderLodCandidates.Count);
+            for (int i = 0; i < detailedCount; i++)
+            {
+                renderLodDetailedCars.Add(
+                    renderLodCandidates[i].car);
+            }
+
+            foreach (ReplayCarView car
+                in carInstances.Cars.Values)
+            {
+                if (car != null)
+                {
+                    car.SetRenderLodBudgetDetailed(
+                        renderLodDetailedCars.Contains(car));
+                }
+            }
+        }
+
         private void RemoveCarState(int driver)
         {
+            if (completionVfxDriver == driver)
+                completionVfxDriver = 0;
+
             carMotion.RemoveCar(driver);
             carAudio.RemoveCar(driver);
             gridStartAudio.RemoveCar(driver);
+        }
+
+        private readonly struct RenderLodCandidate :
+            IComparable<RenderLodCandidate>
+        {
+            public readonly ReplayCarView car;
+            private readonly float distanceSquared;
+
+            public RenderLodCandidate(
+                ReplayCarView car,
+                float distanceSquared)
+            {
+                this.car = car;
+                this.distanceSquared = distanceSquared;
+            }
+
+            public int CompareTo(
+                RenderLodCandidate other)
+            {
+                return distanceSquared.CompareTo(
+                    other.distanceSquared);
+            }
         }
 
         public void SetPlacement(ARPlanePlacementController source)
@@ -379,7 +1011,13 @@ namespace F1XR.RestAPI.Replay
             return carMotion.TryGetMappedPosition(sample, out position);
         }
 
-        private void UpdateEngineSound(ReplayCarView car, LocationSample a, LocationSample b, float u, float duration)
+        private void UpdateEngineSound(
+            ReplayCarView car,
+            LocationSample a,
+            LocationSample b,
+            float u,
+            float duration,
+            float replayTime)
         {
             float rpm = Mathf.Lerp(a.rpm, b.rpm, u);
             float throttle = Mathf.Lerp(a.throttle, b.throttle, u);
@@ -391,6 +1029,10 @@ namespace F1XR.RestAPI.Replay
             if (speed <= 0.01f)
                 speed = EstimateSpeed(a, b, duration);
 
+            car.ApplyDrivingPresentation(
+                replayTime,
+                speed,
+                brake);
             carAudio.UpdateTelemetry(
                 car.driverNumber,
                 rpm,

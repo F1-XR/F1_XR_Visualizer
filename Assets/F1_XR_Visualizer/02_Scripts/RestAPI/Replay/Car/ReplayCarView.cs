@@ -11,6 +11,11 @@ namespace F1XR.RestAPI.Replay
         private Transform logicalRoot;
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation = Quaternion.identity;
+        private Vector3 roomPresentationLocalPosition;
+        private Vector3 roomPresentationLocalScale;
+        private bool roomPresentationApplied;
+        private bool visualMotionApplied;
+        private Camera labelCamera;
 
         public Transform LogicalRoot => logicalRoot != null
             ? logicalRoot
@@ -22,6 +27,7 @@ namespace F1XR.RestAPI.Replay
             logicalRoot = root;
             visualBasePosition = transform.localPosition;
             visualBaseRotation = transform.localRotation;
+            visualMotionApplied = false;
         }
 
         public void Init(int number)
@@ -31,6 +37,7 @@ namespace F1XR.RestAPI.Replay
             name = "VisualMotionRoot";
             bodyRenderersDirty = true;
             SetLabel(number.ToString());
+            RefreshRuntimeUpdateState();
         }
 
         public void SetPosition(Vector3 position)
@@ -50,6 +57,8 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
+            ClearRoomPresentation();
+            visualMotionApplied = true;
             transform.localPosition =
                 visualBasePosition + LogicalRoot.InverseTransformVector(worldOffset);
             transform.localRotation =
@@ -61,8 +70,51 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
+            if (!visualMotionApplied)
+                return;
+
+            ClearRoomPresentation();
             transform.localPosition = visualBasePosition;
             transform.localRotation = visualBaseRotation;
+            visualMotionApplied = false;
+        }
+
+        public void ApplyRoomPresentation(
+            Vector3 worldAnchor,
+            float scale)
+        {
+            ClearRoomPresentation();
+
+            scale = Mathf.Max(1f, scale);
+            if (scale <= 1.0001f)
+                return;
+
+            roomPresentationLocalPosition = transform.localPosition;
+            roomPresentationLocalScale = transform.localScale;
+            roomPresentationApplied = true;
+
+            Vector3 worldPosition = transform.position;
+            Vector3 planarOffset = worldPosition - worldAnchor;
+            planarOffset.y = 0f;
+            transform.position =
+                worldPosition +
+                planarOffset * (scale - 1f);
+            transform.localScale =
+                roomPresentationLocalScale * scale;
+            MarkVisualLayoutDirty();
+        }
+
+        public void ClearRoomPresentation()
+        {
+            if (!roomPresentationApplied)
+                return;
+
+            transform.localPosition =
+                roomPresentationLocalPosition;
+            transform.localScale =
+                roomPresentationLocalScale;
+            roomPresentationApplied = false;
+            MarkVisualLayoutDirty();
         }
 
         public void CollectOnboardHiddenRenderers(List<Renderer> renderers)
@@ -82,6 +134,11 @@ namespace F1XR.RestAPI.Replay
 
         private void OnDestroy()
         {
+            DisposeRenderLod();
+            DisposeOvertakeRibbon();
+            DisposeOvertakeSideBySideVfx();
+            DisposeOvertakeCompletionVfx();
+
             if (selectionRingMaterial != null)
                 Destroy(selectionRingMaterial);
 
@@ -101,26 +158,66 @@ namespace F1XR.RestAPI.Replay
                 Destroy(leaderRingMesh);
         }
 
+        private void OnEnable()
+        {
+            SetLabelObjectsActive(ShouldShowLabel());
+            SetSelectionObjectsActive(selected || hovered);
+            SetLeaderObjectsActive(leaderHighlightVisible && rank == 1);
+        }
+
         private void LateUpdate()
         {
+            // Script reloads can leave cars that were spawned before LOD setup.
+            if (!renderLodConfigured)
+                ConfigureRenderLod();
+
+            UpdateRenderLod();
+
             if (selected || hovered)
                 UpdateSelectionEffect();
 
             if (leaderHighlightVisible && rank == 1)
                 UpdateLeaderEffect();
 
-            if (!ShouldShowLabel() || label == null || Camera.main == null)
+            if (!ShouldShowLabel() || label == null)
                 return;
 
-            labelLine ??= CreateLabelLine();
-            labelBackground ??= CreateLabelBackground();
-            labelTopDot ??= CreateLabelDot("DriverLabelTopDot");
-            labelBottomDot ??= CreateLabelDot("DriverLabelBottomDot");
+            if (labelCamera == null || !labelCamera.isActiveAndEnabled)
+                labelCamera = Camera.main;
 
-            if (labelLayoutDirty && UpdateLabelLayout())
+            if (labelCamera == null)
+                return;
+
+            bool showLabelDetails = ShouldShowLabelDetails();
+            if (showLabelDetails)
+            {
+                labelLine ??= CreateLabelLine();
+                labelBackground ??= CreateLabelBackground();
+                labelTopDot ??= CreateLabelDot("DriverLabelTopDot");
+                labelBottomDot ??= CreateLabelDot("DriverLabelBottomDot");
+            }
+
+            if (labelLayoutDirty && UpdateLabelLayout(showLabelDetails))
                 labelLayoutDirty = false;
 
-            label.transform.rotation = Camera.main.transform.rotation;
+            label.transform.rotation = labelCamera.transform.rotation;
+        }
+
+        private void RefreshRuntimeUpdateState()
+        {
+            enabled =
+                renderLodConfigured ||
+                selected ||
+                hovered ||
+                (leaderHighlightVisible && rank == 1) ||
+                ShouldShowLabel();
+        }
+
+        private void MarkVisualLayoutDirty()
+        {
+            labelLayoutDirty = true;
+            selectionLayoutDirty = true;
+            leaderLayoutDirty = true;
         }
 
         private static void AddRenderer(List<Renderer> renderers, Renderer renderer)
