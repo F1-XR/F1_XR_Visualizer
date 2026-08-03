@@ -4,6 +4,667 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Replay.Room
 {
+    internal sealed class ShowcaseRoute
+    {
+        private const int CurveSamplesPerSegment = 24;
+        private const float MinimumSourceSpan = 0.0001f;
+        private const float MinimumHandleLength = 0.02f;
+        private const float PlaneTolerance = 0.005f;
+        private readonly CubicSegment entryToFocus;
+        private readonly CubicSegment focusToExit;
+        private readonly List<Vector3> centerline = new();
+
+        private ShowcaseRoute(
+            float sourceStart,
+            float sourceEntry,
+            float sourceFocus,
+            float sourceExit,
+            float sourceEnd,
+            Vector3 entryPosition,
+            Vector3 focusPosition,
+            Vector3 exitPosition,
+            Vector3 entryDirection,
+            Vector3 focusDirection,
+            Vector3 exitDirection,
+            float entryContinuationLength,
+            float exitContinuationLength,
+            CubicSegment entryToFocus,
+            CubicSegment focusToExit)
+        {
+            SourceStart = sourceStart;
+            SourceEntry = sourceEntry;
+            SourceFocus = sourceFocus;
+            SourceExit = sourceExit;
+            SourceEnd = sourceEnd;
+            EntryPosition = entryPosition;
+            FocusPosition = focusPosition;
+            ExitPosition = exitPosition;
+            EntryDirection = entryDirection;
+            FocusDirection = focusDirection;
+            ExitDirection = exitDirection;
+            EntryContinuationLength = entryContinuationLength;
+            ExitContinuationLength = exitContinuationLength;
+            this.entryToFocus = entryToFocus;
+            this.focusToExit = focusToExit;
+            BuildCenterline();
+        }
+
+        public float SourceStart { get; }
+        public float SourceEntry { get; }
+        public float SourceFocus { get; }
+        public float SourceExit { get; }
+        public float SourceEnd { get; }
+        public Vector3 EntryPosition { get; }
+        public Vector3 FocusPosition { get; }
+        public Vector3 ExitPosition { get; }
+        public Vector3 EntryDirection { get; }
+        public Vector3 FocusDirection { get; }
+        public Vector3 ExitDirection { get; }
+        public float EntryContinuationLength { get; }
+        public float ExitContinuationLength { get; }
+        public IReadOnlyList<Vector3> Centerline => centerline;
+        public bool IsValid =>
+            SourceStart + MinimumSourceSpan < SourceEntry &&
+            SourceEntry + MinimumSourceSpan < SourceFocus &&
+            SourceFocus + MinimumSourceSpan < SourceExit &&
+            SourceExit + MinimumSourceSpan < SourceEnd &&
+            centerline.Count >= 5;
+
+        public static bool TryCreate(
+            ShowcasePlaybackWindow timing,
+            Pose entryPose,
+            Pose focusPose,
+            Pose exitPose,
+            Vector3 entryTravelDirection,
+            Vector3 exitTravelDirection,
+            float floorHeight,
+            float roadFloorOffset,
+            float focusForwardOffset,
+            float minimumEntryContinuation,
+            float minimumExitContinuation,
+            float sourceStart,
+            float sourceEntry,
+            float sourceFocus,
+            float sourceExit,
+            float sourceEnd,
+            out ShowcaseRoute route,
+            out string failure)
+        {
+            route = null;
+            failure = "";
+            if (!timing.IsValid ||
+                !AreOrdered(
+                    sourceStart,
+                    sourceEntry,
+                    sourceFocus,
+                    sourceExit,
+                    sourceEnd))
+            {
+                failure =
+                    "The source route does not provide ordered Start, Entry, Focus, Exit, and End landmarks.";
+                return false;
+            }
+
+            Vector3 entryDirection = Flat(entryTravelDirection);
+            Vector3 exitDirection = Flat(exitTravelDirection);
+            if (entryDirection.sqrMagnitude <= 0.000001f ||
+                exitDirection.sqrMagnitude <= 0.000001f)
+            {
+                failure =
+                    "The Entry or Exit wall has no stable horizontal travel direction.";
+                return false;
+            }
+
+            entryDirection.Normalize();
+            exitDirection.Normalize();
+            float roadHeight = floorHeight + roadFloorOffset;
+            Vector3 entry = AtHeight(entryPose.position, roadHeight);
+            Vector3 exit = AtHeight(exitPose.position, roadHeight);
+            Vector3 focusForward = Flat(focusPose.forward);
+            if (focusForward.sqrMagnitude <= 0.000001f)
+                focusForward = Flat(exit - entry);
+            if (focusForward.sqrMagnitude <= 0.000001f)
+            {
+                failure =
+                    "The automatic Focus and selected walls do not define a stable route direction.";
+                return false;
+            }
+
+            focusForward.Normalize();
+            Vector3 focus = AtHeight(
+                focusPose.position +
+                focusForward * Mathf.Max(0f, focusForwardOffset),
+                roadHeight);
+            Vector3 overallDirection = Flat(exit - entry);
+            if (overallDirection.sqrMagnitude <= 0.0001f)
+            {
+                failure =
+                    "The Entry and Exit anchors are too close to build a showcase route.";
+                return false;
+            }
+
+            overallDirection.Normalize();
+            if (Vector3.Dot(focusForward, overallDirection) < 0f)
+                focusForward = -focusForward;
+            Vector3 incoming = Flat(focus - entry).normalized;
+            Vector3 outgoing = Flat(exit - focus).normalized;
+            Vector3 focusDirection =
+                incoming + outgoing + focusForward;
+            if (focusDirection.sqrMagnitude <= 0.000001f)
+                focusDirection = overallDirection;
+            else
+                focusDirection.Normalize();
+
+            Vector3 exitInsideDirection = -exitDirection;
+            if (!IsInside(entry, exit, exitInsideDirection) ||
+                !IsInside(exit, entry, entryDirection) ||
+                !IsStrictlyInside(focus, entry, entryDirection) ||
+                !IsStrictlyInside(focus, exit, exitInsideDirection) ||
+                Vector3.Dot(entryDirection, focus - entry) <= 0f ||
+                Vector3.Dot(exitDirection, exit - focus) <= 0f)
+            {
+                failure =
+                    "The automatic Focus is not inside a single Entry-to-Exit wall corridor.";
+                return false;
+            }
+
+            if (!TryBuildSegment(
+                    entry,
+                    focus,
+                    entryDirection,
+                    focusDirection,
+                    entry,
+                    entryDirection,
+                    exit,
+                    exitInsideDirection,
+                    out CubicSegment first) ||
+                !TryBuildSegment(
+                    focus,
+                    exit,
+                    focusDirection,
+                    exitDirection,
+                    entry,
+                    entryDirection,
+                    exit,
+                    exitInsideDirection,
+                    out CubicSegment second))
+            {
+                failure =
+                    "The wall corridor does not leave enough room for stable route tangents.";
+                return false;
+            }
+
+            float sourceCoreLength = sourceExit - sourceEntry;
+            float physicalCoreLength =
+                EstimateLength(first) + EstimateLength(second);
+            float coreScale = physicalCoreLength /
+                Mathf.Max(MinimumSourceSpan, sourceCoreLength);
+            float entryContinuation = Mathf.Max(
+                minimumEntryContinuation,
+                (sourceEntry - sourceStart) * coreScale);
+            float exitContinuation = Mathf.Max(
+                minimumExitContinuation,
+                (sourceEnd - sourceExit) * coreScale);
+
+            ShowcaseRoute candidate = new(
+                sourceStart,
+                sourceEntry,
+                sourceFocus,
+                sourceExit,
+                sourceEnd,
+                entry,
+                focus,
+                exit,
+                entryDirection,
+                focusDirection,
+                exitDirection,
+                entryContinuation,
+                exitContinuation,
+                first,
+                second);
+            if (!candidate.IsValid ||
+                !candidate.HasSinglePortalCrossings() ||
+                candidate.HasSelfIntersection())
+            {
+                failure =
+                    "The generated route would cross a portal more than once or intersect itself.";
+                return false;
+            }
+
+            route = candidate;
+            return true;
+        }
+
+        public bool TryEvaluate(
+            float sourceLongitudinal,
+            out Vector3 position,
+            out Vector3 tangent)
+        {
+            position = Vector3.zero;
+            tangent = Vector3.forward;
+            if (!IsValid)
+                return false;
+
+            float source = Mathf.Clamp(
+                sourceLongitudinal,
+                SourceStart,
+                SourceEnd);
+            if (source <= SourceEntry)
+            {
+                float progress = Mathf.InverseLerp(
+                    SourceStart,
+                    SourceEntry,
+                    source);
+                position = Vector3.Lerp(
+                    EntryPosition -
+                    EntryDirection * EntryContinuationLength,
+                    EntryPosition,
+                    progress);
+                tangent = EntryDirection;
+                return true;
+            }
+
+            if (source <= SourceFocus)
+            {
+                float progress = Mathf.InverseLerp(
+                    SourceEntry,
+                    SourceFocus,
+                    source);
+                entryToFocus.Evaluate(
+                    progress,
+                    out position,
+                    out tangent);
+                return true;
+            }
+
+            if (source <= SourceExit)
+            {
+                float progress = Mathf.InverseLerp(
+                    SourceFocus,
+                    SourceExit,
+                    source);
+                focusToExit.Evaluate(
+                    progress,
+                    out position,
+                    out tangent);
+                return true;
+            }
+
+            float exitProgress = Mathf.InverseLerp(
+                SourceExit,
+                SourceEnd,
+                source);
+            position = Vector3.Lerp(
+                ExitPosition,
+                ExitPosition +
+                ExitDirection * ExitContinuationLength,
+                exitProgress);
+            tangent = ExitDirection;
+            return true;
+        }
+
+        private void BuildCenterline()
+        {
+            centerline.Clear();
+            centerline.Add(
+                EntryPosition -
+                EntryDirection * EntryContinuationLength);
+            centerline.Add(EntryPosition);
+            AppendSegment(entryToFocus);
+            AppendSegment(focusToExit);
+            centerline.Add(
+                ExitPosition +
+                ExitDirection * ExitContinuationLength);
+        }
+
+        private void AppendSegment(CubicSegment segment)
+        {
+            for (int i = 1; i <= CurveSamplesPerSegment; i++)
+            {
+                segment.Evaluate(
+                    i / (float)CurveSamplesPerSegment,
+                    out Vector3 position,
+                    out _);
+                centerline.Add(position);
+            }
+        }
+
+        private bool HasSinglePortalCrossings()
+        {
+            Vector3 exitInside = -ExitDirection;
+            for (int i = 0; i < centerline.Count; i++)
+            {
+                Vector3 point = centerline[i];
+                bool beforeEntry = i == 0;
+                bool afterExit = i == centerline.Count - 1;
+                float entrySide = Vector3.Dot(
+                    point - EntryPosition,
+                    EntryDirection);
+                float exitSide = Vector3.Dot(
+                    point - ExitPosition,
+                    exitInside);
+                if (beforeEntry)
+                {
+                    if (entrySide >= -PlaneTolerance)
+                        return false;
+                }
+                else if (entrySide < -PlaneTolerance)
+                {
+                    return false;
+                }
+
+                if (afterExit)
+                {
+                    if (exitSide >= -PlaneTolerance)
+                        return false;
+                }
+                else if (exitSide < -PlaneTolerance)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool HasSelfIntersection()
+        {
+            for (int first = 0;
+                 first < centerline.Count - 1;
+                 first++)
+            {
+                for (int second = first + 2;
+                     second < centerline.Count - 1;
+                     second++)
+                {
+                    if (SegmentsIntersect(
+                            centerline[first],
+                            centerline[first + 1],
+                            centerline[second],
+                            centerline[second + 1]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryBuildSegment(
+            Vector3 start,
+            Vector3 end,
+            Vector3 startDirection,
+            Vector3 endDirection,
+            Vector3 entryPlanePoint,
+            Vector3 entryInsideDirection,
+            Vector3 exitPlanePoint,
+            Vector3 exitInsideDirection,
+            out CubicSegment segment)
+        {
+            segment = default;
+            float chordLength = Flat(end - start).magnitude;
+            if (chordLength <= MinimumHandleLength)
+                return false;
+
+            float targetHandle = chordLength / 3f;
+            float startHandle = LimitHandleLength(
+                start,
+                startDirection,
+                targetHandle,
+                entryPlanePoint,
+                entryInsideDirection,
+                exitPlanePoint,
+                exitInsideDirection);
+            float endHandle = LimitHandleLength(
+                end,
+                -endDirection,
+                targetHandle,
+                entryPlanePoint,
+                entryInsideDirection,
+                exitPlanePoint,
+                exitInsideDirection);
+            if (startHandle < MinimumHandleLength ||
+                endHandle < MinimumHandleLength)
+            {
+                return false;
+            }
+
+            segment = new CubicSegment(
+                start,
+                start + startDirection * startHandle,
+                end - endDirection * endHandle,
+                end);
+            return true;
+        }
+
+        private static float LimitHandleLength(
+            Vector3 origin,
+            Vector3 handleDirection,
+            float targetLength,
+            Vector3 entryPlanePoint,
+            Vector3 entryInsideDirection,
+            Vector3 exitPlanePoint,
+            Vector3 exitInsideDirection)
+        {
+            float length = Mathf.Max(0f, targetLength);
+            length = LimitHandleAgainstPlane(
+                origin,
+                handleDirection,
+                length,
+                entryPlanePoint,
+                entryInsideDirection);
+            return LimitHandleAgainstPlane(
+                origin,
+                handleDirection,
+                length,
+                exitPlanePoint,
+                exitInsideDirection);
+        }
+
+        private static float LimitHandleAgainstPlane(
+            Vector3 origin,
+            Vector3 handleDirection,
+            float targetLength,
+            Vector3 planePoint,
+            Vector3 insideDirection)
+        {
+            float rate = Vector3.Dot(
+                handleDirection,
+                insideDirection);
+            if (rate >= -0.000001f)
+                return targetLength;
+
+            float clearance = Vector3.Dot(
+                origin - planePoint,
+                insideDirection);
+            return Mathf.Min(
+                targetLength,
+                Mathf.Max(0f, clearance * 0.9f / -rate));
+        }
+
+        private static float EstimateLength(CubicSegment segment)
+        {
+            float length = 0f;
+            Vector3 previous = segment.Start;
+            for (int i = 1; i <= CurveSamplesPerSegment; i++)
+            {
+                segment.Evaluate(
+                    i / (float)CurveSamplesPerSegment,
+                    out Vector3 position,
+                    out _);
+                length += Vector3.Distance(previous, position);
+                previous = position;
+            }
+
+            return length;
+        }
+
+        private static bool AreOrdered(
+            float start,
+            float entry,
+            float focus,
+            float exit,
+            float end)
+        {
+            return float.IsFinite(start) &&
+                float.IsFinite(entry) &&
+                float.IsFinite(focus) &&
+                float.IsFinite(exit) &&
+                float.IsFinite(end) &&
+                start + MinimumSourceSpan < entry &&
+                entry + MinimumSourceSpan < focus &&
+                focus + MinimumSourceSpan < exit &&
+                exit + MinimumSourceSpan < end;
+        }
+
+        private static bool IsInside(
+            Vector3 point,
+            Vector3 planePoint,
+            Vector3 insideDirection)
+        {
+            return Vector3.Dot(
+                point - planePoint,
+                insideDirection) >= -PlaneTolerance;
+        }
+
+        private static bool IsStrictlyInside(
+            Vector3 point,
+            Vector3 planePoint,
+            Vector3 insideDirection)
+        {
+            return Vector3.Dot(
+                point - planePoint,
+                insideDirection) > PlaneTolerance;
+        }
+
+        private static Vector3 AtHeight(Vector3 point, float height)
+        {
+            point.y = height;
+            return point;
+        }
+
+        private static Vector3 Flat(Vector3 value)
+        {
+            value.y = 0f;
+            return value;
+        }
+
+        private static bool SegmentsIntersect(
+            Vector3 firstStart,
+            Vector3 firstEnd,
+            Vector3 secondStart,
+            Vector3 secondEnd)
+        {
+            Vector2 a = new(firstStart.x, firstStart.z);
+            Vector2 b = new(firstEnd.x, firstEnd.z);
+            Vector2 c = new(secondStart.x, secondStart.z);
+            Vector2 d = new(secondEnd.x, secondEnd.z);
+            float abC = Cross(b - a, c - a);
+            float abD = Cross(b - a, d - a);
+            float cdA = Cross(d - c, a - c);
+            float cdB = Cross(d - c, b - c);
+            return abC * abD < -0.000001f &&
+                cdA * cdB < -0.000001f;
+        }
+
+        private static float Cross(Vector2 first, Vector2 second)
+        {
+            return first.x * second.y - first.y * second.x;
+        }
+
+        private readonly struct CubicSegment
+        {
+            public CubicSegment(
+                Vector3 start,
+                Vector3 firstControl,
+                Vector3 secondControl,
+                Vector3 end)
+            {
+                Start = start;
+                FirstControl = firstControl;
+                SecondControl = secondControl;
+                End = end;
+            }
+
+            public Vector3 Start { get; }
+            public Vector3 FirstControl { get; }
+            public Vector3 SecondControl { get; }
+            public Vector3 End { get; }
+
+            public void Evaluate(
+                float progress,
+                out Vector3 position,
+                out Vector3 tangent)
+            {
+                float t = Mathf.Clamp01(progress);
+                float inverse = 1f - t;
+                position =
+                    inverse * inverse * inverse * Start +
+                    3f * inverse * inverse * t * FirstControl +
+                    3f * inverse * t * t * SecondControl +
+                    t * t * t * End;
+                tangent =
+                    3f * inverse * inverse *
+                    (FirstControl - Start) +
+                    6f * inverse * t *
+                    (SecondControl - FirstControl) +
+                    3f * t * t *
+                    (End - SecondControl);
+                tangent = Flat(tangent);
+                if (tangent.sqrMagnitude <= 0.000001f)
+                    tangent = Flat(End - Start);
+                if (tangent.sqrMagnitude > 0.000001f)
+                    tangent.Normalize();
+            }
+        }
+    }
+
+    internal readonly struct ShowcaseRun
+    {
+        public ShowcaseRun(
+            ShowcasePlaybackWindow timing,
+            ShowcaseRoute route,
+            Pose entryPose,
+            Pose focusPose,
+            Pose exitPose,
+            Vector3 entryTravelDirection,
+            Vector3 exitTravelDirection,
+            float floorHeight,
+            int layoutRevision,
+            int sourceRevision)
+        {
+            Timing = timing;
+            Route = route;
+            EntryPose = entryPose;
+            FocusPose = focusPose;
+            ExitPose = exitPose;
+            EntryTravelDirection = entryTravelDirection;
+            ExitTravelDirection = exitTravelDirection;
+            FloorHeight = floorHeight;
+            LayoutRevision = layoutRevision;
+            SourceRevision = sourceRevision;
+        }
+
+        public ShowcasePlaybackWindow Timing { get; }
+        public ShowcaseRoute Route { get; }
+        public Pose EntryPose { get; }
+        public Pose FocusPose { get; }
+        public Pose ExitPose { get; }
+        public Vector3 EntryTravelDirection { get; }
+        public Vector3 ExitTravelDirection { get; }
+        public float FloorHeight { get; }
+        public int LayoutRevision { get; }
+        public int SourceRevision { get; }
+        public bool IsValid =>
+            Timing.IsValid &&
+            Route != null &&
+            Route.IsValid &&
+            EntryTravelDirection.sqrMagnitude > 0.000001f &&
+            ExitTravelDirection.sqrMagnitude > 0.000001f &&
+            float.IsFinite(FloorHeight);
+    }
+
     [DefaultExecutionOrder(1000)]
     [DisallowMultipleComponent]
     public sealed class ShowcaseVehiclePathMapper : MonoBehaviour
@@ -94,6 +755,8 @@ namespace F1XR.RestAPI.Replay.Room
         private float stageRevealStartTime;
         private float stageRevealFirstLongitudinal;
         private float stageRevealSecondLongitudinal;
+        private ShowcaseRun activeRun;
+        private int boundLayoutRevision = -1;
 
         public bool TargetVehicleResolved =>
             firstBinding != null &&
@@ -151,6 +814,16 @@ namespace F1XR.RestAPI.Replay.Room
         public bool PortalsConfigured =>
             portalPresentation != null &&
             portalPresentation.IsConfigured;
+        internal bool TryGetActiveRun(out ShowcaseRun run)
+        {
+            run = activeRun;
+            return run.IsValid;
+        }
+        internal bool TryGetActiveRoute(out ShowcaseRoute route)
+        {
+            route = activeRun.Route;
+            return route != null && route.IsValid;
+        }
         public int AuthoritativePortalVehicleCount =>
             portalPresentation != null
                 ? portalPresentation.AuthoritativeVehicleCount
@@ -280,7 +953,9 @@ namespace F1XR.RestAPI.Replay.Room
                 !firstBinding.IsValid ||
                 secondBinding == null ||
                 !secondBinding.IsValid ||
-                boundSourceRevision != eventReplay.SourceGeometryRevision)
+                boundSourceRevision != eventReplay.SourceGeometryRevision ||
+                showcaseLayout == null ||
+                boundLayoutRevision != showcaseLayout.LayoutRevision)
             {
                 ReleaseBinding(false);
 
@@ -423,7 +1098,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             if (!eventReplay.TryCopyEventLocalCenterPath(
                     eventLocalPath,
-                    out Vector3 overtakePosition,
+                    out _,
                     out _))
             {
                 SetInactive(
@@ -432,10 +1107,39 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            if (!TryCreateShowcaseRun(
+                    out ShowcaseRun run,
+                    out string runFailure))
+            {
+                SetInactive("LayoutInvalid", runFailure);
+                return false;
+            }
+
+            ShowcasePlaybackWindow playbackWindow = run.Timing;
+            if (
+                !eventReplay.TryGetEventLocalPathPosition(
+                    playbackWindow.EntryTime,
+                    out Vector3 entryPosition) ||
+                !eventReplay.TryGetEventLocalPathPosition(
+                    playbackWindow.FocusTime,
+                    out Vector3 focusPosition) ||
+                !eventReplay.TryGetEventLocalPathPosition(
+                    playbackWindow.ExitTime,
+                    out Vector3 exitPosition))
+            {
+                SetInactive(
+                    "SourceUnavailable",
+                    "The showcase playback window could not resolve its Entry, focus, and Exit landmarks.");
+                return false;
+            }
+
             if (!TryPlaceEventStage(
                     stage,
                     eventLocalPath,
-                    overtakePosition,
+                    entryPosition,
+                    focusPosition,
+                    exitPosition,
+                    run,
                     out string placementFailure))
             {
                 SetInactive(
@@ -494,7 +1198,9 @@ namespace F1XR.RestAPI.Replay.Room
             secondBinding = second;
             eventReplay.SetShowcaseAudioFocus(
                 first.DriverNumber);
-            boundSourceRevision = eventReplay.SourceGeometryRevision;
+            boundSourceRevision = run.SourceRevision;
+            boundLayoutRevision = run.LayoutRevision;
+            activeRun = run;
             stageRevealPending = true;
             stageRevealStartTime = eventReplay.CurrentTime;
             eventReplay.TryGetSourceLongitudinal(
@@ -508,6 +1214,7 @@ namespace F1XR.RestAPI.Replay.Room
             lastFailureReason = "";
             Debug.Log(
                 $"[RoomEventPlacement] sourcePoints={eventLocalPath.Count}, " +
+                $"routePoints={run.Route.Centerline.Count}, " +
                 $"eventScale={eventCoordinateScale:0.###}, " +
                 $"entryContinuation={entryContinuation:0.##}m, " +
                 $"exitContinuation={exitContinuation:0.##}m, " +
@@ -520,6 +1227,99 @@ namespace F1XR.RestAPI.Replay.Room
                 $"portals={portalPresentation.IsConfigured}",
                 this);
             return true;
+        }
+
+        private bool TryCreateShowcaseRun(
+            out ShowcaseRun run,
+            out string failure)
+        {
+            run = default;
+            failure = "";
+            if (eventReplay == null ||
+                showcaseLayout == null ||
+                !eventReplay.TryGetShowcasePlaybackWindow(
+                    out ShowcasePlaybackWindow timing) ||
+                !showcaseLayout.TryGetEntryPose(
+                    out Pose entryPose) ||
+                !showcaseLayout.TryGetHeroPose(
+                    out Pose focusPose) ||
+                !showcaseLayout.TryGetExitPose(
+                    out Pose exitPose) ||
+                !showcaseLayout.TryGetRoomFloorHeight(
+                    out float floorHeight))
+            {
+                failure =
+                    "The showcase timing, automatic Focus, or wall layout is unavailable.";
+                return false;
+            }
+
+            if (!eventReplay.TryGetReferenceSourceLongitudinalAtTime(
+                    timing.StartTime,
+                    out float sourceStart) ||
+                !eventReplay.TryGetReferenceSourceLongitudinalAtTime(
+                    timing.EntryTime,
+                    out float sourceEntry) ||
+                !eventReplay.TryGetReferenceSourceLongitudinalAtTime(
+                    timing.FocusTime,
+                    out float sourceFocus) ||
+                !eventReplay.TryGetReferenceSourceLongitudinalAtTime(
+                    timing.ExitTime,
+                    out float sourceExit) ||
+                !eventReplay.TryGetReferenceSourceLongitudinalAtTime(
+                    timing.EndTime,
+                    out float sourceEnd))
+            {
+                failure =
+                    "The reference vehicle could not resolve the authoritative route landmarks.";
+                return false;
+            }
+
+            float continuationScale =
+                Mathf.Max(1f, showcaseTrackScaleMultiplier);
+            if (!ShowcaseRoute.TryCreate(
+                    timing,
+                    entryPose,
+                    focusPose,
+                    exitPose,
+                    showcaseLayout.EntryTravelDirection,
+                    showcaseLayout.ExitTravelDirection,
+                    floorHeight,
+                    roadFloorOffset,
+                    heroForwardOffset,
+                    wallContinuationTarget *
+                    Mathf.Max(1f, entryContinuationMultiplier) *
+                    continuationScale,
+                    wallContinuationTarget * continuationScale,
+                    sourceStart,
+                    sourceEntry,
+                    sourceFocus,
+                    sourceExit,
+                    sourceEnd,
+                    out ShowcaseRoute route,
+                    out string routeFailure))
+            {
+                failure = routeFailure;
+                return false;
+            }
+
+            run = new ShowcaseRun(
+                timing,
+                route,
+                entryPose,
+                focusPose,
+                exitPose,
+                showcaseLayout.EntryTravelDirection,
+                showcaseLayout.ExitTravelDirection,
+                floorHeight,
+                showcaseLayout.LayoutRevision,
+                eventReplay.SourceGeometryRevision);
+            if (run.IsValid)
+                return true;
+
+            run = default;
+            failure =
+                "The showcase timing or captured wall travel direction is invalid.";
+            return false;
         }
 
         private void RevealStageAfterReplayMotion()
@@ -555,7 +1355,10 @@ namespace F1XR.RestAPI.Replay.Room
         private bool TryPlaceEventStage(
             Transform stage,
             IReadOnlyList<Vector3> sourcePath,
-            Vector3 overtakePosition,
+            Vector3 sourceEntryPosition,
+            Vector3 sourceFocusPosition,
+            Vector3 sourceExitPosition,
+            ShowcaseRun run,
             out string failure)
         {
             failure = "";
@@ -568,8 +1371,8 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             Vector3 roomTravel = Flat(
-                showcaseLayout.ExitPose.position -
-                showcaseLayout.EntryPose.position);
+                run.ExitPose.position -
+                run.EntryPose.position);
             if (roomTravel.sqrMagnitude <= 0.000001f)
             {
                 failure =
@@ -578,27 +1381,21 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             Vector3 heroForward = Flat(
-                showcaseLayout.HeroPose.forward);
+                run.FocusPose.forward);
             if (heroForward.sqrMagnitude <= 0.000001f)
                 heroForward = roomTravel.normalized;
             else
                 heroForward.Normalize();
 
             Vector3 overtakeTarget =
-                showcaseLayout.HeroPose.position +
+                run.FocusPose.position +
                 heroForward * heroForwardOffset;
-            if (!showcaseLayout.TryGetRoomFloorHeight(
-                    out float roomFloorHeight))
-            {
-                failure =
-                    "The selected walls do not provide a stable floor height.";
-                return false;
-            }
+            float roomFloorHeight = run.FloorHeight;
 
             Vector3 entryInward = Flat(
-                showcaseLayout.EntryTravelDirection);
+                run.EntryTravelDirection);
             Vector3 exitInward = Flat(
-                -showcaseLayout.ExitTravelDirection);
+                -run.ExitTravelDirection);
             if (entryInward.sqrMagnitude <= 0.000001f ||
                 exitInward.sqrMagnitude <= 0.000001f)
             {
@@ -613,12 +1410,22 @@ namespace F1XR.RestAPI.Replay.Room
             int transitionIndex =
                 FindClosestPointIndex(
                     sourcePath,
-                    overtakePosition);
-            if (transitionIndex <= 0 ||
-                transitionIndex >= sourcePath.Count - 1)
+                    sourceFocusPosition);
+            int entryIndex =
+                FindClosestPointIndex(
+                    sourcePath,
+                    sourceEntryPosition);
+            int exitIndex =
+                FindClosestPointIndex(
+                    sourcePath,
+                    sourceExitPosition);
+            if (entryIndex < 0 ||
+                transitionIndex <= entryIndex ||
+                exitIndex <= transitionIndex ||
+                exitIndex >= sourcePath.Count)
             {
                 failure =
-                    "The ordering-transition point does not leave both an Entry approach and Exit departure.";
+                    "The authoritative showcase window does not leave an ordered Entry, focus, and Exit path.";
                 return false;
             }
 
@@ -627,15 +1434,28 @@ namespace F1XR.RestAPI.Replay.Room
             float totalDistance =
                 cumulativeDistances[cumulativeDistances.Length - 1];
             float roomSpan = roomTravel.magnitude;
+            float continuationScale =
+                Mathf.Max(1f, showcaseTrackScaleMultiplier);
             float entryContinuationTarget =
                 wallContinuationTarget *
-                Mathf.Max(1f, entryContinuationMultiplier);
-            float targetPresentationLength =
-                (roomSpan + wallContinuationTarget * 2f) *
-                showcaseTrackScaleMultiplier;
+                Mathf.Max(1f, entryContinuationMultiplier) *
+                continuationScale;
+            float exitContinuationTarget =
+                wallContinuationTarget *
+                continuationScale;
+            Vector3 sourceCrossing = Flat(
+                sourceExitPosition -
+                sourceEntryPosition);
+            float sourceSpan = sourceCrossing.magnitude;
+            if (sourceSpan <= 0.0001f)
+            {
+                failure =
+                    "The authoritative Entry and Exit landmarks have no usable horizontal separation.";
+                return false;
+            }
+
             float resolvedScale =
-                targetPresentationLength /
-                Mathf.Max(0.0001f, totalDistance);
+                roomSpan / sourceSpan;
             if (!float.IsFinite(resolvedScale) ||
                 resolvedScale <= 0f ||
                 resolvedScale > 10000f)
@@ -645,189 +1465,88 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            float bestScore = float.PositiveInfinity;
-            float bestScale = 0f;
-            int bestEntryIndex = -1;
-            int bestExitIndex = -1;
-            Vector3 bestPosition = Vector3.zero;
-            Quaternion bestRotation = Quaternion.identity;
-            float bestEntryAngle = 180f;
-            float bestExitAngle = 180f;
-            float bestHeroMiss = float.PositiveInfinity;
-            float bestPortalMiss = float.PositiveInfinity;
+            float yaw = Vector3.SignedAngle(
+                sourceCrossing,
+                roomTravel,
+                Vector3.up);
+            Quaternion rotation =
+                Quaternion.Euler(0f, yaw, 0f);
+            Vector3 transformedEntry =
+                rotation *
+                sourceEntryPosition *
+                resolvedScale;
+            Vector3 transformedExit =
+                rotation *
+                sourceExitPosition *
+                resolvedScale;
+            Vector3 position =
+                run.EntryPose.position -
+                transformedEntry;
+            position.y =
+                roomFloorHeight +
+                roadFloorOffset -
+                (rotation *
+                 sourceFocusPosition *
+                 resolvedScale).y;
 
-            for (int entryIndex = 0;
-                 entryIndex < transitionIndex;
-                 entryIndex++)
-            {
-                for (int exitIndex = transitionIndex + 1;
-                     exitIndex < sourcePath.Count;
-                     exitIndex++)
-                {
-                    Vector3 sourceCrossing = Flat(
-                        sourcePath[exitIndex] -
-                        sourcePath[entryIndex]);
-                    float sourceSpan =
-                        sourceCrossing.magnitude;
-                    if (sourceSpan <= 0.0001f)
-                        continue;
+            Vector3 mappedEntry =
+                position + transformedEntry;
+            Vector3 mappedExit =
+                position + transformedExit;
+            Vector3 mappedFocus =
+                position +
+                rotation *
+                sourceFocusPosition *
+                resolvedScale;
+            float entryMiss = Flat(
+                mappedEntry -
+                run.EntryPose.position).magnitude;
+            float exitMiss = Flat(
+                mappedExit -
+                run.ExitPose.position).magnitude;
+            Vector3 sourceEntryDirection =
+                FindDirectionAt(sourcePath, entryIndex);
+            Vector3 sourceExitDirection =
+                FindDirectionAt(sourcePath, exitIndex);
 
-                    float scale = resolvedScale;
-
-                    float yaw = Vector3.SignedAngle(
-                        sourceCrossing,
-                        roomTravel,
-                        Vector3.up);
-                    Quaternion rotation =
-                        Quaternion.Euler(0f, yaw, 0f);
-                    Vector3 transformedEntry =
-                        rotation *
-                        sourcePath[entryIndex] *
-                        scale;
-                    Vector3 transformedExit =
-                        rotation *
-                        sourcePath[exitIndex] *
-                        scale;
-                    Vector3 position =
-                        ((showcaseLayout.EntryPose.position -
-                          transformedEntry) +
-                         (showcaseLayout.ExitPose.position -
-                          transformedExit)) *
-                        0.5f;
-
-                    position.y =
-                        roomFloorHeight +
-                        roadFloorOffset -
-                        (rotation *
-                         overtakePosition *
-                         scale).y;
-
-                    Vector3 mappedExit =
-                        position +
-                        transformedExit;
-                    Vector3 mappedEntry =
-                        position +
-                        transformedEntry;
-                    Vector3 mappedOvertake =
-                        position +
-                        rotation *
-                        overtakePosition *
-                        scale;
-                    float exitMiss = Flat(
-                        mappedExit -
-                        showcaseLayout.ExitPose.position).magnitude;
-                    float entryMiss = Flat(
-                        mappedEntry -
-                        showcaseLayout.EntryPose.position).magnitude;
-                    float candidatePortalMiss =
-                        Mathf.Max(entryMiss, exitMiss);
-                    float heroMiss = Flat(
-                        mappedOvertake -
-                        overtakeTarget).magnitude;
-
-                    Vector3 sourceEntryDirection =
-                        FindDirectionAt(
-                            sourcePath,
-                            entryIndex);
-                    Vector3 sourceExitDirection =
-                        FindDirectionAt(
-                            sourcePath,
-                            exitIndex);
-                    float candidateEntryAngle =
-                        Vector3.Angle(
-                            Flat(rotation *
-                                 sourceEntryDirection),
-                            Flat(showcaseLayout.EntryTravelDirection));
-                    float candidateExitAngle =
-                        Vector3.Angle(
-                            Flat(rotation *
-                                 sourceExitDirection),
-                            Flat(showcaseLayout.ExitTravelDirection));
-                    float candidateEntryContinuation =
-                        cumulativeDistances[entryIndex] *
-                        scale;
-                    float candidateExitContinuation =
-                        (totalDistance -
-                         cumulativeDistances[exitIndex]) *
-                        scale;
-                    float continuationShortfall =
-                        Mathf.Max(
-                            0f,
-                            entryContinuationTarget -
-                            candidateEntryContinuation) +
-                        Mathf.Max(
-                            0f,
-                            wallContinuationTarget -
-                            candidateExitContinuation);
-                    float directionPenalty =
-                        (candidateEntryAngle +
-                         candidateExitAngle) /
-                        180f *
-                        roomSpan;
-                    float score =
-                        heroMiss * 6f +
-                        (entryMiss + exitMiss) * 6f +
-                        directionPenalty +
-                        continuationShortfall;
-                    if (score >= bestScore)
-                        continue;
-
-                    bestScore = score;
-                    bestScale = scale;
-                    bestEntryIndex = entryIndex;
-                    bestExitIndex = exitIndex;
-                    bestPosition = position;
-                    bestRotation = rotation;
-                    bestEntryAngle =
-                        candidateEntryAngle;
-                    bestExitAngle =
-                        candidateExitAngle;
-                    bestHeroMiss = heroMiss;
-                    bestPortalMiss =
-                        candidatePortalMiss;
-                }
-            }
-
-            if (bestEntryIndex < 0 ||
-                bestExitIndex < 0 ||
-                bestScale <= 0f)
-            {
-                failure =
-                    "A finite rigid wall-room-wall placement could not be resolved.";
-                return false;
-            }
-
-            eventCoordinateScale = bestScale;
+            eventCoordinateScale = resolvedScale;
             entryContinuation =
-                cumulativeDistances[bestEntryIndex] *
+                cumulativeDistances[entryIndex] *
                 eventCoordinateScale;
             exitContinuation =
                 (totalDistance -
-                 cumulativeDistances[bestExitIndex]) *
+                 cumulativeDistances[exitIndex]) *
                 eventCoordinateScale;
-            heroMissDistance = bestHeroMiss;
-            entryWallAngle = bestEntryAngle;
-            exitWallAngle = bestExitAngle;
-            portalCrossingMiss = bestPortalMiss;
+            heroMissDistance = Flat(
+                mappedFocus - overtakeTarget).magnitude;
+            entryWallAngle = Vector3.Angle(
+                Flat(rotation * sourceEntryDirection),
+                Flat(run.EntryTravelDirection));
+            exitWallAngle = Vector3.Angle(
+                Flat(rotation * sourceExitDirection),
+                Flat(run.ExitTravelDirection));
+            portalCrossingMiss =
+                Mathf.Max(entryMiss, exitMiss);
             wallPairCompatible =
                 entryContinuation + 0.01f >=
                 entryContinuationTarget &&
-                exitContinuation + 0.01f >= wallContinuationTarget &&
+                exitContinuation + 0.01f >=
+                exitContinuationTarget &&
                 entryWallAngle <= MaximumCompatibleWallAngle &&
                 exitWallAngle <= MaximumCompatibleWallAngle &&
                 portalCrossingMiss <= 0.75f &&
                 heroMissDistance <= Mathf.Max(0.75f, roomSpan * 0.35f);
 
             if (!eventReplay.TrySetPresentationPose(
-                    bestPosition,
-                    bestRotation,
+                    position,
+                    rotation,
                     eventCoordinateScale))
             {
                 failure = "The EventReplayStage rejected the global placement.";
                 return false;
             }
             if (!eventReplay.TryConfigureRoomStageInteraction(
-                    overtakePosition))
+                    sourceFocusPosition))
             {
                 failure = "The EventReplayStage rejected the interaction focus.";
                 return false;
@@ -1287,6 +2006,8 @@ namespace F1XR.RestAPI.Replay.Room
             exitWallAngle = 0f;
             portalCrossingMiss = 0f;
             boundSourceRevision = -1;
+            boundLayoutRevision = -1;
+            activeRun = default;
             wallPairCompatible = false;
             stageRevealPending = false;
             stageRevealStartTime = 0f;
