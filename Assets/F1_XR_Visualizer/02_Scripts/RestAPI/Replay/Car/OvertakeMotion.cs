@@ -72,6 +72,7 @@ namespace F1XR.RestAPI.Replay
         private OvertakeMotionSettings settings = new();
         private OvertakePresentationMode presentationMode =
             OvertakePresentationMode.FullTrack;
+        private OvertakeBattleSequence showcaseBattle;
         private float preparedTime = float.NaN;
 
         public void SetEvents(ReplayEventDto[] source)
@@ -108,6 +109,16 @@ namespace F1XR.RestAPI.Replay
             OvertakePresentationMode mode)
         {
             presentationMode = mode;
+            framePoses.Clear();
+            preparedTime = float.NaN;
+        }
+
+        internal void SetShowcaseBattle(
+            OvertakeBattleSequence sequence)
+        {
+            showcaseBattle = sequence != null && sequence.IsValid
+                ? sequence
+                : null;
             framePoses.Clear();
             preparedTime = float.NaN;
         }
@@ -698,6 +709,17 @@ namespace F1XR.RestAPI.Replay
             out float weight,
             out float velocity)
         {
+            if (presentationMode ==
+                    OvertakePresentationMode.Showcase &&
+                IsShowcaseBattleEvent(replayEvent))
+            {
+                EvaluateShowcaseBattleEnvelope(
+                    time,
+                    out weight,
+                    out velocity);
+                return;
+            }
+
             weight = 0f;
             velocity = 0f;
             float duration =
@@ -758,6 +780,91 @@ namespace F1XR.RestAPI.Replay
             velocity =
                 -SmoothStepDerivative(returnT) /
                 ((1f - returnStart) * duration);
+        }
+
+        private bool IsShowcaseBattleEvent(
+            ReplayEventDto replayEvent)
+        {
+            if (showcaseBattle == null ||
+                !showcaseBattle.IsValid ||
+                replayEvent == null ||
+                replayEvent.driverNumbers == null ||
+                replayEvent.driverNumbers.Length < 2)
+            {
+                return false;
+            }
+
+            int first = replayEvent.driverNumbers[0];
+            int second = replayEvent.driverNumbers[1];
+            return
+                (first == showcaseBattle.FirstDriver &&
+                 second == showcaseBattle.SecondDriver) ||
+                (first == showcaseBattle.SecondDriver &&
+                 second == showcaseBattle.FirstDriver);
+        }
+
+        private void EvaluateShowcaseBattleEnvelope(
+            float time,
+            out float weight,
+            out float velocity)
+        {
+            weight = 0f;
+            velocity = 0f;
+            if (showcaseBattle == null ||
+                !showcaseBattle.IsValid ||
+                time < showcaseBattle.MotionStartTime ||
+                time > showcaseBattle.EndTime)
+            {
+                return;
+            }
+
+            float approachEnd = Mathf.Clamp(
+                showcaseBattle.Exchanges[0].anchorTime,
+                showcaseBattle.MotionStartTime + 0.0001f,
+                showcaseBattle.EndTime);
+            float returnStart = Mathf.Clamp(
+                Mathf.Max(
+                    showcaseBattle.LastExchangeTime,
+                    showcaseBattle.Exchanges[
+                            showcaseBattle.Exchanges.Count - 1]
+                        .confirmedTime),
+                approachEnd,
+                showcaseBattle.EndTime - 0.0001f);
+
+            if (time < approachEnd)
+            {
+                float duration = Mathf.Max(
+                    0.0001f,
+                    approachEnd -
+                    showcaseBattle.MotionStartTime);
+                float progress = Mathf.InverseLerp(
+                    showcaseBattle.MotionStartTime,
+                    approachEnd,
+                    time);
+                weight = SmoothStep(progress);
+                velocity =
+                    SmoothStepDerivative(progress) /
+                    duration;
+                return;
+            }
+
+            if (time <= returnStart)
+            {
+                weight = 1f;
+                return;
+            }
+
+            float returnDuration = Mathf.Max(
+                0.0001f,
+                showcaseBattle.EndTime - returnStart);
+            float returnProgress = Mathf.InverseLerp(
+                returnStart,
+                showcaseBattle.EndTime,
+                time);
+            weight = 1f - SmoothStep(returnProgress);
+            velocity =
+                -SmoothStepDerivative(returnProgress) /
+                returnDuration;
         }
 
         private void ResolveShares(
