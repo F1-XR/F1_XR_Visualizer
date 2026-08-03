@@ -258,12 +258,16 @@ namespace F1XR.UI.WorldPanel
                     _ => false
                 };
 
-                if (!pressedThisFrame || interactor.hasSelection || !IsRayOnPanel(interactor))
+                if (!pressedThisFrame || interactor.hasSelection ||
+                    !TryGetPanelRayHit(interactor, out var grabPoint))
                     continue;
 
                 interactor.StartManualInteraction((IXRSelectInteractable)grab);
                 if (interactor.isPerformingManualInteraction)
+                {
+                    PreserveFarGrabPoint(interactor, grabPoint);
                     gripInteractor = interactor;
+                }
 
                 return;
             }
@@ -280,8 +284,26 @@ namespace F1XR.UI.WorldPanel
             gripInteractor = null;
         }
 
-        bool IsRayOnPanel(XRBaseInputInteractor interactor)
+        void PreserveFarGrabPoint(XRBaseInputInteractor interactor, Vector3 grabPoint)
         {
+            if (interactor is not NearFarInteractor nearFar ||
+                nearFar.interactionAttachController == null)
+            {
+                return;
+            }
+
+            var panelAttach = grab.GetAttachTransform(interactor);
+            if (panelAttach != null)
+                panelAttach.position = grabPoint;
+
+            // A manual select can bypass the NearFarInteractor's own far hit when room geometry
+            // is in front of the panel. Restore the custom panel hit so the grab stays at ray depth.
+            nearFar.interactionAttachController.MoveTo(grabPoint);
+        }
+
+        bool TryGetPanelRayHit(XRBaseInputInteractor interactor, out Vector3 point)
+        {
+            point = default;
             if (interactor is not IXRRayProvider rayProvider)
                 return false;
 
@@ -303,6 +325,7 @@ namespace F1XR.UI.WorldPanel
                 }
 
                 bestDistance = hit.distance;
+                point = hit.point;
                 onPanel = true;
             }
 

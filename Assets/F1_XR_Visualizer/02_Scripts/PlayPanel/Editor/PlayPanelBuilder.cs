@@ -25,8 +25,10 @@ namespace F1XR.PlayPanel.Editor
     /// </summary>
     public static class PlayPanelBuilder
     {
-        const string RootFolder = "Assets/F1_XR_Visualizer/PlayPanel";
-        const string PrefabPath = RootFolder + "/Prefabs/PlayPanel.prefab";
+        const string PrefabsFolder = "Assets/F1_XR_Visualizer/03_Prefabs/PlayPanel";
+        const string ModelsFolder = "Assets/F1_XR_Visualizer/05_Models/PlayPanel";
+        const string MaterialsFolder = "Assets/F1_XR_Visualizer/08_Materials/PlayPanel/Materials";
+        const string PrefabPath = PrefabsFolder + "/PlayPanel.prefab";
         const string FontPath = "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
         const string InstanceName = "PlayPanel";
 
@@ -66,7 +68,7 @@ namespace F1XR.PlayPanel.Editor
         public static void BuildPrefab()
         {
             var root = BuildInstance();
-            EnsureFolder(RootFolder, "Prefabs");
+            EnsureFolders();
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             Object.DestroyImmediate(root);
             AssetDatabase.SaveAssets();
@@ -556,8 +558,8 @@ namespace F1XR.PlayPanel.Editor
 
         // ---------- Utilities ----------
 
-        static string Mat(string name) => RootFolder + "/Materials/PlayPanel_" + name + ".mat";
-        static string Mesh(string name) => RootFolder + "/Meshes/PlayPanel_" + name + ".asset";
+        static string Mat(string name) => MaterialsFolder + "/PlayPanel_" + name + ".mat";
+        static string Mesh(string name) => ModelsFolder + "/PlayPanel_" + name + ".asset";
 
         static GameObject CreateQuad(string name, Transform parent, Vector3 localPos, Vector3 localScale, Material mat)
         {
@@ -638,10 +640,10 @@ namespace F1XR.PlayPanel.Editor
 
         static void EnsureFolders()
         {
-            EnsureFolder("Assets/F1_XR_Visualizer", "PlayPanel");
-            EnsureFolder(RootFolder, "Prefabs");
-            EnsureFolder(RootFolder, "Materials");
-            EnsureFolder(RootFolder, "Meshes");
+            EnsureFolder("Assets/F1_XR_Visualizer/03_Prefabs", "PlayPanel");
+            EnsureFolder("Assets/F1_XR_Visualizer/05_Models", "PlayPanel");
+            EnsureFolder("Assets/F1_XR_Visualizer/08_Materials", "PlayPanel");
+            EnsureFolder("Assets/F1_XR_Visualizer/08_Materials/PlayPanel", "Materials");
         }
 
         static void EnsureFolder(string parent, string child)

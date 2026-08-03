@@ -74,7 +74,7 @@ namespace F1XR.RaceFlags.Editor
     [CustomEditor(typeof(RaceControlFlagPresenter))]
     public sealed class RaceControlFlagPresenterEditor : UnityEditor.Editor
     {
-        private const string FlagPrefabPath = "Assets/F1_XR_Visualizer/RaceFlags/Prefabs/RaceFlagAlert.prefab";
+        private const string FlagPrefabPath = "Assets/F1_XR_Visualizer/03_Prefabs/RaceFlags/RaceFlagAlert.prefab";
         private const string PresenterObjectName = "RaceControlFlagPresenter_TEST";
 
         [MenuItem("Tools/F1 XR/Race Flags/Place Runtime Presenter in Active Test Scene")]

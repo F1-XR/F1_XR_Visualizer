@@ -9,17 +9,16 @@ namespace F1XR.RaceFlags.Editor
 {
     public static class RaceFlagPrefabBuilder
     {
-        private const string RootFolder = "Assets/F1_XR_Visualizer/RaceFlags";
-        private const string ScriptsFolder = RootFolder + "/Scripts";
-        private const string ShadersFolder = RootFolder + "/Shaders";
-        private const string MaterialsFolder = RootFolder + "/Materials";
-        private const string PrefabsFolder = RootFolder + "/Prefabs";
-        private const string EditorFolder = RootFolder + "/Editor";
+        private const string ScriptsFolder = "Assets/F1_XR_Visualizer/02_Scripts/RaceFlags";
+        private const string ShadersFolder = "Assets/F1_XR_Visualizer/08_Materials/RaceFlags/Shaders";
+        private const string MaterialsFolder = "Assets/F1_XR_Visualizer/08_Materials/RaceFlags/Materials";
+        private const string PrefabsFolder = "Assets/F1_XR_Visualizer/03_Prefabs/RaceFlags";
+        private const string ModelsFolder = "Assets/F1_XR_Visualizer/05_Models/RaceFlags";
 
         private const string ShaderPath = ShadersFolder + "/RaceFlagLightweightURP.shader";
         private const string FlagMaterialPath = MaterialsFolder + "/RaceFlagLightweightURP.mat";
         private const string PoleMaterialPath = MaterialsFolder + "/RaceFlagPole.mat";
-        private const string PoleMeshPath = PrefabsFolder + "/RaceFlagPoleMesh.asset";
+        private const string PoleMeshPath = ModelsFolder + "/RaceFlagPoleMesh.asset";
         private const string PrefabPath = PrefabsFolder + "/RaceFlagAlert.prefab";
         private const string TestObjectName = "RaceFlagAlert_TEST";
 
@@ -385,12 +384,14 @@ namespace F1XR.RaceFlags.Editor
 
         private static void EnsureFolders()
         {
-            EnsureFolder("Assets/F1_XR_Visualizer", "RaceFlags");
-            EnsureFolder(RootFolder, "Scripts");
-            EnsureFolder(RootFolder, "Shaders");
-            EnsureFolder(RootFolder, "Materials");
-            EnsureFolder(RootFolder, "Prefabs");
-            EnsureFolder(RootFolder, "Editor");
+            EnsureFolder("Assets/F1_XR_Visualizer/02_Scripts", "RaceFlags");
+            EnsureFolder(ScriptsFolder, "Runtime");
+            EnsureFolder(ScriptsFolder, "Editor");
+            EnsureFolder("Assets/F1_XR_Visualizer/03_Prefabs", "RaceFlags");
+            EnsureFolder("Assets/F1_XR_Visualizer/05_Models", "RaceFlags");
+            EnsureFolder("Assets/F1_XR_Visualizer/08_Materials", "RaceFlags");
+            EnsureFolder("Assets/F1_XR_Visualizer/08_Materials/RaceFlags", "Materials");
+            EnsureFolder("Assets/F1_XR_Visualizer/08_Materials/RaceFlags", "Shaders");
         }
 
         private static void EnsureFolder(string parent, string name)
