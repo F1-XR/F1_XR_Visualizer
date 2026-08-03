@@ -11,7 +11,6 @@ namespace F1XR.RestAPI.Replay
         private Transform logicalRoot;
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation = Quaternion.identity;
-        private Vector3 roomPresentationLocalPosition;
         private Vector3 roomPresentationLocalScale;
         private bool roomPresentationApplied;
         private bool visualMotionApplied;
@@ -85,20 +84,13 @@ namespace F1XR.RestAPI.Replay
         {
             ClearRoomPresentation();
 
-            scale = Mathf.Max(1f, scale);
-            if (scale <= 1.0001f)
+            scale = Mathf.Max(0.01f, scale);
+            if (Mathf.Approximately(scale, 1f))
                 return;
 
-            roomPresentationLocalPosition = transform.localPosition;
             roomPresentationLocalScale = transform.localScale;
             roomPresentationApplied = true;
 
-            Vector3 worldPosition = transform.position;
-            Vector3 planarOffset = worldPosition - worldAnchor;
-            planarOffset.y = 0f;
-            transform.position =
-                worldPosition +
-                planarOffset * (scale - 1f);
             transform.localScale =
                 roomPresentationLocalScale * scale;
             MarkVisualLayoutDirty();
@@ -109,8 +101,6 @@ namespace F1XR.RestAPI.Replay
             if (!roomPresentationApplied)
                 return;
 
-            transform.localPosition =
-                roomPresentationLocalPosition;
             transform.localScale =
                 roomPresentationLocalScale;
             roomPresentationApplied = false;

@@ -14,6 +14,8 @@ namespace F1XR.RestAPI.UI
         private const float OvertakeMarkerOffset = 8f;
         private static readonly Color OvertakeMarkerColor =
             new(0.16f, 0.82f, 1f, 1f);
+        private static readonly Color CurrentOvertakeMarkerColor =
+            new(1f, 0.18f, 0.5f, 1f);
 
         public ReplayPlayer player;
 
@@ -165,8 +167,15 @@ namespace F1XR.RestAPI.UI
         {
             int activeCount = 0;
             ReplayEventDto nextOvertake = null;
+            RectTransform currentMarker = null;
             float timelineStart = player.TimelineStartTime;
             float timelineEnd = timelineStart + player.Duration;
+            EventPopoutReplay eventReplay = player.EventReplay;
+            ReplayEventDto currentOvertake =
+                eventReplay != null &&
+                (eventReplay.IsActive || eventReplay.IsLoading)
+                    ? eventReplay.CurrentEvent
+                    : null;
 
             if (events != null)
             {
@@ -189,6 +198,14 @@ namespace F1XR.RestAPI.UI
                         marker,
                         player.TimelineToNormalized(
                             replayEvent.anchorTime));
+                    bool isCurrent = IsSameEvent(
+                        replayEvent,
+                        currentOvertake);
+                    marker.GetComponent<Image>().color = isCurrent
+                        ? CurrentOvertakeMarkerColor
+                        : OvertakeMarkerColor;
+                    if (isCurrent)
+                        currentMarker = marker;
                     activeCount++;
 
                     if (replayEvent.anchorTime + 0.001f <
@@ -211,9 +228,32 @@ namespace F1XR.RestAPI.UI
                 overtakeMarkers[i].gameObject.SetActive(false);
             }
 
+            currentMarker?.SetAsLastSibling();
+
             RefreshNextOvertakeLabel(
                 activeCount,
                 nextOvertake);
+        }
+
+        private static bool IsSameEvent(
+            ReplayEventDto left,
+            ReplayEventDto right)
+        {
+            if (left == null || right == null)
+                return false;
+
+            if (!string.IsNullOrEmpty(left.eventId) &&
+                !string.IsNullOrEmpty(right.eventId))
+            {
+                return string.Equals(
+                    left.eventId,
+                    right.eventId,
+                    StringComparison.Ordinal);
+            }
+
+            return Mathf.Approximately(
+                left.anchorTime,
+                right.anchorTime);
         }
 
         private RectTransform EnsureOvertakeMarker(int index)
