@@ -25,8 +25,38 @@ namespace F1XR.AIBridge
         ReplayPlayer Player =>
             player != null ? player : (player = FindFirstObjectByType<ReplayPlayer>());
 
+        [Header("예측형 능동 안내(서버 watcher)")]
+        [Tooltip("켜면 리플레이 상태(현재 시각)를 주기 전송 → 서버가 '곧 추월' 예측 안내. " +
+                 "서버 predict_watcher_enabled 와 함께 켠다. 켤 때 Unity PointOutWatcher는 끈다(안내 겹침 방지).")]
+        public bool sendReplayState = false;
+        public float replayStateInterval = 0.7f;   // heartbeat 주기(초)
+        float _hbTimer;
+
         void OnEnable() { if (client != null) client.OnMessage += Route; }
         void OnDisable() { if (client != null) client.OnMessage -= Route; }
+
+        // 리플레이 상태 heartbeat — 발화가 없어도 서버가 현재 시각을 알게 주기 전송.
+        // (예측형 능동 안내 watcher가 '지금 몇 분인지'를 알아야 스스로 안내할 수 있음)
+        void Update()
+        {
+            if (!sendReplayState || client == null) return;
+            ReplayPlayer p = Player;
+            if (p == null || !p.HasDataset) return;
+            _hbTimer += Time.unscaledDeltaTime;
+            if (_hbTimer < replayStateInterval) return;
+            _hbTimer = 0f;
+
+            var hb = new
+            {
+                type = "replay_state",
+                session_key = ResolveSessionKey(0),
+                at_time = CurrentAtTime(),
+                is_playing = true,
+                selected_driver = p.SelectedDriverNumber,
+            };
+            try { client.Send(JsonConvert.SerializeObject(hb, SendSettings)); }
+            catch { /* 연결 전/끊김이면 무시(다음 주기에 재시도) */ }
+        }
 
         /// <summary>수신 JSON을 type별로 라우팅.</summary>
         void Route(string json)
