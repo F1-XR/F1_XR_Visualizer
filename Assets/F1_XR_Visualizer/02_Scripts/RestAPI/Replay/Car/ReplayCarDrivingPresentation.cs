@@ -13,6 +13,9 @@ namespace F1XR.RestAPI.Replay
         private const float ShowcaseMaximumSteeringDegrees = 26f;
         private const float ShowcaseSteeringGain = 5f;
         private const float ShowcaseMinimumSteeringDegrees = 9f;
+        private const float ShowcaseWheelSpinScale = 0.32f;
+        private const float ShowcaseGroundClearanceRadiusRatio = 0.04f;
+        private const float ShowcaseMaximumGroundLiftRadiusRatio = 1.25f;
         private const float SteeringResponse = 12f;
         private const float MaximumContinuousStep = 0.5f;
         private const float BrakeCueThreshold = 0.1f;
@@ -125,11 +128,15 @@ namespace F1XR.RestAPI.Replay
 
             float speedMps =
                 Mathf.Max(0f, speedKph) / 3.6f;
+            float spinScale = showcaseEmphasis
+                ? ShowcaseWheelSpinScale
+                : 1f;
             spinDegrees = Mathf.Repeat(
                 spinDegrees +
                     speedMps / WheelRadiusMeters *
                     Mathf.Rad2Deg *
-                    replayDelta,
+                    replayDelta *
+                    spinScale,
                 360f);
 
             float targetSteering = ResolveSteering(
@@ -195,6 +202,60 @@ namespace F1XR.RestAPI.Replay
             ApplySpeedStreaks(currentSpeedKph);
         }
 
+        public float ResolveShowcaseGroundLiftWorld()
+        {
+            Configure();
+            if (wheels.Count == 0)
+                return 0f;
+
+            Vector3 up = transform.up;
+            float lowestHeight = float.PositiveInfinity;
+            float maximumRadius = 0f;
+
+            foreach (Wheel wheel in wheels)
+            {
+                if (wheel.Transform == null)
+                    continue;
+
+                Renderer[] renderers =
+                    wheel.Transform.GetComponentsInChildren<Renderer>(true);
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer == null)
+                        continue;
+
+                    Bounds bounds = renderer.bounds;
+                    float extent = ProjectedExtent(bounds.extents, up);
+                    float centerHeight = Vector3.Dot(
+                        bounds.center - transform.position,
+                        up);
+                    lowestHeight = Mathf.Min(
+                        lowestHeight,
+                        centerHeight - extent);
+                    maximumRadius = Mathf.Max(maximumRadius, extent);
+                }
+            }
+
+            if (!float.IsFinite(lowestHeight) || maximumRadius <= 0f)
+                return 0f;
+
+            float clearance =
+                maximumRadius * ShowcaseGroundClearanceRadiusRatio;
+            return Mathf.Clamp(
+                -lowestHeight + clearance,
+                0f,
+                maximumRadius * ShowcaseMaximumGroundLiftRadiusRatio);
+        }
+
+        private static float ProjectedExtent(
+            Vector3 extents,
+            Vector3 axis)
+        {
+            return Mathf.Abs(axis.x) * extents.x +
+                Mathf.Abs(axis.y) * extents.y +
+                Mathf.Abs(axis.z) * extents.z;
+        }
+
         private void AddWheel(Transform wheel, bool steering)
         {
             if (wheel == null)
@@ -214,17 +275,26 @@ namespace F1XR.RestAPI.Replay
                 if (wheel.Transform == null)
                     continue;
 
-                Quaternion steering = wheel.Steering
-                    ? Quaternion.AngleAxis(
+                Quaternion steering = Quaternion.identity;
+                if (wheel.Steering)
+                {
+                    Transform parent = wheel.Transform.parent;
+                    Vector3 steeringAxis = parent != null
+                        ? parent.InverseTransformDirection(transform.up)
+                        : Vector3.up;
+                    if (steeringAxis.sqrMagnitude <= 0.000001f)
+                        steeringAxis = Vector3.up;
+
+                    steering = Quaternion.AngleAxis(
                         steeringDegrees,
-                        Vector3.up)
-                    : Quaternion.identity;
+                        steeringAxis.normalized);
+                }
                 Quaternion spin = Quaternion.AngleAxis(
                     spinDegrees,
                     Vector3.right);
                 wheel.Transform.localRotation =
-                    wheel.BaseRotation *
                     steering *
+                    wheel.BaseRotation *
                     spin;
             }
         }
@@ -600,6 +670,19 @@ namespace F1XR.RestAPI.Replay
 
             drivingPresentation.SetShowcaseEmphasis(
                 enabled);
+
+            Vector3 localLift = Vector3.zero;
+            if (enabled)
+            {
+                float worldLift =
+                    drivingPresentation.ResolveShowcaseGroundLiftWorld();
+                Vector3 worldOffset = transform.up * worldLift;
+                localLift = transform.parent != null
+                    ? transform.parent.InverseTransformVector(worldOffset)
+                    : worldOffset;
+            }
+
+            SetDrivingPresentationLocalOffset(localLift);
         }
     }
 }

@@ -10,6 +10,14 @@ namespace F1XR.RestAPI.Replay
         AboveRight
     }
 
+    public enum OvertakeCompletionVfxProfile
+    {
+        Standard,
+        Counter,
+        Repass,
+        Victory
+    }
+
     [Serializable]
     public sealed class OvertakeCompletionVfxSettings
     {

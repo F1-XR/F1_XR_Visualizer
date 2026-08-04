@@ -45,6 +45,7 @@ namespace F1XR.RestAPI.Replay
     {
         private static readonly bool SnapCarsToTrackSurface = false;
         private const float RouteContinuityMaximumGap = 2f;
+        private const float ShowcaseHeadingSmoothingWeight = 0.65f;
 
         private readonly CarGroundSnap groundSnap = new();
         private readonly Dictionary<LocationSample, Vector3> mappedPositions = new();
@@ -61,6 +62,7 @@ namespace F1XR.RestAPI.Replay
         private Vector3 customOrigin;
         private Quaternion customRotation = Quaternion.identity;
         private ReplayCarWorldPoseOverride worldPoseOverride;
+        private bool showcaseHeadingSmoothing;
 
         public ReplayCarMotion(CarInstances _)
         {
@@ -123,6 +125,11 @@ namespace F1XR.RestAPI.Replay
         {
             if (worldPoseOverride == resolver)
                 worldPoseOverride = null;
+        }
+
+        internal void SetShowcaseHeadingSmoothing(bool enabled)
+        {
+            showcaseHeadingSmoothing = enabled;
         }
 
         internal void PrepareMappedPositions(
@@ -274,6 +281,33 @@ namespace F1XR.RestAPI.Replay
             out float interpolation,
             out float duration)
         {
+            ResolvePose(
+                car,
+                previous,
+                previous,
+                a,
+                b,
+                next,
+                next,
+                time,
+                out pose,
+                out interpolation,
+                out duration);
+        }
+
+        internal void ResolvePose(
+            ReplayCarView car,
+            LocationSample previousFar,
+            LocationSample previous,
+            LocationSample a,
+            LocationSample b,
+            LocationSample next,
+            LocationSample nextFar,
+            float time,
+            out ReplayCarPose pose,
+            out float interpolation,
+            out float duration)
+        {
             duration = Mathf.Max(0.001f, b.t - a.t);
             interpolation = Mathf.Clamp01((time - a.t) / duration);
 
@@ -281,6 +315,10 @@ namespace F1XR.RestAPI.Replay
             TryGetMappedPosition(b, out Vector3 positionB);
             TryGetMappedPosition(previous, out Vector3 previousPosition);
             TryGetMappedPosition(next, out Vector3 nextPosition);
+            TryGetMappedPosition(
+                previousFar,
+                out Vector3 previousFarPosition);
+            TryGetMappedPosition(nextFar, out Vector3 nextFarPosition);
 
             if (customParent != null)
             {
@@ -288,6 +326,10 @@ namespace F1XR.RestAPI.Replay
                 positionB = customRotation * (positionB - customOrigin);
                 previousPosition = customRotation * (previousPosition - customOrigin);
                 nextPosition = customRotation * (nextPosition - customOrigin);
+                previousFarPosition = customRotation *
+                    (previousFarPosition - customOrigin);
+                nextFarPosition = customRotation *
+                    (nextFarPosition - customOrigin);
             }
 
             Vector3 rawPosition = Vector3.Lerp(
@@ -305,6 +347,15 @@ namespace F1XR.RestAPI.Replay
                 exitDirection,
                 segmentDirection,
                 interpolation);
+            if (showcaseHeadingSmoothing)
+            {
+                direction = SmoothShowcaseDirection(
+                    direction,
+                    FlatDirection(previousFarPosition, nextPosition),
+                    FlatDirection(previousPosition, nextFarPosition),
+                    segmentDirection,
+                    interpolation);
+            }
             bool hasDirection = direction.sqrMagnitude > 0.000001f;
             Quaternion trackRotation = hasDirection
                 ? Quaternion.LookRotation(direction.normalized, Vector3.up)
@@ -413,6 +464,29 @@ namespace F1XR.RestAPI.Replay
                 entry.normalized,
                 exit.normalized,
                 interpolation).normalized;
+        }
+
+        private static Vector3 SmoothShowcaseDirection(
+            Vector3 nearDirection,
+            Vector3 broadEntry,
+            Vector3 broadExit,
+            Vector3 fallback,
+            float interpolation)
+        {
+            Vector3 broadDirection = SmoothDirection(
+                broadEntry,
+                broadExit,
+                fallback,
+                interpolation);
+            if (nearDirection.sqrMagnitude <= 0.000001f)
+                return broadDirection;
+            if (broadDirection.sqrMagnitude <= 0.000001f)
+                return nearDirection;
+
+            return Vector3.Slerp(
+                nearDirection.normalized,
+                broadDirection.normalized,
+                ShowcaseHeadingSmoothingWeight).normalized;
         }
 
         public void ApplyLogicalPose(

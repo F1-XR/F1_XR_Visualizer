@@ -778,6 +778,11 @@ namespace F1XR.RestAPI.Replay
         private IEnumerator OpenRoutine(ReplayEventDto definition)
         {
             isLoading = true;
+
+            // Let deferred Unity destruction finish before a replacement
+            // stage allocates another map and portal presentation.
+            yield return null;
+
             float scanSeconds = Mathf.Max(
                 Mathf.Max(
                     eventLeadSeconds,
@@ -918,7 +923,7 @@ namespace F1XR.RestAPI.Replay
         {
             eventCars = new ReplayCarSet(
                 player.carPrefab,
-                null,
+                player,
                 false);
             eventCars.SetOvertakePresentationMode(
                 OvertakePresentationMode.Showcase);
@@ -2401,7 +2406,8 @@ namespace F1XR.RestAPI.Replay
                     battleSequence.FinalLeader,
                     replayTime,
                     $"BATTLE WON\n{winner}",
-                    1.4f);
+                    1.4f,
+                    OvertakeCompletionVfxProfile.Victory);
             }
 
             lastBattleVfxReplayTime = replayTime;
@@ -2416,11 +2422,14 @@ namespace F1XR.RestAPI.Replay
                 exchange.overtaker);
             string text;
             float intensity;
+            OvertakeCompletionVfxProfile profile;
             switch (exchange.kind)
             {
                 case OvertakeBattleExchangeKind.Counter:
                     text = $"{driver}\nCOUNTER";
                     intensity = 1.12f;
+                    profile =
+                        OvertakeCompletionVfxProfile.Counter;
                     break;
                 case OvertakeBattleExchangeKind.Repass:
                     text =
@@ -2428,10 +2437,14 @@ namespace F1XR.RestAPI.Replay
                     intensity = Mathf.Min(
                         1.35f,
                         1.18f + exchangeIndex * 0.05f);
+                    profile =
+                        OvertakeCompletionVfxProfile.Repass;
                     break;
                 default:
                     text = $"{driver}\nPASS";
                     intensity = 1f;
+                    profile =
+                        OvertakeCompletionVfxProfile.Standard;
                     break;
             }
 
@@ -2439,7 +2452,8 @@ namespace F1XR.RestAPI.Replay
                 exchange.overtaker,
                 replayTime,
                 text,
-                intensity);
+                intensity,
+                profile);
         }
 
         private void ResetBattleVfxPlayback(float replayTime)
@@ -2506,6 +2520,10 @@ namespace F1XR.RestAPI.Replay
         {
             if (restoreTableTrack)
                 RestoreTableTrackRendering();
+
+            if (stageRoot != null)
+                stageRoot.SetActive(false);
+
             isLoading = false;
             isActive = false;
             timeline.Pause();
