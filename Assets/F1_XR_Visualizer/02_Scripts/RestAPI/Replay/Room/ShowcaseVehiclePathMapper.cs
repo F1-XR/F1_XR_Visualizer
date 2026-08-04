@@ -793,6 +793,10 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 1.5f;
         [SerializeField] private bool immersiveScaleEnabled;
 
+        [Header("Life Size Drive-By Contract")]
+        [SerializeField]
+        private LifeSizeDriveBySettings lifeSizeDriveBy = new();
+
         [Header("Overtake Exit Portal VFX")]
         [SerializeField]
         private OvertakePortalTransitionVfxSettings
@@ -847,6 +851,8 @@ namespace F1XR.RestAPI.Replay.Room
         private float stageRevealFirstLongitudinal;
         private float stageRevealSecondLongitudinal;
         private ShowcaseRun activeRun;
+        private LifeSizeDriveByPlan preparedLifeSizePlan;
+        private string lifeSizePlanFailure = "";
         private ShowcaseStagePlacementMode activePlacementMode;
         private int boundLayoutRevision = -1;
 
@@ -916,6 +922,14 @@ namespace F1XR.RestAPI.Replay.Room
             route = activeRun.Route;
             return route != null && route.IsValid;
         }
+        internal bool TryGetPreparedLifeSizePlan(
+            out LifeSizeDriveByPlan plan,
+            out string failure)
+        {
+            plan = preparedLifeSizePlan;
+            failure = lifeSizePlanFailure;
+            return plan != null && plan.IsValid;
+        }
         public int AuthoritativePortalVehicleCount =>
             portalPresentation != null
                 ? portalPresentation.AuthoritativeVehicleCount
@@ -967,6 +981,8 @@ namespace F1XR.RestAPI.Replay.Room
             overtakePortalTransitionVfx ??=
                 new OvertakePortalTransitionVfxSettings();
             overtakePortalTransitionVfx.ClampValues();
+            lifeSizeDriveBy ??= new LifeSizeDriveBySettings();
+            lifeSizeDriveBy.ClampValues();
 
             if (sourceProgressEnd <= sourceProgressStart)
             {
@@ -1239,6 +1255,8 @@ namespace F1XR.RestAPI.Replay.Room
                     placementFailure);
                 return false;
             }
+
+            PrepareLifeSizeDriveByPlan(run);
 
             ShowcaseStagePlacement portalAlignedPlacement =
                 placement;
@@ -1705,6 +1723,20 @@ namespace F1XR.RestAPI.Replay.Room
             failure =
                 "The event stage placement candidate contains invalid values.";
             return false;
+        }
+
+        private void PrepareLifeSizeDriveByPlan(ShowcaseRun run)
+        {
+            lifeSizeDriveBy ??= new LifeSizeDriveBySettings();
+            if (!LifeSizeDriveByPlanner.TryPrepare(
+                    run,
+                    showcaseLayout,
+                    lifeSizeDriveBy,
+                    out preparedLifeSizePlan,
+                    out lifeSizePlanFailure))
+            {
+                preparedLifeSizePlan = null;
+            }
         }
 
         private bool TryCreateRoomDioramaPlacement(
@@ -2378,6 +2410,8 @@ namespace F1XR.RestAPI.Replay.Room
             boundSourceRevision = -1;
             boundLayoutRevision = -1;
             activeRun = default;
+            preparedLifeSizePlan = null;
+            lifeSizePlanFailure = "";
             activePlacementMode =
                 ShowcaseStagePlacementMode.None;
             wallPairCompatible = false;
