@@ -170,8 +170,8 @@ namespace F1XR.Interaction.Input
             bool leftHandTracked = handSubsystem != null && handSubsystem.leftHand.isTracked;
             bool rightHandTracked = handSubsystem != null && handSubsystem.rightHand.isTracked;
 
-            Apply(leftHandRoot, leftHandRay, leftController, leftHandTracked, !leftHandTracked && leftControllerTracked);
-            Apply(rightHandRoot, rightHandRay, rightController, rightHandTracked, !rightHandTracked && rightControllerTracked);
+            Apply(leftHandRoot, leftHandRay, leftController, !leftControllerTracked && leftHandTracked, leftControllerTracked);
+            Apply(rightHandRoot, rightHandRay, rightController, !rightControllerTracked && rightHandTracked, rightControllerTracked);
         }
 
         void ApplyControllerOnly()
