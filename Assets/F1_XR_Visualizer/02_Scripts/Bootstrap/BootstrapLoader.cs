@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using F1XR.Drone;
 using UnityEngine;
@@ -8,10 +9,10 @@ namespace F1XR.Bootstrap
     [DisallowMultipleComponent]
     public sealed class BootstrapLoader : MonoBehaviour
     {
+        const string DroneHostScenePrefix = "SessionSpace";
+
         [SerializeField] string initialSceneName = "HomeSpace";
         [SerializeField] string vrDroneSceneName = "VRDroneSpace";
-        [SerializeField] string[] droneHostSceneNames =
-            { "SessionSpace", "SessionSpace0803" };
 
         static BootstrapLoader instance;
         bool isLoadingDroneScene;
@@ -117,19 +118,16 @@ namespace F1XR.Bootstrap
 
         bool IsDroneHostScene(string sceneName)
         {
-            foreach (string hostSceneName in droneHostSceneNames)
-            {
-                if (hostSceneName == sceneName)
-                    return true;
-            }
-
-            return false;
+            return sceneName.StartsWith(
+                DroneHostScenePrefix,
+                StringComparison.Ordinal);
         }
 
         static bool IsDirectPlayHostScene(string sceneName)
         {
-            return sceneName == "SessionSpace" ||
-                sceneName == "SessionSpace0803";
+            return sceneName.StartsWith(
+                DroneHostScenePrefix,
+                StringComparison.Ordinal);
         }
 
         static T FindInScene<T>(Scene scene) where T : Component
