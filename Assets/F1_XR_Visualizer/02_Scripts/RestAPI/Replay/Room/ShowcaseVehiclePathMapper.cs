@@ -817,6 +817,8 @@ namespace F1XR.RestAPI.Replay.Room
         private float criticalSegmentCenterBias = 0.65f;
         [SerializeField, Min(0f)]
         private float balancedMaximumShift = 2f;
+        [SerializeField, Min(0f)]
+        private float multiExchangeMaximumShift = 3.5f;
 
         [Header("Portals")]
         [SerializeField]
@@ -1019,6 +1021,9 @@ namespace F1XR.RestAPI.Replay.Room
             balancedMaximumShift = Mathf.Max(
                 0f,
                 balancedMaximumShift);
+            multiExchangeMaximumShift = Mathf.Max(
+                0f,
+                multiExchangeMaximumShift);
             overtakePortalTransitionVfx ??=
                 new OvertakePortalTransitionVfxSettings();
             overtakePortalTransitionVfx.ClampValues();
@@ -1978,6 +1983,36 @@ namespace F1XR.RestAPI.Replay.Room
             Vector3 compositionAnchor = sourceFocusPosition;
             Vector3 compositionDirection =
                 sourceFocusDirection;
+            bool usesMultiExchangeFraming = false;
+            if (compositionMode ==
+                    RoomDioramaCompositionMode.Balanced &&
+                eventReplay != null &&
+                eventReplay.TryGetShowcaseExchangeSpan(
+                    out Vector3 firstExchangePosition,
+                    out Vector3 lastExchangePosition))
+            {
+                Vector3 exchangeCenter =
+                    (firstExchangePosition +
+                     lastExchangePosition) * 0.5f;
+                int exchangeCenterIndex = FindClosestPointIndex(
+                    sourcePath,
+                    exchangeCenter);
+                if (exchangeCenterIndex >= 0)
+                {
+                    Vector3 exchangeDirection = Flat(
+                        FindDirectionAt(
+                            sourcePath,
+                            exchangeCenterIndex));
+                    if (exchangeDirection.sqrMagnitude > 0.000001f)
+                    {
+                        compositionAnchor = exchangeCenter;
+                        compositionDirection =
+                            exchangeDirection.normalized;
+                        usesMultiExchangeFraming = true;
+                    }
+                }
+            }
+
             if (compositionMode ==
                     RoomDioramaCompositionMode
                         .TracksideImmersiveExperimental &&
@@ -2014,7 +2049,9 @@ namespace F1XR.RestAPI.Replay.Room
                     sourceFocusPosition).magnitude * scale;
                 float maximumShift = Mathf.Max(
                     0f,
-                    balancedMaximumShift);
+                    usesMultiExchangeFraming
+                        ? multiExchangeMaximumShift
+                        : balancedMaximumShift);
                 if (physicalShift > maximumShift &&
                     physicalShift > 0.000001f)
                 {

@@ -92,6 +92,9 @@ namespace F1XR.RestAPI.Replay
         [Min(0f)] public float battleConfirmationSeconds = 0.45f;
         [Range(0.02f, 0.25f)] public float battleSampleSeconds = 0.05f;
         [Min(0f)] public float battleVictoryDelaySeconds = 0.65f;
+        [Min(1f)] public float battleCruiseSpeedMultiplier = 1.5f;
+        [Min(0f)] public float battleExchangeNormalSpeedSeconds = 1.25f;
+        [Min(0f)] public float battleCruiseBlendSeconds = 0.75f;
 
         private readonly ReplayTimeline timeline = new();
         private readonly Dictionary<int, List<LocationSample>> eventSamples = new();
@@ -185,6 +188,33 @@ namespace F1XR.RestAPI.Replay
         public float OrderingTransitionTime => isActive
             ? ResolveOrderingTransitionTime()
             : 0f;
+
+        internal bool HasMultipleShowcaseExchanges =>
+            battleSequence != null &&
+            battleSequence.IsValid &&
+            battleSequence.Exchanges.Count > 1;
+
+        internal bool TryGetShowcaseExchangeSpan(
+            out Vector3 firstPosition,
+            out Vector3 lastPosition)
+        {
+            firstPosition = Vector3.zero;
+            lastPosition = Vector3.zero;
+            if (!HasMultipleShowcaseExchanges)
+                return false;
+
+            OvertakeBattleExchange first =
+                battleSequence.Exchanges[0];
+            OvertakeBattleExchange last =
+                battleSequence.Exchanges[
+                    battleSequence.Exchanges.Count - 1];
+            return TryGetEventLocalPathPosition(
+                    first.anchorTime,
+                    out firstPosition) &&
+                TryGetEventLocalPathPosition(
+                    last.anchorTime,
+                    out lastPosition);
+        }
 
         internal bool TryGetShowcasePlaybackWindow(
             out ShowcasePlaybackWindow window)
@@ -852,7 +882,9 @@ namespace F1XR.RestAPI.Replay
                 timeline.Advance(
                     Time.deltaTime,
                     eventPlaybackSpeed *
-                    showcasePlaybackSpeedMultiplier);
+                    showcasePlaybackSpeedMultiplier *
+                    ResolveBattleCruiseSpeedMultiplier(
+                        timeline.CurrentTime));
                 if (timeline.StopAtEnd())
                     eventAudio?.SetPlaying(false);
             }
@@ -863,6 +895,52 @@ namespace F1XR.RestAPI.Replay
                 timeline.IsPlaying,
                 null);
             ApplyCars();
+        }
+
+        private float ResolveBattleCruiseSpeedMultiplier(
+            float replayTime)
+        {
+            if (!HasMultipleShowcaseExchanges ||
+                battleCruiseSpeedMultiplier <= 1f)
+            {
+                return 1f;
+            }
+
+            IReadOnlyList<OvertakeBattleExchange> exchanges =
+                battleSequence.Exchanges;
+            for (int i = 0; i < exchanges.Count - 1; i++)
+            {
+                float previousTime = exchanges[i].anchorTime;
+                float nextTime = exchanges[i + 1].anchorTime;
+                if (replayTime <= previousTime ||
+                    replayTime >= nextTime)
+                {
+                    continue;
+                }
+
+                float nearestExchange = Mathf.Min(
+                    replayTime - previousTime,
+                    nextTime - replayTime);
+                float blendStart = Mathf.Max(
+                    0f,
+                    battleExchangeNormalSpeedSeconds);
+                float blendEnd = blendStart + Mathf.Max(
+                    0.0001f,
+                    battleCruiseBlendSeconds);
+                float cruiseBlend = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        blendStart,
+                        blendEnd,
+                        nearestExchange));
+                return Mathf.Lerp(
+                    1f,
+                    Mathf.Max(1f, battleCruiseSpeedMultiplier),
+                    cruiseBlend);
+            }
+
+            return 1f;
         }
 
         private bool BuildEventSamples(

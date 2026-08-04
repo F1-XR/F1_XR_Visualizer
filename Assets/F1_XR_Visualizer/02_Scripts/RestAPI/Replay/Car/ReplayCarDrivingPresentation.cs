@@ -21,6 +21,8 @@ namespace F1XR.RestAPI.Replay
         private const float BrakeCueThreshold = 0.1f;
         private const float ShowcaseBrakeCueScale = 2.4f;
         private const float SpeedStreakMinimumKph = 70f;
+        private const float ContactShadowOpacity = 0.32f;
+        private const int ContactShadowTextureSize = 32;
 
         private static readonly int BaseColorId =
             Shader.PropertyToID("_BaseColor");
@@ -32,6 +34,7 @@ namespace F1XR.RestAPI.Replay
             new(4f, 0.02f, 0.01f, 1f);
         private static Material brakeCueMaterial;
         private static Material speedStreakMaterial;
+        private static Material contactShadowMaterial;
 
         private readonly List<Wheel> wheels = new();
         private Transform frontLeft;
@@ -40,6 +43,7 @@ namespace F1XR.RestAPI.Replay
         private Transform rearRight;
         private GameObject brakeCue;
         private GameObject speedStreakRoot;
+        private GameObject contactShadow;
         private readonly LineRenderer[] speedStreaks =
             new LineRenderer[2];
         private readonly Vector3[] speedStreakStarts =
@@ -188,6 +192,11 @@ namespace F1XR.RestAPI.Replay
 
             if (enabled && speedStreakRoot == null)
                 CreateSpeedStreaks();
+            if (enabled && contactShadow == null)
+                CreateContactShadow();
+
+            if (contactShadow != null)
+                contactShadow.SetActive(enabled);
 
             if (brakeCue != null)
             {
@@ -433,6 +442,74 @@ namespace F1XR.RestAPI.Replay
             speedStreakRoot.SetActive(false);
         }
 
+        private void CreateContactShadow()
+        {
+            if (frontLeft == null ||
+                frontRight == null ||
+                rearLeft == null ||
+                rearRight == null)
+            {
+                return;
+            }
+
+            Vector3[] wheelPositions =
+            {
+                transform.InverseTransformPoint(frontLeft.position),
+                transform.InverseTransformPoint(frontRight.position),
+                transform.InverseTransformPoint(rearLeft.position),
+                transform.InverseTransformPoint(rearRight.position)
+            };
+            Vector3 minimum = wheelPositions[0];
+            Vector3 maximum = wheelPositions[0];
+            for (int i = 1; i < wheelPositions.Length; i++)
+            {
+                minimum = Vector3.Min(minimum, wheelPositions[i]);
+                maximum = Vector3.Max(maximum, wheelPositions[i]);
+            }
+
+            float wheelbase = Mathf.Max(
+                0.01f,
+                maximum.z - minimum.z);
+            float trackWidth = Mathf.Max(
+                0.01f,
+                maximum.x - minimum.x);
+            Vector3 center = (minimum + maximum) * 0.5f;
+
+            contactShadow = GameObject.CreatePrimitive(
+                PrimitiveType.Quad);
+            contactShadow.name = "ShowcaseContactShadow";
+            contactShadow.layer = gameObject.layer;
+            contactShadow.transform.SetParent(transform, false);
+            contactShadow.transform.localPosition = new Vector3(
+                center.x,
+                minimum.y - wheelbase * 0.08f,
+                center.z);
+            contactShadow.transform.localRotation =
+                Quaternion.Euler(90f, 0f, 0f);
+            contactShadow.transform.localScale = new Vector3(
+                trackWidth * 1.35f,
+                wheelbase * 1.2f,
+                1f);
+
+            Collider shadowCollider =
+                contactShadow.GetComponent<Collider>();
+            if (shadowCollider != null)
+                Destroy(shadowCollider);
+
+            MeshRenderer renderer =
+                contactShadow.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial =
+                    GetContactShadowMaterial();
+                renderer.shadowCastingMode =
+                    UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+
+            contactShadow.SetActive(false);
+        }
+
         public bool OwnsRenderer(Renderer renderer)
         {
             if (renderer == null)
@@ -447,6 +524,13 @@ namespace F1XR.RestAPI.Replay
             if (speedStreakRoot != null &&
                 renderer.transform.IsChildOf(
                     speedStreakRoot.transform))
+            {
+                return true;
+            }
+
+            if (contactShadow != null &&
+                renderer.transform.IsChildOf(
+                    contactShadow.transform))
             {
                 return true;
             }
@@ -586,6 +670,57 @@ namespace F1XR.RestAPI.Replay
                 name = "Replay Speed Streak"
             };
             return speedStreakMaterial;
+        }
+
+        private static Material GetContactShadowMaterial()
+        {
+            if (contactShadowMaterial != null)
+                return contactShadowMaterial;
+
+            Shader shader =
+                Shader.Find("Sprites/Default") ??
+                Shader.Find("Universal Render Pipeline/Unlit") ??
+                Shader.Find("Unlit/Transparent");
+            contactShadowMaterial = new Material(shader)
+            {
+                name = "Showcase Contact Shadow"
+            };
+
+            Texture2D texture = new(
+                ContactShadowTextureSize,
+                ContactShadowTextureSize,
+                TextureFormat.RGBA32,
+                false)
+            {
+                name = "Showcase Contact Shadow Texture",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            Color[] pixels = new Color[
+                ContactShadowTextureSize *
+                ContactShadowTextureSize];
+            for (int y = 0; y < ContactShadowTextureSize; y++)
+            {
+                for (int x = 0; x < ContactShadowTextureSize; x++)
+                {
+                    float u =
+                        (x + 0.5f) /
+                        ContactShadowTextureSize * 2f - 1f;
+                    float v =
+                        (y + 0.5f) /
+                        ContactShadowTextureSize * 2f - 1f;
+                    float alpha = Mathf.Pow(
+                        Mathf.Clamp01(1f - u * u - v * v),
+                        1.7f) * ContactShadowOpacity;
+                    pixels[y * ContactShadowTextureSize + x] =
+                        new Color(0f, 0f, 0f, alpha);
+                }
+            }
+
+            texture.SetPixels(pixels);
+            texture.Apply(false, true);
+            contactShadowMaterial.mainTexture = texture;
+            return contactShadowMaterial;
         }
 
         private static Transform Find(
