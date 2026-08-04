@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro;
 
 namespace F1XR.RestAPI.Replay
 {
@@ -261,6 +262,41 @@ namespace F1XR.RestAPI.Replay
             Bounds textBounds = textRenderer != null ? textRenderer.localBounds : default;
             float fallbackHeight = text != null
                 ? Mathf.Max(0.0001f, text.characterSize * text.fontSize)
+                : 0.0001f;
+            string content = text != null ? text.text : string.Empty;
+            float textWidth = textBounds.size.x > 0f
+                ? textBounds.size.x
+                : fallbackHeight * Mathf.Max(1.2f, content.Length * 0.42f);
+            float textLocalHeight = textBounds.size.y > 0f
+                ? textBounds.size.y
+                : fallbackHeight * 0.82f;
+            float horizontalPadding = textLocalHeight * 0.16f;
+            float verticalPadding = textLocalHeight * 0.12f;
+
+            localPosition = new Vector3(
+                textBounds.center.x,
+                textBounds.center.y,
+                -textLocalHeight * depthRatio
+            );
+            localScale = new Vector3(
+                textWidth + horizontalPadding * 2f,
+                textLocalHeight + verticalPadding * 2f,
+                1f
+            );
+        }
+
+        public static void GetTextBackgroundTransform(
+            TMP_Text text,
+            MeshRenderer textRenderer,
+            float depthRatio,
+            out Vector3 localPosition,
+            out Vector3 localScale)
+        {
+            Bounds textBounds = textRenderer != null
+                ? textRenderer.localBounds
+                : default;
+            float fallbackHeight = text != null
+                ? Mathf.Max(0.0001f, text.fontSize)
                 : 0.0001f;
             string content = text != null ? text.text : string.Empty;
             float textWidth = textBounds.size.x > 0f

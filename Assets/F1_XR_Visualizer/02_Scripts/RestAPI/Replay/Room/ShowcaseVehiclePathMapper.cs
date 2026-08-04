@@ -679,6 +679,12 @@ namespace F1XR.RestAPI.Replay.Room
         LifeSizeDriveByExperimental
     }
 
+    internal enum RoomDioramaCompositionMode
+    {
+        Balanced,
+        TracksideImmersiveExperimental
+    }
+
     internal readonly struct ShowcaseStagePlacement
     {
         public ShowcaseStagePlacement(
@@ -803,6 +809,21 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 1.5f;
         [SerializeField] private bool immersiveScaleEnabled;
 
+        [Header("Room Diorama Composition")]
+        [SerializeField]
+        private RoomDioramaCompositionMode compositionMode =
+            RoomDioramaCompositionMode.Balanced;
+        [SerializeField, Range(0f, 1f)]
+        private float criticalSegmentCenterBias = 0.65f;
+        [SerializeField, Min(0f)]
+        private float balancedMaximumShift = 2f;
+
+        [Header("Portals")]
+        [SerializeField]
+        private bool trackExitPortalEnabled = true;
+        [SerializeField]
+        private bool connectedWallPortalsEnabled = true;
+
         [Header("Life Size Drive-By Contract")]
         [SerializeField]
         private LifeSizeDriveBySettings lifeSizeDriveBy = new();
@@ -856,6 +877,9 @@ namespace F1XR.RestAPI.Replay.Room
         private float entryWallAngle;
         private float exitWallAngle;
         private float portalCrossingMiss;
+        private float compositionShiftDistance;
+        private bool connectedPortalCandidate;
+        private string activePortalMode = "None";
         private int boundSourceRevision = -1;
         private bool wallPairCompatible;
         private bool stageRevealPending;
@@ -990,6 +1014,11 @@ namespace F1XR.RestAPI.Replay.Room
                 Mathf.Max(
                     1f,
                     showcasePlaybackSpeedMultiplier);
+            criticalSegmentCenterBias = Mathf.Clamp01(
+                criticalSegmentCenterBias);
+            balancedMaximumShift = Mathf.Max(
+                0f,
+                balancedMaximumShift);
             overtakePortalTransitionVfx ??=
                 new OvertakePortalTransitionVfxSettings();
             overtakePortalTransitionVfx.ClampValues();
@@ -1289,7 +1318,13 @@ namespace F1XR.RestAPI.Replay.Room
 
             ShowcaseStagePlacement portalAlignedPlacement =
                 placement;
-            if (!TryCreateRoomDioramaPlacement(
+            connectedPortalCandidate =
+                connectedWallPortalsEnabled &&
+                compositionMode ==
+                    RoomDioramaCompositionMode.Balanced &&
+                portalAlignedPlacement.WallPairCompatible;
+            if (!connectedPortalCandidate &&
+                !TryCreateRoomDioramaPlacement(
                     eventLocalPath,
                     entryPosition,
                     focusPosition,
@@ -1335,16 +1370,24 @@ namespace F1XR.RestAPI.Replay.Room
                 lifeSizePlanFailure = lifeSizeCommitFailure;
             }
 
-            eventReplay.SetShowcaseDrivingPresentation(
-                first.DriverNumber,
-                second.DriverNumber,
-                true);
             eventReplay.SetShowcasePlaybackSpeedMultiplier(
                 showcasePlaybackSpeedMultiplier);
-            bool usesPortals = !usesLifeSize &&
+            bool usesWallPortals = !usesLifeSize &&
                 placement.Mode ==
                 ShowcaseStagePlacementMode.PortalAlignedRigid;
-            if (usesPortals)
+            bool usesTrackExitPortal =
+                !usesLifeSize &&
+                trackExitPortalEnabled &&
+                placement.Mode ==
+                    ShowcaseStagePlacementMode.RoomDioramaRigid;
+            bool usesPortals =
+                usesWallPortals || usesTrackExitPortal;
+            activePortalMode = usesWallPortals
+                ? "WallPair"
+                : usesTrackExitPortal
+                    ? "TrackExit"
+                    : "None";
+            if (usesWallPortals)
             {
                 portalPresentation.ImmersiveScaleEnabled =
                     immersiveScaleEnabled;
@@ -1365,6 +1408,25 @@ namespace F1XR.RestAPI.Replay.Room
                         "PortalInvalid",
                         portalFailure);
                     return false;
+                }
+            }
+            else if (usesTrackExitPortal)
+            {
+                if (!TryCreateTrackExitPortalPose(
+                        stage,
+                        eventLocalPath,
+                        exitPosition,
+                        out Pose trackExitPose) ||
+                    !portalPresentation.ConfigureTrackExit(
+                        stage,
+                        trackExitPose,
+                        first.VehicleRoot,
+                        second.VehicleRoot,
+                        out _))
+                {
+                    portalPresentation.Clear();
+                    usesPortals = false;
+                    activePortalMode = "None";
                 }
             }
             else
@@ -1388,6 +1450,10 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             ApplyActiveVehiclePresentation(first, second);
+            eventReplay.SetShowcaseDrivingPresentation(
+                first.DriverNumber,
+                second.DriverNumber,
+                true);
 
             eventReplay.SuspendTableTrackRendering();
             boundStage = stage;
@@ -1416,6 +1482,9 @@ namespace F1XR.RestAPI.Replay.Room
                 $"[RoomEventPlacement] sourcePoints={eventLocalPath.Count}, " +
                 $"routePoints={run.Route.Centerline.Count}, " +
                 $"mode={activePlacementMode}, " +
+                $"composition={compositionMode}, " +
+                $"portalCandidate={connectedPortalCandidate}, " +
+                $"portalMode={activePortalMode}, " +
                 $"eventScale={eventCoordinateScale:0.###}, " +
                 $"entryContinuation={entryContinuation:0.##}m, " +
                 $"exitContinuation={exitContinuation:0.##}m, " +
@@ -1423,6 +1492,7 @@ namespace F1XR.RestAPI.Replay.Room
                 $"wallAngles={entryWallAngle:0.#}/{exitWallAngle:0.#}deg, " +
                 $"portalMiss={portalCrossingMiss:0.###}m, " +
                 $"heroMiss={heroMissDistance:0.###}m, " +
+                $"compositionShift={compositionShiftDistance:0.###}m, " +
                 $"vehicleLength={vehicleLengthBefore:0.###}m->{vehicleLengthAfter:0.###}m, " +
                 $"vehicleScale={appliedPresentationScale:0.#####}, " +
                 $"portals={portalPresentation.IsConfigured}",
@@ -1894,8 +1964,73 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            Vector3 sourceFocusDirection =
-                FindDirectionAt(sourcePath, focusIndex);
+            Vector3 sourceFocusDirection = Flat(
+                FindDirectionAt(sourcePath, focusIndex));
+            if (sourceFocusDirection.sqrMagnitude <= 0.000001f)
+            {
+                failure =
+                    "The source track has no stable focus direction.";
+                return false;
+            }
+
+            sourceFocusDirection.Normalize();
+            float scale = portalAlignedPlacement.UniformScale;
+            Vector3 compositionAnchor = sourceFocusPosition;
+            Vector3 compositionDirection =
+                sourceFocusDirection;
+            if (compositionMode ==
+                    RoomDioramaCompositionMode
+                        .TracksideImmersiveExperimental &&
+                TryFindCriticalPathCenter(
+                    sourcePath,
+                    entryIndex,
+                    focusIndex,
+                    exitIndex,
+                    out Vector3 criticalCenter,
+                    out Vector3 criticalDirection))
+            {
+                criticalDirection = Flat(criticalDirection);
+                if (criticalDirection.sqrMagnitude > 0.000001f)
+                {
+                    criticalDirection.Normalize();
+                    float bias = Mathf.Clamp01(
+                        criticalSegmentCenterBias);
+                    compositionAnchor = Vector3.Lerp(
+                        sourceFocusPosition,
+                        criticalCenter,
+                        bias);
+                    compositionDirection = Vector3.Slerp(
+                        sourceFocusDirection,
+                        criticalDirection,
+                        bias);
+                }
+            }
+
+            if (compositionMode ==
+                RoomDioramaCompositionMode.Balanced)
+            {
+                float physicalShift = Flat(
+                    compositionAnchor -
+                    sourceFocusPosition).magnitude * scale;
+                float maximumShift = Mathf.Max(
+                    0f,
+                    balancedMaximumShift);
+                if (physicalShift > maximumShift &&
+                    physicalShift > 0.000001f)
+                {
+                    float limitRatio = Mathf.Clamp01(
+                        maximumShift / physicalShift);
+                    compositionAnchor = Vector3.Lerp(
+                        sourceFocusPosition,
+                        compositionAnchor,
+                        limitRatio);
+                    compositionDirection = Vector3.Slerp(
+                        sourceFocusDirection,
+                        compositionDirection,
+                        limitRatio);
+                }
+            }
+
             Vector3 heroForward = Flat(run.FocusPose.forward);
             if (heroForward.sqrMagnitude <= 0.000001f)
             {
@@ -1904,8 +2039,8 @@ namespace F1XR.RestAPI.Replay.Room
                     run.EntryPose.position);
             }
 
-            sourceFocusDirection = Flat(sourceFocusDirection);
-            if (sourceFocusDirection.sqrMagnitude <= 0.000001f ||
+            compositionDirection = Flat(compositionDirection);
+            if (compositionDirection.sqrMagnitude <= 0.000001f ||
                 heroForward.sqrMagnitude <= 0.000001f)
             {
                 failure =
@@ -1913,25 +2048,24 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            sourceFocusDirection.Normalize();
+            compositionDirection.Normalize();
             heroForward.Normalize();
             float yaw = Vector3.SignedAngle(
-                sourceFocusDirection,
+                compositionDirection,
                 heroForward,
                 Vector3.up);
             Quaternion rotation =
                 Quaternion.Euler(0f, yaw, 0f);
-            float scale = portalAlignedPlacement.UniformScale;
             Vector3 overtakeTarget =
                 run.FocusPose.position +
                 heroForward * heroForwardOffset;
             Vector3 position =
                 overtakeTarget -
-                rotation * sourceFocusPosition * scale;
+                rotation * compositionAnchor * scale;
             position.y =
                 run.FloorHeight +
                 roadFloorOffset -
-                (rotation * sourceFocusPosition * scale).y;
+                (rotation * compositionAnchor * scale).y;
 
             Vector3 mappedEntry =
                 position +
@@ -1942,6 +2076,9 @@ namespace F1XR.RestAPI.Replay.Room
             Vector3 mappedFocus =
                 position +
                 rotation * sourceFocusPosition * scale;
+            Vector3 mappedCompositionAnchor =
+                position +
+                rotation * compositionAnchor * scale;
             Vector3 sourceEntryDirection =
                 FindDirectionAt(sourcePath, entryIndex);
             Vector3 sourceExitDirection =
@@ -1959,14 +2096,18 @@ namespace F1XR.RestAPI.Replay.Room
             float resolvedPortalCrossingMiss =
                 Mathf.Max(entryMiss, exitMiss);
             float resolvedHeroMissDistance = Flat(
-                mappedFocus - overtakeTarget).magnitude;
+                mappedCompositionAnchor -
+                overtakeTarget).magnitude;
+            compositionShiftDistance = Flat(
+                mappedFocus -
+                mappedCompositionAnchor).magnitude;
 
             placement = new ShowcaseStagePlacement(
                 ShowcaseStagePlacementMode.RoomDioramaRigid,
                 position,
                 rotation,
                 scale,
-                sourceFocusPosition,
+                compositionAnchor,
                 portalAlignedPlacement.EntryContinuation,
                 portalAlignedPlacement.ExitContinuation,
                 portalAlignedPlacement.EntryContinuationTarget,
@@ -1984,6 +2125,122 @@ namespace F1XR.RestAPI.Replay.Room
             failure =
                 "The RoomDiorama source track placement contains invalid values.";
             return false;
+        }
+
+        private static bool TryFindCriticalPathCenter(
+            IReadOnlyList<Vector3> sourcePath,
+            int entryIndex,
+            int focusIndex,
+            int exitIndex,
+            out Vector3 center,
+            out Vector3 direction)
+        {
+            center = Vector3.zero;
+            direction = Vector3.forward;
+            if (sourcePath == null ||
+                entryIndex < 0 ||
+                focusIndex < entryIndex ||
+                exitIndex < focusIndex ||
+                exitIndex >= sourcePath.Count)
+            {
+                return false;
+            }
+
+            float totalLength = 0f;
+            for (int i = entryIndex + 1;
+                 i <= exitIndex;
+                 i++)
+            {
+                totalLength += Vector3.Distance(
+                    sourcePath[i - 1],
+                    sourcePath[i]);
+            }
+
+            if (totalLength <= 0.000001f)
+                return false;
+
+            float targetLength = totalLength * 0.5f;
+            float accumulated = 0f;
+            for (int i = entryIndex + 1;
+                 i <= exitIndex;
+                 i++)
+            {
+                Vector3 start = sourcePath[i - 1];
+                Vector3 end = sourcePath[i];
+                float segmentLength = Vector3.Distance(
+                    start,
+                    end);
+                if (segmentLength <= 0.000001f)
+                    continue;
+
+                if (accumulated + segmentLength >=
+                    targetLength)
+                {
+                    float progress = Mathf.Clamp01(
+                        (targetLength - accumulated) /
+                        segmentLength);
+                    center = Vector3.Lerp(
+                        start,
+                        end,
+                        progress);
+                    direction = end - start;
+                    return direction.sqrMagnitude >
+                        0.000001f;
+                }
+
+                accumulated += segmentLength;
+            }
+
+            center = sourcePath[exitIndex];
+            direction = FindDirectionAt(
+                sourcePath,
+                exitIndex);
+            return direction.sqrMagnitude > 0.000001f;
+        }
+
+        private static bool TryCreateTrackExitPortalPose(
+            Transform stage,
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceExitPosition,
+            out Pose pose)
+        {
+            pose = default;
+            if (stage == null ||
+                sourcePath == null ||
+                sourcePath.Count < 2)
+            {
+                return false;
+            }
+
+            int exitIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceExitPosition);
+            if (exitIndex < 0)
+                return false;
+
+            Vector3 sourceDirection =
+                FindDirectionAt(sourcePath, exitIndex);
+            Vector3 worldDirection = Flat(
+                stage.TransformDirection(sourceDirection));
+            if (worldDirection.sqrMagnitude <= 0.000001f)
+                return false;
+
+            worldDirection.Normalize();
+            Vector3 worldPosition =
+                stage.TransformPoint(sourceExitPosition);
+            if (!float.IsFinite(worldPosition.x) ||
+                !float.IsFinite(worldPosition.y) ||
+                !float.IsFinite(worldPosition.z))
+            {
+                return false;
+            }
+
+            pose = new Pose(
+                worldPosition,
+                Quaternion.LookRotation(
+                    worldDirection,
+                    Vector3.up));
+            return true;
         }
 
         private static bool TryValidateEventStagePlacement(
@@ -2538,6 +2795,9 @@ namespace F1XR.RestAPI.Replay.Room
             entryWallAngle = 0f;
             exitWallAngle = 0f;
             portalCrossingMiss = 0f;
+            compositionShiftDistance = 0f;
+            connectedPortalCandidate = false;
+            activePortalMode = "None";
             boundSourceRevision = -1;
             boundLayoutRevision = -1;
             activeRun = default;
