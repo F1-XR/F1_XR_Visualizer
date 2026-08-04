@@ -5,7 +5,7 @@ namespace F1XR.RestAPI.Replay
 {
     internal sealed class OvertakeFallbackCorridor
     {
-        private const float MinimumTrackOverlapRatio = 0.1f;
+        private const float MinimumTrackOverlapRatio = 0.7f;
 
         private readonly List<Vector3> centerline = new();
         private readonly List<Vector3> leftBoundary = new();
@@ -102,83 +102,13 @@ namespace F1XR.RestAPI.Replay
                 return offset;
             }
 
-            return Mathf.Clamp(offset, minimum, maximum);
-        }
+            float clamped = Mathf.Clamp(offset, minimum, maximum);
+            if (offset > 0f)
+                return Mathf.Max(0f, clamped);
+            if (offset < 0f)
+                return Mathf.Min(0f, clamped);
 
-        public float AvailableOffset(
-            Vector3 position,
-            Vector3 lateralDirection,
-            Vector3 localForward,
-            float vehicleWidth,
-            float vehicleLength,
-            float safetyMargin,
-            int direction,
-            bool includeFutureLimits = true)
-        {
-            if (!TryGetOffsetRange(
-                    position,
-                    lateralDirection,
-                    localForward,
-                    vehicleWidth,
-                    vehicleLength,
-                    safetyMargin,
-                    out float minimum,
-                    out float maximum,
-                    includeFutureLimits))
-            {
-                return float.PositiveInfinity;
-            }
-
-            return Mathf.Max(
-                0f,
-                direction >= 0 ? maximum : -minimum);
-        }
-
-        public float MinimumAvailableOffset(
-            float vehicleWidth,
-            float vehicleLength,
-            float safetyMargin,
-            int direction)
-        {
-            if (!HasAuthoritativeBoundaries ||
-                centerline.Count < 2)
-            {
-                return float.PositiveInfinity;
-            }
-
-            float minimumCapacity = float.PositiveInfinity;
-            for (int i = 0; i < centerline.Count; i++)
-            {
-                Vector3 forward = GetSampleForward(i);
-                Vector3 right = Vector3.Cross(
-                    Vector3.up,
-                    forward);
-                float bodyHalfExtent = ProjectedBodyHalfExtent(
-                    forward,
-                    right,
-                    vehicleWidth,
-                    vehicleLength);
-                float minimumTrackOverlap =
-                    Mathf.Max(0f, vehicleWidth) *
-                    MinimumTrackOverlapRatio;
-                float boundaryOffset = direction >= 0
-                    ? Vector3.Dot(
-                        rightBoundary[i] - centerline[i],
-                        right)
-                    : -Vector3.Dot(
-                        leftBoundary[i] - centerline[i],
-                        right);
-                float capacity = Mathf.Max(
-                    0f,
-                    boundaryOffset -
-                    minimumTrackOverlap +
-                    bodyHalfExtent);
-                minimumCapacity = Mathf.Min(
-                    minimumCapacity,
-                    capacity);
-            }
-
-            return minimumCapacity;
+            return 0f;
         }
 
         public bool TryGetOffsetRange(
@@ -227,9 +157,11 @@ namespace F1XR.RestAPI.Replay
             float boundaryMaximum;
             if (HasAuthoritativeBoundaries)
             {
-                float boundaryMargin =
+                float minimumTrackOverlap =
                     Mathf.Max(0f, vehicleWidth) *
-                    MinimumTrackOverlapRatio -
+                    MinimumTrackOverlapRatio;
+                float boundaryInset =
+                    minimumTrackOverlap -
                     bodyHalfExtent;
                 int next =
                     (segmentIndex + 1) %
@@ -246,12 +178,12 @@ namespace F1XR.RestAPI.Replay
                     Vector3.Dot(
                         left - center,
                         corridorRight) +
-                    boundaryMargin;
+                    boundaryInset;
                 boundaryMaximum =
                     Vector3.Dot(
                         right - center,
                         corridorRight) -
-                    boundaryMargin;
+                    boundaryInset;
                 if (includeFutureLimits)
                 {
                     ApplyPredictiveBoundaryLimits(
@@ -266,12 +198,14 @@ namespace F1XR.RestAPI.Replay
             }
             else
             {
-                float margin =
-                    bodyHalfExtent +
-                    Mathf.Max(0f, safetyMargin);
+                float minimumTrackOverlap =
+                    Mathf.Max(0f, vehicleWidth) *
+                    MinimumTrackOverlapRatio;
                 float usableHalfWidth = Mathf.Max(
                     0f,
-                    roadWidth * 0.5f - margin);
+                    roadWidth * 0.5f +
+                    bodyHalfExtent -
+                    minimumTrackOverlap);
                 boundaryMinimum = -usableHalfWidth;
                 boundaryMaximum = usableHalfWidth;
             }
