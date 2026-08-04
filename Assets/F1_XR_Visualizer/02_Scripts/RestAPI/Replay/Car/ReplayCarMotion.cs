@@ -7,6 +7,11 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Replay
 {
+    internal delegate bool ReplayCarWorldPoseOverride(
+        int driverNumber,
+        float replayTime,
+        out Pose pose);
+
     public readonly struct ReplayCarPose
     {
         public readonly Transform parent;
@@ -55,6 +60,7 @@ namespace F1XR.RestAPI.Replay
         private Transform customParent;
         private Vector3 customOrigin;
         private Quaternion customRotation = Quaternion.identity;
+        private ReplayCarWorldPoseOverride worldPoseOverride;
 
         public ReplayCarMotion(CarInstances _)
         {
@@ -104,6 +110,19 @@ namespace F1XR.RestAPI.Replay
             customOrigin = sourceOrigin;
             customRotation = sourceToLocalRotation;
             groundSnap.ClearSurfaceCache();
+        }
+
+        internal void SetWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            worldPoseOverride = resolver;
+        }
+
+        internal void ClearWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            if (worldPoseOverride == resolver)
+                worldPoseOverride = null;
         }
 
         internal void PrepareMappedPositions(
@@ -314,7 +333,7 @@ namespace F1XR.RestAPI.Replay
                 groundSnap.ClearPose(car.driverNumber);
             }
 
-            pose = new ReplayCarPose(
+            ReplayCarPose resolvedPose = new(
                 carParent,
                 rawPosition,
                 hasDirection ? direction.normalized : Vector3.forward,
@@ -322,6 +341,52 @@ namespace F1XR.RestAPI.Replay
                 worldRotation,
                 segmentDirection.magnitude / duration,
                 hasDirection);
+            pose = TryResolveWorldOverride(
+                car,
+                time,
+                resolvedPose,
+                out ReplayCarPose worldOverride)
+                    ? worldOverride
+                    : resolvedPose;
+        }
+
+        private bool TryResolveWorldOverride(
+            ReplayCarView car,
+            float replayTime,
+            ReplayCarPose sourcePose,
+            out ReplayCarPose pose)
+        {
+            pose = default;
+            if (worldPoseOverride == null ||
+                !worldPoseOverride(
+                    car.driverNumber,
+                    replayTime,
+                    out Pose worldPose) ||
+                !IsFinite(worldPose.position) ||
+                !IsFinite(worldPose.rotation))
+            {
+                return false;
+            }
+
+            Vector3 worldForward =
+                worldPose.rotation * Vector3.forward;
+            Vector3 localPosition = worldPose.position;
+            Vector3 localForward = worldForward;
+            localForward.y = 0f;
+            bool hasDirection =
+                localForward.sqrMagnitude > 0.000001f;
+
+            pose = new ReplayCarPose(
+                null,
+                localPosition,
+                hasDirection
+                    ? localForward.normalized
+                    : sourcePose.localForward,
+                worldPose.position,
+                worldPose.rotation,
+                sourcePose.localSpeed,
+                hasDirection);
+            return true;
         }
 
         private static Vector3 FlatDirection(Vector3 from, Vector3 to)
@@ -393,11 +458,27 @@ namespace F1XR.RestAPI.Replay
 
         public void Clear()
         {
+            worldPoseOverride = null;
             groundSnap.Clear();
             mappedPositions.Clear();
             ClearPreparedSamples();
             hasOrigin = false;
             origin = Vector3.zero;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
         }
 
         private bool IsPrepared(

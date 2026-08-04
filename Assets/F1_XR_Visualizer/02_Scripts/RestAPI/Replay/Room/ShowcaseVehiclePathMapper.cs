@@ -669,7 +669,14 @@ namespace F1XR.RestAPI.Replay.Room
     {
         None,
         PortalAlignedRigid,
-        RoomDioramaRigid
+        RoomDioramaRigid,
+        LifeSizeDriveBy
+    }
+
+    internal enum ShowcasePresentationMode
+    {
+        RoomDiorama,
+        LifeSizeDriveByExperimental
     }
 
     internal readonly struct ShowcaseStagePlacement
@@ -784,6 +791,9 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private float modelHeadingCorrection;
 
         [Header("Presentation")]
+        [SerializeField]
+        private ShowcasePresentationMode presentationMode =
+            ShowcasePresentationMode.RoomDiorama;
         [SerializeField, Min(0f)] private float wallContinuationTarget = 10f;
         [SerializeField, Range(1f, 2f)] private float entryContinuationMultiplier = 1.5f;
         [SerializeField, Min(0f)] private float heroForwardOffset = 0.25f;
@@ -808,6 +818,8 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<Vector3> eventLocalPath = new();
         private EventPopoutReplay eventReplay;
         private ShowcasePortalPresentation portalPresentation;
+        private LifeSizeDriveByRoadPresentation lifeSizeRoad;
+        private LifeSizeDriveByVehiclePresentation lifeSizeVehicles;
         private Transform boundStage;
         private VehicleBinding firstBinding;
         private VehicleBinding secondBinding;
@@ -1010,7 +1022,10 @@ namespace F1XR.RestAPI.Replay.Room
             isApplyingRoomPoses = false;
             ResolveEventReplay();
             eventReplay?.SetOvertakeVehicleSizeScale(
-                showcaseVehicleScale);
+                lifeSizeVehicles != null &&
+                lifeSizeVehicles.IsCommitted
+                    ? 1f
+                    : showcaseVehicleScale);
 
             if (!mappingEnabled)
             {
@@ -1116,7 +1131,7 @@ namespace F1XR.RestAPI.Replay.Room
             firstMappedProgress = firstSourceLongitudinal;
             secondMappedProgress = secondSourceLongitudinal;
 
-            ApplyRoomVehiclePresentation(
+            ApplyActiveVehiclePresentation(
                 firstBinding,
                 secondBinding);
             RevealStageAfterReplayMotion();
@@ -1155,6 +1170,16 @@ namespace F1XR.RestAPI.Replay.Room
                 portalPresentation =
                     GetComponent<ShowcasePortalPresentation>() ??
                     gameObject.AddComponent<ShowcasePortalPresentation>();
+
+            if (lifeSizeRoad == null)
+                lifeSizeRoad =
+                    GetComponent<LifeSizeDriveByRoadPresentation>() ??
+                    gameObject.AddComponent<LifeSizeDriveByRoadPresentation>();
+
+            if (lifeSizeVehicles == null)
+                lifeSizeVehicles =
+                    GetComponent<LifeSizeDriveByVehiclePresentation>() ??
+                    gameObject.AddComponent<LifeSizeDriveByVehiclePresentation>();
         }
 
         private void ResolveEventReplay()
@@ -1256,7 +1281,11 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            PrepareLifeSizeDriveByPlan(run);
+            PrepareLifeSizeDriveByPlan(
+                run,
+                stage,
+                first,
+                second);
 
             ShowcaseStagePlacement portalAlignedPlacement =
                 placement;
@@ -1298,13 +1327,21 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             CaptureVehicleScale(first, second);
+            bool usesLifeSize = TryCommitLifeSizeDriveBy(
+                out string lifeSizeCommitFailure);
+            if (!usesLifeSize &&
+                !string.IsNullOrEmpty(lifeSizeCommitFailure))
+            {
+                lifeSizePlanFailure = lifeSizeCommitFailure;
+            }
+
             eventReplay.SetShowcaseDrivingPresentation(
                 first.DriverNumber,
                 second.DriverNumber,
                 true);
             eventReplay.SetShowcasePlaybackSpeedMultiplier(
                 showcasePlaybackSpeedMultiplier);
-            bool usesPortals =
+            bool usesPortals = !usesLifeSize &&
                 placement.Mode ==
                 ShowcaseStagePlacementMode.PortalAlignedRigid;
             if (usesPortals)
@@ -1350,7 +1387,7 @@ namespace F1XR.RestAPI.Replay.Room
                     eventReplay.CurrentTime);
             }
 
-            ApplyRoomVehiclePresentation(first, second);
+            ApplyActiveVehiclePresentation(first, second);
 
             eventReplay.SuspendTableTrackRendering();
             boundStage = stage;
@@ -1361,7 +1398,9 @@ namespace F1XR.RestAPI.Replay.Room
             boundSourceRevision = run.SourceRevision;
             boundLayoutRevision = run.LayoutRevision;
             activeRun = run;
-            activePlacementMode = placement.Mode;
+            activePlacementMode = usesLifeSize
+                ? ShowcaseStagePlacementMode.LifeSizeDriveBy
+                : placement.Mode;
             stageRevealPending = true;
             stageRevealStartTime = eventReplay.CurrentTime;
             eventReplay.TryGetSourceLongitudinal(
@@ -1371,12 +1410,12 @@ namespace F1XR.RestAPI.Replay.Room
                 second.DriverNumber,
                 out stageRevealSecondLongitudinal);
             ResetOrderDiagnostics();
-            bindingState = placement.Mode.ToString();
+            bindingState = activePlacementMode.ToString();
             lastFailureReason = "";
             Debug.Log(
                 $"[RoomEventPlacement] sourcePoints={eventLocalPath.Count}, " +
                 $"routePoints={run.Route.Centerline.Count}, " +
-                $"mode={placement.Mode}, " +
+                $"mode={activePlacementMode}, " +
                 $"eventScale={eventCoordinateScale:0.###}, " +
                 $"entryContinuation={entryContinuation:0.##}m, " +
                 $"exitContinuation={exitContinuation:0.##}m, " +
@@ -1725,8 +1764,22 @@ namespace F1XR.RestAPI.Replay.Room
             return false;
         }
 
-        private void PrepareLifeSizeDriveByPlan(ShowcaseRun run)
+        private void PrepareLifeSizeDriveByPlan(
+            ShowcaseRun run,
+            Transform stage,
+            VehicleBinding first,
+            VehicleBinding second)
         {
+            lifeSizeRoad?.Clear();
+            lifeSizeVehicles?.Clear();
+            preparedLifeSizePlan = null;
+            lifeSizePlanFailure = "";
+            if (presentationMode !=
+                ShowcasePresentationMode.LifeSizeDriveByExperimental)
+            {
+                return;
+            }
+
             lifeSizeDriveBy ??= new LifeSizeDriveBySettings();
             if (!LifeSizeDriveByPlanner.TryPrepare(
                     run,
@@ -1736,7 +1789,69 @@ namespace F1XR.RestAPI.Replay.Room
                     out lifeSizePlanFailure))
             {
                 preparedLifeSizePlan = null;
+                return;
             }
+
+            if (lifeSizeRoad == null ||
+                !lifeSizeRoad.TryPrepare(
+                    preparedLifeSizePlan,
+                    stage,
+                    out lifeSizePlanFailure) ||
+                lifeSizeVehicles == null ||
+                !lifeSizeVehicles.TryPrepare(
+                    eventReplay,
+                    preparedLifeSizePlan,
+                    first.DriverNumber,
+                    second.DriverNumber,
+                    ResolveCar(first),
+                    ResolveCar(second),
+                    out lifeSizePlanFailure))
+            {
+                lifeSizeRoad?.Clear();
+                lifeSizeVehicles?.Clear();
+                preparedLifeSizePlan = null;
+            }
+        }
+
+        private bool TryCommitLifeSizeDriveBy(out string failure)
+        {
+            failure = "";
+            if (presentationMode !=
+                    ShowcasePresentationMode.LifeSizeDriveByExperimental ||
+                preparedLifeSizePlan == null)
+            {
+                return false;
+            }
+
+            if (lifeSizeVehicles == null ||
+                lifeSizeRoad == null ||
+                !lifeSizeVehicles.TryCommit(
+                    preparedLifeSizePlan,
+                    out failure))
+            {
+                lifeSizeVehicles?.Clear();
+                lifeSizeRoad?.Clear();
+                preparedLifeSizePlan = null;
+                return false;
+            }
+
+            if (lifeSizeRoad.TryCommit(
+                    preparedLifeSizePlan,
+                    out failure))
+            {
+                appliedRoomVehicleLength =
+                    preparedLifeSizePlan.VehicleLength;
+                vehicleLengthAfter = appliedRoomVehicleLength;
+                appliedPresentationScale = vehicleLengthBefore > 0f
+                    ? vehicleLengthAfter / vehicleLengthBefore
+                    : 1f;
+                return true;
+            }
+
+            lifeSizeVehicles.Clear();
+            lifeSizeRoad.Clear();
+            preparedLifeSizePlan = null;
+            return false;
         }
 
         private bool TryCreateRoomDioramaPlacement(
@@ -2262,6 +2377,20 @@ namespace F1XR.RestAPI.Replay.Room
                 vehicleLengthAfter;
         }
 
+        private void ApplyActiveVehiclePresentation(
+            VehicleBinding first,
+            VehicleBinding second)
+        {
+            if (lifeSizeVehicles != null &&
+                lifeSizeVehicles.IsCommitted)
+            {
+                lifeSizeVehicles.ApplyPresentationScale();
+                return;
+            }
+
+            ApplyRoomVehiclePresentation(first, second);
+        }
+
         private static ReplayCarView ResolveCar(
             VehicleBinding binding)
         {
@@ -2376,6 +2505,8 @@ namespace F1XR.RestAPI.Replay.Room
         {
             Transform stageToRestore = boundStage;
             portalPresentation?.Clear();
+            lifeSizeVehicles?.Clear();
+            lifeSizeRoad?.Clear();
             RestoreVehiclePresentation(firstBinding);
             RestoreVehiclePresentation(secondBinding);
             eventReplay?.SetShowcaseDrivingPresentation(
