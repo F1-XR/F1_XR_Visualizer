@@ -191,13 +191,7 @@ namespace F1XR.RestAPI.Replay.Room
                 new GameObject("WallRoomWallPresentation").transform;
             presentationRoot.SetParent(transform, true);
 
-            originalViewerMask = viewerCamera.cullingMask;
-            viewerMaskCaptured = true;
-            viewerCamera.cullingMask &=
-                ~(1 << PortalSceneLayer);
-
             CaptureRoomTrackCorridor(stage);
-            CaptureAndHideSourceRenderers(stage);
             int roomTrackRendererCount =
                 CreateRoomTrackRenderers(stage);
             int firstProxyCount =
@@ -238,6 +232,11 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            originalViewerMask = viewerCamera.cullingMask;
+            viewerMaskCaptured = true;
+            viewerCamera.cullingMask &=
+                ~(1 << PortalSceneLayer);
+            CaptureAndHideSourceRenderers(stage);
             configured = true;
             SuspendPlaneMeshVisualizers();
             Debug.Log(
@@ -522,7 +521,9 @@ namespace F1XR.RestAPI.Replay.Room
             for (int i = 0; i < renderers.Length; i++)
             {
                 Renderer renderer = renderers[i];
-                if (renderer == null)
+                if (renderer == null ||
+                    rendererProxies.Contains(
+                        renderer.gameObject))
                     continue;
 
                 Transform current = renderer.transform;

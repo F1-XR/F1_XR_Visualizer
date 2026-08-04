@@ -124,6 +124,9 @@ namespace F1XR.RestAPI.Replay
         private OvertakeMotionSettings eventOvertakeSettings;
         private GameObject stageRoot;
         private BoxCollider stageInteractionCollider;
+        private Vector3 stageInteractionDefaultCenter;
+        private Vector3 stageInteractionDefaultSize;
+        private bool stageInteractionDefaultsCaptured;
         private EventTrackSegment trackSegment;
         private Mesh roadMesh;
         private LineRenderer leftRoadEdge;
@@ -427,6 +430,81 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        internal bool TryApplyRoomStagePlacement(
+            Vector3 position,
+            Quaternion rotation,
+            float uniformScale,
+            Vector3 eventLocalFocus,
+            float physicalInteractionWidth = 0.6f)
+        {
+            if (PresentationRoot == null ||
+                stageInteractionCollider == null ||
+                !IsFinite(position) ||
+                !IsFinite(rotation) ||
+                !IsFinite(eventLocalFocus) ||
+                !float.IsFinite(uniformScale) ||
+                !float.IsFinite(physicalInteractionWidth))
+            {
+                return false;
+            }
+
+            float resolvedScale = Mathf.Max(0.1f, uniformScale);
+            Vector3 parentScale =
+                PresentationRoot.parent != null
+                    ? PresentationRoot.parent.lossyScale
+                    : Vector3.one;
+            float parentWorldScale = Mathf.Max(
+                Mathf.Abs(parentScale.x),
+                Mathf.Abs(parentScale.y),
+                Mathf.Abs(parentScale.z));
+            float uniformWorldScale =
+                parentWorldScale * resolvedScale;
+            if (!float.IsFinite(uniformWorldScale) ||
+                uniformWorldScale <= 0.000001f)
+            {
+                return false;
+            }
+
+            float localWidth =
+                Mathf.Max(0.1f, physicalInteractionWidth) /
+                uniformWorldScale;
+            float localHeight = 0.12f / uniformWorldScale;
+            Vector3 interactionCenter =
+                eventLocalFocus +
+                Vector3.up * localHeight * 0.5f;
+            Vector3 interactionSize =
+                new(localWidth, localHeight, localWidth);
+            if (!IsFinite(interactionCenter) ||
+                !IsFinite(interactionSize))
+            {
+                return false;
+            }
+
+            PresentationRoot.SetPositionAndRotation(
+                position,
+                rotation);
+            PresentationRoot.localScale =
+                Vector3.one * resolvedScale;
+            stageInteractionCollider.center = interactionCenter;
+            stageInteractionCollider.size = interactionSize;
+            return true;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
+        }
+
         public bool TryRestoreTableRelativePose()
         {
             if (PresentationRoot == null)
@@ -434,7 +512,19 @@ namespace F1XR.RestAPI.Replay
 
             ResolveStagePose(out Vector3 position, out Quaternion rotation);
             rotation = Quaternion.Euler(0f, rotation.eulerAngles.y, 0f);
-            return TrySetPresentationPose(position, rotation, stageScale);
+            if (!TrySetPresentationPose(position, rotation, stageScale))
+                return false;
+
+            if (stageInteractionCollider != null &&
+                stageInteractionDefaultsCaptured)
+            {
+                stageInteractionCollider.center =
+                    stageInteractionDefaultCenter;
+                stageInteractionCollider.size =
+                    stageInteractionDefaultSize;
+            }
+
+            return true;
         }
 
         private void Awake()
@@ -2083,6 +2173,9 @@ namespace F1XR.RestAPI.Replay
             bounds.Expand(new Vector3(0f, 0.04f, 0f));
             collider.center = bounds.center;
             collider.size = bounds.size;
+            stageInteractionDefaultCenter = collider.center;
+            stageInteractionDefaultSize = collider.size;
+            stageInteractionDefaultsCaptured = true;
 
             Rigidbody body = stageRoot.AddComponent<Rigidbody>();
             body.isKinematic = true;
@@ -2402,6 +2495,9 @@ namespace F1XR.RestAPI.Replay
 
             stageRoot = null;
             stageInteractionCollider = null;
+            stageInteractionDefaultCenter = Vector3.zero;
+            stageInteractionDefaultSize = Vector3.zero;
+            stageInteractionDefaultsCaptured = false;
             trackSegment = null;
             roadMesh = null;
             leftRoadEdge = null;
