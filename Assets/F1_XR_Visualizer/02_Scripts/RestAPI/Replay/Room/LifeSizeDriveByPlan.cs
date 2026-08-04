@@ -9,6 +9,7 @@ namespace F1XR.RestAPI.Replay.Room
     {
         [SerializeField, Min(0.5f)] private float roadWidth = 3.6f;
         [SerializeField, Min(0.01f)] private float roadThickness = 0.08f;
+        [SerializeField, Min(2f)] private float vehicleLength = 5.2f;
         [SerializeField, Min(0.5f)] private float portalHeight = 2.1f;
         [SerializeField, Min(0f)] private float wallMargin = 0.1f;
         [SerializeField, Min(0.001f)] private float seamPositionTolerance = 0.03f;
@@ -16,6 +17,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         public float RoadWidth => roadWidth;
         public float RoadThickness => roadThickness;
+        public float VehicleLength => vehicleLength;
         public float PortalHeight => portalHeight;
         public float WallMargin => wallMargin;
         public float SeamPositionTolerance => seamPositionTolerance;
@@ -25,6 +27,8 @@ namespace F1XR.RestAPI.Replay.Room
         {
             roadWidth = Mathf.Max(0.5f, roadWidth);
             roadThickness = Mathf.Max(0.01f, roadThickness);
+            if (!float.IsFinite(vehicleLength) || vehicleLength < 2f)
+                vehicleLength = 5.2f;
             portalHeight = Mathf.Max(0.5f, portalHeight);
             wallMargin = Mathf.Max(0f, wallMargin);
             seamPositionTolerance = Mathf.Max(
@@ -101,6 +105,7 @@ namespace F1XR.RestAPI.Replay.Room
             LifeSizePortalSeam exitSeam,
             float roadWidth,
             float roadThickness,
+            float vehicleLength,
             int layoutRevision,
             int sourceRevision)
         {
@@ -110,6 +115,7 @@ namespace F1XR.RestAPI.Replay.Room
             ExitSeam = exitSeam;
             RoadWidth = roadWidth;
             RoadThickness = roadThickness;
+            VehicleLength = vehicleLength;
             LayoutRevision = layoutRevision;
             SourceRevision = sourceRevision;
             centerline = route != null
@@ -123,6 +129,7 @@ namespace F1XR.RestAPI.Replay.Room
         public LifeSizePortalSeam ExitSeam { get; }
         public float RoadWidth { get; }
         public float RoadThickness { get; }
+        public float VehicleLength { get; }
         public int LayoutRevision { get; }
         public int SourceRevision { get; }
         public IReadOnlyList<Vector3> Centerline => centerline;
@@ -134,6 +141,7 @@ namespace F1XR.RestAPI.Replay.Room
             ExitSeam.IsValid &&
             RoadWidth > 0f &&
             RoadThickness > 0f &&
+            VehicleLength >= 2f &&
             LayoutRevision >= 0 &&
             SourceRevision >= 0 &&
             centerline.Count >= 5;
@@ -238,6 +246,7 @@ namespace F1XR.RestAPI.Replay.Room
                 exitSeam,
                 settings.RoadWidth,
                 settings.RoadThickness,
+                settings.VehicleLength,
                 run.LayoutRevision,
                 run.SourceRevision);
             if (!TryValidate(candidate, settings, out failure))

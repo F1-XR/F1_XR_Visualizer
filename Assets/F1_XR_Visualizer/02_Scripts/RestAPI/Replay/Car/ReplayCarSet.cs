@@ -1289,6 +1289,18 @@ namespace F1XR.RestAPI.Replay
                 sourceToLocalRotation);
         }
 
+        internal void SetWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            carMotion.SetWorldPoseOverride(resolver);
+        }
+
+        internal void ClearWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            carMotion.ClearWorldPoseOverride(resolver);
+        }
+
         public bool TryGetMappedPosition(
             LocationSample sample,
             out Vector3 position)

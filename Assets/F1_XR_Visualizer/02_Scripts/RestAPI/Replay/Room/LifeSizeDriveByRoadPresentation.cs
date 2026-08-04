@@ -13,10 +13,13 @@ namespace F1XR.RestAPI.Replay.Room
         private Mesh roadMesh;
         private Material roadMaterial;
         private LifeSizeDriveByPlan preparedPlan;
+        private Transform sourceStage;
+        private readonly List<RendererState> sourceRendererStates = new();
 
         internal bool IsPrepared =>
             preparedPlan != null &&
             preparedPlan.IsValid &&
+            sourceStage != null &&
             roadRoot != null &&
             roadMesh != null;
         internal bool IsCommitted =>
@@ -24,16 +27,20 @@ namespace F1XR.RestAPI.Replay.Room
 
         internal bool TryPrepare(
             LifeSizeDriveByPlan plan,
+            Transform stage,
             out string failure)
         {
             Clear();
             failure = "";
-            if (plan == null || !plan.IsValid)
+            if (plan == null || !plan.IsValid || stage == null)
             {
                 failure =
                     "A validated LifeSize drive-by plan is required before road preparation.";
                 return false;
             }
+
+            sourceStage = stage;
+            CaptureSourceRendererStates();
 
             roadRoot = new GameObject("LifeSizeDriveByRoad");
             roadRoot.layer = IgnoreRaycastLayer;
@@ -89,12 +96,16 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            SetSourceEnvironmentHidden(true);
             roadRoot.SetActive(true);
             return true;
         }
 
         internal void Clear()
         {
+            SetSourceEnvironmentHidden(false);
+            sourceRendererStates.Clear();
+            sourceStage = null;
             preparedPlan = null;
             if (roadRoot != null)
                 Destroy(roadRoot);
@@ -141,6 +152,55 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             return true;
+        }
+
+        private void CaptureSourceRendererStates()
+        {
+            sourceRendererStates.Clear();
+            if (sourceStage == null)
+                return;
+
+            Transform cars = sourceStage.Find("Cars");
+            Renderer[] renderers =
+                sourceStage.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null ||
+                    cars != null && renderer.transform.IsChildOf(cars))
+                {
+                    continue;
+                }
+
+                sourceRendererStates.Add(new RendererState(renderer));
+            }
+        }
+
+        private void SetSourceEnvironmentHidden(bool hidden)
+        {
+            for (int i = 0; i < sourceRendererStates.Count; i++)
+                sourceRendererStates[i].SetHidden(hidden);
+        }
+
+        private readonly struct RendererState
+        {
+            private readonly Renderer renderer;
+            private readonly bool forceRenderingOff;
+
+            public RendererState(Renderer renderer)
+            {
+                this.renderer = renderer;
+                forceRenderingOff = renderer.forceRenderingOff;
+            }
+
+            public void SetHidden(bool hidden)
+            {
+                if (renderer != null)
+                {
+                    renderer.forceRenderingOff =
+                        hidden || forceRenderingOff;
+                }
+            }
         }
 
         private static Mesh BuildRoadMesh(LifeSizeDriveByPlan plan)

@@ -487,6 +487,7 @@ namespace F1XR.RestAPI.Replay
                 Vector3.one * resolvedScale;
             stageInteractionCollider.center = interactionCenter;
             stageInteractionCollider.size = interactionSize;
+            SetStageInteractionEnabled(false);
             return true;
         }
 
@@ -524,7 +525,33 @@ namespace F1XR.RestAPI.Replay
                     stageInteractionDefaultSize;
             }
 
+            SetStageInteractionEnabled(true);
+
             return true;
+        }
+
+        private void SetStageInteractionEnabled(bool enabled)
+        {
+            if (PresentationRoot == null)
+                return;
+
+            var policy =
+                PresentationRoot.GetComponent<WorldGrabPolicy>();
+            if (policy != null)
+                policy.enabled = enabled;
+
+            var scale =
+                PresentationRoot.GetComponent<ScaleController>();
+            if (scale != null)
+                scale.enabled = enabled;
+
+            var grab =
+                PresentationRoot.GetComponent<XRGrabInteractable>();
+            if (grab != null)
+                grab.enabled = enabled;
+
+            if (stageInteractionCollider != null)
+                stageInteractionCollider.enabled = enabled;
         }
 
         private void Awake()
@@ -641,6 +668,22 @@ namespace F1XR.RestAPI.Replay
                 firstDriver,
                 secondDriver,
                 enabled);
+        }
+
+        internal bool TrySetCarWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            if (!isActive || eventCars == null || resolver == null)
+                return false;
+
+            eventCars.SetWorldPoseOverride(resolver);
+            return true;
+        }
+
+        internal void ClearCarWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            eventCars?.ClearWorldPoseOverride(resolver);
         }
 
         public void SetShowcasePlaybackSpeedMultiplier(
@@ -1250,7 +1293,7 @@ namespace F1XR.RestAPI.Replay
             return closestPathDistance;
         }
 
-        private bool TryGetSourceLongitudinalAtTime(
+        internal bool TryGetSourceLongitudinalAtTime(
             int driverNumber,
             float time,
             out float longitudinal)
