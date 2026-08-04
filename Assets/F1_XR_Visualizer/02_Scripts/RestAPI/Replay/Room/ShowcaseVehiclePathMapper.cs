@@ -669,7 +669,7 @@ namespace F1XR.RestAPI.Replay.Room
     {
         None,
         PortalAlignedRigid,
-        HeroAnchoredRigid
+        RoomDioramaRigid
     }
 
     internal readonly struct ShowcaseStagePlacement
@@ -1240,33 +1240,33 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            ShowcaseStagePlacement portalAlignedPlacement =
+                placement;
+            if (!TryCreateRoomDioramaPlacement(
+                    eventLocalPath,
+                    entryPosition,
+                    focusPosition,
+                    exitPosition,
+                    run,
+                    portalAlignedPlacement,
+                    out placement,
+                    out placementFailure))
+            {
+                SetInactive(
+                    "PlacementInvalid",
+                    placementFailure);
+                return false;
+            }
+
             CapturePlacementDiagnostics(placement);
             if (!TryValidateEventStagePlacement(
                     placement,
                     out placementFailure))
             {
-                string portalAlignedFailure = placementFailure;
-                if (!TryCreateHeroAnchoredPlacement(
-                        eventLocalPath,
-                        entryPosition,
-                        focusPosition,
-                        exitPosition,
-                        run,
-                        placement,
-                        out placement,
-                        out placementFailure) ||
-                    !TryValidateEventStagePlacement(
-                        placement,
-                        out placementFailure))
-                {
-                    SetInactive(
-                        "PlacementInvalid",
-                        portalAlignedFailure + " " +
-                        placementFailure);
-                    return false;
-                }
-
-                CapturePlacementDiagnostics(placement);
+                SetInactive(
+                    "PlacementInvalid",
+                    placementFailure);
+                return false;
             }
 
             if (!TryCommitEventStagePlacement(
@@ -1707,7 +1707,7 @@ namespace F1XR.RestAPI.Replay.Room
             return false;
         }
 
-        private bool TryCreateHeroAnchoredPlacement(
+        private bool TryCreateRoomDioramaPlacement(
             IReadOnlyList<Vector3> sourcePath,
             Vector3 sourceEntryPosition,
             Vector3 sourceFocusPosition,
@@ -1815,7 +1815,7 @@ namespace F1XR.RestAPI.Replay.Room
                 mappedFocus - overtakeTarget).magnitude;
 
             placement = new ShowcaseStagePlacement(
-                ShowcaseStagePlacementMode.HeroAnchoredRigid,
+                ShowcaseStagePlacementMode.RoomDioramaRigid,
                 position,
                 rotation,
                 scale,
@@ -1835,7 +1835,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             placement = default;
             failure =
-                "The Hero-anchored source track placement contains invalid values.";
+                "The RoomDiorama source track placement contains invalid values.";
             return false;
         }
 
@@ -1852,7 +1852,7 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             if (placement.Mode ==
-                ShowcaseStagePlacementMode.HeroAnchoredRigid)
+                ShowcaseStagePlacementMode.RoomDioramaRigid)
             {
                 return true;
             }
