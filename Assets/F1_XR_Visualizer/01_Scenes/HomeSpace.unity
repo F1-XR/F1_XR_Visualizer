@@ -228,6 +228,10 @@ PrefabInstance:
       propertyPath: m_Enabled
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5647931907121370637, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_ClearFlags
+      value: 2
+      objectReference: {fileID: 0}
     - target: {fileID: 6411689789220004100, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_Enabled
       value: 0
@@ -10624,9 +10628,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1879897963}
-    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1879897964}
   m_SourcePrefab: {fileID: 100100000, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
 --- !u!4 &1879897960 stripped
 Transform:
@@ -10650,21 +10651,6 @@ MonoBehaviour:
   m_Script: {fileID: 388652186}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.OccludedInputVisualMarker
---- !u!114 &1879897964
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 899376451}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 61fec2e0a859ae54cb06f6a74e7361f2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.PoseSmoothingFollow
-  positionSmoothTime: 0.06
-  rotationLerpSpeed: 18
-  snapDistance: 0.5
 --- !u!1 &1888845641
 GameObject:
   m_ObjectHideFlags: 0
