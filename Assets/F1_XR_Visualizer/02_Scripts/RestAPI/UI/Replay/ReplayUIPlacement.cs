@@ -39,7 +39,12 @@ namespace F1XR.RestAPI.UI
                 15,
                 FontStyles.Bold,
                 TextAlignmentOptions.Center);
-            SetRect(placementStatus.rectTransform, 8f, -8f, 284f, 28f);
+            placementStatus.enableAutoSizing = true;
+            placementStatus.fontSizeMin = 9f;
+            placementStatus.fontSizeMax = 15f;
+            placementStatus.textWrappingMode = TextWrappingModes.Normal;
+            placementStatus.overflowMode = TextOverflowModes.Truncate;
+            SetRect(placementStatus.rectTransform, 8f, -6f, 284f, 32f);
 
             placementAutomaticButton = CreatePlacementButton(
                 "TableAutomatic",
@@ -88,6 +93,13 @@ namespace F1XR.RestAPI.UI
             label.rectTransform.offsetMin = Vector2.zero;
             label.rectTransform.offsetMax = Vector2.zero;
             StyleButton(button);
+            label.fontSize = 15f;
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 10f;
+            label.fontSizeMax = 15f;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.margin = new Vector4(6f, 2f, 6f, 2f);
             return button;
         }
 

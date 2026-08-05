@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro;
 using static F1XR.RestAPI.Replay.ReplayCarVisualUtil;
 
 namespace F1XR.RestAPI.Replay
@@ -10,13 +11,12 @@ namespace F1XR.RestAPI.Replay
         private const float LabelLineGapRatio = 0.08f;
         private const float LabelLineWidthRatio = 0.014f;
         private const float LabelBackgroundDepthRatio = 0.03f;
-        private TextMesh label;
+        private TextMeshPro label;
         private LineRenderer labelLine;
         private MeshRenderer labelBackground;
         private MeshRenderer labelRenderer;
         private MeshRenderer labelTopDot;
         private MeshRenderer labelBottomDot;
-        private Material labelTextMaterial;
         private Material labelLineMaterial;
         private Material labelBackgroundMaterial;
         private Material labelDotMaterial;
@@ -39,6 +39,21 @@ namespace F1XR.RestAPI.Replay
                 : text;
 
             RefreshLabelText();
+        }
+
+        public void SetLabelFont(TMP_FontAsset font)
+        {
+            if (font == null)
+                return;
+
+            if (label == null)
+                label = CreateLabel();
+
+            if (label.font == font)
+                return;
+
+            label.font = font;
+            labelLayoutDirty = true;
         }
 
         public void SetRank(int value)
@@ -112,25 +127,22 @@ namespace F1XR.RestAPI.Replay
             labelLayoutDirty = true;
         }
 
-        private TextMesh CreateLabel()
+        private TextMeshPro CreateLabel()
         {
             GameObject obj = new GameObject("DriverLabel");
             obj.transform.SetParent(transform, false);
             obj.transform.localRotation = Quaternion.identity;
             obj.transform.localScale = Vector3.one;
 
-            TextMesh text = obj.AddComponent<TextMesh>();
-            text.anchor = TextAnchor.MiddleCenter;
-            text.alignment = TextAlignment.Center;
+            TextMeshPro text = obj.AddComponent<TextMeshPro>();
+            text.alignment = TextAlignmentOptions.Center;
             text.fontSize = 32;
-            text.characterSize = 0.01f;
+            text.autoSizeTextContainer = true;
             text.color = labelColor;
             text.text = driverNumber.ToString();
             labelRenderer = obj.GetComponent<MeshRenderer>();
             labelRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             labelRenderer.receiveShadows = false;
-            labelTextMaterial = GetLabelTextMaterial(text);
-            labelRenderer.sharedMaterial = labelTextMaterial;
 
             return text;
         }
@@ -186,7 +198,8 @@ namespace F1XR.RestAPI.Replay
             float textHeight = carSize * LabelSizeRatio;
             float inheritedScale = MaxAbsComponent(transform.lossyScale);
 
-            label.characterSize = textHeight / (label.fontSize * inheritedScale);
+            float textScale = textHeight / (label.fontSize * inheritedScale);
+            label.transform.localScale = Vector3.one * textScale;
             float lineStartWidth = textHeight * LabelLineWidthRatio;
             float lineEndWidth = textHeight * 0.008f;
             float dotSize = lineStartWidth * 3f;
@@ -220,6 +233,7 @@ namespace F1XR.RestAPI.Replay
             SetDot(labelBottomDot, lineStart, dotSize);
             SetDot(labelTopDot, lineEnd, dotSize);
 
+            label.ForceMeshUpdate();
             GetTextBackgroundTransform(
                 label,
                 labelRenderer,

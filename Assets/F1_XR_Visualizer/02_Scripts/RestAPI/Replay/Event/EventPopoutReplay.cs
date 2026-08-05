@@ -9,6 +9,43 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace F1XR.RestAPI.Replay
 {
+    internal readonly struct ShowcasePlaybackWindow
+    {
+        public ShowcasePlaybackWindow(
+            float portalVisualStartTime,
+            float startTime,
+            float entryTime,
+            float focusTime,
+            float exitTime,
+            float endTime,
+            float portalVisualEndTime)
+        {
+            PortalVisualStartTime = portalVisualStartTime;
+            StartTime = startTime;
+            EntryTime = entryTime;
+            FocusTime = focusTime;
+            ExitTime = exitTime;
+            EndTime = endTime;
+            PortalVisualEndTime = portalVisualEndTime;
+        }
+
+        public float PortalVisualStartTime { get; }
+        public float StartTime { get; }
+        public float EntryTime { get; }
+        public float FocusTime { get; }
+        public float ExitTime { get; }
+        public float EndTime { get; }
+        public float PortalVisualEndTime { get; }
+        public bool IsValid =>
+            PortalVisualStartTime <= StartTime &&
+            EndTime > StartTime &&
+            EntryTime >= StartTime &&
+            FocusTime > EntryTime &&
+            ExitTime > FocusTime &&
+            ExitTime <= EndTime &&
+            PortalVisualEndTime >= EndTime;
+    }
+
     public sealed class EventPopoutReplay : MonoBehaviour
     {
         private const int MaxEventDrivers = 4;
@@ -38,12 +75,26 @@ namespace F1XR.RestAPI.Replay
         [Min(3)] public int maxTrackPoints = 192;
         [Min(1f)] public float maxEventDuration = 30f;
         [Min(0.01f)] public float eventPlaybackSpeed = 1f;
-        [Min(0f)] public float eventLeadSeconds = 8f;
-        [Min(0f)] public float eventTailSeconds = 5f;
+        [Min(0f)] public float eventLeadSeconds = 6f;
+        [Min(0f)] public float eventTailSeconds = 3f;
+        [Min(0f)] public float showcaseEntryApproachSeconds = 0.75f;
+        [Min(0f)] public float showcaseExitDepartureSeconds = 0.75f;
+        [Min(0f)] public float showcasePortalVisualPaddingSeconds = 5f;
         [Min(0f)] public float overtakeMotionLeadSeconds = 3f;
         [Min(0f)] public float raceStartMotionGraceSeconds = 1f;
         [Min(0f)] public float minimumMovingLeadSeconds = 4f;
         [Min(1f)] public float eventMinimumSeparationInVehicleWidths = 1.05f;
+
+        [Header("Showcase Battle")]
+        [Min(1f)] public float battleScanSeconds = 14f;
+        [Min(0f)] public float battleContinuationSeconds = 12f;
+        [Min(0f)] public float battleConfirmationInVehicleLengths = 0.15f;
+        [Min(0f)] public float battleConfirmationSeconds = 0.45f;
+        [Range(0.02f, 0.25f)] public float battleSampleSeconds = 0.05f;
+        [Min(0f)] public float battleVictoryDelaySeconds = 0.65f;
+        [Min(1f)] public float battleCruiseSpeedMultiplier = 1.5f;
+        [Min(0f)] public float battleExchangeNormalSpeedSeconds = 1.25f;
+        [Min(0f)] public float battleCruiseBlendSeconds = 0.75f;
 
         private readonly ReplayTimeline timeline = new();
         private readonly Dictionary<int, List<LocationSample>> eventSamples = new();
@@ -51,6 +102,8 @@ namespace F1XR.RestAPI.Replay
         private readonly HashSet<int> eventDrivers = new();
         private readonly List<Vector3> mappedPath = new();
         private readonly List<float> mappedPathDistances = new();
+        private readonly List<Vector3> presentationPath = new();
+        private readonly List<float> presentationPathDistances = new();
         private readonly List<Vector3> fallbackCorridorPath = new();
         private readonly List<Vector3> safetyApronPath = new();
         private readonly List<Vector3> safetyApronLeftEdge = new();
@@ -61,6 +114,8 @@ namespace F1XR.RestAPI.Replay
         private readonly List<TableTrackRendererState> tableTrackRendererStates = new();
         private readonly OvertakeCompletionDetector
             completionDetector = new();
+        private readonly ShowcaseOvertakeBattleBuilder
+            battleBuilder = new();
 
         private ReplayPlayer player;
         private ReplayCarSet eventCars;
@@ -68,9 +123,13 @@ namespace F1XR.RestAPI.Replay
         private int showcaseAudioFocusDriver;
         private ReplayEventDto currentEvent;
         private ReplayEventDto motionEvent;
+        private OvertakeBattleSequence battleSequence;
         private OvertakeMotionSettings eventOvertakeSettings;
         private GameObject stageRoot;
         private BoxCollider stageInteractionCollider;
+        private Vector3 stageInteractionDefaultCenter;
+        private Vector3 stageInteractionDefaultSize;
+        private bool stageInteractionDefaultsCaptured;
         private EventTrackSegment trackSegment;
         private Mesh roadMesh;
         private LineRenderer leftRoadEdge;
@@ -89,14 +148,32 @@ namespace F1XR.RestAPI.Replay
         private bool isLoading;
         private bool isActive;
         private float showcasePlaybackSpeedMultiplier = 1f;
+        private float overtakeVehicleSizeScale = 1f;
+        private int nextBattleExchangeIndex;
+        private float lastBattleVfxReplayTime = float.NaN;
+        private bool battleCompletionConfirmed;
+        private bool battleVictoryTriggered;
+        private ShowcasePlaybackWindow showcasePlaybackWindow;
 
         public bool IsLoading => isLoading;
         public bool IsActive => isActive;
         public bool IsPlaying => isActive && timeline.IsPlaying;
+        public bool HasNextOvertake =>
+            TryFindNextOvertake(out _);
         public float CurrentTime => isActive ? timeline.CurrentTime : 0f;
         public bool OvertakeCompletionConfirmed =>
             isActive &&
-            completionDetector.HasTriggered;
+            (battleSequence != null && battleSequence.IsValid
+                ? battleCompletionConfirmed
+                : completionDetector.HasTriggered);
+        public int OvertakeFinalLeader =>
+            battleSequence != null && battleSequence.IsValid
+                ? battleSequence.FinalLeader
+                : currentEvent != null &&
+                  currentEvent.driverNumbers != null &&
+                  currentEvent.driverNumbers.Length > 0
+                    ? currentEvent.driverNumbers[0]
+                    : 0;
         public float StartTime => isActive ? timeline.StartTime : 0f;
         public float EndTime => isActive ? timeline.RaceEndTime : 0f;
         public float NormalizedTime => isActive
@@ -107,10 +184,65 @@ namespace F1XR.RestAPI.Replay
             ? stageRoot.transform
             : null;
         public int SourceGeometryRevision => sourceGeometryRevision;
-        public int SourceGeometryPointCount => mappedPath.Count;
+        public int SourceGeometryPointCount => presentationPath.Count;
         public float OrderingTransitionTime => isActive
             ? ResolveOrderingTransitionTime()
             : 0f;
+
+        internal bool HasMultipleShowcaseExchanges =>
+            battleSequence != null &&
+            battleSequence.IsValid &&
+            battleSequence.Exchanges.Count > 1;
+
+        internal bool TryGetShowcaseExchangeSpan(
+            out Vector3 firstPosition,
+            out Vector3 lastPosition)
+        {
+            firstPosition = Vector3.zero;
+            lastPosition = Vector3.zero;
+            if (!HasMultipleShowcaseExchanges)
+                return false;
+
+            OvertakeBattleExchange first =
+                battleSequence.Exchanges[0];
+            OvertakeBattleExchange last =
+                battleSequence.Exchanges[
+                    battleSequence.Exchanges.Count - 1];
+            return TryGetEventLocalPathPosition(
+                    first.anchorTime,
+                    out firstPosition) &&
+                TryGetEventLocalPathPosition(
+                    last.anchorTime,
+                    out lastPosition);
+        }
+
+        internal bool TryGetShowcasePlaybackWindow(
+            out ShowcasePlaybackWindow window)
+        {
+            window = showcasePlaybackWindow;
+            return isActive && window.IsValid;
+        }
+
+        internal bool TryGetEventLocalPathPosition(
+            float replayTime,
+            out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (!isActive ||
+                referenceDriverNumber <= 0 ||
+                !TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    replayTime,
+                    out float distance))
+            {
+                return false;
+            }
+
+            position = sourceToEventRotation *
+                (EvaluateSourcePathDistance(distance) -
+                 eventSpaceCenter);
+            return true;
+        }
 
         public bool TryCopyEventLocalCenterPath(
             List<Vector3> destination,
@@ -296,6 +428,19 @@ namespace F1XR.RestAPI.Replay
                 out longitudinal);
         }
 
+        internal bool TryGetReferenceSourceLongitudinalAtTime(
+            float replayTime,
+            out float longitudinal)
+        {
+            longitudinal = 0f;
+            return isActive &&
+                referenceDriverNumber > 0 &&
+                TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    replayTime,
+                    out longitudinal);
+        }
+
         public void Configure(ReplayPlayer replayPlayer)
         {
             player = replayPlayer;
@@ -315,6 +460,82 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        internal bool TryApplyRoomStagePlacement(
+            Vector3 position,
+            Quaternion rotation,
+            float uniformScale,
+            Vector3 eventLocalFocus,
+            float physicalInteractionWidth = 0.6f)
+        {
+            if (PresentationRoot == null ||
+                stageInteractionCollider == null ||
+                !IsFinite(position) ||
+                !IsFinite(rotation) ||
+                !IsFinite(eventLocalFocus) ||
+                !float.IsFinite(uniformScale) ||
+                !float.IsFinite(physicalInteractionWidth))
+            {
+                return false;
+            }
+
+            float resolvedScale = Mathf.Max(0.1f, uniformScale);
+            Vector3 parentScale =
+                PresentationRoot.parent != null
+                    ? PresentationRoot.parent.lossyScale
+                    : Vector3.one;
+            float parentWorldScale = Mathf.Max(
+                Mathf.Abs(parentScale.x),
+                Mathf.Abs(parentScale.y),
+                Mathf.Abs(parentScale.z));
+            float uniformWorldScale =
+                parentWorldScale * resolvedScale;
+            if (!float.IsFinite(uniformWorldScale) ||
+                uniformWorldScale <= 0.000001f)
+            {
+                return false;
+            }
+
+            float localWidth =
+                Mathf.Max(0.1f, physicalInteractionWidth) /
+                uniformWorldScale;
+            float localHeight = 0.12f / uniformWorldScale;
+            Vector3 interactionCenter =
+                eventLocalFocus +
+                Vector3.up * localHeight * 0.5f;
+            Vector3 interactionSize =
+                new(localWidth, localHeight, localWidth);
+            if (!IsFinite(interactionCenter) ||
+                !IsFinite(interactionSize))
+            {
+                return false;
+            }
+
+            PresentationRoot.SetPositionAndRotation(
+                position,
+                rotation);
+            PresentationRoot.localScale =
+                Vector3.one * resolvedScale;
+            stageInteractionCollider.center = interactionCenter;
+            stageInteractionCollider.size = interactionSize;
+            SetStageInteractionEnabled(false);
+            return true;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
+        }
+
         public bool TryRestoreTableRelativePose()
         {
             if (PresentationRoot == null)
@@ -322,7 +543,45 @@ namespace F1XR.RestAPI.Replay
 
             ResolveStagePose(out Vector3 position, out Quaternion rotation);
             rotation = Quaternion.Euler(0f, rotation.eulerAngles.y, 0f);
-            return TrySetPresentationPose(position, rotation, stageScale);
+            if (!TrySetPresentationPose(position, rotation, stageScale))
+                return false;
+
+            if (stageInteractionCollider != null &&
+                stageInteractionDefaultsCaptured)
+            {
+                stageInteractionCollider.center =
+                    stageInteractionDefaultCenter;
+                stageInteractionCollider.size =
+                    stageInteractionDefaultSize;
+            }
+
+            SetStageInteractionEnabled(true);
+
+            return true;
+        }
+
+        private void SetStageInteractionEnabled(bool enabled)
+        {
+            if (PresentationRoot == null)
+                return;
+
+            var policy =
+                PresentationRoot.GetComponent<WorldGrabPolicy>();
+            if (policy != null)
+                policy.enabled = enabled;
+
+            var scale =
+                PresentationRoot.GetComponent<ScaleController>();
+            if (scale != null)
+                scale.enabled = enabled;
+
+            var grab =
+                PresentationRoot.GetComponent<XRGrabInteractable>();
+            if (grab != null)
+                grab.enabled = enabled;
+
+            if (stageInteractionCollider != null)
+                stageInteractionCollider.enabled = enabled;
         }
 
         private void Awake()
@@ -361,6 +620,21 @@ namespace F1XR.RestAPI.Replay
                 Debug.LogWarning("[EventReplay] No overtake event is available in the manifest.", this);
                 return;
             }
+
+            Open(definition);
+        }
+
+        public void OpenNextOvertake()
+        {
+            if (isLoading ||
+                player == null ||
+                !player.HasDataset)
+            {
+                return;
+            }
+
+            if (!TryFindNextOvertake(out ReplayEventDto definition))
+                return;
 
             Open(definition);
         }
@@ -426,11 +700,34 @@ namespace F1XR.RestAPI.Replay
                 enabled);
         }
 
+        internal bool TrySetCarWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            if (!isActive || eventCars == null || resolver == null)
+                return false;
+
+            eventCars.SetWorldPoseOverride(resolver);
+            return true;
+        }
+
+        internal void ClearCarWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            eventCars?.ClearWorldPoseOverride(resolver);
+        }
+
         public void SetShowcasePlaybackSpeedMultiplier(
             float multiplier)
         {
             showcasePlaybackSpeedMultiplier =
                 Mathf.Max(1f, multiplier);
+        }
+
+        public void SetOvertakeVehicleSizeScale(float scale)
+        {
+            overtakeVehicleSizeScale = Mathf.Max(0.01f, scale);
+            eventCars?.SetOvertakeVehicleSizeScale(
+                overtakeVehicleSizeScale);
         }
 
         public void TogglePlay()
@@ -511,8 +808,26 @@ namespace F1XR.RestAPI.Replay
         private IEnumerator OpenRoutine(ReplayEventDto definition)
         {
             isLoading = true;
-            float loadStart = Mathf.Max(player.TimelineStartTime, definition.startTime - trackPaddingSeconds);
-            float loadEnd = Mathf.Min(player.ReadyUntilTime, definition.endTime + trackPaddingSeconds);
+
+            // Let deferred Unity destruction finish before a replacement
+            // stage allocates another map and portal presentation.
+            yield return null;
+
+            float scanSeconds = Mathf.Max(
+                Mathf.Max(
+                    eventLeadSeconds,
+                    eventTailSeconds),
+                battleScanSeconds);
+            float loadStart = Mathf.Max(
+                player.TimelineStartTime,
+                definition.anchorTime -
+                scanSeconds -
+                trackPaddingSeconds);
+            float loadEnd = Mathf.Min(
+                player.ReadyUntilTime,
+                definition.anchorTime +
+                scanSeconds +
+                trackPaddingSeconds);
             bool loaded = false;
 
             yield return player.LoadEventRange(loadStart, loadEnd, value => loaded = value);
@@ -546,7 +861,9 @@ namespace F1XR.RestAPI.Replay
                 yield break;
             }
 
-            timeline.Reset(loadStart, loadEnd);
+            timeline.Reset(
+                showcasePlaybackWindow.StartTime,
+                showcasePlaybackWindow.EndTime);
             isLoading = false;
             isActive = true;
             openRoutine = null;
@@ -565,7 +882,9 @@ namespace F1XR.RestAPI.Replay
                 timeline.Advance(
                     Time.deltaTime,
                     eventPlaybackSpeed *
-                    showcasePlaybackSpeedMultiplier);
+                    showcasePlaybackSpeedMultiplier *
+                    ResolveBattleCruiseSpeedMultiplier(
+                        timeline.CurrentTime));
                 if (timeline.StopAtEnd())
                     eventAudio?.SetPlaying(false);
             }
@@ -576,6 +895,52 @@ namespace F1XR.RestAPI.Replay
                 timeline.IsPlaying,
                 null);
             ApplyCars();
+        }
+
+        private float ResolveBattleCruiseSpeedMultiplier(
+            float replayTime)
+        {
+            if (!HasMultipleShowcaseExchanges ||
+                battleCruiseSpeedMultiplier <= 1f)
+            {
+                return 1f;
+            }
+
+            IReadOnlyList<OvertakeBattleExchange> exchanges =
+                battleSequence.Exchanges;
+            for (int i = 0; i < exchanges.Count - 1; i++)
+            {
+                float previousTime = exchanges[i].anchorTime;
+                float nextTime = exchanges[i + 1].anchorTime;
+                if (replayTime <= previousTime ||
+                    replayTime >= nextTime)
+                {
+                    continue;
+                }
+
+                float nearestExchange = Mathf.Min(
+                    replayTime - previousTime,
+                    nextTime - replayTime);
+                float blendStart = Mathf.Max(
+                    0f,
+                    battleExchangeNormalSpeedSeconds);
+                float blendEnd = blendStart + Mathf.Max(
+                    0.0001f,
+                    battleCruiseBlendSeconds);
+                float cruiseBlend = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        blendStart,
+                        blendEnd,
+                        nearestExchange));
+                return Mathf.Lerp(
+                    1f,
+                    Mathf.Max(1f, battleCruiseSpeedMultiplier),
+                    cruiseBlend);
+            }
+
+            return 1f;
         }
 
         private bool BuildEventSamples(
@@ -636,8 +1001,12 @@ namespace F1XR.RestAPI.Replay
         {
             eventCars = new ReplayCarSet(
                 player.carPrefab,
-                null,
+                player,
                 false);
+            eventCars.SetOvertakePresentationMode(
+                OvertakePresentationMode.Showcase);
+            eventCars.SetOvertakeVehicleSizeScale(
+                overtakeVehicleSizeScale);
             eventCars.SetMapScaleRatio(
                 player.GetTrackMapScaleRatio());
             eventCars.SetTeamPrefabs(player.teamCarPrefabs);
@@ -659,16 +1028,63 @@ namespace F1XR.RestAPI.Replay
                 return false;
             if (!BuildEventLongitudinals())
                 return false;
-            float transitionTime =
-                ResolveOrderingTransitionTime(
+            float referenceVehicleLength =
+                ResolveBattleReferenceVehicleLength(definition);
+            battleSequence = battleBuilder.Build(
+                definition,
+                definition.anchorTime -
+                Mathf.Max(1f, battleScanSeconds),
+                definition.anchorTime +
+                Mathf.Max(1f, battleScanSeconds),
+                player.TimelineStartTime,
+                player.ReadyUntilTime,
+                eventLeadSeconds,
+                eventTailSeconds,
+                overtakeMotionLeadSeconds,
+                battleContinuationSeconds,
+                maxEventDuration,
+                referenceVehicleLength *
+                Mathf.Max(
+                    0f,
+                    battleConfirmationInVehicleLengths),
+                battleConfirmationSeconds,
+                battleSampleSeconds,
+                TryGetSourceGap);
+            float transitionTime = battleSequence != null &&
+                                   battleSequence.IsValid
+                ? battleSequence.FocusTime
+                : ResolveOrderingTransitionTime(
                     definition,
                     definition.startTime,
                     definition.endTime);
-            motionEvent = CreateMotionEvent(
+            if (battleSequence != null && battleSequence.IsValid)
+            {
+                definition.startTime = battleSequence.StartTime;
+                definition.endTime = battleSequence.EndTime;
+                LogBattleSequence(definition, battleSequence);
+            }
+            showcasePlaybackWindow =
+                CreateShowcasePlaybackWindow(
+                    trackStartTime,
+                    definition.startTime,
+                    transitionTime,
+                    definition.endTime,
+                    trackEndTime);
+            if (!showcasePlaybackWindow.IsValid)
+                return false;
+            if (!BuildPresentationPath(
+                    showcasePlaybackWindow.StartTime,
+                    showcasePlaybackWindow.EndTime))
+            {
+                return false;
+            }
+            motionEvent = CreateBattleMotionEvent(
                 definition,
-                transitionTime);
+                transitionTime,
+                battleSequence);
             eventCars.SetReplayEvents(
                 new[] { motionEvent });
+            eventCars.SetShowcaseBattle(battleSequence);
             eventCars.SetOvertakeApproachRibbon(
                 motionEvent,
                 player.overtakeApproachRibbon);
@@ -679,6 +1095,8 @@ namespace F1XR.RestAPI.Replay
                 player.overtakeCompletionVfx);
             eventCars.SetOvertakeCompletionVfx(
                 player.overtakeCompletionVfx);
+            ResetBattleVfxPlayback(
+                showcasePlaybackWindow.StartTime);
             sourceGeometryRevision++;
 
             GetPathFrame(out Vector3 center, out Quaternion sourceToLocalRotation);
@@ -828,6 +1246,94 @@ namespace F1XR.RestAPI.Replay
             return eventLongitudinals.Count > 0;
         }
 
+        private bool BuildPresentationPath(
+            float startTime,
+            float endTime)
+        {
+            presentationPath.Clear();
+            presentationPathDistances.Clear();
+            if (referenceDriverNumber <= 0 ||
+                !TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    startTime,
+                    out float startDistance) ||
+                !TryGetSourceLongitudinalAtTime(
+                    referenceDriverNumber,
+                    endTime,
+                    out float endDistance) ||
+                endDistance - startDistance <= 0.0001f)
+            {
+                return false;
+            }
+
+            presentationPath.Add(
+                EvaluateSourcePathDistance(startDistance));
+            presentationPathDistances.Add(startDistance);
+            for (int i = 1; i < mappedPath.Count - 1; i++)
+            {
+                float distance = mappedPathDistances[i];
+                if (distance <= startDistance ||
+                    distance >= endDistance)
+                {
+                    continue;
+                }
+
+                presentationPath.Add(mappedPath[i]);
+                presentationPathDistances.Add(distance);
+            }
+
+            presentationPath.Add(
+                EvaluateSourcePathDistance(endDistance));
+            presentationPathDistances.Add(endDistance);
+            return presentationPath.Count >= 3;
+        }
+
+        private ShowcasePlaybackWindow
+            CreateShowcasePlaybackWindow(
+                float loadedStartTime,
+                float startTime,
+                float focusTime,
+                float endTime,
+                float loadedEndTime)
+        {
+            if (endTime <= startTime ||
+                focusTime <= startTime ||
+                focusTime >= endTime)
+            {
+                return default;
+            }
+
+            float entryTime = startTime +
+                Mathf.Min(
+                    Mathf.Max(
+                        0f,
+                        showcaseEntryApproachSeconds),
+                    (focusTime - startTime) * 0.5f);
+            float exitTime = endTime -
+                Mathf.Min(
+                    Mathf.Max(
+                        0f,
+                        showcaseExitDepartureSeconds),
+                    (endTime - focusTime) * 0.5f);
+            float visualPadding = Mathf.Max(
+                0f,
+                showcasePortalVisualPaddingSeconds);
+            float portalVisualStartTime = Mathf.Max(
+                loadedStartTime,
+                startTime - visualPadding);
+            float portalVisualEndTime = Mathf.Min(
+                loadedEndTime,
+                endTime + visualPadding);
+            return new ShowcasePlaybackWindow(
+                portalVisualStartTime,
+                startTime,
+                entryTime,
+                focusTime,
+                exitTime,
+                endTime,
+                portalVisualEndTime);
+        }
+
         private float ProjectSourcePathDistance(
             Vector3 position,
             float minimumPathDistance,
@@ -870,7 +1376,7 @@ namespace F1XR.RestAPI.Replay
             return closestPathDistance;
         }
 
-        private bool TryGetSourceLongitudinalAtTime(
+        internal bool TryGetSourceLongitudinalAtTime(
             int driverNumber,
             float time,
             out float longitudinal)
@@ -959,10 +1465,62 @@ namespace F1XR.RestAPI.Replay
 
         private float ResolveOrderingTransitionTime()
         {
+            if (battleSequence != null && battleSequence.IsValid)
+                return battleSequence.FocusTime;
+
             return ResolveOrderingTransitionTime(
                 currentEvent,
                 timeline.StartTime,
                 timeline.RaceEndTime);
+        }
+
+        private float ResolveBattleReferenceVehicleLength(
+            ReplayEventDto definition)
+        {
+            int[] drivers = definition != null
+                ? definition.driverNumbers
+                : null;
+            if (drivers == null || drivers.Length < 2)
+                return 0.001f;
+
+            float length = 0f;
+            for (int i = 0; i < 2; i++)
+            {
+                if (eventCars.TryEnsureVisualSize(
+                        drivers[i],
+                        out _,
+                        out float visualLength))
+                {
+                    length = Mathf.Max(length, visualLength);
+                }
+            }
+
+            return Mathf.Max(0.001f, length);
+        }
+
+        private static void LogBattleSequence(
+            ReplayEventDto definition,
+            OvertakeBattleSequence sequence)
+        {
+            if (definition == null || sequence == null)
+                return;
+
+            string exchanges = string.Empty;
+            for (int i = 0; i < sequence.Exchanges.Count; i++)
+            {
+                OvertakeBattleExchange exchange =
+                    sequence.Exchanges[i];
+                if (i > 0)
+                    exchanges += ", ";
+                exchanges +=
+                    $"{exchange.overtaker}>{exchange.defender}@{exchange.anchorTime:0.000}";
+            }
+
+            Debug.Log(
+                $"[ShowcaseBattle] event={definition.eventId}, " +
+                $"reconstructed={sequence.Reconstructed}, " +
+                $"window={sequence.StartTime:0.000}-{sequence.EndTime:0.000}, " +
+                $"exchanges=[{exchanges}]");
         }
 
         private float ResolveOrderingTransitionTime(
@@ -1092,19 +1650,25 @@ namespace F1XR.RestAPI.Replay
             out Vector3 center,
             out Quaternion sourceToLocalRotation)
         {
-            Bounds bounds = new Bounds(mappedPath[0], Vector3.zero);
-            for (int i = 1; i < mappedPath.Count; i++)
-                bounds.Encapsulate(mappedPath[i]);
+            Bounds bounds = new Bounds(
+                presentationPath[0],
+                Vector3.zero);
+            for (int i = 1; i < presentationPath.Count; i++)
+                bounds.Encapsulate(presentationPath[i]);
 
             center = bounds.center;
-            Vector3 forward = mappedPath[mappedPath.Count - 1] - mappedPath[0];
+            Vector3 forward =
+                presentationPath[presentationPath.Count - 1] -
+                presentationPath[0];
             forward.y = 0f;
 
             if (forward.sqrMagnitude < 0.000001f)
             {
-                for (int i = 1; i < mappedPath.Count; i++)
+                for (int i = 1; i < presentationPath.Count; i++)
                 {
-                    Vector3 candidate = mappedPath[i] - mappedPath[i - 1];
+                    Vector3 candidate =
+                        presentationPath[i] -
+                        presentationPath[i - 1];
                     candidate.y = 0f;
                     if (candidate.sqrMagnitude > forward.sqrMagnitude)
                         forward = candidate;
@@ -1167,14 +1731,16 @@ namespace F1XR.RestAPI.Replay
             Vector3 center,
             Quaternion sourceToLocalRotation)
         {
-            int count = mappedPath.Count;
+            int count = presentationPath.Count;
             Vector3[] vertices = new Vector3[count * 2];
             Vector2[] uv = new Vector2[count * 2];
             int[] triangles = new int[(count - 1) * 6];
             Vector3[] localPath = new Vector3[count];
 
             for (int i = 0; i < count; i++)
-                localPath[i] = sourceToLocalRotation * (mappedPath[i] - center);
+                localPath[i] =
+                    sourceToLocalRotation *
+                    (presentationPath[i] - center);
 
             ExtendRoadEnd(localPath);
 
@@ -1250,7 +1816,7 @@ namespace F1XR.RestAPI.Replay
             bool created = trackSegment.Build(
                 stageRoot.transform,
                 player.GetTrackPlacementTransform(),
-                mappedPath,
+                presentationPath,
                 center,
                 sourceToLocalRotation,
                 effectivePadding,
@@ -1318,11 +1884,11 @@ namespace F1XR.RestAPI.Replay
             Quaternion sourceToLocalRotation)
         {
             safetyApronPath.Clear();
-            for (int i = 0; i < mappedPath.Count; i++)
+            for (int i = 0; i < presentationPath.Count; i++)
             {
                 safetyApronPath.Add(
                     sourceToLocalRotation *
-                    (mappedPath[i] - center));
+                    (presentationPath[i] - center));
             }
         }
 
@@ -1364,14 +1930,29 @@ namespace F1XR.RestAPI.Replay
                     vehicleWidth,
                     drivableLeftEdge,
                     drivableRightEdge);
-            if (hasDrivableEdges)
+            bool hasReliableRoadEdges =
+                !hasDrivableEdges &&
+                trackSegment.TryBuildReliableRoadEdges(
+                    safetyApronPath,
+                    vehicleWidth,
+                    drivableLeftEdge,
+                    drivableRightEdge);
+            if (hasDrivableEdges ||
+                hasReliableRoadEdges)
             {
                 eventCars.SetActualOvertakeCorridor(
                     safetyApronPath,
                     drivableLeftEdge,
                     drivableRightEdge,
                     false);
+                eventCars.ResetResolvedOvertakeSides();
                 ApplyCars();
+                if (hasReliableRoadEdges)
+                {
+                    Debug.LogWarning(
+                        "[EventReplay] Drivable-only boundaries were incomplete; overtake motion is using detected road-surface boundaries.",
+                        this);
+                }
             }
             else
             {
@@ -1428,7 +2009,7 @@ namespace F1XR.RestAPI.Replay
                     safetyApronRightEdge[i];
                 float extensionWeight =
                     SafetyApronExtensionWeight(
-                        mappedPathDistances[i],
+                        presentationPathDistances[i],
                         motionStartDistance,
                         approachEndDistance,
                         returnStartDistance,
@@ -1524,6 +2105,37 @@ namespace F1XR.RestAPI.Replay
                 referenceDriverNumber <= 0)
             {
                 return false;
+            }
+
+            if (battleSequence != null &&
+                battleSequence.IsValid &&
+                battleSequence.Exchanges.Count > 0)
+            {
+                OvertakeBattleExchange firstExchange =
+                    battleSequence.Exchanges[0];
+                OvertakeBattleExchange finalExchange =
+                    battleSequence.Exchanges[
+                        battleSequence.Exchanges.Count - 1];
+                float battleReturnStart = Mathf.Max(
+                    finalExchange.anchorTime,
+                    finalExchange.confirmedTime);
+                return TryGetSourceLongitudinalAtTime(
+                        referenceDriverNumber,
+                        battleSequence.MotionStartTime,
+                        out motionStart) &&
+                    TryGetSourceLongitudinalAtTime(
+                        referenceDriverNumber,
+                        firstExchange.anchorTime,
+                        out approachEnd) &&
+                    TryGetSourceLongitudinalAtTime(
+                        referenceDriverNumber,
+                        battleReturnStart,
+                        out returnStart) &&
+                    TryGetSourceLongitudinalAtTime(
+                        referenceDriverNumber,
+                        battleSequence.EndTime,
+                        out motionEnd) &&
+                    motionEnd - motionStart > 0.0001f;
             }
 
             float duration =
@@ -1626,10 +2238,11 @@ namespace F1XR.RestAPI.Replay
         private float ResolveTrackRegionPadding()
         {
             float pathLength = 0f;
-            for (int i = 1; i < mappedPath.Count; i++)
+            for (int i = 1; i < presentationPath.Count; i++)
             {
                 Vector3 segment =
-                    mappedPath[i] - mappedPath[i - 1];
+                    presentationPath[i] -
+                    presentationPath[i - 1];
                 segment.y = 0f;
                 pathLength += segment.magnitude;
             }
@@ -1686,6 +2299,9 @@ namespace F1XR.RestAPI.Replay
             bounds.Expand(new Vector3(0f, 0.04f, 0f));
             collider.center = bounds.center;
             collider.size = bounds.size;
+            stageInteractionDefaultCenter = collider.center;
+            stageInteractionDefaultSize = collider.size;
+            stageInteractionDefaultsCaptured = true;
 
             Rigidbody body = stageRoot.AddComponent<Rigidbody>();
             body.isKinematic = true;
@@ -1729,6 +2345,12 @@ namespace F1XR.RestAPI.Replay
         private void UpdateOvertakeCompletion(
             float replayTime)
         {
+            if (battleSequence != null && battleSequence.IsValid)
+            {
+                UpdateBattleVfxPlayback(replayTime);
+                return;
+            }
+
             int[] drivers = motionEvent != null
                 ? motionEvent.driverNumbers
                 : null;
@@ -1789,6 +2411,164 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
+        private void UpdateBattleVfxPlayback(float replayTime)
+        {
+            if (battleSequence == null ||
+                !battleSequence.IsValid ||
+                eventCars == null)
+            {
+                return;
+            }
+
+            bool hasPrevious =
+                !float.IsNaN(lastBattleVfxReplayTime);
+            float seekThreshold =
+                player != null &&
+                player.overtakeCompletionVfx != null
+                    ? Mathf.Max(
+                        0.05f,
+                        player.overtakeCompletionVfx
+                            .seekResetThresholdSeconds)
+                    : 0.5f;
+            bool discontinuity = hasPrevious &&
+                (replayTime < lastBattleVfxReplayTime ||
+                 replayTime - lastBattleVfxReplayTime >
+                 seekThreshold);
+            if (!hasPrevious || discontinuity)
+            {
+                ResetBattleVfxPlayback(replayTime);
+                return;
+            }
+
+            while (nextBattleExchangeIndex <
+                       battleSequence.Exchanges.Count &&
+                   battleSequence.Exchanges[
+                           nextBattleExchangeIndex]
+                       .anchorTime <= replayTime)
+            {
+                OvertakeBattleExchange exchange =
+                    battleSequence.Exchanges[
+                        nextBattleExchangeIndex];
+                if (exchange.anchorTime >
+                    lastBattleVfxReplayTime + 0.0001f)
+                {
+                    TriggerBattleExchangeVfx(
+                        exchange,
+                        nextBattleExchangeIndex,
+                        replayTime);
+                }
+
+                nextBattleExchangeIndex++;
+            }
+
+            OvertakeBattleExchange finalExchange =
+                battleSequence.Exchanges[
+                    battleSequence.Exchanges.Count - 1];
+            float finalConfirmationTime = Mathf.Max(
+                finalExchange.anchorTime,
+                finalExchange.confirmedTime);
+            if (replayTime >= finalConfirmationTime)
+                battleCompletionConfirmed = true;
+
+            float victoryTime =
+                finalConfirmationTime +
+                Mathf.Max(0f, battleVictoryDelaySeconds);
+            if (!battleVictoryTriggered &&
+                replayTime >= victoryTime &&
+                lastBattleVfxReplayTime < victoryTime)
+            {
+                battleVictoryTriggered = true;
+                string winner = eventCars.GetDriverLabel(
+                    battleSequence.FinalLeader);
+                eventCars.TriggerOvertakeCompletionVfx(
+                    battleSequence.FinalLeader,
+                    replayTime,
+                    $"BATTLE WON\n{winner}",
+                    1.4f,
+                    OvertakeCompletionVfxProfile.Victory);
+            }
+
+            lastBattleVfxReplayTime = replayTime;
+        }
+
+        private void TriggerBattleExchangeVfx(
+            OvertakeBattleExchange exchange,
+            int exchangeIndex,
+            float replayTime)
+        {
+            string driver = eventCars.GetDriverLabel(
+                exchange.overtaker);
+            string text;
+            float intensity;
+            OvertakeCompletionVfxProfile profile;
+            switch (exchange.kind)
+            {
+                case OvertakeBattleExchangeKind.Counter:
+                    text = $"{driver}\nCOUNTER";
+                    intensity = 1.12f;
+                    profile =
+                        OvertakeCompletionVfxProfile.Counter;
+                    break;
+                case OvertakeBattleExchangeKind.Repass:
+                    text =
+                        $"{driver}\nREPASS ×{exchangeIndex}";
+                    intensity = Mathf.Min(
+                        1.35f,
+                        1.18f + exchangeIndex * 0.05f);
+                    profile =
+                        OvertakeCompletionVfxProfile.Repass;
+                    break;
+                default:
+                    text = $"{driver}\nPASS";
+                    intensity = 1f;
+                    profile =
+                        OvertakeCompletionVfxProfile.Standard;
+                    break;
+            }
+
+            eventCars.TriggerOvertakeCompletionVfx(
+                exchange.overtaker,
+                replayTime,
+                text,
+                intensity,
+                profile);
+        }
+
+        private void ResetBattleVfxPlayback(float replayTime)
+        {
+            nextBattleExchangeIndex = 0;
+            battleCompletionConfirmed = false;
+            battleVictoryTriggered = false;
+            lastBattleVfxReplayTime = replayTime;
+            eventCars?.ResetOvertakeCompletionVfx();
+            if (battleSequence == null ||
+                !battleSequence.IsValid)
+            {
+                return;
+            }
+
+            while (nextBattleExchangeIndex <
+                       battleSequence.Exchanges.Count &&
+                   battleSequence.Exchanges[
+                           nextBattleExchangeIndex]
+                       .anchorTime <= replayTime)
+            {
+                nextBattleExchangeIndex++;
+            }
+
+            OvertakeBattleExchange finalExchange =
+                battleSequence.Exchanges[
+                    battleSequence.Exchanges.Count - 1];
+            float finalConfirmationTime = Mathf.Max(
+                finalExchange.anchorTime,
+                finalExchange.confirmedTime);
+            battleCompletionConfirmed =
+                replayTime >= finalConfirmationTime;
+            battleVictoryTriggered =
+                replayTime >= finalConfirmationTime +
+                Mathf.Max(0f, battleVictoryDelaySeconds);
+        }
+
         private void ResetIndices()
         {
             if (eventDrivers.Count == 0)
@@ -1818,11 +2598,20 @@ namespace F1XR.RestAPI.Replay
         {
             if (restoreTableTrack)
                 RestoreTableTrackRendering();
+
+            if (stageRoot != null)
+                stageRoot.SetActive(false);
+
             isLoading = false;
             isActive = false;
             timeline.Pause();
             eventAudio?.Clear();
             completionDetector.Reset();
+            nextBattleExchangeIndex = 0;
+            lastBattleVfxReplayTime = float.NaN;
+            battleCompletionConfirmed = false;
+            battleVictoryTriggered = false;
+            showcasePlaybackWindow = default;
             eventCars?.Clear();
             eventAudio = null;
             eventCars = null;
@@ -1845,6 +2634,9 @@ namespace F1XR.RestAPI.Replay
 
             stageRoot = null;
             stageInteractionCollider = null;
+            stageInteractionDefaultCenter = Vector3.zero;
+            stageInteractionDefaultSize = Vector3.zero;
+            stageInteractionDefaultsCaptured = false;
             trackSegment = null;
             roadMesh = null;
             leftRoadEdge = null;
@@ -1855,6 +2647,7 @@ namespace F1XR.RestAPI.Replay
             safetyApronMaterial = null;
             currentEvent = null;
             motionEvent = null;
+            battleSequence = null;
             eventOvertakeSettings = null;
             eventSamples.Clear();
             eventIndices.Clear();
@@ -1862,6 +2655,8 @@ namespace F1XR.RestAPI.Replay
             referenceDriverNumber = 0;
             mappedPath.Clear();
             mappedPathDistances.Clear();
+            presentationPath.Clear();
+            presentationPathDistances.Clear();
             fallbackCorridorPath.Clear();
             safetyApronPath.Clear();
             safetyApronLeftEdge.Clear();
@@ -1975,6 +2770,61 @@ namespace F1XR.RestAPI.Replay
                 sideSource = source.sideSource,
                 sideConfidence = source.sideConfidence,
                 motionProfile = source.motionProfile,
+                overtakerShare = source.overtakerShare,
+                defenderShare = source.defenderShare
+            };
+        }
+
+        private ReplayEventDto CreateBattleMotionEvent(
+            ReplayEventDto source,
+            float transitionTime,
+            OvertakeBattleSequence sequence)
+        {
+            if (sequence == null ||
+                !sequence.IsValid ||
+                sequence.Exchanges.Count == 0)
+            {
+                return CreateMotionEvent(
+                    source,
+                    transitionTime);
+            }
+
+            OvertakeBattleExchange firstExchange =
+                sequence.Exchanges[0];
+            bool sourceDirectionMatches =
+                source.driverNumbers != null &&
+                source.driverNumbers.Length >= 2 &&
+                source.driverNumbers[0] ==
+                    firstExchange.overtaker &&
+                source.driverNumbers[1] ==
+                    firstExchange.defender;
+            return new ReplayEventDto
+            {
+                eventId = source.eventId + "_battle",
+                eventType = source.eventType,
+                anchorTime = firstExchange.anchorTime,
+                startTime = sequence.MotionStartTime,
+                endTime = sequence.EndTime,
+                driverNumbers = new[]
+                {
+                    firstExchange.overtaker,
+                    firstExchange.defender
+                },
+                progressStart = source.progressStart,
+                progressEnd = source.progressEnd,
+                confidence = source.confidence,
+                displayTitle = source.displayTitle,
+                displayDescription = source.displayDescription,
+                passingSide = sourceDirectionMatches
+                    ? source.passingSide
+                    : null,
+                sideSource = sourceDirectionMatches
+                    ? source.sideSource
+                    : "BattleContinuity",
+                sideConfidence = sourceDirectionMatches
+                    ? source.sideConfidence
+                    : 0f,
+                motionProfile = "ShowcaseBattle",
                 overtakerShare = source.overtakerShare,
                 defenderShare = source.defenderShare
             };
@@ -2252,6 +3102,64 @@ namespace F1XR.RestAPI.Replay
             }
 
             return closest;
+        }
+
+        private bool TryFindNextOvertake(
+            out ReplayEventDto next)
+        {
+            next = null;
+            ReplayEventDto[] events =
+                player != null ? player.Events : null;
+            if (events == null || events.Length == 0)
+                return false;
+
+            float minimumAnchorTime =
+                ResolveEarliestAutomaticOvertakeAnchor();
+            float currentAnchor = currentEvent != null
+                ? currentEvent.anchorTime
+                : player.CurrentTime;
+            string currentId = currentEvent != null
+                ? currentEvent.eventId
+                : string.Empty;
+
+            for (int i = 0; i < events.Length; i++)
+            {
+                ReplayEventDto candidate = events[i];
+                if (candidate == null ||
+                    !string.Equals(
+                        candidate.eventType,
+                        "Overtake",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    candidate.anchorTime < minimumAnchorTime)
+                {
+                    continue;
+                }
+
+                bool followsCurrent =
+                    candidate.anchorTime > currentAnchor + 0.0001f ||
+                    Mathf.Approximately(
+                        candidate.anchorTime,
+                        currentAnchor) &&
+                    string.CompareOrdinal(
+                        candidate.eventId,
+                        currentId) > 0;
+                if (!followsCurrent)
+                    continue;
+
+                if (next == null ||
+                    candidate.anchorTime < next.anchorTime ||
+                    Mathf.Approximately(
+                        candidate.anchorTime,
+                        next.anchorTime) &&
+                    string.CompareOrdinal(
+                        candidate.eventId,
+                        next.eventId) < 0)
+                {
+                    next = candidate;
+                }
+            }
+
+            return next != null;
         }
 
         private static List<LocationSample> CopyRange(

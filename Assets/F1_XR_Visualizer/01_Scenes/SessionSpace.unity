@@ -870,8 +870,9 @@ MonoBehaviour:
   entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
   roadFloorOffset: 0.02
-  showcaseVehicleScale: 1.3
-  showcasePlaybackSpeedMultiplier: 2
+  showcaseTrackScaleMultiplier: 1.15
+  showcaseVehicleScale: 0.7
+  showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
   overtakePortalTransitionVfx:
     enabled: 1
@@ -2973,6 +2974,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1705380155}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  carLabelFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
   teamCarPrefabs:
   - teamName: Alfa Romeo
     prefab: {fileID: 4614466437777478188, guid: f0daaf1c8ae548c68c1f76995c3a015e, type: 3}

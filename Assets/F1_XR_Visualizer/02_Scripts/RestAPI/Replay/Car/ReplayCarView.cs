@@ -11,7 +11,8 @@ namespace F1XR.RestAPI.Replay
         private Transform logicalRoot;
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation = Quaternion.identity;
-        private Vector3 roomPresentationLocalPosition;
+        private Vector3 visualMotionLocalOffset;
+        private Vector3 drivingPresentationLocalOffset;
         private Vector3 roomPresentationLocalScale;
         private bool roomPresentationApplied;
         private bool visualMotionApplied;
@@ -27,6 +28,8 @@ namespace F1XR.RestAPI.Replay
             logicalRoot = root;
             visualBasePosition = transform.localPosition;
             visualBaseRotation = transform.localRotation;
+            visualMotionLocalOffset = Vector3.zero;
+            drivingPresentationLocalOffset = Vector3.zero;
             visualMotionApplied = false;
         }
 
@@ -59,8 +62,9 @@ namespace F1XR.RestAPI.Replay
 
             ClearRoomPresentation();
             visualMotionApplied = true;
-            transform.localPosition =
-                visualBasePosition + LogicalRoot.InverseTransformVector(worldOffset);
+            visualMotionLocalOffset =
+                LogicalRoot.InverseTransformVector(worldOffset);
+            ApplyVisualLocalPosition();
             transform.localRotation =
                 Quaternion.AngleAxis(localYaw, Vector3.up) * visualBaseRotation;
         }
@@ -70,13 +74,29 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
-            if (!visualMotionApplied)
+            if (!visualMotionApplied &&
+                visualMotionLocalOffset.sqrMagnitude <= 0.000001f)
                 return;
 
             ClearRoomPresentation();
-            transform.localPosition = visualBasePosition;
+            visualMotionLocalOffset = Vector3.zero;
+            ApplyVisualLocalPosition();
             transform.localRotation = visualBaseRotation;
             visualMotionApplied = false;
+        }
+
+        internal void SetDrivingPresentationLocalOffset(Vector3 offset)
+        {
+            drivingPresentationLocalOffset = offset;
+            ApplyVisualLocalPosition();
+        }
+
+        private void ApplyVisualLocalPosition()
+        {
+            transform.localPosition =
+                visualBasePosition +
+                visualMotionLocalOffset +
+                drivingPresentationLocalOffset;
         }
 
         public void ApplyRoomPresentation(
@@ -85,20 +105,13 @@ namespace F1XR.RestAPI.Replay
         {
             ClearRoomPresentation();
 
-            scale = Mathf.Max(1f, scale);
-            if (scale <= 1.0001f)
+            scale = Mathf.Max(0.01f, scale);
+            if (Mathf.Approximately(scale, 1f))
                 return;
 
-            roomPresentationLocalPosition = transform.localPosition;
             roomPresentationLocalScale = transform.localScale;
             roomPresentationApplied = true;
 
-            Vector3 worldPosition = transform.position;
-            Vector3 planarOffset = worldPosition - worldAnchor;
-            planarOffset.y = 0f;
-            transform.position =
-                worldPosition +
-                planarOffset * (scale - 1f);
             transform.localScale =
                 roomPresentationLocalScale * scale;
             MarkVisualLayoutDirty();
@@ -109,8 +122,6 @@ namespace F1XR.RestAPI.Replay
             if (!roomPresentationApplied)
                 return;
 
-            transform.localPosition =
-                roomPresentationLocalPosition;
             transform.localScale =
                 roomPresentationLocalScale;
             roomPresentationApplied = false;

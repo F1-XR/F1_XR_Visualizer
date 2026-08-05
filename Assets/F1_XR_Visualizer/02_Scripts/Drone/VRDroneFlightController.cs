@@ -17,6 +17,7 @@ namespace F1XR.Drone
         [SerializeField, Min(1f)] float yawAcceleration = 180f;
         [SerializeField, Min(1f)] float yawDeceleration = 270f;
         [SerializeField, Range(0f, 0.9f)] float deadzone = 0.15f;
+        [SerializeField, Min(0.25f)] float exitHoldDuration = 1f;
 
         readonly List<InputDevice> inputDevices = new();
 
@@ -24,6 +25,7 @@ namespace F1XR.Drone
         Vector3 horizontalVelocity;
         float verticalVelocity;
         float yawVelocity;
+        float exitHoldTime;
         public void Configure(VRDroneCoordinator value)
         {
             coordinator = value;
@@ -34,11 +36,15 @@ namespace F1XR.Drone
             horizontalVelocity = Vector3.zero;
             verticalVelocity = 0f;
             yawVelocity = 0f;
+            exitHoldTime = 0f;
         }
 
         void Update()
         {
             if (coordinator == null || !coordinator.IsVrActive)
+                return;
+
+            if (UpdateExitHold())
                 return;
 
             Vector2 leftStick = ReadThumbstick(XRNode.LeftHand);
@@ -82,6 +88,25 @@ namespace F1XR.Drone
             Vector3 movement = horizontalVelocity * Time.deltaTime;
             movement.y = verticalVelocity * Time.deltaTime;
             coordinator.ApplyDroneMotion(movement, yawVelocity * Time.deltaTime);
+        }
+
+        bool UpdateExitHold()
+        {
+            if (!ReadButton(XRNode.RightHand, CommonUsages.secondaryButton))
+            {
+                exitHoldTime = 0f;
+                coordinator.SetExitHoldProgress(0f);
+                return false;
+            }
+
+            exitHoldTime += Time.deltaTime;
+            coordinator.SetExitHoldProgress(exitHoldTime / exitHoldDuration);
+            if (exitHoldTime < exitHoldDuration)
+                return false;
+
+            exitHoldTime = 0f;
+            coordinator.ExitVr();
+            return true;
         }
 
         Vector3 MoveVelocity(
@@ -150,6 +175,20 @@ namespace F1XR.Drone
             }
 
             return 0f;
+        }
+
+        bool ReadButton(XRNode node, InputFeatureUsage<bool> button)
+        {
+            inputDevices.Clear();
+            InputDevices.GetDevicesAtXRNode(node, inputDevices);
+
+            foreach (InputDevice device in inputDevices)
+            {
+                if (device.TryGetFeatureValue(button, out bool value))
+                    return value;
+            }
+
+            return false;
         }
     }
 }

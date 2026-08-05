@@ -8,6 +8,7 @@ namespace F1XR.RestAPI.Replay
     {
         private const int MaxPathSamples = 48;
         private const float MinimumSurfaceNormalY = 0.35f;
+        private const float MinimumReliableEdgeCoverage = 0.7f;
 
         private readonly List<Mesh> meshes = new();
         private readonly List<RoadTriangle> roadTriangles = new();
@@ -42,9 +43,9 @@ namespace F1XR.RestAPI.Replay
                 sourcePath,
                 sourceCenter,
                 sourceToLocalRotation);
-            float[] highestSurfaceY = new float[localPath.Length];
-            for (int i = 0; i < highestSurfaceY.Length; i++)
-                highestSurfaceY[i] = float.NegativeInfinity;
+            float[] nearestSurfaceY = new float[localPath.Length];
+            for (int i = 0; i < nearestSurfaceY.Length; i++)
+                nearestSurfaceY[i] = float.NegativeInfinity;
 
             int triangleCount = 0;
             foreach (MeshFilter filter in visualRoot.GetComponentsInChildren<MeshFilter>(true))
@@ -61,14 +62,14 @@ namespace F1XR.RestAPI.Replay
                     stageBounds,
                     localPath,
                     padding,
-                    highestSurfaceY);
+                    nearestSurfaceY);
             }
 
             if (triangleCount > 0)
             {
                 float surfaceOffset = FindMedianSurfaceOffset(
                     localPath,
-                    highestSurfaceY);
+                    nearestSurfaceY);
                 segmentRoot.transform.localPosition = Vector3.up * surfaceOffset;
 
                 Bounds copiedBounds = meshes[0].bounds;
@@ -134,6 +135,22 @@ namespace F1XR.RestAPI.Replay
                 rightEdges);
         }
 
+        public bool TryBuildReliableRoadEdges(
+            IReadOnlyList<Vector3> path,
+            float vehicleWidth,
+            List<Vector3> leftEdges,
+            List<Vector3> rightEdges)
+        {
+            return TryBuildEdges(
+                path,
+                vehicleWidth,
+                roadTriangles,
+                "Reliable road surface",
+                true,
+                leftEdges,
+                rightEdges);
+        }
+
         private bool TryBuildEdges(
             IReadOnlyList<Vector3> path,
             float vehicleWidth,
@@ -183,9 +200,12 @@ namespace F1XR.RestAPI.Replay
             Debug.Log(
                 $"[EventTrackSegment] {label} road-edge samples=" +
                 $"{detected}/{path.Count}.");
+            float coverage =
+                detected /
+                (float)path.Count;
             if (detected == 0 ||
                 requireCompleteCoverage &&
-                detected != path.Count)
+                coverage < MinimumReliableEdgeCoverage)
             {
                 leftEdges.Clear();
                 rightEdges.Clear();
@@ -308,7 +328,7 @@ namespace F1XR.RestAPI.Replay
             Bounds clipBounds,
             IReadOnlyList<Vector3> localPath,
             float padding,
-            float[] highestSurfaceY)
+            float[] nearestSurfaceY)
         {
             Mesh source = sourceFilter.sharedMesh;
             Vector3[] sourceVertices = source.vertices;
@@ -386,12 +406,12 @@ namespace F1XR.RestAPI.Replay
                             padding))
                         continue;
 
-                    RecordSurfaceHeights(
+                    RecordNearestSurfaceHeights(
                         positions[a],
                         positions[b],
                         positions[c],
                         localPath,
-                        highestSurfaceY);
+                        nearestSurfaceY);
                     if (isRoadSurface)
                     {
                         RecordRoadTriangle(
@@ -859,12 +879,12 @@ namespace F1XR.RestAPI.Replay
             return samples.ToArray();
         }
 
-        private static void RecordSurfaceHeights(
+        private static void RecordNearestSurfaceHeights(
             Vector3 a,
             Vector3 b,
             Vector3 c,
             IReadOnlyList<Vector3> samples,
-            float[] highestSurfaceY)
+            float[] nearestSurfaceY)
         {
             Vector3 normal = Vector3.Cross(b - a, c - a);
             if (normal.sqrMagnitude <= 0.00000001f ||
@@ -877,7 +897,12 @@ namespace F1XR.RestAPI.Replay
                 if (!TryGetSurfaceY(sample, a, b, c, out float surfaceY))
                     continue;
 
-                highestSurfaceY[i] = Mathf.Max(highestSurfaceY[i], surfaceY);
+                if (float.IsNegativeInfinity(nearestSurfaceY[i]) ||
+                    Mathf.Abs(sample.y - surfaceY) <
+                    Mathf.Abs(sample.y - nearestSurfaceY[i]))
+                {
+                    nearestSurfaceY[i] = surfaceY;
+                }
             }
         }
 
@@ -916,13 +941,13 @@ namespace F1XR.RestAPI.Replay
 
         private static float FindMedianSurfaceOffset(
             IReadOnlyList<Vector3> samples,
-            IReadOnlyList<float> highestSurfaceY)
+            IReadOnlyList<float> nearestSurfaceY)
         {
             List<float> found = new(samples.Count);
             for (int i = 0; i < samples.Count; i++)
             {
-                if (!float.IsNegativeInfinity(highestSurfaceY[i]))
-                    found.Add(samples[i].y - highestSurfaceY[i]);
+                if (!float.IsNegativeInfinity(nearestSurfaceY[i]))
+                    found.Add(samples[i].y - nearestSurfaceY[i]);
             }
 
             if (found.Count == 0)

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Profiling;
+using TMPro;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Utility;
 using F1XR.RestAPI.Replay.Playback;
@@ -28,6 +29,7 @@ namespace F1XR.RestAPI.Replay
 
         public ApiClient api;
         public GameObject carPrefab;
+        public TMP_FontAsset carLabelFont;
         public TeamCarPrefab[] teamCarPrefabs;
         public ARPlanePlacementController placement;
         public TrackCalibration trackCalibration;
