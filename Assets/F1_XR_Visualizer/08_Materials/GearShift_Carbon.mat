@@ -21,7 +21,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: GearShift_Carbon
-  m_Shader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
+  m_Shader: {fileID: 4800000, guid: 7b3e9c1d5a2f4e88b6c0d9a1f2e34c57, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
@@ -44,7 +44,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BumpMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 36fbe3e0064aa8147ae2522ea5ba91f7, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
@@ -59,12 +59,20 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _EdgeMask:
+        m_Texture: {fileID: 2800000, guid: f9cca3c926431f54381381731b82efba, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _EmissionMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MaskMap:
+        m_Texture: {fileID: 2800000, guid: c45be7e788dd73d469b98fed439157de, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -102,37 +110,74 @@ Material:
     - _AlphaToMask: 0
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
-    - _BumpScale: 1
+    - _BulbFresnelBoost: 0.7
+    - _BulbPanelAngle: 0
+    - _BulbSoft: 0.05
+    - _BulbStart: 0.68
+    - _BumpScale: 0.5
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _Cull: 2
+    - _CurvScale: 1.15
     - _Cutoff: 0.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
+    - _EdgeContrast: 7
+    - _EdgeEmission: 0.05
+    - _EdgeGain: 2.6
+    - _EdgeMax: 0.3
+    - _EdgeMin: 0.07
+    - _EdgeSmoothness: 0.96
+    - _EdgeThreshold: 0.5
+    - _EdgeWidthComp: 1
     - _EnvironmentReflections: 1
+    - _FresnelIntensity: 0.05
+    - _FresnelPower: 6
+    - _GlassBulbAmount: 1
+    - _GlassShaftAmount: 0.9
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _Metallic: 0.9
+    - _MaskRotation: 0
+    - _Metallic: 0.05
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _Smoothness: 0.72
+    - _RimIntensity: 0.8
+    - _RimPower: 5
+    - _SeamCount: 4
+    - _SeamEmission: 0.35
+    - _SeamIntensity: 0.4
+    - _SeamWidth: 0.012
+    - _ShellSoft: 0.15
+    - _ShellStart: 0.32
+    - _Smoothness: 0.94
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
+    - _ThicknessGlow: 0.85
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1
+    - _ZoneSoft: 0.04
     m_Colors:
-    - _BaseColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 1}
+    - _BandA: {r: 0.022, g: 0.0018, b: 0.0012, a: 1}
+    - _BandB: {r: 0.182, g: 0.034, b: 0.01, a: 1}
+    - _BandC: {r: 0.578, g: 0.01, b: 0.006, a: 1}
+    - _BandD: {r: 0.05, g: 0.0018, b: 0.0012, a: 1}
+    - _BaseColor: {r: 0.022, g: 0.022, b: 0.025, a: 1}
     - _Color: {r: 0.043137237, g: 0.043137237, b: 0.050980374, a: 1}
-    - _EmissionColor: {r: 0.015, g: 0.0004, b: 0.0005, a: 1}
+    - _EdgeColor: {r: 0.42, g: 0.01, b: 0.004, a: 1}
+    - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _GlassBulb: {r: 0.66, g: 0.88, b: 0.3, a: 0.48}
+    - _GlassLine: {r: 0.03, g: 1, b: 0.45, a: 0}
+    - _GlassShaft: {r: 0.27, g: 0.58, b: 0.72, a: 0.9}
+    - _RimColor: {r: 0.35, g: 0.005, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
