@@ -195,6 +195,21 @@ namespace F1XR.RestAPI.Replay
             string hudText,
             float intensityScale)
         {
+            TriggerOvertakeCompletionVfx(
+                driver,
+                replayTime,
+                hudText,
+                intensityScale,
+                OvertakeCompletionVfxProfile.Standard);
+        }
+
+        public void TriggerOvertakeCompletionVfx(
+            int driver,
+            float replayTime,
+            string hudText,
+            float intensityScale,
+            OvertakeCompletionVfxProfile profile)
+        {
             if (completionVfxSettings == null ||
                 !completionVfxSettings.enabled ||
                 !carInstances.Cars.TryGetValue(
@@ -211,7 +226,8 @@ namespace F1XR.RestAPI.Replay
                 completionVfxSettings,
                 replayTime,
                 hudText,
-                intensityScale);
+                intensityScale,
+                profile);
         }
 
         public void UpdateOvertakeCompletionVfx(
@@ -250,6 +266,8 @@ namespace F1XR.RestAPI.Replay
             OvertakePresentationMode mode)
         {
             overtakeMotion.SetPresentationMode(mode);
+            carMotion.SetShowcaseHeadingSmoothing(
+                mode == OvertakePresentationMode.Showcase);
         }
 
         internal void SetShowcaseBattle(
@@ -360,10 +378,12 @@ namespace F1XR.RestAPI.Replay
                 ResolvePoseMarker.Begin();
                 carMotion.ResolvePose(
                     car,
+                    list[Mathf.Max(0, index - 2)],
                     list[Mathf.Max(0, index - 1)],
                     list[index],
                     list[index + 1],
                     list[Mathf.Min(list.Count - 1, index + 2)],
+                    list[Mathf.Min(list.Count - 1, index + 3)],
                     time,
                     out ReplayCarPose pose,
                     out float interpolation,
@@ -531,6 +551,7 @@ namespace F1XR.RestAPI.Replay
 
         private void SetupCar(int driver, ReplayCarView car)
         {
+            car.SetLabelFont(player != null ? player.carLabelFont : null);
             carPresentation.SetupCar(driver, car);
             car.ConfigureDrivingPresentation();
             car.ConfigureRenderLod();
@@ -1287,6 +1308,18 @@ namespace F1XR.RestAPI.Replay
                 parent,
                 sourceOrigin,
                 sourceToLocalRotation);
+        }
+
+        internal void SetWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            carMotion.SetWorldPoseOverride(resolver);
+        }
+
+        internal void ClearWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            carMotion.ClearWorldPoseOverride(resolver);
         }
 
         public bool TryGetMappedPosition(

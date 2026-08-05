@@ -5,6 +5,7 @@ using F1XR.RestAPI.Replay.Track.Build;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.Serialization;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace F1XR.Drone
@@ -15,6 +16,9 @@ namespace F1XR.Drone
         const string EnvironmentName = "VRDroneEnvironment";
 
         [SerializeField, Min(1f)] float vrScaleMultiplier = 1000f;
+        [Header("Debug")]
+        [SerializeField, FormerlySerializedAs("showGrabVolumeVisual")]
+        bool showGrabRange;
 
         TrackRevealPlacer trackPlacer;
         XROrigin xrOrigin;
@@ -40,6 +44,7 @@ namespace F1XR.Drone
         Color savedBackgroundColor;
         bool savedPassthroughActive;
         bool savedTrackEditMode;
+        bool appliedShowGrabVolumeVisual;
         bool isVrActive;
         Scene hostScene;
         bool hasHostScene;
@@ -67,6 +72,15 @@ namespace F1XR.Drone
             StartCoroutine(Initialize());
         }
 
+        void Update()
+        {
+            if (showGrabRange == appliedShowGrabVolumeVisual)
+                return;
+
+            appliedShowGrabVolumeVisual = showGrabRange;
+            cubeSpawner?.SetGrabVolumeVisual(showGrabRange);
+        }
+
         void OnDestroy()
         {
             if (cubeSpawner != null)
@@ -82,7 +96,11 @@ namespace F1XR.Drone
             if (cubeSpawner == null)
                 cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
 
-            cubeSpawner.Configure(trackPlacer, xrCamera.transform);
+            cubeSpawner.Configure(
+                trackPlacer,
+                xrCamera.transform,
+                showGrabRange);
+            appliedShowGrabVolumeVisual = showGrabRange;
             cubeSpawner.CubeReleased -= EnterVr;
             cubeSpawner.CubeReleased += EnterVr;
 

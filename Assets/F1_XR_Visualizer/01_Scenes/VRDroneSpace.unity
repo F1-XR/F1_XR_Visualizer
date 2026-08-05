@@ -194,6 +194,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Drone.VRDroneCoordinator
   vrScaleMultiplier: 1000
   exitUiDistance: 1.2
+  showGrabVolumeVisual: 1
 --- !u!114 &2003
 MonoBehaviour:
   m_ObjectHideFlags: 0
