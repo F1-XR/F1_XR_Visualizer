@@ -1623,6 +1623,7 @@ MonoBehaviour:
   standingsRowHeight: 19
   positionChangeFlashSeconds: 1.2
   standingsMoveSpeed: 10
+  refreshInterval: 0.1
 --- !u!1001 &1226495040
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1631,6 +1632,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 319710139870861721, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: player
+      value: 
+      objectReference: {fileID: 1705380154}
+    - target: {fileID: 358480993955718652, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: player
+      value: 
+      objectReference: {fileID: 1705380154}
+    - target: {fileID: 358480993955718652, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: sendReplayState
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1512278900930449566, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       propertyPath: uiFont
       value: 
@@ -1643,10 +1656,18 @@ PrefabInstance:
       propertyPath: defaultQuestion
       value: Default Question
       objectReference: {fileID: 0}
+    - target: {fileID: 1972968151036858088, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: player
+      value: 
+      objectReference: {fileID: 1705380154}
     - target: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       propertyPath: m_Name
       value: AIBridge
       objectReference: {fileID: 0}
+    - target: {fileID: 8761324872737865527, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: player
+      value: 
+      objectReference: {fileID: 1705380154}
     - target: {fileID: 9173072661305171653, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       propertyPath: m_LocalPosition.x
       value: 1.48105
@@ -1695,6 +1716,17 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1247387138}
   m_SourcePrefab: {fileID: 100100000, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+--- !u!114 &1226495041 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 358480993955718652, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+  m_PrefabInstance: {fileID: 1226495040}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1247387126}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 414f247cd30a33346bc9b54b54b5538f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.AgentBridge
 --- !u!1 &1247387126 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
@@ -1718,14 +1750,14 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1247387126}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c61a476f81246104cae129ea138d78de, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.PointOutWatcher
   player: {fileID: 1705380154}
   highlight: {fileID: 1247387132}
-  bridge: {fileID: 0}
+  bridge: {fileID: 1226495041}
   minConfidence: 0.6
   cooldownSec: 18
   leadSec: 2
@@ -2396,6 +2428,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1705380155}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  carLabelFont: {fileID: 0}
   teamCarPrefabs:
   - teamName: Alfa Romeo
     prefab: {fileID: 4614466437777478188, guid: f0daaf1c8ae548c68c1f76995c3a015e, type: 3}
@@ -2463,6 +2496,7 @@ MonoBehaviour:
   preloadChunksAhead: 3
   manifestPollSeconds: 1
   showCarLabels: 1
+  enableCarLod: 1
   hideLeaderHighlightAfterRaceStart: 1
   leaderHighlightDelaySeconds: 10
   engineSound:
@@ -2632,6 +2666,104 @@ MonoBehaviour:
     maximumVisualYawDegrees: 14
     overlapBlendMode: 0
     debugOvertakeVisuals: 0
+  overtakeApproachRibbon:
+    enabled: 1
+    growth:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    overtakerTrailSeconds: 0.95
+    overtakerGlowWidthInCarWidths: 0.34
+    overtakerCoreWidthInCarWidths: 0.1
+    overtakerGlowColor: {r: 0.04, g: 0.68, b: 1, a: 0.82}
+    defenderTrailSeconds: 0.65
+    defenderGlowWidthInCarWidths: 0.22
+    defenderCoreWidthInCarWidths: 0.065
+    defenderGlowColor: {r: 0.2, g: 1, b: 0.62, a: 0.65}
+    coreColor: {r: 1, g: 1, b: 1, a: 0.96}
+    preRollSeconds: 1.25
+    startIntensity: 0.22
+    defenderIntensity: 0.68
+    minimumVertexDistanceInCarLengths: 0.065
+    rearOffsetInCarLengths: 0.42
+    verticalOffsetInCarHeights: 0.24
+    seekClearThresholdSeconds: 0.5
+  overtakeSideBySideVfx:
+    enabled: 1
+    startOffsetNormalized: 0
+    endOffsetNormalized: 0
+    transitionBlendSeconds: 0.35
+    overtakerTrailTimeMultiplier: 1.45
+    overtakerGlowWidthMultiplier: 1.25
+    overtakerCoreWidthMultiplier: 1.15
+    overtakerIntensityMultiplier: 1.3
+    defenderTrailTimeMultiplier: 1.1
+    defenderGlowWidthMultiplier: 1.05
+    defenderCoreWidthMultiplier: 1.03
+    defenderIntensityMultiplier: 1.05
+    lightSweepDuration: 0.45
+    lightSweepWidthInCarLengths: 0.12
+    lightSweepIntensity: 1.45
+    lightSweepColor: {r: 0.45, g: 0.9, b: 1.35, a: 0.82}
+    lightSweepTopOffsetInCarHeights: 0.08
+    sparkBurstCount: 8
+    sparkLifetime: 0.22
+    sparkSizeInCarWidths: 0.035
+    sparkSpeedInCarLengthsPerSecond: 1.5
+    sparkEmissionColor: {r: 1, g: 0.62, b: 0.16, a: 0.9}
+    sparkTriggerNormalized: 0.55
+    sparkRearOffsetInCarLengths: 0.28
+    sparkFloorOffsetInCarHeights: 0.08
+    seekResetThresholdSeconds: 0.5
+  overtakeCompletionVfx:
+    enabled: 1
+    clearanceInCarLengths: 0.15
+    stabilityDurationReplaySeconds: 0.2
+    hysteresisInCarLengths: 0.05
+    allowOrderingLeadFallback: 1
+    orderingLeadInCarLengths: 0.08
+    pulseDurationReplaySeconds: 0.4
+    pulseIntensity: 1.35
+    pulseColor: {r: 0.32, g: 0.88, b: 1.25, a: 0.86}
+    sweepDurationReplaySeconds: 0.55
+    sweepWidthInCarLengths: 0.16
+    sweepIntensity: 1.8
+    sweepColor: {r: 0.72, g: 1.05, b: 1.35, a: 0.92}
+    streakDurationReplaySeconds: 0.62
+    streakLengthInCarLengths: 0.95
+    streakWidthInCarWidths: 0.055
+    streakColor: {r: 0.35, g: 0.92, b: 1.35, a: 0.88}
+    hudText: 'OVERTAKE
+
+      +1 POSITION'
+    hudDisplayDurationReplaySeconds: 1.2
+    hudFadeInReplaySeconds: 0.12
+    hudFadeOutReplaySeconds: 0.25
+    hudScale: 1.3
+    hudAnchor: 0
+    hudWorldOffset: {x: 0, y: 0.012, z: 0}
+    seekResetThresholdSeconds: 0.5
+    suppressForwardSeekConfirmation: 1
   positionScale: 0.0001
 --- !u!114 &1705380155
 MonoBehaviour:
@@ -2668,6 +2800,9 @@ MonoBehaviour:
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
+  useCachedDatasetFastStart: 0
+  cachedDatasetId: 
+  cachedCircuitKey: 0
   useEventReplayTestSession: 0
 --- !u!4 &1705380157
 Transform:
