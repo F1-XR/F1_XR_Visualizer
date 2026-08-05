@@ -46,6 +46,25 @@ namespace F1XR.Interaction.Input
             }
             if (button != null)
                 restLocalPosition = button.localPosition;
+
+            Debug.Log($"[WGF] Awake t={Time.time:F2} button={(button!=null?button.name:"NULL")} restLocalPos={restLocalPosition}");
+            StartCoroutine(DiagLog());
+        }
+
+        System.Collections.IEnumerator DiagLog()
+        {
+            var gun = transform.Find("GripAnchor/WheelGun");
+            for (int f = 0; f < 90; f++)
+            {
+                if (f % 10 == 0)
+                {
+                    string s = gun != null
+                        ? $"gunActive={gun.gameObject.activeInHierarchy} gunWorldPos={gun.position} gunScale={gun.lossyScale} btnLocal={(button!=null?button.localPosition.ToString():"-")}"
+                        : "gun NULL";
+                    Debug.Log($"[WGF] diag f={f} t={Time.time:F2} {s}");
+                }
+                yield return null;
+            }
         }
 
         void Update()

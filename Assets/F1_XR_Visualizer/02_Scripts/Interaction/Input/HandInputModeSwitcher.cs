@@ -222,7 +222,11 @@ namespace F1XR.Interaction.Input
         static void SetActive(GameObject target, bool active)
         {
             if (target != null && target.activeSelf != active)
+            {
+                if (target.name == "Right Controller")
+                    Debug.Log($"[HIMS] Right Controller SetActive({active}) frame={Time.frameCount} t={Time.time:F2}");
                 target.SetActive(active);
+            }
         }
     }
 }
