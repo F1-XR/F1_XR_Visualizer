@@ -147,6 +147,26 @@ namespace F1XR.RestAPI.Replay
             return visualLength;
         }
 
+        internal bool TryGetVisualWorldHeight(
+            Vector3 up,
+            out float height)
+        {
+            height = 0f;
+            if (!TryGetCarBounds(out Bounds bounds) ||
+                up.sqrMagnitude <= 0.000001f)
+            {
+                return false;
+            }
+
+            Vector3 direction = up.normalized;
+            Vector3 extents = bounds.extents;
+            height = 2f *
+                (Mathf.Abs(direction.x) * extents.x +
+                 Mathf.Abs(direction.y) * extents.y +
+                 Mathf.Abs(direction.z) * extents.z);
+            return height > 0.0001f;
+        }
+
         private float GetVisualSize(Vector3 axis)
         {
             RefreshBodyRenderers();

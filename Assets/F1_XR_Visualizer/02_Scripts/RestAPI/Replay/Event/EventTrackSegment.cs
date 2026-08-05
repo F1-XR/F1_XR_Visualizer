@@ -13,6 +13,8 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Mesh> meshes = new();
         private readonly List<RoadTriangle> roadTriangles = new();
         private readonly List<RoadTriangle> drivableTriangles = new();
+        private readonly List<OcclusionTriangle> occlusionTriangles = new();
+        private Transform segmentRoot;
 
         public bool Build(
             Transform parent,
@@ -36,8 +38,9 @@ namespace F1XR.RestAPI.Replay
             if (visualRoot == null)
                 visualRoot = sourceRoot;
 
-            GameObject segmentRoot = new GameObject("ActualTrackRegion");
-            segmentRoot.transform.SetParent(parent, false);
+            GameObject segmentObject = new GameObject("ActualTrackRegion");
+            segmentObject.transform.SetParent(parent, false);
+            segmentRoot = segmentObject.transform;
 
             Vector3[] localPath = BuildLocalPath(
                 sourcePath,
@@ -55,7 +58,7 @@ namespace F1XR.RestAPI.Replay
 
                 triangleCount += CopyMesh(
                     filter,
-                    segmentRoot.transform,
+                    segmentRoot,
                     sourceRoot,
                     sourceCenter,
                     sourceToLocalRotation,
@@ -70,7 +73,7 @@ namespace F1XR.RestAPI.Replay
                 float surfaceOffset = FindMedianSurfaceOffset(
                     localPath,
                     nearestSurfaceY);
-                segmentRoot.transform.localPosition = Vector3.up * surfaceOffset;
+                segmentRoot.localPosition = Vector3.up * surfaceOffset;
 
                 Bounds copiedBounds = meshes[0].bounds;
                 for (int i = 1; i < meshes.Count; i++)
@@ -85,7 +88,7 @@ namespace F1XR.RestAPI.Replay
                 return true;
             }
 
-            Object.Destroy(segmentRoot);
+            Object.Destroy(segmentObject);
             Clear();
             return false;
         }
@@ -101,6 +104,52 @@ namespace F1XR.RestAPI.Replay
             meshes.Clear();
             roadTriangles.Clear();
             drivableTriangles.Clear();
+            occlusionTriangles.Clear();
+            segmentRoot = null;
+        }
+
+        public bool TryIsTerrainOccluded(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            out bool occluded)
+        {
+            occluded = false;
+            if (segmentRoot == null || occlusionTriangles.Count == 0)
+                return false;
+
+            Vector3 origin = segmentRoot.InverseTransformPoint(worldOrigin);
+            Vector3 target = segmentRoot.InverseTransformPoint(worldTarget);
+            Vector3 ray = target - origin;
+            float distance = ray.magnitude;
+            if (distance <= 0.0001f)
+                return true;
+
+            float worldScale = Mathf.Max(
+                Mathf.Abs(segmentRoot.lossyScale.x),
+                Mathf.Abs(segmentRoot.lossyScale.y),
+                Mathf.Abs(segmentRoot.lossyScale.z));
+            float targetClearance = worldScale > 0.0001f
+                ? Mathf.Max(0f, worldTargetClearance) / worldScale
+                : 0f;
+            float maximumHitDistance = distance - targetClearance;
+            if (maximumHitDistance <= 0.0001f)
+                return true;
+
+            Vector3 direction = ray / distance;
+            for (int i = 0; i < occlusionTriangles.Count; i++)
+            {
+                if (occlusionTriangles[i].Intersects(
+                        origin,
+                        direction,
+                        maximumHitDistance))
+                {
+                    occluded = true;
+                    break;
+                }
+            }
+
+            return true;
         }
 
         public bool TryBuildSafetyApronEdges(
@@ -405,6 +454,12 @@ namespace F1XR.RestAPI.Replay
                             localPath,
                             padding))
                         continue;
+
+                    occlusionTriangles.Add(
+                        new OcclusionTriangle(
+                            positions[a],
+                            positions[b],
+                            positions[c]));
 
                     RecordNearestSurfaceHeights(
                         positions[a],
@@ -815,6 +870,56 @@ namespace F1XR.RestAPI.Replay
             public Vector3 A { get; }
             public Vector3 B { get; }
             public Vector3 C { get; }
+        }
+
+        private readonly struct OcclusionTriangle
+        {
+            private const float IntersectionTolerance = 0.00001f;
+
+            public OcclusionTriangle(
+                Vector3 a,
+                Vector3 b,
+                Vector3 c)
+            {
+                A = a;
+                EdgeAB = b - a;
+                EdgeAC = c - a;
+            }
+
+            private Vector3 A { get; }
+            private Vector3 EdgeAB { get; }
+            private Vector3 EdgeAC { get; }
+
+            public bool Intersects(
+                Vector3 origin,
+                Vector3 direction,
+                float maximumDistance)
+            {
+                Vector3 perpendicular =
+                    Vector3.Cross(direction, EdgeAC);
+                float determinant =
+                    Vector3.Dot(EdgeAB, perpendicular);
+                if (Mathf.Abs(determinant) <= IntersectionTolerance)
+                    return false;
+
+                float inverse = 1f / determinant;
+                Vector3 fromA = origin - A;
+                float u =
+                    Vector3.Dot(fromA, perpendicular) * inverse;
+                if (u < 0f || u > 1f)
+                    return false;
+
+                Vector3 cross = Vector3.Cross(fromA, EdgeAB);
+                float v =
+                    Vector3.Dot(direction, cross) * inverse;
+                if (v < 0f || u + v > 1f)
+                    return false;
+
+                float distance =
+                    Vector3.Dot(EdgeAC, cross) * inverse;
+                return distance > IntersectionTolerance &&
+                    distance < maximumDistance;
+            }
         }
 
         private struct RoadInterval
