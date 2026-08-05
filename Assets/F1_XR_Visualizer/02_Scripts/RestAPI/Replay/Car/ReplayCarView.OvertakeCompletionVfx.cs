@@ -34,6 +34,7 @@ namespace F1XR.RestAPI.Replay
         private float completionVfxLastReplayTime = float.NaN;
         private string completionHudOverride;
         private float completionIntensityScale = 1f;
+        private OvertakeCompletionVfxProfile completionVfxProfile;
 
         public void TriggerOvertakeCompletionVfx(
             OvertakeCompletionVfxSettings settings,
@@ -43,7 +44,8 @@ namespace F1XR.RestAPI.Replay
                 settings,
                 replayTime,
                 null,
-                1f);
+                1f,
+                OvertakeCompletionVfxProfile.Standard);
         }
 
         public void TriggerOvertakeCompletionVfx(
@@ -51,6 +53,21 @@ namespace F1XR.RestAPI.Replay
             float replayTime,
             string hudText,
             float intensityScale)
+        {
+            TriggerOvertakeCompletionVfx(
+                settings,
+                replayTime,
+                hudText,
+                intensityScale,
+                OvertakeCompletionVfxProfile.Standard);
+        }
+
+        public void TriggerOvertakeCompletionVfx(
+            OvertakeCompletionVfxSettings settings,
+            float replayTime,
+            string hudText,
+            float intensityScale,
+            OvertakeCompletionVfxProfile profile)
         {
             if (settings == null || !settings.enabled)
                 return;
@@ -60,6 +77,7 @@ namespace F1XR.RestAPI.Replay
             completionIntensityScale = Mathf.Max(
                 0.1f,
                 intensityScale);
+            completionVfxProfile = profile;
             EnsureCompletionVfx();
             completionVfxStartTime = replayTime;
             completionVfxLastReplayTime = replayTime;
@@ -136,6 +154,8 @@ namespace F1XR.RestAPI.Replay
             completionVfxSettings = null;
             completionHudOverride = null;
             completionIntensityScale = 1f;
+            completionVfxProfile =
+                OvertakeCompletionVfxProfile.Standard;
 
             if (completionPulseRenderer != null)
                 completionPulseRenderer.enabled = false;
@@ -374,7 +394,8 @@ namespace F1XR.RestAPI.Replay
                         Mathf.SmoothStep(
                             0f,
                             1f,
-                            progress));
+                            progress)) *
+                    GetCompletionPulseRadiusScale();
                 UpdateRingMesh(
                     transform,
                     completionPulseMesh,
@@ -383,19 +404,20 @@ namespace F1XR.RestAPI.Replay
                     transform.InverseTransformPoint(
                         worldCenter),
                     radius,
-                    0.7f,
-                    progress * 35f);
+                    GetCompletionPulseThickness(),
+                    progress *
+                    GetCompletionPulseRotation());
             }
 
-            float envelope =
-                Mathf.Sin(progress * Mathf.PI);
+            float envelope = GetCompletionPulseEnvelope(
+                progress);
             float intensity = Mathf.Max(
                 0f,
                 completionVfxSettings
                     .pulseIntensity) *
                 completionIntensityScale;
-            Color color =
-                completionVfxSettings.pulseColor;
+            Color color = ResolveCompletionProfileColor(
+                completionVfxSettings.pulseColor);
             color.r *= intensity;
             color.g *= intensity;
             color.b *= intensity;
@@ -433,15 +455,18 @@ namespace F1XR.RestAPI.Replay
             }
 
             completionSweepRenderer.enabled = true;
-            float eased = Mathf.SmoothStep(
-                0f,
-                1f,
+            float eased = GetCompletionSweepProgress(
                 progress);
+            bool reverseSweep =
+                completionVfxProfile ==
+                OvertakeCompletionVfxProfile.Counter;
+            float sweepStart = reverseSweep ? -0.52f : 0.52f;
+            float sweepEnd = -sweepStart;
             Vector3 position =
                 bounds.center +
                 transform.forward *
                 length *
-                Mathf.Lerp(0.52f, -0.52f, eased) +
+                Mathf.Lerp(sweepStart, sweepEnd, eased) +
                 transform.up *
                 height *
                 0.58f;
@@ -467,8 +492,8 @@ namespace F1XR.RestAPI.Replay
 
             float envelope =
                 Mathf.Sin(Mathf.PI * progress);
-            Color color =
-                completionVfxSettings.sweepColor;
+            Color color = ResolveCompletionProfileColor(
+                completionVfxSettings.sweepColor);
             float intensity =
                 Mathf.Max(
                     0f,
@@ -587,8 +612,8 @@ namespace F1XR.RestAPI.Replay
 
             float envelope =
                 Mathf.Sin(Mathf.PI * progress);
-            Color color =
-                completionVfxSettings.streakColor;
+            Color color = ResolveCompletionProfileColor(
+                completionVfxSettings.streakColor);
             color.r *= completionIntensityScale;
             color.g *= completionIntensityScale;
             color.b *= completionIntensityScale;
@@ -659,20 +684,144 @@ namespace F1XR.RestAPI.Replay
                     fadeInAlpha,
                     fadeOutAlpha));
 
+            Color hudColor = GetCompletionHudColor(alpha);
             SetMaterialColor(
                 completionHudMaterial,
-                new Color(1f, 1f, 1f, alpha));
+                hudColor);
             completionHudText.color =
-                new Color(1f, 1f, 1f, alpha);
+                hudColor;
+            Color backgroundColor =
+                GetCompletionHudBackgroundColor(alpha);
             SetMaterialColor(
                 completionHudBackgroundMaterial,
-                new Color(
-                    0.01f,
-                    0.03f,
-                    0.05f,
-                    0.58f * alpha));
+                backgroundColor);
             UpdateCompletionHudLayout(
                 Mathf.Clamp01(elapsed / duration));
+        }
+
+        private float GetCompletionPulseRadiusScale()
+        {
+            return completionVfxProfile switch
+            {
+                OvertakeCompletionVfxProfile.Counter => 0.92f,
+                OvertakeCompletionVfxProfile.Repass => 1.12f,
+                OvertakeCompletionVfxProfile.Victory => 1.28f,
+                _ => 1f
+            };
+        }
+
+        private float GetCompletionPulseThickness()
+        {
+            return completionVfxProfile switch
+            {
+                OvertakeCompletionVfxProfile.Counter => 0.5f,
+                OvertakeCompletionVfxProfile.Repass => 0.82f,
+                OvertakeCompletionVfxProfile.Victory => 0.95f,
+                _ => 0.7f
+            };
+        }
+
+        private float GetCompletionPulseRotation()
+        {
+            return completionVfxProfile switch
+            {
+                OvertakeCompletionVfxProfile.Counter => -65f,
+                OvertakeCompletionVfxProfile.Repass => 125f,
+                OvertakeCompletionVfxProfile.Victory => 22f,
+                _ => 35f
+            };
+        }
+
+        private float GetCompletionPulseEnvelope(float progress)
+        {
+            if (completionVfxProfile ==
+                OvertakeCompletionVfxProfile.Repass)
+            {
+                return Mathf.Abs(
+                    Mathf.Sin(progress * Mathf.PI * 2f));
+            }
+
+            return Mathf.Sin(progress * Mathf.PI);
+        }
+
+        private float GetCompletionSweepProgress(float progress)
+        {
+            float travel = completionVfxProfile ==
+                OvertakeCompletionVfxProfile.Repass
+                    ? Mathf.PingPong(progress * 2f, 1f)
+                    : progress;
+            return Mathf.SmoothStep(0f, 1f, travel);
+        }
+
+        private Color ResolveCompletionProfileColor(Color source)
+        {
+            Color accent;
+            float blend;
+            switch (completionVfxProfile)
+            {
+                case OvertakeCompletionVfxProfile.Counter:
+                    accent = new Color(
+                        1.4f,
+                        0.28f,
+                        0.06f,
+                        source.a);
+                    blend = 0.78f;
+                    break;
+                case OvertakeCompletionVfxProfile.Repass:
+                    accent = new Color(
+                        0.72f,
+                        0.28f,
+                        1.45f,
+                        source.a);
+                    blend = 0.78f;
+                    break;
+                case OvertakeCompletionVfxProfile.Victory:
+                    accent = new Color(
+                        1.55f,
+                        1.02f,
+                        0.16f,
+                        source.a);
+                    blend = 0.86f;
+                    break;
+                default:
+                    return source;
+            }
+
+            Color result = Color.Lerp(source, accent, blend);
+            result.a = source.a;
+            return result;
+        }
+
+        private Color GetCompletionHudColor(float alpha)
+        {
+            Color color = completionVfxProfile switch
+            {
+                OvertakeCompletionVfxProfile.Counter =>
+                    new Color(1f, 0.42f, 0.12f, alpha),
+                OvertakeCompletionVfxProfile.Repass =>
+                    new Color(0.76f, 0.52f, 1f, alpha),
+                OvertakeCompletionVfxProfile.Victory =>
+                    new Color(1f, 0.86f, 0.22f, alpha),
+                _ => new Color(1f, 1f, 1f, alpha)
+            };
+            color.a = alpha;
+            return color;
+        }
+
+        private Color GetCompletionHudBackgroundColor(float alpha)
+        {
+            Color color = completionVfxProfile switch
+            {
+                OvertakeCompletionVfxProfile.Counter =>
+                    new Color(0.11f, 0.015f, 0.005f, 1f),
+                OvertakeCompletionVfxProfile.Repass =>
+                    new Color(0.045f, 0.01f, 0.09f, 1f),
+                OvertakeCompletionVfxProfile.Victory =>
+                    new Color(0.1f, 0.065f, 0.005f, 1f),
+                _ => new Color(0.01f, 0.03f, 0.05f, 1f)
+            };
+            color.a = 0.58f * alpha;
+            return color;
         }
 
         private void UpdateCompletionHudLayout(

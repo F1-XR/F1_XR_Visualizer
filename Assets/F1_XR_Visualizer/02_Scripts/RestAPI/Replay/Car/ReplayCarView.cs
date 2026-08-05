@@ -11,6 +11,8 @@ namespace F1XR.RestAPI.Replay
         private Transform logicalRoot;
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation = Quaternion.identity;
+        private Vector3 visualMotionLocalOffset;
+        private Vector3 drivingPresentationLocalOffset;
         private Vector3 roomPresentationLocalScale;
         private bool roomPresentationApplied;
         private bool visualMotionApplied;
@@ -26,6 +28,8 @@ namespace F1XR.RestAPI.Replay
             logicalRoot = root;
             visualBasePosition = transform.localPosition;
             visualBaseRotation = transform.localRotation;
+            visualMotionLocalOffset = Vector3.zero;
+            drivingPresentationLocalOffset = Vector3.zero;
             visualMotionApplied = false;
         }
 
@@ -58,8 +62,9 @@ namespace F1XR.RestAPI.Replay
 
             ClearRoomPresentation();
             visualMotionApplied = true;
-            transform.localPosition =
-                visualBasePosition + LogicalRoot.InverseTransformVector(worldOffset);
+            visualMotionLocalOffset =
+                LogicalRoot.InverseTransformVector(worldOffset);
+            ApplyVisualLocalPosition();
             transform.localRotation =
                 Quaternion.AngleAxis(localYaw, Vector3.up) * visualBaseRotation;
         }
@@ -69,13 +74,29 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
-            if (!visualMotionApplied)
+            if (!visualMotionApplied &&
+                visualMotionLocalOffset.sqrMagnitude <= 0.000001f)
                 return;
 
             ClearRoomPresentation();
-            transform.localPosition = visualBasePosition;
+            visualMotionLocalOffset = Vector3.zero;
+            ApplyVisualLocalPosition();
             transform.localRotation = visualBaseRotation;
             visualMotionApplied = false;
+        }
+
+        internal void SetDrivingPresentationLocalOffset(Vector3 offset)
+        {
+            drivingPresentationLocalOffset = offset;
+            ApplyVisualLocalPosition();
+        }
+
+        private void ApplyVisualLocalPosition()
+        {
+            transform.localPosition =
+                visualBasePosition +
+                visualMotionLocalOffset +
+                drivingPresentationLocalOffset;
         }
 
         public void ApplyRoomPresentation(

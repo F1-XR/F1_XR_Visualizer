@@ -92,6 +92,9 @@ namespace F1XR.RestAPI.Replay
         [Min(0f)] public float battleConfirmationSeconds = 0.45f;
         [Range(0.02f, 0.25f)] public float battleSampleSeconds = 0.05f;
         [Min(0f)] public float battleVictoryDelaySeconds = 0.65f;
+        [Min(1f)] public float battleCruiseSpeedMultiplier = 1.5f;
+        [Min(0f)] public float battleExchangeNormalSpeedSeconds = 1.25f;
+        [Min(0f)] public float battleCruiseBlendSeconds = 0.75f;
 
         private readonly ReplayTimeline timeline = new();
         private readonly Dictionary<int, List<LocationSample>> eventSamples = new();
@@ -124,6 +127,9 @@ namespace F1XR.RestAPI.Replay
         private OvertakeMotionSettings eventOvertakeSettings;
         private GameObject stageRoot;
         private BoxCollider stageInteractionCollider;
+        private Vector3 stageInteractionDefaultCenter;
+        private Vector3 stageInteractionDefaultSize;
+        private bool stageInteractionDefaultsCaptured;
         private EventTrackSegment trackSegment;
         private Mesh roadMesh;
         private LineRenderer leftRoadEdge;
@@ -182,6 +188,33 @@ namespace F1XR.RestAPI.Replay
         public float OrderingTransitionTime => isActive
             ? ResolveOrderingTransitionTime()
             : 0f;
+
+        internal bool HasMultipleShowcaseExchanges =>
+            battleSequence != null &&
+            battleSequence.IsValid &&
+            battleSequence.Exchanges.Count > 1;
+
+        internal bool TryGetShowcaseExchangeSpan(
+            out Vector3 firstPosition,
+            out Vector3 lastPosition)
+        {
+            firstPosition = Vector3.zero;
+            lastPosition = Vector3.zero;
+            if (!HasMultipleShowcaseExchanges)
+                return false;
+
+            OvertakeBattleExchange first =
+                battleSequence.Exchanges[0];
+            OvertakeBattleExchange last =
+                battleSequence.Exchanges[
+                    battleSequence.Exchanges.Count - 1];
+            return TryGetEventLocalPathPosition(
+                    first.anchorTime,
+                    out firstPosition) &&
+                TryGetEventLocalPathPosition(
+                    last.anchorTime,
+                    out lastPosition);
+        }
 
         internal bool TryGetShowcasePlaybackWindow(
             out ShowcasePlaybackWindow window)
@@ -427,6 +460,82 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        internal bool TryApplyRoomStagePlacement(
+            Vector3 position,
+            Quaternion rotation,
+            float uniformScale,
+            Vector3 eventLocalFocus,
+            float physicalInteractionWidth = 0.6f)
+        {
+            if (PresentationRoot == null ||
+                stageInteractionCollider == null ||
+                !IsFinite(position) ||
+                !IsFinite(rotation) ||
+                !IsFinite(eventLocalFocus) ||
+                !float.IsFinite(uniformScale) ||
+                !float.IsFinite(physicalInteractionWidth))
+            {
+                return false;
+            }
+
+            float resolvedScale = Mathf.Max(0.1f, uniformScale);
+            Vector3 parentScale =
+                PresentationRoot.parent != null
+                    ? PresentationRoot.parent.lossyScale
+                    : Vector3.one;
+            float parentWorldScale = Mathf.Max(
+                Mathf.Abs(parentScale.x),
+                Mathf.Abs(parentScale.y),
+                Mathf.Abs(parentScale.z));
+            float uniformWorldScale =
+                parentWorldScale * resolvedScale;
+            if (!float.IsFinite(uniformWorldScale) ||
+                uniformWorldScale <= 0.000001f)
+            {
+                return false;
+            }
+
+            float localWidth =
+                Mathf.Max(0.1f, physicalInteractionWidth) /
+                uniformWorldScale;
+            float localHeight = 0.12f / uniformWorldScale;
+            Vector3 interactionCenter =
+                eventLocalFocus +
+                Vector3.up * localHeight * 0.5f;
+            Vector3 interactionSize =
+                new(localWidth, localHeight, localWidth);
+            if (!IsFinite(interactionCenter) ||
+                !IsFinite(interactionSize))
+            {
+                return false;
+            }
+
+            PresentationRoot.SetPositionAndRotation(
+                position,
+                rotation);
+            PresentationRoot.localScale =
+                Vector3.one * resolvedScale;
+            stageInteractionCollider.center = interactionCenter;
+            stageInteractionCollider.size = interactionSize;
+            SetStageInteractionEnabled(false);
+            return true;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
+        }
+
         public bool TryRestoreTableRelativePose()
         {
             if (PresentationRoot == null)
@@ -434,7 +543,45 @@ namespace F1XR.RestAPI.Replay
 
             ResolveStagePose(out Vector3 position, out Quaternion rotation);
             rotation = Quaternion.Euler(0f, rotation.eulerAngles.y, 0f);
-            return TrySetPresentationPose(position, rotation, stageScale);
+            if (!TrySetPresentationPose(position, rotation, stageScale))
+                return false;
+
+            if (stageInteractionCollider != null &&
+                stageInteractionDefaultsCaptured)
+            {
+                stageInteractionCollider.center =
+                    stageInteractionDefaultCenter;
+                stageInteractionCollider.size =
+                    stageInteractionDefaultSize;
+            }
+
+            SetStageInteractionEnabled(true);
+
+            return true;
+        }
+
+        private void SetStageInteractionEnabled(bool enabled)
+        {
+            if (PresentationRoot == null)
+                return;
+
+            var policy =
+                PresentationRoot.GetComponent<WorldGrabPolicy>();
+            if (policy != null)
+                policy.enabled = enabled;
+
+            var scale =
+                PresentationRoot.GetComponent<ScaleController>();
+            if (scale != null)
+                scale.enabled = enabled;
+
+            var grab =
+                PresentationRoot.GetComponent<XRGrabInteractable>();
+            if (grab != null)
+                grab.enabled = enabled;
+
+            if (stageInteractionCollider != null)
+                stageInteractionCollider.enabled = enabled;
         }
 
         private void Awake()
@@ -553,6 +700,22 @@ namespace F1XR.RestAPI.Replay
                 enabled);
         }
 
+        internal bool TrySetCarWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            if (!isActive || eventCars == null || resolver == null)
+                return false;
+
+            eventCars.SetWorldPoseOverride(resolver);
+            return true;
+        }
+
+        internal void ClearCarWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            eventCars?.ClearWorldPoseOverride(resolver);
+        }
+
         public void SetShowcasePlaybackSpeedMultiplier(
             float multiplier)
         {
@@ -645,6 +808,11 @@ namespace F1XR.RestAPI.Replay
         private IEnumerator OpenRoutine(ReplayEventDto definition)
         {
             isLoading = true;
+
+            // Let deferred Unity destruction finish before a replacement
+            // stage allocates another map and portal presentation.
+            yield return null;
+
             float scanSeconds = Mathf.Max(
                 Mathf.Max(
                     eventLeadSeconds,
@@ -714,7 +882,9 @@ namespace F1XR.RestAPI.Replay
                 timeline.Advance(
                     Time.deltaTime,
                     eventPlaybackSpeed *
-                    showcasePlaybackSpeedMultiplier);
+                    showcasePlaybackSpeedMultiplier *
+                    ResolveBattleCruiseSpeedMultiplier(
+                        timeline.CurrentTime));
                 if (timeline.StopAtEnd())
                     eventAudio?.SetPlaying(false);
             }
@@ -725,6 +895,52 @@ namespace F1XR.RestAPI.Replay
                 timeline.IsPlaying,
                 null);
             ApplyCars();
+        }
+
+        private float ResolveBattleCruiseSpeedMultiplier(
+            float replayTime)
+        {
+            if (!HasMultipleShowcaseExchanges ||
+                battleCruiseSpeedMultiplier <= 1f)
+            {
+                return 1f;
+            }
+
+            IReadOnlyList<OvertakeBattleExchange> exchanges =
+                battleSequence.Exchanges;
+            for (int i = 0; i < exchanges.Count - 1; i++)
+            {
+                float previousTime = exchanges[i].anchorTime;
+                float nextTime = exchanges[i + 1].anchorTime;
+                if (replayTime <= previousTime ||
+                    replayTime >= nextTime)
+                {
+                    continue;
+                }
+
+                float nearestExchange = Mathf.Min(
+                    replayTime - previousTime,
+                    nextTime - replayTime);
+                float blendStart = Mathf.Max(
+                    0f,
+                    battleExchangeNormalSpeedSeconds);
+                float blendEnd = blendStart + Mathf.Max(
+                    0.0001f,
+                    battleCruiseBlendSeconds);
+                float cruiseBlend = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        blendStart,
+                        blendEnd,
+                        nearestExchange));
+                return Mathf.Lerp(
+                    1f,
+                    Mathf.Max(1f, battleCruiseSpeedMultiplier),
+                    cruiseBlend);
+            }
+
+            return 1f;
         }
 
         private bool BuildEventSamples(
@@ -785,7 +1001,7 @@ namespace F1XR.RestAPI.Replay
         {
             eventCars = new ReplayCarSet(
                 player.carPrefab,
-                null,
+                player,
                 false);
             eventCars.SetOvertakePresentationMode(
                 OvertakePresentationMode.Showcase);
@@ -1160,7 +1376,7 @@ namespace F1XR.RestAPI.Replay
             return closestPathDistance;
         }
 
-        private bool TryGetSourceLongitudinalAtTime(
+        internal bool TryGetSourceLongitudinalAtTime(
             int driverNumber,
             float time,
             out float longitudinal)
@@ -2083,6 +2299,9 @@ namespace F1XR.RestAPI.Replay
             bounds.Expand(new Vector3(0f, 0.04f, 0f));
             collider.center = bounds.center;
             collider.size = bounds.size;
+            stageInteractionDefaultCenter = collider.center;
+            stageInteractionDefaultSize = collider.size;
+            stageInteractionDefaultsCaptured = true;
 
             Rigidbody body = stageRoot.AddComponent<Rigidbody>();
             body.isKinematic = true;
@@ -2265,7 +2484,8 @@ namespace F1XR.RestAPI.Replay
                     battleSequence.FinalLeader,
                     replayTime,
                     $"BATTLE WON\n{winner}",
-                    1.4f);
+                    1.4f,
+                    OvertakeCompletionVfxProfile.Victory);
             }
 
             lastBattleVfxReplayTime = replayTime;
@@ -2280,11 +2500,14 @@ namespace F1XR.RestAPI.Replay
                 exchange.overtaker);
             string text;
             float intensity;
+            OvertakeCompletionVfxProfile profile;
             switch (exchange.kind)
             {
                 case OvertakeBattleExchangeKind.Counter:
                     text = $"{driver}\nCOUNTER";
                     intensity = 1.12f;
+                    profile =
+                        OvertakeCompletionVfxProfile.Counter;
                     break;
                 case OvertakeBattleExchangeKind.Repass:
                     text =
@@ -2292,10 +2515,14 @@ namespace F1XR.RestAPI.Replay
                     intensity = Mathf.Min(
                         1.35f,
                         1.18f + exchangeIndex * 0.05f);
+                    profile =
+                        OvertakeCompletionVfxProfile.Repass;
                     break;
                 default:
                     text = $"{driver}\nPASS";
                     intensity = 1f;
+                    profile =
+                        OvertakeCompletionVfxProfile.Standard;
                     break;
             }
 
@@ -2303,7 +2530,8 @@ namespace F1XR.RestAPI.Replay
                 exchange.overtaker,
                 replayTime,
                 text,
-                intensity);
+                intensity,
+                profile);
         }
 
         private void ResetBattleVfxPlayback(float replayTime)
@@ -2370,6 +2598,10 @@ namespace F1XR.RestAPI.Replay
         {
             if (restoreTableTrack)
                 RestoreTableTrackRendering();
+
+            if (stageRoot != null)
+                stageRoot.SetActive(false);
+
             isLoading = false;
             isActive = false;
             timeline.Pause();
@@ -2402,6 +2634,9 @@ namespace F1XR.RestAPI.Replay
 
             stageRoot = null;
             stageInteractionCollider = null;
+            stageInteractionDefaultCenter = Vector3.zero;
+            stageInteractionDefaultSize = Vector3.zero;
+            stageInteractionDefaultsCaptured = false;
             trackSegment = null;
             roadMesh = null;
             leftRoadEdge = null;
