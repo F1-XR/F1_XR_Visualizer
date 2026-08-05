@@ -44,6 +44,9 @@ namespace F1XR.RestAPI.Replay.Room
         private bool portalEdgeActive;
         private float portalSurfaceSweepCrossingX;
         private float portalSurfaceSweepCrossingY;
+        private bool portalTransitionPending;
+        private Vector3 pendingPortalCrossingPoint;
+        private Vector3 pendingPortalTravelDirection;
 
         public void ConfigureOvertakePortalTransition(
             OvertakePortalTransitionVfxSettings settings,
@@ -52,6 +55,7 @@ namespace F1XR.RestAPI.Replay.Room
             float replayTime)
         {
             ResetOvertakePortalTransitionVfx();
+            ClearPendingPortalTransition();
             portalTransitionSettings =
                 settings ??
                 new OvertakePortalTransitionVfxSettings();
@@ -88,12 +92,14 @@ namespace F1XR.RestAPI.Replay.Room
                 exitSurface == null)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 return;
             }
 
             if (!portalTransitionSettings.enabled)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 portalTransitionLastReplayTime =
                     float.NaN;
                 overtakerCrossingState = default;
@@ -105,6 +111,17 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
 
             EnsurePortalTransitionVisuals();
+            if (portalTransitionPending &&
+                overtakeCompletionConfirmed &&
+                exitPortalVisible)
+            {
+                TriggerPortalTransition(
+                    replayTime,
+                    pendingPortalCrossingPoint,
+                    pendingPortalTravelDirection);
+                ClearPendingPortalTransition();
+            }
+
             if (float.IsNaN(
                     portalTransitionLastReplayTime))
             {
@@ -125,6 +142,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (replayDelta < -0.0001f)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 InitializeCrossingState(
                     ref overtakerCrossingState,
                     portalTransitionOvertaker);
@@ -141,6 +159,7 @@ namespace F1XR.RestAPI.Replay.Room
                     .largeForwardSeekThresholdSeconds)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 bool crossed =
                     TryUpdateCrossingState(
                         ref overtakerCrossingState,
@@ -180,6 +199,7 @@ namespace F1XR.RestAPI.Replay.Room
                     .seekResetThresholdSeconds)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 InitializeCrossingState(
                     ref overtakerCrossingState,
                     portalTransitionOvertaker);
@@ -197,10 +217,17 @@ namespace F1XR.RestAPI.Replay.Room
                     out Vector3 crossingPoint,
                     out Vector3 travelDirection))
             {
-                if (overtakeCompletionConfirmed)
+                if (overtakeCompletionConfirmed &&
+                    exitPortalVisible)
                 {
                     TriggerPortalTransition(
                         replayTime,
+                        crossingPoint,
+                        travelDirection);
+                }
+                else
+                {
+                    RememberPendingPortalTransition(
                         crossingPoint,
                         travelDirection);
                 }
@@ -214,10 +241,17 @@ namespace F1XR.RestAPI.Replay.Room
                     out crossingPoint,
                     out travelDirection))
             {
-                if (overtakeCompletionConfirmed)
+                if (overtakeCompletionConfirmed &&
+                    exitPortalVisible)
                 {
                     TriggerPortalTransition(
                         replayTime,
+                        crossingPoint,
+                        travelDirection);
+                }
+                else
+                {
+                    RememberPendingPortalTransition(
                         crossingPoint,
                         travelDirection);
                 }
@@ -232,6 +266,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void ClearOvertakePortalTransition()
         {
             ResetOvertakePortalTransitionVfx();
+            ClearPendingPortalTransition();
             if (portalTransitionRoot != null)
                 portalTransitionRoot.gameObject.SetActive(false);
 
@@ -262,6 +297,22 @@ namespace F1XR.RestAPI.Replay.Room
             portalTransitionEffectStartTime =
                 float.NaN;
             portalTransitionConfigured = false;
+        }
+
+        private void RememberPendingPortalTransition(
+            Vector3 crossingPoint,
+            Vector3 travelDirection)
+        {
+            portalTransitionPending = true;
+            pendingPortalCrossingPoint = crossingPoint;
+            pendingPortalTravelDirection = travelDirection;
+        }
+
+        private void ClearPendingPortalTransition()
+        {
+            portalTransitionPending = false;
+            pendingPortalCrossingPoint = Vector3.zero;
+            pendingPortalTravelDirection = Vector3.zero;
         }
 
         private void InitializeCrossingState(

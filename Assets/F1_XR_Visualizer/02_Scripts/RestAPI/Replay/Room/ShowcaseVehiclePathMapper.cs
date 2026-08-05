@@ -773,6 +773,13 @@ namespace F1XR.RestAPI.Replay.Room
         WallPair
     }
 
+    internal enum WallExitPresentationStrategy
+    {
+        None,
+        FixedWallRun,
+        MultiBeatWallRun
+    }
+
     internal readonly struct ShowcaseStagePlacement
     {
         public ShowcaseStagePlacement(
@@ -945,8 +952,8 @@ namespace F1XR.RestAPI.Replay.Room
         private float minimumEvaluatedPortalWallHeight = 1.7f;
         [SerializeField, Range(0f, 100f)]
         private float wallPairRecommendationScore = 60f;
-        [SerializeField, Range(0f, 100f)]
-        private float wallExitRecommendationScore = 52f;
+        [SerializeField, Min(0.1f)]
+        private float wallExitFocusScoreDistance = 6f;
 
         [Header("Wall Portal Evaluation Runtime")]
         [SerializeField] private int evaluatedWallCount;
@@ -1007,6 +1014,17 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private int actionBeatsTerrainOccluded;
         [SerializeField] private int actionBeatsWithMissingPosition;
 
+        [Header("Wall Exit Handoff Runtime")]
+        [SerializeField, Min(0f)]
+        private float multiBeatTransitionSafetyMargin = 0.15f;
+        [SerializeField]
+        private WallExitPresentationStrategy wallExitStrategy;
+        [SerializeField] private bool wallExitHandoffPrepared;
+        [SerializeField] private bool wallExitHandoffActive;
+        [SerializeField] private bool wallExitHandoffComplete;
+        [SerializeField] private float wallExitHandoffTime;
+        [SerializeField] private int wallExitTransitionBeatIndex = -1;
+
         [Header("Reference Pass Runtime Metrics")]
         [SerializeField] private Vector3 perceptionEyeRelativeTrackFocus;
         [SerializeField] private float perceptionClosestVehicleDistance;
@@ -1038,6 +1056,8 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<ShowcaseActionBeat> actionBeats = new();
         private readonly List<ShowcaseActionBeat>
             presentationCalibrationBeats = new();
+        private readonly List<ShowcaseActionBeat>
+            wallExitPlanningBeats = new();
         private readonly List<bool> actionBeatVisibility = new();
         private readonly List<ShowcaseVisibleInterval>
             visibleIntervals = new();
@@ -1126,6 +1146,11 @@ namespace F1XR.RestAPI.Replay.Room
         private Transform battleReframeCueRoot;
         private LineRenderer battleReframeCue;
         private Material battleReframeCueMaterial;
+        private float wallExitHandoffElapsed;
+        private ShowcaseShotPlacementCandidate
+            wallExitBattlePlacement;
+        private ShowcaseShotPlacementCandidate
+            wallExitFinalPlacement;
         private bool deferExitPortalUntilFinalShot;
         private int finalAdditionalShotRequestIndex = -1;
         private int lastProcessedAdditionalShotRequestIndex = -1;
@@ -1326,10 +1351,9 @@ namespace F1XR.RestAPI.Replay.Room
                 wallPairRecommendationScore,
                 0f,
                 100f);
-            wallExitRecommendationScore = Mathf.Clamp(
-                wallExitRecommendationScore,
-                0f,
-                100f);
+            wallExitFocusScoreDistance = Mathf.Max(
+                0.1f,
+                wallExitFocusScoreDistance);
             visibilitySampleSeconds = Mathf.Max(
                 0.05f,
                 visibilitySampleSeconds);
@@ -1355,6 +1379,9 @@ namespace F1XR.RestAPI.Replay.Room
                 battleReframeDuration,
                 0.2f,
                 1.5f);
+            multiBeatTransitionSafetyMargin = Mathf.Max(
+                0f,
+                multiBeatTransitionSafetyMargin);
             overtakePortalTransitionVfx ??=
                 new OvertakePortalTransitionVfxSettings();
             overtakePortalTransitionVfx.ClampValues();
@@ -1660,10 +1687,17 @@ namespace F1XR.RestAPI.Replay.Room
 
             ShowcaseStagePlacement portalAlignedPlacement =
                 placement;
+            bool hasMultiBeatWallExitPlan =
+                TryPlanMultiBeatWallExit(
+                    out float plannedWallExitTransitionTime,
+                    out int plannedWallExitTransitionBeatIndex,
+                    out Vector3 wallExitAttentionPosition);
+            if (!hasMultiBeatWallExitPlan)
+                wallExitAttentionPosition = focusPosition;
             EvaluateWallPortalCandidates(
                 eventLocalPath,
                 entryPosition,
-                focusPosition,
+                wallExitAttentionPosition,
                 exitPosition,
                 run,
                 portalAlignedPlacement);
@@ -1672,6 +1706,22 @@ namespace F1XR.RestAPI.Replay.Room
                 wallPortalRecommendation ==
                     WallPortalRecommendationMode.ExitWall &&
                 hasRecommendedWallExitPlacement;
+            wallExitStrategy =
+                appliedRecommendedWallExitPlacement
+                    ? hasMultiBeatWallExitPlan
+                        ? WallExitPresentationStrategy
+                            .MultiBeatWallRun
+                        : WallExitPresentationStrategy
+                            .FixedWallRun
+                    : WallExitPresentationStrategy.None;
+            wallExitTransitionBeatIndex =
+                wallExitStrategy ==
+                    WallExitPresentationStrategy.MultiBeatWallRun
+                        ? plannedWallExitTransitionBeatIndex
+                        : -1;
+            ShowcaseStagePlacement wallExitBattleStagePlacement =
+                default;
+            bool hasWallExitBattleStagePlacement = false;
             connectedPortalCandidate =
                 connectedWallPortalsEnabled &&
                 compositionMode ==
@@ -1680,6 +1730,19 @@ namespace F1XR.RestAPI.Replay.Room
             if (appliedRecommendedWallExitPlacement)
             {
                 placement = recommendedWallExitPlacement;
+                hasWallExitBattleStagePlacement =
+                    wallExitStrategy ==
+                        WallExitPresentationStrategy
+                            .MultiBeatWallRun &&
+                    TryCreateRoomDioramaPlacement(
+                        eventLocalPath,
+                        entryPosition,
+                        focusPosition,
+                        exitPosition,
+                        run,
+                        portalAlignedPlacement,
+                        out wallExitBattleStagePlacement,
+                        out _);
             }
             else if (!connectedPortalCandidate &&
                 !TryCreateRoomDioramaPlacement(
@@ -1827,6 +1890,25 @@ namespace F1XR.RestAPI.Replay.Room
                     eventReplay.CurrentTime);
             }
 
+            ShowcaseStagePlacement initialPresentationPlacement =
+                placement;
+            bool usesWallExitHandoff =
+                !usesLifeSize &&
+                usesPortals &&
+                activePortalMode == "ExitWall" &&
+                wallExitStrategy ==
+                    WallExitPresentationStrategy.MultiBeatWallRun &&
+                appliedRecommendedWallExitPlacement &&
+                hasWallExitBattleStagePlacement &&
+                TryApplyShotPlacement(
+                    ToShotPlacement(
+                        wallExitBattleStagePlacement));
+            if (usesWallExitHandoff)
+            {
+                initialPresentationPlacement =
+                    wallExitBattleStagePlacement;
+            }
+
             ApplyActiveVehiclePresentation(first, second);
             eventReplay.SetShowcaseDrivingPresentation(
                 first.DriverNumber,
@@ -1846,7 +1928,18 @@ namespace F1XR.RestAPI.Replay.Room
                 ? ShowcaseStagePlacementMode.LifeSizeDriveBy
                 : placement.Mode;
             AnalyzeCurrentShotVisibility();
-            InitializeShotPlacementRuntime(placement);
+            InitializeShotPlacementRuntime(
+                initialPresentationPlacement);
+            InitializeWallExitHandoffRuntime(
+                usesWallExitHandoff
+                    ? wallExitBattleStagePlacement
+                    : default,
+                usesWallExitHandoff
+                    ? placement
+                    : default,
+                usesWallExitHandoff
+                    ? plannedWallExitTransitionTime
+                    : 0f);
             InitializeFinalShotExitPortalVisibility();
             stageRevealPending = true;
             stageRevealStartTime = eventReplay.CurrentTime;
@@ -1881,6 +1974,10 @@ namespace F1XR.RestAPI.Replay.Room
                 $"speedFloor={minimumBoostedBattleTravelInVehicleLengthsPerSecond:0.##} car/s, " +
                 $"speedCeiling={maximumBoostedPlaybackSpeed:0.###}x, " +
                 $"battleTravel={measuredBattleTravelInVehicleLengthsPerSecond:0.##} car/s, " +
+                $"wallExitHandoff={wallExitHandoffPrepared}@" +
+                $"{wallExitHandoffTime:0.00}, " +
+                $"wallExitStrategy={wallExitStrategy}, " +
+                $"transitionBeat={wallExitTransitionBeatIndex}, " +
                 $"portals={portalPresentation.IsConfigured}",
                 this);
             return true;
@@ -1984,7 +2081,8 @@ namespace F1XR.RestAPI.Replay.Room
                 visibleActionBeatCount == actionBeatCount;
             requiresAdditionalShot =
                 actionBeatCount > 0 &&
-                !allActionBeatsVisible;
+                !allActionBeatsVisible &&
+                !appliedRecommendedWallExitPlacement;
             BuildAdditionalShotRequests();
             TryConfigureNaturalVisibilityEnd(window);
             MeasureShowcasePerception(viewer);
@@ -2513,6 +2611,7 @@ namespace F1XR.RestAPI.Replay.Room
             usesNaturalVisibilityEnd = false;
             naturalVisibilityEndTime = 0f;
             if (eventReplay == null ||
+                appliedRecommendedWallExitPlacement ||
                 requiresAdditionalShot ||
                 actionBeats.Count == 0 ||
                 visibleIntervals.Count == 0)
@@ -2677,6 +2776,58 @@ namespace F1XR.RestAPI.Replay.Room
             return placement.IsValid;
         }
 
+        private bool TryPlanMultiBeatWallExit(
+            out float transitionTime,
+            out int transitionBeatIndex,
+            out Vector3 wallExitAttentionPosition)
+        {
+            transitionTime = 0f;
+            transitionBeatIndex = -1;
+            wallExitAttentionPosition = Vector3.zero;
+            wallExitPlanningBeats.Clear();
+            if (eventReplay == null ||
+                !eventReplay.TryCopyShowcaseActionBeats(
+                    wallExitPlanningBeats) ||
+                wallExitPlanningBeats.Count < 2)
+            {
+                return false;
+            }
+
+            float requiredGap =
+                Mathf.Max(0.2f, battleReframeDuration) *
+                Mathf.Max(1f, maximumBoostedPlaybackSpeed) +
+                multiBeatTransitionSafetyMargin;
+            for (int beforeIndex =
+                    wallExitPlanningBeats.Count - 2;
+                 beforeIndex >= 0;
+                 beforeIndex--)
+            {
+                ShowcaseActionBeat before =
+                    wallExitPlanningBeats[beforeIndex];
+                ShowcaseActionBeat after =
+                    wallExitPlanningBeats[beforeIndex + 1];
+                float resolvedTransitionTime = Mathf.Max(
+                    before.Time,
+                    before.ConfirmedTime);
+                float nextBeatStart = Mathf.Min(
+                    after.StartTime,
+                    after.Time);
+                if (nextBeatStart - resolvedTransitionTime <
+                    requiredGap)
+                {
+                    continue;
+                }
+
+                transitionTime = resolvedTransitionTime;
+                transitionBeatIndex = beforeIndex + 1;
+                wallExitAttentionPosition =
+                    after.EventLocalPosition;
+                return true;
+            }
+
+            return false;
+        }
+
         private void InitializeShotPlacementRuntime(
             ShowcaseStagePlacement placement)
         {
@@ -2700,6 +2851,152 @@ namespace F1XR.RestAPI.Replay.Room
                 initialShotPlacement.IsValid;
         }
 
+        private void InitializeWallExitHandoffRuntime(
+            ShowcaseStagePlacement battlePlacement,
+            ShowcaseStagePlacement exitPlacement,
+            float transitionTime)
+        {
+            ResetWallExitHandoffRuntime();
+            wallExitBattlePlacement =
+                ToShotPlacement(battlePlacement);
+            wallExitFinalPlacement =
+                ToShotPlacement(exitPlacement);
+            wallExitHandoffPrepared =
+                appliedRecommendedWallExitPlacement &&
+                wallExitBattlePlacement.IsValid &&
+                wallExitFinalPlacement.IsValid &&
+                ShotPlacementsDiffer(
+                    wallExitBattlePlacement,
+                    wallExitFinalPlacement);
+            wallExitHandoffComplete =
+                !wallExitHandoffPrepared;
+            if (!wallExitHandoffPrepared)
+                return;
+
+            wallExitHandoffTime = transitionTime;
+        }
+
+        private void UpdateWallExitHandoffPlacement()
+        {
+            if (!wallExitHandoffPrepared || eventReplay == null)
+                return;
+
+            float replayTime = eventReplay.CurrentTime;
+            bool timelineChanged =
+                observedShowcaseTimelineRevision !=
+                eventReplay.ShowcaseTimelineRevision;
+            bool rewound =
+                replayTime + 0.0001f < previousShotReplayTime;
+            if (timelineChanged || rewound)
+            {
+                CancelWallExitHandoff(false);
+                wallExitHandoffComplete =
+                    replayTime >= wallExitHandoffTime;
+                TryApplyShotPlacement(
+                    wallExitHandoffComplete
+                        ? wallExitFinalPlacement
+                        : wallExitBattlePlacement);
+                observedShowcaseTimelineRevision =
+                    eventReplay.ShowcaseTimelineRevision;
+                previousShotReplayTime = replayTime;
+                UpdateFinalShotExitPortalVisibility();
+                return;
+            }
+
+            previousShotReplayTime = replayTime;
+            if (wallExitHandoffActive)
+            {
+                UpdateWallExitHandoff();
+                return;
+            }
+            if (wallExitHandoffComplete ||
+                !eventReplay.IsPlaying ||
+                replayTime < wallExitHandoffTime)
+            {
+                return;
+            }
+
+            BeginWallExitHandoff();
+        }
+
+        private void BeginWallExitHandoff()
+        {
+            wallExitHandoffElapsed = 0f;
+            wallExitHandoffActive = true;
+            wallExitHandoffComplete = false;
+            SetBattleReframeVehiclesHidden(true);
+            Camera viewer = Camera.main;
+            if (viewer != null)
+                ShowBattleReframeCue(viewer);
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void UpdateWallExitHandoff()
+        {
+            SetBattleReframeVehiclesHidden(true);
+            if (!eventReplay.IsPlaying)
+                return;
+
+            wallExitHandoffElapsed += Time.unscaledDeltaTime;
+            float availableReplayTime = activeRun.IsValid
+                ? activeRun.Timing.ExitTime - wallExitHandoffTime
+                : battleReframeDuration;
+            float duration = Mathf.Clamp(
+                availableReplayTime,
+                0.2f,
+                Mathf.Max(0.2f, battleReframeDuration));
+            float progress = Mathf.Clamp01(
+                wallExitHandoffElapsed / duration);
+            float eased = progress * progress *
+                (3f - 2f * progress);
+            ShowcaseShotPlacementCandidate placement = new(
+                Vector3.Lerp(
+                    wallExitBattlePlacement.Position,
+                    wallExitFinalPlacement.Position,
+                    eased),
+                Quaternion.Slerp(
+                    wallExitBattlePlacement.Rotation,
+                    wallExitFinalPlacement.Rotation,
+                    eased),
+                Mathf.Lerp(
+                    wallExitBattlePlacement.UniformScale,
+                    wallExitFinalPlacement.UniformScale,
+                    eased),
+                Vector3.Lerp(
+                    wallExitBattlePlacement.EventLocalFocus,
+                    wallExitFinalPlacement.EventLocalFocus,
+                    eased));
+            if (!TryApplyShotPlacement(placement))
+            {
+                CancelWallExitHandoff(true);
+                return;
+            }
+
+            UpdateBattleReframeCue(progress);
+            if (progress < 1f)
+                return;
+
+            wallExitHandoffActive = false;
+            wallExitHandoffComplete = true;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void CancelWallExitHandoff(bool restoreBattlePlacement)
+        {
+            wallExitHandoffActive = false;
+            wallExitHandoffElapsed = 0f;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            if (restoreBattlePlacement)
+            {
+                wallExitHandoffComplete = false;
+                TryApplyShotPlacement(wallExitBattlePlacement);
+                UpdateFinalShotExitPortalVisibility();
+            }
+        }
+
         private void UpdateAdditionalShotPlacement()
         {
             if (!shotPlacementRuntimeInitialized ||
@@ -2707,6 +3004,14 @@ namespace F1XR.RestAPI.Replay.Room
                 activePlacementMode !=
                     ShowcaseStagePlacementMode.RoomDioramaRigid)
             {
+                return;
+            }
+
+            if (appliedRecommendedWallExitPlacement)
+            {
+                if (battleReframeActive)
+                    CancelBattleReframe();
+                UpdateWallExitHandoffPlacement();
                 return;
             }
 
@@ -3073,6 +3378,7 @@ namespace F1XR.RestAPI.Replay.Room
             deferExitPortalUntilFinalShot =
                 portalPresentation != null &&
                 portalPresentation.IsConfigured &&
+                !appliedRecommendedWallExitPlacement &&
                 activePlacementMode ==
                     ShowcaseStagePlacementMode.RoomDioramaRigid &&
                 finalAdditionalShotRequestIndex >= 0;
@@ -3092,8 +3398,14 @@ namespace F1XR.RestAPI.Replay.Room
                 !battleReframeActive &&
                 lastProcessedAdditionalShotRequestIndex >=
                     finalAdditionalShotRequestIndex;
+            bool wallExitReady =
+                appliedRecommendedWallExitPlacement &&
+                (!wallExitHandoffPrepared ||
+                 wallExitHandoffComplete);
             portalPresentation.SetExitPortalVisible(
-                finalShot && !usesNaturalVisibilityEnd);
+                appliedRecommendedWallExitPlacement
+                    ? wallExitReady
+                    : finalShot && !usesNaturalVisibilityEnd);
         }
 
         private bool TryApplyShotPlacement(
@@ -3106,6 +3418,33 @@ namespace F1XR.RestAPI.Replay.Room
                     placement.Rotation,
                     placement.UniformScale,
                     placement.EventLocalFocus);
+        }
+
+        private static ShowcaseShotPlacementCandidate ToShotPlacement(
+            ShowcaseStagePlacement placement)
+        {
+            return placement.IsValid
+                ? new ShowcaseShotPlacementCandidate(
+                    placement.Position,
+                    placement.Rotation,
+                    placement.UniformScale,
+                    placement.InteractionFocus)
+                : default;
+        }
+
+        private static bool ShotPlacementsDiffer(
+            ShowcaseShotPlacementCandidate first,
+            ShowcaseShotPlacementCandidate second)
+        {
+            return Vector3.Distance(
+                       first.Position,
+                       second.Position) > 0.01f ||
+                Quaternion.Angle(
+                    first.Rotation,
+                    second.Rotation) > 0.5f ||
+                Mathf.Abs(
+                    first.UniformScale -
+                    second.UniformScale) > 0.0001f;
         }
 
         private bool TryFindPrecedingVisibleInterval(
@@ -3372,6 +3711,23 @@ namespace F1XR.RestAPI.Replay.Room
             lastProcessedAdditionalShotRequestIndex = -1;
             usesNaturalVisibilityEnd = false;
             naturalVisibilityEndTime = 0f;
+            ResetWallExitHandoffRuntime();
+        }
+
+        private void ResetWallExitHandoffRuntime()
+        {
+            if (wallExitHandoffActive)
+            {
+                SetBattleReframeVehiclesHidden(false);
+                HideBattleReframeCue();
+            }
+            wallExitHandoffPrepared = false;
+            wallExitHandoffActive = false;
+            wallExitHandoffComplete = false;
+            wallExitHandoffTime = 0f;
+            wallExitHandoffElapsed = 0f;
+            wallExitBattlePlacement = default;
+            wallExitFinalPlacement = default;
         }
 
         private bool TryCreateShowcaseRun(
@@ -3885,9 +4241,7 @@ namespace F1XR.RestAPI.Replay.Room
                 wallPortalRecommendation =
                     WallPortalRecommendationMode.WallPair;
             }
-            else if (bestQualifiedExitScore >=
-                     wallExitRecommendationScore &&
-                     hasRecommendedWallExitPlacement)
+            else if (hasRecommendedWallExitPlacement)
             {
                 wallPortalRecommendation =
                     WallPortalRecommendationMode.ExitWall;
@@ -4072,7 +4426,8 @@ namespace F1XR.RestAPI.Replay.Room
             float focusMiss = Flat(
                 mappedFocus - heroTarget).magnitude;
             float focusScore = 1f - Mathf.Clamp01(
-                focusMiss / 3f);
+                focusMiss /
+                Mathf.Max(0.1f, wallExitFocusScoreDistance));
             float focusViewScore = ScoreViewerPoint(
                 viewer,
                 mappedFocus);
@@ -4088,16 +4443,12 @@ namespace F1XR.RestAPI.Replay.Room
                     Flat(mappedExit - heroTarget).magnitude - 3f) /
                 5f);
             score = 100f *
-                (focusScore * 0.35f +
+                (focusScore * 0.2f +
                  focusViewScore * 0.25f +
-                 wallViewScore * 0.15f +
-                 continuationScore * 0.15f +
-                 distanceScore * 0.1f);
-            qualified =
-                focusMiss <= 2.25f &&
-                focusViewScore >= 0.35f &&
-                wallViewScore >= 0.2f &&
-                continuationScore >= 0.1f;
+                 wallViewScore * 0.3f +
+                 continuationScore * 0.2f +
+                 distanceScore * 0.05f);
+            qualified = true;
             placement = new ShowcaseStagePlacement(
                 ShowcaseStagePlacementMode.RoomDioramaRigid,
                 position,
@@ -4109,7 +4460,7 @@ namespace F1XR.RestAPI.Replay.Room
                 baselinePlacement.EntryContinuationTarget,
                 baselinePlacement.ExitContinuationTarget,
                 focusMiss,
-                2.25f,
+                wallExitFocusScoreDistance,
                 baselinePlacement.EntryWallAngle,
                 0f,
                 Flat(mappedExit - exitWall.Center).magnitude,
@@ -5477,6 +5828,9 @@ namespace F1XR.RestAPI.Replay.Room
             recommendedWallExitPlacement = default;
             recommendedWallExitFrame = default;
             activePortalMode = "None";
+            wallExitStrategy =
+                WallExitPresentationStrategy.None;
+            wallExitTransitionBeatIndex = -1;
             boundSourceRevision = -1;
             boundLayoutRevision = -1;
             activeRun = default;
@@ -5491,6 +5845,7 @@ namespace F1XR.RestAPI.Replay.Room
             stageRevealSecondLongitudinal = 0f;
             eventLocalPath.Clear();
             presentationCalibrationBeats.Clear();
+            wallExitPlanningBeats.Clear();
             ResetShotVisibilityAnalysis();
             isApplyingRoomPoses = false;
             ResetOrderDiagnostics();
