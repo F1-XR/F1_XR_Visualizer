@@ -79,13 +79,27 @@ namespace F1XR.RestAPI.Replay.Room
         private bool trackExitOnly;
         private float trackExitDistance;
         private bool trackExitDistanceValid;
+        private bool exitPortalVisible = true;
 
         public bool IsConfigured => configured;
+        public bool ExitPortalVisible =>
+            configured && exitPortalVisible;
         public bool ImmersiveScaleEnabled { get; set; }
         public int AuthoritativeVehicleCount =>
             configured && firstVehicle != null && secondVehicle != null
                 ? 2
                 : 0;
+
+        public void SetExitPortalVisible(bool visible)
+        {
+            exitPortalVisible = visible;
+            if (exitSurface != null)
+            {
+                exitSurface.gameObject.SetActive(visible);
+            }
+            if (!visible && exitCamera != null)
+                exitCamera.enabled = false;
+        }
 
         public bool Configure(
             Transform stage,
@@ -353,6 +367,7 @@ namespace F1XR.RestAPI.Replay.Room
             viewerCamera.cullingMask &=
                 ~(1 << PortalSceneLayer);
             CaptureAndHideSourceRenderers(stage);
+            presentationRoot.SetParent(stage, true);
             configured = true;
             SuspendPlaneMeshVisualizers();
             RefreshPortalViews();
@@ -395,6 +410,7 @@ namespace F1XR.RestAPI.Replay.Room
             includedRoomTrackSubmeshes = 0;
             excludedRoomTrackSubmeshes = 0;
             trackExitOnly = false;
+            exitPortalVisible = true;
 
             for (int i = 0; i < sourceLayers.Count; i++)
             {

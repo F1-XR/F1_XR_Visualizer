@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using F1XR.RestAPI.Api;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace F1XR.RestAPI.Replay.Room
 {
@@ -932,6 +933,16 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(0f)]
         private float visibilityTerrainClearanceInVehicleLengths = 0.35f;
 
+        [Header("Multi-Shot Battle Reframe")]
+        [SerializeField, Range(0.2f, 1.5f)]
+        private float battleReframeDuration = 0.7f;
+        [SerializeField]
+        private Color battleReframeStartColor =
+            new(0.05f, 0.78f, 1f, 0.82f);
+        [SerializeField]
+        private Color battleReframeEndColor =
+            new(1f, 0.12f, 0.62f, 0.82f);
+
         [Header("Multi-Shot Runtime Analysis")]
         [SerializeField] private int actionBeatCount;
         [SerializeField] private int visibleActionBeatCount;
@@ -1016,6 +1027,19 @@ namespace F1XR.RestAPI.Replay.Room
         private int activeAdditionalShotRequestIndex = -1;
         private float previousShotReplayTime;
         private bool shotPlacementRuntimeInitialized;
+        private bool battleReframeActive;
+        private float battleReframeElapsed;
+        private int battleReframeRequestIndex = -1;
+        private ShowcaseShotPlacementCandidate battleReframeFrom;
+        private ShowcaseShotPlacementCandidate battleReframeTo;
+        private Transform battleReframeCueRoot;
+        private LineRenderer battleReframeCue;
+        private Material battleReframeCueMaterial;
+        private bool deferExitPortalUntilFinalShot;
+        private int finalAdditionalShotRequestIndex = -1;
+        private int lastProcessedAdditionalShotRequestIndex = -1;
+        private bool usesNaturalVisibilityEnd;
+        private float naturalVisibilityEndTime;
 
         private enum VisibilityFailure
         {
@@ -1183,6 +1207,10 @@ namespace F1XR.RestAPI.Replay.Room
             visibilityTerrainClearanceInVehicleLengths = Mathf.Max(
                 0f,
                 visibilityTerrainClearanceInVehicleLengths);
+            battleReframeDuration = Mathf.Clamp(
+                battleReframeDuration,
+                0.2f,
+                1.5f);
             overtakePortalTransitionVfx ??=
                 new OvertakePortalTransitionVfxSettings();
             overtakePortalTransitionVfx.ClampValues();
@@ -1350,6 +1378,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDestroy()
         {
             ReleaseBinding();
+            DisposeBattleReframeCue();
         }
 
         private void ResolveLocalReferences()
@@ -1634,6 +1663,7 @@ namespace F1XR.RestAPI.Replay.Room
                 : placement.Mode;
             AnalyzeCurrentShotVisibility();
             InitializeShotPlacementRuntime(placement);
+            InitializeFinalShotExitPortalVisibility();
             stageRevealPending = true;
             stageRevealStartTime = eventReplay.CurrentTime;
             eventReplay.TryGetSourceLongitudinal(
@@ -1669,6 +1699,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void AnalyzeCurrentShotVisibility()
         {
+            eventReplay?.ClearShowcasePresentationEndTime();
             ResetShotVisibilityAnalysis();
             if (!analyzeShotVisibility ||
                 eventReplay == null ||
@@ -1766,6 +1797,7 @@ namespace F1XR.RestAPI.Replay.Room
                 actionBeatCount > 0 &&
                 !allActionBeatsVisible;
             BuildAdditionalShotRequests();
+            TryConfigureNaturalVisibilityEnd(window);
             int transitionCount = 0;
             int placementCount = 0;
             for (int i = 0; i < additionalShotRequests.Count; i++)
@@ -1785,12 +1817,58 @@ namespace F1XR.RestAPI.Replay.Room
                 $"{additionalShotRequests.Count}, " +
                 $"transitionWindows={transitionCount}, " +
                 $"placementCandidates={placementCount}, " +
+                $"naturalEnd=" +
+                $"{(usesNaturalVisibilityEnd ? naturalVisibilityEndTime.ToString("0.00") : "none")}, " +
                 $"failures(distance/view/terrain/missing)=" +
                 $"{actionBeatsOutsideDistance}/" +
                 $"{actionBeatsOutsideView}/" +
                 $"{actionBeatsTerrainOccluded}/" +
                 $"{actionBeatsWithMissingPosition}.",
                 this);
+        }
+
+        private void TryConfigureNaturalVisibilityEnd(
+            ShowcasePlaybackWindow window)
+        {
+            usesNaturalVisibilityEnd = false;
+            naturalVisibilityEndTime = 0f;
+            if (eventReplay == null ||
+                requiresAdditionalShot ||
+                actionBeats.Count == 0 ||
+                visibleIntervals.Count == 0)
+            {
+                return;
+            }
+
+            ShowcaseActionBeat finalBeat =
+                actionBeats[actionBeats.Count - 1];
+            ShowcaseVisibleInterval finalInterval =
+                visibleIntervals[visibleIntervals.Count - 1];
+            float mandatoryBeatTime = Mathf.Max(
+                finalBeat.Time,
+                finalBeat.ConfirmedTime);
+            float sampleTolerance = Mathf.Max(
+                0.05f,
+                visibilityAnalysisSampleStep);
+            if (!finalInterval.IsValid ||
+                mandatoryBeatTime <
+                    finalInterval.StartTime - sampleTolerance ||
+                mandatoryBeatTime >
+                    finalInterval.EndTime + sampleTolerance ||
+                finalInterval.EndTime >=
+                    window.EndTime - sampleTolerance)
+            {
+                return;
+            }
+
+            if (!eventReplay.TrySetShowcasePresentationEndTime(
+                    finalInterval.EndTime))
+            {
+                return;
+            }
+
+            usesNaturalVisibilityEnd = true;
+            naturalVisibilityEndTime = finalInterval.EndTime;
         }
 
         private void BuildAdditionalShotRequests()
@@ -1941,12 +2019,18 @@ namespace F1XR.RestAPI.Replay.Room
             float replayTime = eventReplay.CurrentTime;
             if (replayTime + 0.0001f < previousShotReplayTime)
             {
+                CancelBattleReframe();
                 RestoreShotPlacementForTime(replayTime);
                 previousShotReplayTime = replayTime;
                 return;
             }
 
             previousShotReplayTime = replayTime;
+            if (battleReframeActive)
+            {
+                UpdateBattleReframe();
+                return;
+            }
             if (!eventReplay.IsPlaying)
                 return;
 
@@ -1959,7 +2043,10 @@ namespace F1XR.RestAPI.Replay.Room
                 if (!request.HasTransitionWindow ||
                     !request.HasPlacement)
                 {
+                    lastProcessedAdditionalShotRequestIndex =
+                        nextAdditionalShotRequestIndex;
                     nextAdditionalShotRequestIndex++;
+                    UpdateFinalShotExitPortalVisibility();
                     continue;
                 }
 
@@ -1967,7 +2054,10 @@ namespace F1XR.RestAPI.Replay.Room
                     return;
                 if (replayTime > request.TransitionEndTime)
                 {
+                    lastProcessedAdditionalShotRequestIndex =
+                        nextAdditionalShotRequestIndex;
                     nextAdditionalShotRequestIndex++;
+                    UpdateFinalShotExitPortalVisibility();
                     continue;
                 }
 
@@ -1981,27 +2071,244 @@ namespace F1XR.RestAPI.Replay.Room
                     return;
                 }
 
-                if (!TryApplyShotPlacement(request.Placement))
-                    return;
-
                 ShowcaseShotPlacementCandidate previousPlacement =
                     activeAdditionalShotRequestIndex >= 0
                         ? additionalShotRequests[
                             activeAdditionalShotRequestIndex].Placement
                         : initialShotPlacement;
-                if (!eventReplay.TrySkipShowcaseDeadGap(
-                        request.TransitionEndTime))
-                {
-                    TryApplyShotPlacement(previousPlacement);
-                    return;
-                }
-
-                activeAdditionalShotRequestIndex =
-                    nextAdditionalShotRequestIndex;
-                nextAdditionalShotRequestIndex++;
-                previousShotReplayTime = eventReplay.CurrentTime;
+                BeginBattleReframe(
+                    previousPlacement,
+                    request.Placement,
+                    nextAdditionalShotRequestIndex,
+                    viewer);
                 return;
             }
+        }
+
+        private void BeginBattleReframe(
+            ShowcaseShotPlacementCandidate from,
+            ShowcaseShotPlacementCandidate to,
+            int requestIndex,
+            Camera viewer)
+        {
+            if (!from.IsValid ||
+                !to.IsValid ||
+                requestIndex < 0 ||
+                requestIndex >= additionalShotRequests.Count ||
+                viewer == null)
+            {
+                return;
+            }
+
+            battleReframeFrom = from;
+            battleReframeTo = to;
+            battleReframeRequestIndex = requestIndex;
+            battleReframeElapsed = 0f;
+            battleReframeActive = true;
+            SetBattleReframeVehiclesHidden(true);
+            ShowBattleReframeCue(viewer);
+        }
+
+        private void UpdateBattleReframe()
+        {
+            SetBattleReframeVehiclesHidden(true);
+            if (!eventReplay.IsPlaying)
+                return;
+
+            battleReframeElapsed += Time.unscaledDeltaTime;
+            float duration = Mathf.Max(
+                0.2f,
+                battleReframeDuration);
+            float progress = Mathf.Clamp01(
+                battleReframeElapsed / duration);
+            if (battleReframeRequestIndex >= 0 &&
+                battleReframeRequestIndex <
+                    additionalShotRequests.Count)
+            {
+                ShowcaseAdditionalShotRequest request =
+                    additionalShotRequests[
+                        battleReframeRequestIndex];
+                progress = Mathf.Max(
+                    progress,
+                    Mathf.InverseLerp(
+                        request.TransitionStartTime,
+                        request.TransitionEndTime,
+                        eventReplay.CurrentTime));
+            }
+            float eased = progress * progress *
+                (3f - 2f * progress);
+            ShowcaseShotPlacementCandidate placement =
+                new(
+                    Vector3.Lerp(
+                        battleReframeFrom.Position,
+                        battleReframeTo.Position,
+                        eased),
+                    Quaternion.Slerp(
+                        battleReframeFrom.Rotation,
+                        battleReframeTo.Rotation,
+                        eased),
+                    Mathf.Lerp(
+                        battleReframeFrom.UniformScale,
+                        battleReframeTo.UniformScale,
+                        eased),
+                    Vector3.Lerp(
+                        battleReframeFrom.EventLocalFocus,
+                        battleReframeTo.EventLocalFocus,
+                        eased));
+            if (!TryApplyShotPlacement(placement))
+            {
+                CancelBattleReframe();
+                TryApplyShotPlacement(battleReframeFrom);
+                return;
+            }
+
+            UpdateBattleReframeCue(progress);
+            if (progress < 1f)
+                return;
+
+            activeAdditionalShotRequestIndex =
+                battleReframeRequestIndex;
+            lastProcessedAdditionalShotRequestIndex =
+                battleReframeRequestIndex;
+            nextAdditionalShotRequestIndex =
+                battleReframeRequestIndex + 1;
+            battleReframeActive = false;
+            battleReframeRequestIndex = -1;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void CancelBattleReframe()
+        {
+            battleReframeActive = false;
+            battleReframeElapsed = 0f;
+            battleReframeRequestIndex = -1;
+            battleReframeFrom = default;
+            battleReframeTo = default;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+        }
+
+        private void SetBattleReframeVehiclesHidden(bool hidden)
+        {
+            ResolveCar(firstBinding)?
+                .SetShowcaseTransitionHidden(hidden);
+            ResolveCar(secondBinding)?
+                .SetShowcaseTransitionHidden(hidden);
+        }
+
+        private void ShowBattleReframeCue(Camera viewer)
+        {
+            EnsureBattleReframeCue(viewer);
+            if (battleReframeCueRoot != null)
+                battleReframeCueRoot.gameObject.SetActive(true);
+            UpdateBattleReframeCue(0f);
+        }
+
+        private void EnsureBattleReframeCue(Camera viewer)
+        {
+            if (battleReframeCueRoot != null &&
+                battleReframeCue != null)
+            {
+                battleReframeCueRoot.SetParent(
+                    viewer.transform,
+                    false);
+                return;
+            }
+
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                return;
+
+            GameObject cueObject = new("BattleReframeCue")
+            {
+                hideFlags = HideFlags.DontSave
+            };
+            battleReframeCueRoot = cueObject.transform;
+            battleReframeCueRoot.SetParent(
+                viewer.transform,
+                false);
+            battleReframeCueRoot.localPosition =
+                new Vector3(0f, 0f, 0.75f);
+            battleReframeCueRoot.localRotation =
+                Quaternion.identity;
+            battleReframeCueMaterial = new Material(shader)
+            {
+                name = "Battle Reframe Cue Material",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            battleReframeCue =
+                cueObject.AddComponent<LineRenderer>();
+            battleReframeCue.useWorldSpace = false;
+            battleReframeCue.loop = true;
+            battleReframeCue.positionCount = 48;
+            battleReframeCue.sharedMaterial =
+                battleReframeCueMaterial;
+            battleReframeCue.alignment = LineAlignment.View;
+            battleReframeCue.numCornerVertices = 3;
+            battleReframeCue.numCapVertices = 3;
+            battleReframeCue.shadowCastingMode =
+                ShadowCastingMode.Off;
+            battleReframeCue.receiveShadows = false;
+        }
+
+        private void UpdateBattleReframeCue(float progress)
+        {
+            if (battleReframeCue == null)
+                return;
+
+            float envelope = Mathf.Sin(
+                Mathf.Clamp01(progress) * Mathf.PI);
+            float radius = Mathf.Lerp(
+                0.12f,
+                0.42f,
+                Mathf.SmoothStep(0f, 1f, progress));
+            float alpha = envelope * 0.82f;
+            Color start = battleReframeStartColor;
+            Color end = battleReframeEndColor;
+            start.a *= alpha;
+            end.a *= alpha;
+            battleReframeCue.startColor = start;
+            battleReframeCue.endColor = end;
+            battleReframeCue.widthMultiplier =
+                Mathf.Lerp(0.012f, 0.003f, progress);
+            for (int i = 0;
+                i < battleReframeCue.positionCount;
+                i++)
+            {
+                float angle =
+                    i /
+                    (float)battleReframeCue.positionCount *
+                    Mathf.PI * 2f;
+                battleReframeCue.SetPosition(
+                    i,
+                    new Vector3(
+                        Mathf.Cos(angle) * radius,
+                        Mathf.Sin(angle) * radius,
+                        0f));
+            }
+        }
+
+        private void HideBattleReframeCue()
+        {
+            if (battleReframeCueRoot != null)
+                battleReframeCueRoot.gameObject.SetActive(false);
+        }
+
+        private void DisposeBattleReframeCue()
+        {
+            if (battleReframeCueRoot != null)
+                Destroy(battleReframeCueRoot.gameObject);
+            if (battleReframeCueMaterial != null)
+                Destroy(battleReframeCueMaterial);
+
+            battleReframeCueRoot = null;
+            battleReframeCue = null;
+            battleReframeCueMaterial = null;
         }
 
         private void RestoreShotPlacementForTime(float replayTime)
@@ -2038,6 +2345,51 @@ namespace F1XR.RestAPI.Replay.Room
                     resolvedRequestIndex;
             }
             nextAdditionalShotRequestIndex = resolvedNextIndex;
+            lastProcessedAdditionalShotRequestIndex =
+                resolvedNextIndex - 1;
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void InitializeFinalShotExitPortalVisibility()
+        {
+            finalAdditionalShotRequestIndex = -1;
+            for (int i = 0;
+                i < additionalShotRequests.Count;
+                i++)
+            {
+                ShowcaseAdditionalShotRequest request =
+                    additionalShotRequests[i];
+                if (request.HasTransitionWindow &&
+                    request.HasPlacement)
+                {
+                    finalAdditionalShotRequestIndex = i;
+                }
+            }
+            lastProcessedAdditionalShotRequestIndex = -1;
+            deferExitPortalUntilFinalShot =
+                portalPresentation != null &&
+                portalPresentation.IsConfigured &&
+                activePlacementMode ==
+                    ShowcaseStagePlacementMode.RoomDioramaRigid &&
+                finalAdditionalShotRequestIndex >= 0;
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void UpdateFinalShotExitPortalVisibility()
+        {
+            if (portalPresentation == null ||
+                !portalPresentation.IsConfigured)
+            {
+                return;
+            }
+
+            bool finalShot =
+                !deferExitPortalUntilFinalShot ||
+                !battleReframeActive &&
+                lastProcessedAdditionalShotRequestIndex >=
+                    finalAdditionalShotRequestIndex;
+            portalPresentation.SetExitPortalVisible(
+                finalShot && !usesNaturalVisibilityEnd);
         }
 
         private bool TryApplyShotPlacement(
@@ -2298,6 +2650,17 @@ namespace F1XR.RestAPI.Replay.Room
             activeAdditionalShotRequestIndex = -1;
             previousShotReplayTime = 0f;
             shotPlacementRuntimeInitialized = false;
+            battleReframeActive = false;
+            battleReframeElapsed = 0f;
+            battleReframeRequestIndex = -1;
+            battleReframeFrom = default;
+            battleReframeTo = default;
+            HideBattleReframeCue();
+            deferExitPortalUntilFinalShot = false;
+            finalAdditionalShotRequestIndex = -1;
+            lastProcessedAdditionalShotRequestIndex = -1;
+            usesNaturalVisibilityEnd = false;
+            naturalVisibilityEndTime = 0f;
         }
 
         private bool TryCreateShowcaseRun(
@@ -3604,6 +3967,7 @@ namespace F1XR.RestAPI.Replay.Room
             bool restoreTableTrack = true)
         {
             Transform stageToRestore = boundStage;
+            CancelBattleReframe();
             portalPresentation?.Clear();
             lifeSizeVehicles?.Clear();
             lifeSizeRoad?.Clear();
@@ -3618,6 +3982,7 @@ namespace F1XR.RestAPI.Replay.Room
                     : 0,
                 false);
             eventReplay?.SetShowcasePlaybackSpeedMultiplier(1f);
+            eventReplay?.ClearShowcasePresentationEndTime();
             eventReplay?.SetShowcaseAudioFocus(0);
             if (restoreTableTrack)
                 eventReplay?.RestoreTableTrackRendering();
