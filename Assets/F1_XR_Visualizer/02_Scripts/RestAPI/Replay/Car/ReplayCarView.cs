@@ -17,6 +17,11 @@ namespace F1XR.RestAPI.Replay
         private bool roomPresentationApplied;
         private bool visualMotionApplied;
         private Camera labelCamera;
+        private readonly List<Renderer>
+            showcaseTransitionRenderers = new();
+        private readonly List<bool>
+            showcaseTransitionRendererStates = new();
+        private bool showcaseTransitionHidden;
 
         public Transform LogicalRoot => logicalRoot != null
             ? logicalRoot
@@ -143,8 +148,63 @@ namespace F1XR.RestAPI.Replay
             AddRenderer(renderers, leaderRing);
         }
 
+        internal void SetShowcaseTransitionHidden(bool hidden)
+        {
+            if (hidden)
+            {
+                if (!showcaseTransitionHidden)
+                {
+                    showcaseTransitionRenderers.Clear();
+                    showcaseTransitionRendererStates.Clear();
+                    Renderer[] renderers =
+                        GetComponentsInChildren<Renderer>(true);
+                    for (int i = 0; i < renderers.Length; i++)
+                    {
+                        Renderer renderer = renderers[i];
+                        if (renderer == null)
+                            continue;
+
+                        showcaseTransitionRenderers.Add(renderer);
+                        showcaseTransitionRendererStates.Add(
+                            renderer.enabled);
+                    }
+                    showcaseTransitionHidden = true;
+                }
+
+                for (int i = 0;
+                    i < showcaseTransitionRenderers.Count;
+                    i++)
+                {
+                    Renderer renderer =
+                        showcaseTransitionRenderers[i];
+                    if (renderer != null)
+                        renderer.enabled = false;
+                }
+                return;
+            }
+
+            if (!showcaseTransitionHidden)
+                return;
+
+            for (int i = 0;
+                i < showcaseTransitionRenderers.Count;
+                i++)
+            {
+                Renderer renderer = showcaseTransitionRenderers[i];
+                if (renderer != null)
+                {
+                    renderer.enabled =
+                        showcaseTransitionRendererStates[i];
+                }
+            }
+            showcaseTransitionRenderers.Clear();
+            showcaseTransitionRendererStates.Clear();
+            showcaseTransitionHidden = false;
+        }
+
         private void OnDestroy()
         {
+            SetShowcaseTransitionHidden(false);
             DisposeRenderLod();
             DisposeOvertakeRibbon();
             DisposeOvertakeSideBySideVfx();

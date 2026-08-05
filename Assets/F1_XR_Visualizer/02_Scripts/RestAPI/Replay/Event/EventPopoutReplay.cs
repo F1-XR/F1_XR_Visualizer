@@ -186,6 +186,7 @@ namespace F1XR.RestAPI.Replay
         private bool battleCompletionConfirmed;
         private bool battleVictoryTriggered;
         private ShowcasePlaybackWindow showcasePlaybackWindow;
+        private float showcasePresentationEndTime = float.NaN;
 
         public bool IsLoading => isLoading;
         public bool IsActive => isActive;
@@ -859,6 +860,27 @@ namespace F1XR.RestAPI.Replay
                 Mathf.Max(1f, multiplier);
         }
 
+        internal bool TrySetShowcasePresentationEndTime(
+            float replayTime)
+        {
+            if (!isActive ||
+                !showcasePlaybackWindow.IsValid ||
+                !float.IsFinite(replayTime) ||
+                replayTime <= showcasePlaybackWindow.StartTime ||
+                replayTime >= showcasePlaybackWindow.EndTime)
+            {
+                return false;
+            }
+
+            showcasePresentationEndTime = replayTime;
+            return true;
+        }
+
+        internal void ClearShowcasePresentationEndTime()
+        {
+            showcasePresentationEndTime = float.NaN;
+        }
+
         public void SetOvertakeVehicleSizeScale(float scale)
         {
             overtakeVehicleSizeScale = Mathf.Max(0.01f, scale);
@@ -893,29 +915,6 @@ namespace F1XR.RestAPI.Replay
             timeline.SetTime(timeline.FromNormalized(normalized));
             ResetIndices();
             ApplyCars();
-        }
-
-        internal bool TrySkipShowcaseDeadGap(float targetTime)
-        {
-            if (!isActive ||
-                !showcasePlaybackWindow.IsValid ||
-                !float.IsFinite(targetTime))
-            {
-                return false;
-            }
-
-            float currentTime = timeline.CurrentTime;
-            float resolvedTime = Mathf.Clamp(
-                targetTime,
-                currentTime,
-                showcasePlaybackWindow.EndTime);
-            if (resolvedTime <= currentTime + 0.0001f)
-                return false;
-
-            timeline.SetTime(resolvedTime);
-            ResetIndices();
-            ApplyCars();
-            return true;
         }
 
         public void Close()
@@ -1044,7 +1043,15 @@ namespace F1XR.RestAPI.Replay
                     showcasePlaybackSpeedMultiplier *
                     ResolveBattleCruiseSpeedMultiplier(
                         timeline.CurrentTime));
-                if (timeline.StopAtEnd())
+                if (!float.IsNaN(showcasePresentationEndTime) &&
+                    timeline.CurrentTime >=
+                        showcasePresentationEndTime)
+                {
+                    timeline.SetTime(showcasePresentationEndTime);
+                    timeline.Pause();
+                    eventAudio?.SetPlaying(false);
+                }
+                else if (timeline.StopAtEnd())
                     eventAudio?.SetPlaying(false);
             }
 
@@ -2771,6 +2778,7 @@ namespace F1XR.RestAPI.Replay
             battleCompletionConfirmed = false;
             battleVictoryTriggered = false;
             showcasePlaybackWindow = default;
+            showcasePresentationEndTime = float.NaN;
             eventCars?.Clear();
             eventAudio = null;
             eventCars = null;
