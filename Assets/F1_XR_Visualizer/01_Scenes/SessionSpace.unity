@@ -866,6 +866,7 @@ MonoBehaviour:
   mappedPathStart: 0
   mappedPathEnd: 1
   modelHeadingCorrection: 0
+  presentationMode: 0
   wallContinuationTarget: 10
   entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
@@ -874,6 +875,20 @@ MonoBehaviour:
   showcaseVehicleScale: 0.7
   showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
+  compositionMode: 0
+  criticalSegmentCenterBias: 0.65
+  balancedMaximumShift: 2
+  multiExchangeMaximumShift: 3.5
+  trackExitPortalEnabled: 1
+  connectedWallPortalsEnabled: 1
+  lifeSizeDriveBy:
+    roadWidth: 3.6
+    roadThickness: 0.08
+    vehicleLength: 5.2
+    portalHeight: 2.1
+    wallMargin: 0.1
+    seamPositionTolerance: 0.03
+    seamAngleTolerance: 2
   overtakePortalTransitionVfx:
     enabled: 1
     overtakingCarOnly: 1

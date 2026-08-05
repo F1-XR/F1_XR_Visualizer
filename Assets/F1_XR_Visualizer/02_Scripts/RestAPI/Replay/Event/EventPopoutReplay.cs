@@ -46,6 +46,38 @@ namespace F1XR.RestAPI.Replay
             PortalVisualEndTime >= EndTime;
     }
 
+    internal readonly struct ShowcaseActionBeat
+    {
+        public ShowcaseActionBeat(
+            float time,
+            float startTime,
+            float endTime,
+            float confirmedTime,
+            int overtaker,
+            int defender,
+            OvertakeBattleExchangeKind kind,
+            Vector3 eventLocalPosition)
+        {
+            Time = time;
+            StartTime = startTime;
+            EndTime = endTime;
+            ConfirmedTime = confirmedTime;
+            Overtaker = overtaker;
+            Defender = defender;
+            Kind = kind;
+            EventLocalPosition = eventLocalPosition;
+        }
+
+        public float Time { get; }
+        public float StartTime { get; }
+        public float EndTime { get; }
+        public float ConfirmedTime { get; }
+        public int Overtaker { get; }
+        public int Defender { get; }
+        public OvertakeBattleExchangeKind Kind { get; }
+        public Vector3 EventLocalPosition { get; }
+    }
+
     public sealed class EventPopoutReplay : MonoBehaviour
     {
         private const int MaxEventDrivers = 4;
@@ -216,6 +248,71 @@ namespace F1XR.RestAPI.Replay
                     out lastPosition);
         }
 
+        internal bool TryCopyShowcaseActionBeats(
+            List<ShowcaseActionBeat> destination)
+        {
+            destination?.Clear();
+            if (destination == null ||
+                battleSequence == null ||
+                !battleSequence.IsValid)
+            {
+                return false;
+            }
+
+            IReadOnlyList<OvertakeBattleExchange> exchanges =
+                battleSequence.Exchanges;
+            for (int i = 0; i < exchanges.Count; i++)
+            {
+                OvertakeBattleExchange exchange = exchanges[i];
+                if (!TryGetEventLocalPathPosition(
+                        exchange.anchorTime,
+                        out Vector3 position))
+                {
+                    destination.Clear();
+                    return false;
+                }
+
+                float padding = Mathf.Max(
+                    battleSampleSeconds,
+                    battleExchangeNormalSpeedSeconds);
+                float beatStart = Mathf.Max(
+                    showcasePlaybackWindow.StartTime,
+                    exchange.anchorTime - padding);
+                float beatEnd = Mathf.Min(
+                    showcasePlaybackWindow.EndTime,
+                    Mathf.Max(
+                        exchange.confirmedTime,
+                        exchange.anchorTime + padding));
+                if (i > 0)
+                {
+                    beatStart = Mathf.Max(
+                        beatStart,
+                        (exchanges[i - 1].anchorTime +
+                         exchange.anchorTime) * 0.5f);
+                }
+                if (i < exchanges.Count - 1)
+                {
+                    beatEnd = Mathf.Min(
+                        beatEnd,
+                        (exchange.anchorTime +
+                         exchanges[i + 1].anchorTime) * 0.5f);
+                }
+
+                destination.Add(
+                    new ShowcaseActionBeat(
+                        exchange.anchorTime,
+                        beatStart,
+                        beatEnd,
+                        exchange.confirmedTime,
+                        exchange.overtaker,
+                        exchange.defender,
+                        exchange.kind,
+                        position));
+            }
+
+            return destination.Count > 0;
+        }
+
         internal bool TryGetShowcasePlaybackWindow(
             out ShowcasePlaybackWindow window)
         {
@@ -242,6 +339,45 @@ namespace F1XR.RestAPI.Replay
                 (EvaluateSourcePathDistance(distance) -
                  eventSpaceCenter);
             return true;
+        }
+
+        internal bool TryGetEventLocalVehiclePosition(
+            int driverNumber,
+            float replayTime,
+            out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (!isActive ||
+                !eventSamples.TryGetValue(
+                    driverNumber,
+                    out List<LocationSample> samples) ||
+                !TryGetMappedPosition(
+                    samples,
+                    replayTime,
+                    out Vector3 mappedPosition))
+            {
+                return false;
+            }
+
+            position = sourceToEventRotation *
+                (mappedPosition - eventSpaceCenter);
+            return true;
+        }
+
+        internal bool TryGetShowcaseTerrainOcclusion(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            out bool occluded)
+        {
+            occluded = false;
+            return isActive &&
+                trackSegment != null &&
+                trackSegment.TryIsTerrainOccluded(
+                    worldOrigin,
+                    worldTarget,
+                    worldTargetClearance,
+                    out occluded);
         }
 
         public bool TryCopyEventLocalCenterPath(
@@ -757,6 +893,29 @@ namespace F1XR.RestAPI.Replay
             timeline.SetTime(timeline.FromNormalized(normalized));
             ResetIndices();
             ApplyCars();
+        }
+
+        internal bool TrySkipShowcaseDeadGap(float targetTime)
+        {
+            if (!isActive ||
+                !showcasePlaybackWindow.IsValid ||
+                !float.IsFinite(targetTime))
+            {
+                return false;
+            }
+
+            float currentTime = timeline.CurrentTime;
+            float resolvedTime = Mathf.Clamp(
+                targetTime,
+                currentTime,
+                showcasePlaybackWindow.EndTime);
+            if (resolvedTime <= currentTime + 0.0001f)
+                return false;
+
+            timeline.SetTime(resolvedTime);
+            ResetIndices();
+            ApplyCars();
+            return true;
         }
 
         public void Close()
