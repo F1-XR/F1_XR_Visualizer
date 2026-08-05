@@ -187,6 +187,7 @@ namespace F1XR.RestAPI.Replay
         private bool battleVictoryTriggered;
         private ShowcasePlaybackWindow showcasePlaybackWindow;
         private float showcasePresentationEndTime = float.NaN;
+        private int showcaseTimelineRevision;
 
         public bool IsLoading => isLoading;
         public bool IsActive => isActive;
@@ -217,6 +218,8 @@ namespace F1XR.RestAPI.Replay
             ? stageRoot.transform
             : null;
         public int SourceGeometryRevision => sourceGeometryRevision;
+        internal int ShowcaseTimelineRevision =>
+            showcaseTimelineRevision;
         public int SourceGeometryPointCount => presentationPath.Count;
         public float OrderingTransitionTime => isActive
             ? ResolveOrderingTransitionTime()
@@ -881,6 +884,47 @@ namespace F1XR.RestAPI.Replay
             showcasePresentationEndTime = float.NaN;
         }
 
+        internal bool TryGetShowcaseResultPresentationEndTime(
+            out float replayTime)
+        {
+            replayTime = 0f;
+            if (!isActive ||
+                !showcasePlaybackWindow.IsValid ||
+                battleSequence == null ||
+                !battleSequence.IsValid)
+            {
+                return false;
+            }
+
+            OvertakeBattleExchange finalExchange =
+                battleSequence.Exchanges[
+                    battleSequence.Exchanges.Count - 1];
+            float finalConfirmationTime = Mathf.Max(
+                finalExchange.anchorTime,
+                finalExchange.confirmedTime);
+            float resultDuration = 0f;
+            OvertakeCompletionVfxSettings settings =
+                player != null
+                    ? player.overtakeCompletionVfx
+                    : null;
+            if (settings != null && settings.enabled)
+            {
+                resultDuration = Mathf.Max(
+                    settings.pulseDurationReplaySeconds,
+                    settings.sweepDurationReplaySeconds,
+                    settings.streakDurationReplaySeconds,
+                    settings.hudDisplayDurationReplaySeconds);
+            }
+
+            replayTime = Mathf.Min(
+                showcasePlaybackWindow.EndTime,
+                finalConfirmationTime +
+                Mathf.Max(0f, battleVictoryDelaySeconds) +
+                resultDuration);
+            return float.IsFinite(replayTime) &&
+                replayTime > showcasePlaybackWindow.StartTime;
+        }
+
         public void SetOvertakeVehicleSizeScale(float scale)
         {
             overtakeVehicleSizeScale = Mathf.Max(0.01f, scale);
@@ -902,6 +946,7 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             timeline.SetTime(timeline.StartTime);
+            showcaseTimelineRevision++;
             ResetIndices();
             Play();
             ApplyCars();
@@ -913,6 +958,7 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             timeline.SetTime(timeline.FromNormalized(normalized));
+            showcaseTimelineRevision++;
             ResetIndices();
             ApplyCars();
         }
