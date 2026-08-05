@@ -875,12 +875,34 @@ MonoBehaviour:
   showcaseVehicleScale: 0.7
   showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
+  normalizeRoomPresentation: 1
+  minimumRoomVehicleLength: 0.5
+  maximumRoomVehicleLength: 0.7
+  minimumVehiclePresentationScale: 0.5
+  maximumVehiclePresentationScale: 1.1
+  minimumBoostedBattleTravelInVehicleLengthsPerSecond: 10
+  maximumBoostedPlaybackSpeed: 2.4
   compositionMode: 0
   criticalSegmentCenterBias: 0.65
   balancedMaximumShift: 2
   multiExchangeMaximumShift: 3.5
+  referencePassProfileEnabled: 1
+  referencePassCrossingYaw: 28
   trackExitPortalEnabled: 1
   connectedWallPortalsEnabled: 1
+  evaluateWallPortalCandidates: 1
+  minimumEvaluatedPortalWallWidth: 2
+  minimumEvaluatedPortalWallHeight: 1.7
+  wallPairRecommendationScore: 60
+  wallExitFocusScoreDistance: 6
+  evaluatedWallCount: 0
+  evaluatedWallPairCount: 0
+  qualifiedWallPairCount: 0
+  bestWallPairScore: 0
+  evaluatedWallExitCount: 0
+  qualifiedWallExitCount: 0
+  bestWallExitScore: 0
+  wallPortalRecommendation: 0
   lifeSizeDriveBy:
     roadWidth: 3.6
     roadThickness: 0.08
@@ -959,6 +981,29 @@ MonoBehaviour:
   actionBeatsOutsideView: 0
   actionBeatsTerrainOccluded: 0
   actionBeatsWithMissingPosition: 0
+  multiBeatTransitionSafetyMargin: 0.15
+  wallExitStrategy: 0
+  wallExitHandoffPrepared: 0
+  wallExitHandoffActive: 0
+  wallExitHandoffComplete: 0
+  wallExitHandoffTime: 0
+  wallExitTransitionBeatIndex: -1
+  perceptionEyeRelativeTrackFocus: {x: 0, y: 0, z: 0}
+  perceptionClosestVehicleDistance: 0
+  perceptionVehicleAngularSize: 0
+  perceptionScreenTravelPerSecond: 0
+  perceptionBattleVisibleFraction: 0
+  runtimePerceptionSampleCount: 0
+  runtimePerceptionVisibleFraction: 0
+  runtimePerceptionScreenSpeedP90: 0
+  runtimePerceptionScreenSpeedPeak: 0
+  runtimePerceptionLateralSpeedP90: 0
+  runtimePerceptionLateralSpeedPeak: 0
+  runtimePerceptionLoomingRateP90: 0
+  runtimePerceptionLoomingRatePeak: 0
+  runtimePerceptionAngularSizePeak: 0
+  runtimePerceptionClosestDistance: 0
+  runtimePerceptionClosestEyePosition: {x: 0, y: 0, z: 0}
   mappingEnabled: 1
 --- !u!4 &493722811
 Transform:
@@ -2214,37 +2259,6 @@ MonoBehaviour:
   positionChangeFlashSeconds: 1.2
   standingsMoveSpeed: 10
   refreshInterval: 0.1
---- !u!1 &1304137257
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1304137258}
-  m_Layer: 0
-  m_Name: EngineAudio
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1304137258
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1304137257}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1356394193
 GameObject:
   m_ObjectHideFlags: 0
@@ -4178,7 +4192,6 @@ SceneRoots:
   - {fileID: 1113257132}
   - {fileID: 493722811}
   - {fileID: 1127476783}
-  - {fileID: 1304137258}
   - {fileID: 1751285736}
   - {fileID: 778030370}
   - {fileID: 803093117}
