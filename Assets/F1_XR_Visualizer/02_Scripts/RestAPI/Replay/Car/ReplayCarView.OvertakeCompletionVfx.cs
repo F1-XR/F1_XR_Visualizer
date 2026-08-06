@@ -755,6 +755,29 @@ namespace F1XR.RestAPI.Replay
 
         private Color ResolveCompletionProfileColor(Color source)
         {
+            if (completionVfxSettings != null &&
+                completionVfxSettings.useDriverColor)
+            {
+                Color driverColor = ResolveOvertakeDriverColor(
+                    source,
+                    true,
+                    completionVfxSettings.driverColorBlend,
+                    completionVfxSettings
+                        .minimumDriverColorBrightness);
+                float profileIntensity = completionVfxProfile switch
+                {
+                    OvertakeCompletionVfxProfile.Counter => 1.08f,
+                    OvertakeCompletionVfxProfile.Repass => 1.14f,
+                    OvertakeCompletionVfxProfile.Victory => 1.2f,
+                    _ => 1f
+                };
+                driverColor.r *= profileIntensity;
+                driverColor.g *= profileIntensity;
+                driverColor.b *= profileIntensity;
+                driverColor.a = source.a;
+                return driverColor;
+            }
+
             Color accent;
             float blend;
             switch (completionVfxProfile)
