@@ -882,6 +882,17 @@ MonoBehaviour:
   maximumVehiclePresentationScale: 1.1
   minimumBoostedBattleTravelInVehicleLengthsPerSecond: 10
   maximumBoostedPlaybackSpeed: 2.4
+  cinematicRoomScaleEnabled: 1
+  minimumCinematicBattleTravelMetersPerSecond: 7.5
+  minimumCinematicBattleTravelInVehicleLengthsPerSecond: 14
+  minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond: 10
+  cinematicSlowSectionPercentile: 0.25
+  maximumCinematicScaleMultiplier: 4
+  maximumCinematicEventScale: 320
+  measuredLocalBattleTravelPerSecond: 0
+  resolvedCinematicScaleMultiplier: 1
+  projectedCinematicBattleTravelMetersPerSecond: 0
+  measuredSlowSectionBattleTravelInVehicleLengthsPerSecond: 0
   compositionMode: 0
   criticalSegmentCenterBias: 0.65
   balancedMaximumShift: 2
@@ -968,6 +979,12 @@ MonoBehaviour:
   visibilityProbeCenterInVehicleHeight: 0.5
   visibilityProbeSpanInVehicleHeight: 0.35
   visibilityTerrainClearanceInVehicleLengths: 0.35
+  runtimeOcclusionAssistanceEnabled: 1
+  occlusionAssistSampleInterval: 0.1
+  occlusionAssistActivationDelay: 0.08
+  occlusionAssistReleaseDelay: 0.2
+  firstOcclusionAssistActive: 0
+  secondOcclusionAssistActive: 0
   battleReframeDuration: 0.7
   battleReframeStartColor: {r: 0.05, g: 0.78, b: 1, a: 0.82}
   battleReframeEndColor: {r: 1, g: 0.12, b: 0.62, a: 0.82}
@@ -982,6 +999,7 @@ MonoBehaviour:
   actionBeatsTerrainOccluded: 0
   actionBeatsWithMissingPosition: 0
   multiBeatTransitionSafetyMargin: 0.15
+  maximumBattleToWallFocusShift: 3
   wallExitStrategy: 0
   wallExitHandoffPrepared: 0
   wallExitHandoffActive: 0
@@ -1005,6 +1023,8 @@ MonoBehaviour:
   runtimePerceptionClosestDistance: 0
   runtimePerceptionClosestEyePosition: {x: 0, y: 0, z: 0}
   mappingEnabled: 1
+  exitPortalLifecycleState: 0
+  battleOnlyRearWallExitDistance: 0
 --- !u!4 &493722811
 Transform:
   m_ObjectHideFlags: 0
