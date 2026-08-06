@@ -358,8 +358,11 @@ namespace F1XR.RestAPI.Replay
 
             float envelope =
                 Mathf.Sin(Mathf.PI * progress);
-            Color color =
-                settings.lightSweepColor;
+            Color color = ResolveOvertakeDriverColor(
+                settings.lightSweepColor,
+                settings.useDriverColor,
+                settings.driverColorBlend,
+                settings.minimumDriverColorBrightness);
             color.r *=
                 settings.lightSweepIntensity *
                 envelope;

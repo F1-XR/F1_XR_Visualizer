@@ -22,6 +22,7 @@ namespace F1XR.RestAPI.Replay
         private Material labelDotMaterial;
         private MaterialPropertyBlock labelDotBlock;
         private Color labelColor = Color.white;
+        private bool hasDriverColor;
         private string driverLabel;
         private int rank;
         private bool labelVisible = true;
@@ -94,6 +95,7 @@ namespace F1XR.RestAPI.Replay
         public void SetColor(Color color)
         {
             labelColor = color;
+            hasDriverColor = true;
             if (label != null)
                 label.color = labelColor;
 

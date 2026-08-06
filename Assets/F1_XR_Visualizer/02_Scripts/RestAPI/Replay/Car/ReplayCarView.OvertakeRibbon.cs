@@ -81,9 +81,14 @@ namespace F1XR.RestAPI.Replay
 
             float brightnessBoost =
                 Mathf.Max(1f, intensity);
-            Color glowColor = overtaker
+            Color fallbackGlowColor = overtaker
                 ? settings.overtakerGlowColor
                 : settings.defenderGlowColor;
+            Color glowColor = ResolveOvertakeDriverColor(
+                fallbackGlowColor,
+                settings.useDriverColor,
+                settings.driverColorBlend,
+                settings.minimumDriverColorBrightness);
             glowColor.r *= brightnessBoost;
             glowColor.g *= brightnessBoost;
             glowColor.b *= brightnessBoost;
@@ -123,6 +128,45 @@ namespace F1XR.RestAPI.Replay
                 overtakeRibbonWorldWidth *
                 coreWidth *
                 intensity;
+        }
+
+        private Color ResolveOvertakeDriverColor(
+            Color fallback,
+            bool useDriverColor,
+            float blend,
+            float minimumBrightness)
+        {
+            if (!useDriverColor || !hasDriverColor)
+                return fallback;
+
+            Color.RGBToHSV(
+                labelColor,
+                out float hue,
+                out float saturation,
+                out float value);
+            value = Mathf.Max(
+                value,
+                Mathf.Clamp01(minimumBrightness));
+
+            Color driverColor = Color.HSVToRGB(
+                hue,
+                saturation,
+                value,
+                true);
+            float emissionGain = Mathf.Max(
+                1f,
+                Mathf.Max(fallback.r, Mathf.Max(fallback.g, fallback.b)));
+            driverColor.r *= emissionGain;
+            driverColor.g *= emissionGain;
+            driverColor.b *= emissionGain;
+            driverColor.a = fallback.a;
+
+            Color result = Color.Lerp(
+                fallback,
+                driverColor,
+                Mathf.Clamp01(blend));
+            result.a = fallback.a;
+            return result;
         }
 
         public void ClearOvertakeApproachRibbon()
