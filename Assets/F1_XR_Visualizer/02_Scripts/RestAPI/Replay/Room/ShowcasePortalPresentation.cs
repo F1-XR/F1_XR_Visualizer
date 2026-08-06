@@ -44,6 +44,18 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<GameObject> rendererProxies = new();
         private readonly List<Mesh> runtimeMeshes = new();
         private readonly List<Material> runtimeMaterials = new();
+        private readonly Dictionary<Renderer, Material[]>
+            roomTrackOriginalMaterials = new();
+        private readonly Dictionary<Renderer, Material[]>
+            roomVehicleOriginalMaterials = new();
+        private readonly HashSet<Material>
+            suppressedRoomOccluderMaterials = new();
+        private readonly HashSet<Material>
+            desiredRoomOccluderMaterials = new();
+        private readonly HashSet<Material>
+            plannedRoomOccluderMaterials = new();
+        private readonly HashSet<Material>
+            combinedRoomOccluderMaterials = new();
         private readonly List<RenderTexture> renderTextures = new();
         private readonly List<ARPlaneMeshVisualizer> suspendedPlaneVisualizers = new();
         private readonly List<ARPlaneManager> subscribedPlaneManagers = new();
@@ -76,6 +88,11 @@ namespace F1XR.RestAPI.Replay.Room
         private int excludedRoomTrackSubmeshes;
         private bool viewerMaskCaptured;
         private bool configured;
+        private Material roomOccluderClearMaterial;
+        private Material firstVehicleXRayMaterial;
+        private Material secondVehicleXRayMaterial;
+        private bool firstVehicleXRayApplied;
+        private bool secondVehicleXRayApplied;
         private bool trackExitOnly;
         private float trackExitDistance;
         private bool trackExitDistanceValid;
@@ -377,6 +394,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void Clear()
         {
+            plannedRoomOccluderMaterials.Clear();
+            ResetRoomOcclusionAssistance();
             DisablePortalCamera(entryCamera);
             DisablePortalCamera(exitCamera);
             if (presentationRoot != null)
@@ -427,6 +446,11 @@ namespace F1XR.RestAPI.Replay.Room
             labelRendererStates.Clear();
             roomCarRenderers.Clear();
             roomCarTmpRenderers.Clear();
+            roomTrackOriginalMaterials.Clear();
+            roomVehicleOriginalMaterials.Clear();
+            suppressedRoomOccluderMaterials.Clear();
+            desiredRoomOccluderMaterials.Clear();
+            combinedRoomOccluderMaterials.Clear();
             roomTrackLeftBoundary.Clear();
             roomTrackRightBoundary.Clear();
             roomTrackDistances.Clear();
@@ -461,6 +485,9 @@ namespace F1XR.RestAPI.Replay.Room
                     Destroy(runtimeMaterials[i]);
             }
             runtimeMaterials.Clear();
+            roomOccluderClearMaterial = null;
+            firstVehicleXRayMaterial = null;
+            secondVehicleXRayMaterial = null;
 
             for (int i = 0; i < runtimeMeshes.Count; i++)
             {
@@ -788,6 +815,8 @@ namespace F1XR.RestAPI.Replay.Room
                     proxyRenderer);
                 proxyRenderer.sharedMaterials =
                     clippedMaterials;
+                roomTrackOriginalMaterials[proxyRenderer] =
+                    proxyRenderer.sharedMaterials;
                 created++;
             }
 
@@ -908,6 +937,8 @@ namespace F1XR.RestAPI.Replay.Room
                     CopyRendererSettings(
                         meshRenderer,
                         proxyRenderer);
+                    roomVehicleOriginalMaterials[proxyRenderer] =
+                        proxyRenderer.sharedMaterials;
                     roomCarRenderers.Add(
                         new RendererBinding(
                             source,
@@ -981,6 +1012,8 @@ namespace F1XR.RestAPI.Replay.Room
                     CopyRendererSettings(
                         skinned,
                         proxyRenderer);
+                    roomVehicleOriginalMaterials[proxyRenderer] =
+                        proxyRenderer.sharedMaterials;
                     roomCarRenderers.Add(
                         new RendererBinding(
                             source,
@@ -2143,6 +2176,308 @@ namespace F1XR.RestAPI.Replay.Room
                 if (binding.Proxy != null)
                     binding.Proxy.enabled = visible;
             }
+        }
+
+        internal void SetRoomOcclusionAssistance(
+            ShowcaseOcclusionHit firstHit,
+            ShowcaseOcclusionHit secondHit)
+        {
+            if (!configured)
+            {
+                ResetRoomOcclusionAssistance();
+                return;
+            }
+
+            desiredRoomOccluderMaterials.Clear();
+            bool firstDecorativeSuppressed =
+                TryAddDecorativeSuppression(
+                    firstHit,
+                    desiredRoomOccluderMaterials);
+            bool secondDecorativeSuppressed =
+                TryAddDecorativeSuppression(
+                    secondHit,
+                    desiredRoomOccluderMaterials);
+            ApplyCombinedRoomOccluderSuppression();
+            SetVehicleXRay(
+                firstVehicle,
+                firstHit.IsOccluded &&
+                !firstDecorativeSuppressed,
+                GetVehicleXRayMaterial(true),
+                ref firstVehicleXRayApplied);
+            SetVehicleXRay(
+                secondVehicle,
+                secondHit.IsOccluded &&
+                !secondDecorativeSuppressed,
+                GetVehicleXRayMaterial(false),
+                ref secondVehicleXRayApplied);
+        }
+
+        internal void ResetRoomOcclusionAssistance()
+        {
+            desiredRoomOccluderMaterials.Clear();
+            ApplyCombinedRoomOccluderSuppression();
+            SetVehicleXRay(
+                firstVehicle,
+                false,
+                null,
+                ref firstVehicleXRayApplied);
+            SetVehicleXRay(
+                secondVehicle,
+                false,
+                null,
+                ref secondVehicleXRayApplied);
+        }
+
+        internal void SetPlannedRoomOccluders(
+            IReadOnlyCollection<Material> materials)
+        {
+            plannedRoomOccluderMaterials.Clear();
+            if (materials != null)
+            {
+                foreach (Material material in materials)
+                {
+                    if (material != null)
+                        plannedRoomOccluderMaterials.Add(material);
+                }
+            }
+
+            ApplyCombinedRoomOccluderSuppression();
+        }
+
+        private void ApplyCombinedRoomOccluderSuppression()
+        {
+            combinedRoomOccluderMaterials.Clear();
+            combinedRoomOccluderMaterials.UnionWith(
+                plannedRoomOccluderMaterials);
+            combinedRoomOccluderMaterials.UnionWith(
+                desiredRoomOccluderMaterials);
+            ApplyRoomOccluderSuppression(
+                combinedRoomOccluderMaterials);
+        }
+
+        private bool TryAddDecorativeSuppression(
+            ShowcaseOcclusionHit hit,
+            HashSet<Material> destination)
+        {
+            if (!hit.IsOccluded ||
+                hit.Kind != ShowcaseOccluderKind.Decorative ||
+                hit.Material == null ||
+                GetRoomOccluderClearMaterial() == null)
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<Renderer, Material[]> pair in
+                     roomTrackOriginalMaterials)
+            {
+                Material[] materials = pair.Value;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    if (materials[i] != hit.Material)
+                        continue;
+
+                    destination.Add(hit.Material);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ApplyRoomOccluderSuppression(
+            HashSet<Material> desired)
+        {
+            bool hasDesired = desired != null && desired.Count > 0;
+            if ((!hasDesired &&
+                 suppressedRoomOccluderMaterials.Count == 0) ||
+                hasDesired &&
+                suppressedRoomOccluderMaterials.SetEquals(desired))
+            {
+                return;
+            }
+
+            suppressedRoomOccluderMaterials.Clear();
+            if (hasDesired)
+                suppressedRoomOccluderMaterials.UnionWith(desired);
+
+            Material clearMaterial = hasDesired
+                ? GetRoomOccluderClearMaterial()
+                : null;
+            foreach (KeyValuePair<Renderer, Material[]> pair in
+                     roomTrackOriginalMaterials)
+            {
+                Renderer renderer = pair.Key;
+                if (renderer == null)
+                    continue;
+
+                Material[] originals = pair.Value;
+                Material[] applied =
+                    (Material[])originals.Clone();
+                if (clearMaterial != null)
+                {
+                    for (int i = 0; i < applied.Length; i++)
+                    {
+                        if (suppressedRoomOccluderMaterials.Contains(
+                                originals[i]))
+                        {
+                            applied[i] = clearMaterial;
+                        }
+                    }
+                }
+
+                renderer.sharedMaterials = applied;
+            }
+        }
+
+        private void SetVehicleXRay(
+            Transform vehicleRoot,
+            bool enabled,
+            Material xRayMaterial,
+            ref bool appliedState)
+        {
+            enabled &= xRayMaterial != null;
+            if (appliedState == enabled)
+                return;
+
+            foreach (KeyValuePair<Renderer, Material[]> pair in
+                     roomVehicleOriginalMaterials)
+            {
+                Renderer proxy = pair.Key;
+                if (proxy == null ||
+                    vehicleRoot == null ||
+                    !proxy.transform.IsChildOf(vehicleRoot))
+                {
+                    continue;
+                }
+
+                if (enabled)
+                {
+                    Material[] xRayMaterials =
+                        new Material[pair.Value.Length];
+                    for (int i = 0;
+                         i < xRayMaterials.Length;
+                         i++)
+                    {
+                        xRayMaterials[i] = xRayMaterial;
+                    }
+                    proxy.sharedMaterials = xRayMaterials;
+                    proxy.SetPropertyBlock(null);
+                }
+                else
+                {
+                    proxy.sharedMaterials = pair.Value;
+                    Renderer source = FindSourceRenderer(proxy);
+                    if (source != null)
+                    {
+                        MaterialPropertyBlock block =
+                            new MaterialPropertyBlock();
+                        source.GetPropertyBlock(block);
+                        proxy.SetPropertyBlock(block);
+                    }
+                }
+            }
+
+            appliedState = enabled;
+        }
+
+        private Renderer FindSourceRenderer(Renderer proxy)
+        {
+            for (int i = 0; i < roomCarRenderers.Count; i++)
+            {
+                if (roomCarRenderers[i].Proxy == proxy)
+                    return roomCarRenderers[i].Source;
+            }
+
+            return null;
+        }
+
+        private Material GetRoomOccluderClearMaterial()
+        {
+            if (roomOccluderClearMaterial == null)
+            {
+                roomOccluderClearMaterial =
+                    CreateOcclusionAssistMaterial(
+                        "Runtime_RoomOccluderClear",
+                        new Color(0f, 0f, 0f, 0f),
+                        false,
+                        3000);
+            }
+
+            return roomOccluderClearMaterial;
+        }
+
+        private Material GetVehicleXRayMaterial(bool first)
+        {
+            Material material = first
+                ? firstVehicleXRayMaterial
+                : secondVehicleXRayMaterial;
+            if (material != null)
+                return material;
+
+            Color color = first
+                ? new Color(0.05f, 0.78f, 1f, 0.62f)
+                : new Color(1f, 0.12f, 0.62f, 0.62f);
+            material = CreateOcclusionAssistMaterial(
+                first
+                    ? "Runtime_FirstVehicleXRay"
+                    : "Runtime_SecondVehicleXRay",
+                color,
+                true,
+                first ? 3250 : 3251);
+            if (first)
+                firstVehicleXRayMaterial = material;
+            else
+                secondVehicleXRayMaterial = material;
+            return material;
+        }
+
+        private Material CreateOcclusionAssistMaterial(
+            string name,
+            Color color,
+            bool depthAlways,
+            int renderQueue)
+        {
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                return null;
+
+            Material material = new(shader) { name = name };
+            material.SetOverrideTag("RenderType", "Transparent");
+            if (material.HasProperty("_Surface"))
+                material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat(
+                    "_SrcBlend",
+                    (float)BlendMode.SrcAlpha);
+            }
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat(
+                    "_DstBlend",
+                    (float)BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 0f);
+            if (material.HasProperty("_ZTest") && depthAlways)
+            {
+                material.SetFloat(
+                    "_ZTest",
+                    (float)CompareFunction.Always);
+            }
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            if (material.HasProperty(BaseColorId))
+                material.SetColor(BaseColorId, color);
+            if (material.HasProperty(ColorId))
+                material.SetColor(ColorId, color);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = renderQueue;
+            runtimeMaterials.Add(material);
+            return material;
         }
 
         private bool BoundsTouchesRoom(Bounds bounds)

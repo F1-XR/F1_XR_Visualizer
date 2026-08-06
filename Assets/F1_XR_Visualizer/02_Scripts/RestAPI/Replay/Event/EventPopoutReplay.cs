@@ -179,6 +179,7 @@ namespace F1XR.RestAPI.Replay
         private bool hasSnapshot;
         private bool isLoading;
         private bool isActive;
+        private bool showcaseTransitionHeld;
         private float showcasePlaybackSpeedMultiplier = 1f;
         private float overtakeVehicleSizeScale = 1f;
         private int nextBattleExchangeIndex;
@@ -382,6 +383,49 @@ namespace F1XR.RestAPI.Replay
                     worldTarget,
                     worldTargetClearance,
                     out occluded);
+        }
+
+        internal bool TryGetShowcaseOcclusion(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            out ShowcaseOcclusionHit hit)
+        {
+            hit = default;
+            return isActive &&
+                trackSegment != null &&
+                trackSegment.TryGetOcclusion(
+                    worldOrigin,
+                    worldTarget,
+                    worldTargetClearance,
+                    out hit);
+        }
+
+        internal bool TryCollectShowcaseRemovableOccluders(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            HashSet<Material> destination,
+            out bool occluded,
+            out bool hasNonRemovableOccluder)
+        {
+            occluded = false;
+            hasNonRemovableOccluder = false;
+            return isActive &&
+                trackSegment != null &&
+                trackSegment.TryCollectRemovableOccluders(
+                    worldOrigin,
+                    worldTarget,
+                    worldTargetClearance,
+                    destination,
+                    out occluded,
+                    out hasNonRemovableOccluder);
+        }
+
+        internal void SetShowcaseIgnoredOcclusionMaterials(
+            IReadOnlyCollection<Material> materials)
+        {
+            trackSegment?.SetIgnoredOcclusionMaterials(materials);
         }
 
         public bool TryCopyEventLocalCenterPath(
@@ -810,7 +854,7 @@ namespace F1XR.RestAPI.Replay
                 return;
 
             timeline.Play();
-            eventAudio?.SetPlaying(true);
+            eventAudio?.SetPlaying(!showcaseTransitionHeld);
         }
 
         public void Pause()
@@ -861,6 +905,17 @@ namespace F1XR.RestAPI.Replay
         {
             showcasePlaybackSpeedMultiplier =
                 Mathf.Max(1f, multiplier);
+        }
+
+        internal void SetShowcaseTransitionHold(bool held)
+        {
+            if (showcaseTransitionHeld == held)
+                return;
+
+            showcaseTransitionHeld = held;
+            eventAudio?.SetPlaying(
+                timeline.IsPlaying &&
+                !showcaseTransitionHeld);
         }
 
         internal bool TrySetShowcasePresentationEndTime(
@@ -1081,7 +1136,8 @@ namespace F1XR.RestAPI.Replay
             if (!isActive)
                 return;
 
-            if (timeline.IsPlaying)
+            if (timeline.IsPlaying &&
+                !showcaseTransitionHeld)
             {
                 timeline.Advance(
                     Time.deltaTime,
@@ -1104,7 +1160,8 @@ namespace F1XR.RestAPI.Replay
             eventAudio?.Update(
                 player != null ? player.engineSound : null,
                 true,
-                timeline.IsPlaying,
+                timeline.IsPlaying &&
+                !showcaseTransitionHeld,
                 null);
             ApplyCars();
         }
@@ -2816,6 +2873,7 @@ namespace F1XR.RestAPI.Replay
 
             isLoading = false;
             isActive = false;
+            showcaseTransitionHeld = false;
             timeline.Pause();
             eventAudio?.Clear();
             completionDetector.Reset();
