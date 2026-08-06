@@ -55,7 +55,7 @@ namespace F1XR.AIBridge
                 selected_driver = p.SelectedDriverNumber,
             };
             try { client.Send(JsonConvert.SerializeObject(hb, SendSettings)); }
-            catch { /* 연결 전/끊김이면 무시(다음 주기에 재시도) */ }
+            catch (System.Exception e) { Debug.LogWarning($"[hb] replay_state 전송 실패: {e.Message}"); }
         }
 
         /// <summary>수신 JSON을 type별로 라우팅.</summary>

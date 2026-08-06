@@ -3,7 +3,9 @@
 // uGUI + TextMeshPro 로 구성해 프로젝트 폰트와 통일. 런타임에 캔버스를 코드로 생성한다.
 // 검증 끝나면 이 컴포넌트(가 붙은 오브젝트)는 지워도 된다.
 #if AIBRIDGE_READY
+using System.Collections;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
 using F1XR.AIBridge.Voice;
@@ -34,7 +36,33 @@ namespace F1XR.AIBridge
         Image _micBg;
         bool _recording;
 
-        void Start() { BuildUI(); }
+        void Start() { BuildUI(); StartCoroutine(FocusInputNextFrame()); }
+
+        // 이 씬의 EventSystem은 XR용(XRUIInputModule)이라 데스크톱에서 마우스로
+        // 입력창을 눌러 포커스 잡기가 잘 안 된다. 그래서 시작할 때 코드로 포커스를 준다.
+        // (UI가 다 만들어진 뒤 1프레임 기다렸다 선택해야 안정적)
+        IEnumerator FocusInputNextFrame()
+        {
+            yield return null;
+            FocusInput();
+        }
+
+        void FocusInput()
+        {
+            if (_input == null) return;
+            if (EventSystem.current != null)
+                EventSystem.current.SetSelectedGameObject(_input.gameObject);
+            _input.ActivateInputField();
+            _input.Select();
+        }
+
+        void SendCurrent()
+        {
+            if (bridge == null) { Debug.LogError("[Tester] bridge 미할당"); return; }
+            string q = _input != null && !string.IsNullOrWhiteSpace(_input.text) ? _input.text : defaultQuestion;
+            Debug.Log($"[Tester] 텍스트 전송 → {q}");
+            bridge.SendText(q, sessionKey);
+        }
 
         // ─────────────────────────── UI 생성 ───────────────────────────
         void BuildUI()
@@ -75,15 +103,9 @@ namespace F1XR.AIBridge
             // 입력창
             _input = MakeInput(panel, defaultQuestion);
 
-            // 질문 보내기 버튼
-            var sendBtn = MakeButton(panel, "Send", accent, Color.white, out _, out _, 66);
-            sendBtn.onClick.AddListener(() =>
-            {
-                if (bridge == null) { Debug.LogError("[Tester] bridge 미할당"); return; }
-                string q = _input != null ? _input.text : defaultQuestion;
-                Debug.Log($"[Tester] 텍스트 전송 → {q}");
-                bridge.SendText(q, sessionKey);
-            });
+            // 질문 보내기 버튼 (Enter로도 전송됨 — MakeInput의 onSubmit 참고)
+            var sendBtn = MakeButton(panel, "Send  (Enter)", accent, Color.white, out _, out _, 66);
+            sendBtn.onClick.AddListener(SendCurrent);
 
             // 구분 여백
             var gap = NewRect("Gap", panel);
@@ -204,6 +226,14 @@ namespace F1XR.AIBridge
             input.textComponent = text;
             input.placeholder = placeholder;
             input.text = value;
+            input.lineType = TMP_InputField.LineType.SingleLine;   // Enter=제출(줄바꿈 아님)
+            // Enter를 누르면 전송하고, 다음 질문을 위해 입력창을 비우고 다시 포커스한다.
+            input.onSubmit.AddListener(_ =>
+            {
+                SendCurrent();
+                input.text = "";
+                FocusInput();
+            });
             return input;
         }
     }
