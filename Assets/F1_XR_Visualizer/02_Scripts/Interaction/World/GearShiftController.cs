@@ -90,6 +90,8 @@ namespace F1XR.Interaction.World
         /// <summary>기능이 선택될 때 1회 발생. 인수는 선택된 방향.</summary>
         public event Action<GearDirection> DirectionSelected;
 
+        public GearUIController UI => uiController;
+
         public GearDirection CurrentDirection => hoverDir;
         public bool IsHeld => held;
 
@@ -106,6 +108,11 @@ namespace F1XR.Interaction.World
                 if (value != null)
                 {
                     canSelect = true;
+                    // 기준점을 이번 프레임 손 위치로 다시 잡는다. morph 는 기어봉을 파괴하지 않고
+                    // SetActive(false) 로 숨기므로, 숨은 동안 LateUpdate 가 안 돌아 hasAnchor 가 true 로
+                    // 남는다. 그대로 두면 다시 꺼낸 순간 옛 기준점과의 거리가 통째로 입력이 되어
+                    // 손을 안 움직였는데도 단이 튄다.
+                    hasAnchor = false;
                     if (uiController != null)
                         uiController.Open();
                 }
@@ -150,6 +157,9 @@ namespace F1XR.Interaction.World
                 bendRest = bendTransform.localRotation;
             currentGear = Mathf.Clamp(initialGear, 0, gearCount - 1);
             snappedAngle = GearAngle(currentGear);
+            // 잡기 전에도 UpdateDetent 가 돌기 때문에, 기준 각도를 현재 단 중심으로 맞춰 둬야 한다.
+            // (0 으로 두면 첫 프레임에 aimAngle 이 단 경계를 넘어 혼자 한 칸 올라간다.)
+            grabBaseAngle = snappedAngle;
         }
 
         void AutoWire()
@@ -295,6 +305,10 @@ namespace F1XR.Interaction.World
                 // 잡은 지점 = 현재 단의 중심. 그래야 어느 단에서 잡든 앞뒤로 반 칸만 움직이면
                 // 바로 다음 단으로 넘어간다(예전엔 잡은 지점과 단 중심이 어긋나 한참 밀어야 했음).
                 grabBaseAngle = GearAngle(currentGear);
+                // 이전에 잡았을 때의 스무딩 잔여값을 지운다. 안 지우면 다시 꺼낸 순간 손을 안 움직였는데도
+                // 그 잔여 입력이 단 경계를 넘겨 혼자 한 칸 튄다.
+                smoothedInput = Vector2.zero;
+                inputVelocity = Vector2.zero;
                 return Vector2.zero; // 잡은 첫 프레임은 중립
             }
 

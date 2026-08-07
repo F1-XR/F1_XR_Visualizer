@@ -866,6 +866,7 @@ MonoBehaviour:
   mappedPathStart: 0
   mappedPathEnd: 1
   modelHeadingCorrection: 0
+  presentationMode: 0
   wallContinuationTarget: 10
   entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
@@ -874,6 +875,20 @@ MonoBehaviour:
   showcaseVehicleScale: 0.7
   showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
+  compositionMode: 0
+  criticalSegmentCenterBias: 0.65
+  balancedMaximumShift: 2
+  multiExchangeMaximumShift: 3.5
+  trackExitPortalEnabled: 1
+  connectedWallPortalsEnabled: 1
+  lifeSizeDriveBy:
+    roadWidth: 3.6
+    roadThickness: 0.08
+    vehicleLength: 5.2
+    portalHeight: 2.1
+    wallMargin: 0.1
+    seamPositionTolerance: 0.03
+    seamAngleTolerance: 2
   overtakePortalTransitionVfx:
     enabled: 1
     overtakingCarOnly: 1
@@ -1158,18 +1173,6 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 1560403920519649015, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 0.0020000003
-      objectReference: {fileID: 0}
-    - target: {fileID: 1560403920519649015, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 0.002
-      objectReference: {fileID: 0}
-    - target: {fileID: 1560403920519649015, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 0.0020000003
-      objectReference: {fileID: 0}
-    - target: {fileID: 1560403920519649015, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
       objectReference: {fileID: 0}
@@ -1230,6 +1233,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
+--- !u!4 &778030371 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1560403920519649015, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
+  m_PrefabInstance: {fileID: 778030370}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &803093115
 GameObject:
   m_ObjectHideFlags: 0
@@ -2178,6 +2186,108 @@ MonoBehaviour:
   positionChangeFlashSeconds: 1.2
   standingsMoveSpeed: 10
   refreshInterval: 0.1
+--- !u!1 &1255090621
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1255090623}
+  - component: {fileID: 1255090622}
+  - component: {fileID: 1255090624}
+  m_Layer: 0
+  m_Name: Gear Panel Selection
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1255090622
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1255090621}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2e1c268b75ff3541b14a25a3d0765e2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.World.GearPanelSelection
+  bindings:
+  - uiItem: {fileID: 2508535240008626214, guid: 7254bcea3345fcd499916378a5c8c15c, type: 3}
+    panel: {fileID: 778030371}
+    borderParent: {fileID: 0}
+    cornerRadiusOverride: -1
+    firstWidget: {fileID: 0}
+  - uiItem: {fileID: 6640459579891870524, guid: 7254bcea3345fcd499916378a5c8c15c, type: 3}
+    panel: {fileID: 1751285738}
+    borderParent: {fileID: 0}
+    cornerRadiusOverride: -1
+    firstWidget: {fileID: 0}
+  - uiItem: {fileID: 7220591560646862916, guid: 7254bcea3345fcd499916378a5c8c15c, type: 3}
+    panel: {fileID: 2100327795}
+    borderParent: {fileID: 0}
+    cornerRadiusOverride: 0
+    firstWidget: {fileID: 0}
+  - uiItem: {fileID: 7590837530953856308, guid: 7254bcea3345fcd499916378a5c8c15c, type: 3}
+    panel: {fileID: 1168590220}
+    borderParent: {fileID: 0}
+    cornerRadiusOverride: -1
+    firstWidget: {fileID: 0}
+  gearShift: {fileID: 0}
+  borderShader: {fileID: 4800000, guid: 1d725727953eeaf4692c0de804619952, type: 3}
+  selectedScale: 1.06
+  smoothTime: 0.12
+  borderColor: {r: 1, g: 0.06, b: 0.03, a: 1}
+  thicknessFraction: 0.03
+  cornerRadiusFraction: 0.08
+  chaseSpeed: 0.6
+  tailLength: 0.18
+  intensity: 3
+  focusWidgetOnSelect: 1
+--- !u!4 &1255090623
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1255090621}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1255090624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1255090621}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca3d7601315aad241a4ba6db318084bc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.World.PanelWidgetNavigator
+  panelSelection: {fileID: 1255090622}
+  focusShader: {fileID: 4800000, guid: 1d725727953eeaf4692c0de804619952, type: 3}
+  useRightHand: 1
+  moveThreshold: 0.6
+  repeatInterval: 0.25
+  includeSelectables: 1
+  includeClickHandlers: 1
+  includeTexts: 1
+  minArea: 200
+  rescanInterval: 0.3
+  focusColor: {r: 1, g: 0.85, b: 0.1, a: 1}
+  focusIntensity: 2.5
+  focusThicknessFraction: 0.06
 --- !u!1 &1304137257
 GameObject:
   m_ObjectHideFlags: 0
@@ -2974,6 +3084,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1705380155}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  carLabelFont: {fileID: 0}
   teamCarPrefabs:
   - teamName: Alfa Romeo
     prefab: {fileID: 4614466437777478188, guid: f0daaf1c8ae548c68c1f76995c3a015e, type: 3}
@@ -3442,6 +3553,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+--- !u!4 &1751285738 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8387741373429518330, guid: 4e0fc0e4232ff2f429cb4022ca4749cf, type: 3}
+  m_PrefabInstance: {fileID: 1751285736}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1948394329
 GameObject:
   m_ObjectHideFlags: 0
@@ -4146,3 +4262,4 @@ SceneRoots:
   - {fileID: 778030370}
   - {fileID: 803093117}
   - {fileID: 2100327795}
+  - {fileID: 1255090623}

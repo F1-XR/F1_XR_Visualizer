@@ -116,9 +116,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 164950867181456334}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 1, w: 0}
-  m_LocalPosition: {x: 0, y: 0, z: -0.0006}
-  m_LocalScale: {x: 0.026, y: 0.026, z: 1}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0.0005}
+  m_LocalScale: {x: 0.034, y: 0.034, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 8924820996241580560}
@@ -156,7 +156,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 2e6714af9c8b40745ad3f0921bc6e5d8, type: 2}
+  - {fileID: 2100000, guid: be0486521f0d4634aaed308ce017be1c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -695,22 +695,22 @@ MonoBehaviour:
   hoverPositionOffset: {x: 0.03, y: 0, z: 0}
   cameraOffset: 0.02
   hoverScaleMultiplier: 1.08
-  gearInactiveAlpha: 0.25
+  gearInactiveAlpha: 0.8
   activeSortingOrder: 10
   revealStartScale: 0.4
   backgroundRenderer: {fileID: 6438836173986808194}
   outlineRenderer: {fileID: 64667677414483292}
   iconRenderer: {fileID: 6502319205256091947}
   hoverHalo: {fileID: 9065611911940156244}
-  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.62}
+  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.88}
   selectedBackgroundColor: {r: 0.88235295, g: 0.023529412, b: 0, a: 1}
   normalIconColor: {r: 1, g: 1, b: 1, a: 1}
   selectedIconColor: {r: 1, g: 1, b: 1, a: 1}
-  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 0.9}
+  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 1}
   haloColor: {r: 1, g: 0.11764706, b: 0.078431375, a: 1}
   haloHoverAlpha: 0.45
   outlineHoverBoost: 1.6
-  dimAmount: 0.55
+  dimAmount: 0.75
   baseColorProperty: _BaseColor
   legacyColorProperty: _Color
 --- !u!1 &1642695508230935192
@@ -855,22 +855,22 @@ MonoBehaviour:
   hoverPositionOffset: {x: -0.03, y: 0, z: 0}
   cameraOffset: 0.02
   hoverScaleMultiplier: 1.08
-  gearInactiveAlpha: 0.25
+  gearInactiveAlpha: 0.8
   activeSortingOrder: 10
   revealStartScale: 0.4
   backgroundRenderer: {fileID: 6957905915840894918}
   outlineRenderer: {fileID: 7836413244183888916}
   iconRenderer: {fileID: 1685092448728482754}
   hoverHalo: {fileID: 5651364935511336906}
-  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.434}
+  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.88}
   selectedBackgroundColor: {r: 0.88235295, g: 0.023529412, b: 0, a: 1}
   normalIconColor: {r: 1, g: 1, b: 1, a: 0.7}
   selectedIconColor: {r: 1, g: 1, b: 1, a: 1}
-  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 0.63}
+  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 1}
   haloColor: {r: 1, g: 0.11764706, b: 0.078431375, a: 1}
   haloHoverAlpha: 0.45
   outlineHoverBoost: 1.6
-  dimAmount: 0.55
+  dimAmount: 0.75
   baseColorProperty: _BaseColor
   legacyColorProperty: _Color
 --- !u!1 &2907233355161062006
@@ -1105,22 +1105,22 @@ MonoBehaviour:
   hoverPositionOffset: {x: 0, y: 0.03, z: 0}
   cameraOffset: 0.02
   hoverScaleMultiplier: 1.08
-  gearInactiveAlpha: 0.25
+  gearInactiveAlpha: 0.8
   activeSortingOrder: 10
   revealStartScale: 0.4
   backgroundRenderer: {fileID: 7588818427664826462}
   outlineRenderer: {fileID: 1847935577118972189}
   iconRenderer: {fileID: 9192433505346215325}
   hoverHalo: {fileID: 8421016516350628953}
-  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.527}
+  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.88}
   selectedBackgroundColor: {r: 0.88235295, g: 0.023529412, b: 0, a: 1}
   normalIconColor: {r: 1, g: 1, b: 1, a: 0.85}
   selectedIconColor: {r: 1, g: 1, b: 1, a: 1}
-  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 0.765}
+  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 1}
   haloColor: {r: 1, g: 0.11764706, b: 0.078431375, a: 1}
   haloHoverAlpha: 0.45
   outlineHoverBoost: 1.6
-  dimAmount: 0.55
+  dimAmount: 0.75
   baseColorProperty: _BaseColor
   legacyColorProperty: _Color
 --- !u!1 &3874145924177892005
@@ -1332,22 +1332,22 @@ MonoBehaviour:
   hoverPositionOffset: {x: 0, y: -0.03, z: 0}
   cameraOffset: 0.02
   hoverScaleMultiplier: 1.08
-  gearInactiveAlpha: 0.25
+  gearInactiveAlpha: 0.8
   activeSortingOrder: 10
   revealStartScale: 0.4
   backgroundRenderer: {fileID: 1382806744660601641}
   outlineRenderer: {fileID: 8027035164895075995}
   iconRenderer: {fileID: 5008798177552637373}
   hoverHalo: {fileID: 3442432299731811100}
-  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.341}
+  normalBackgroundColor: {r: 0.043137256, g: 0.043137256, b: 0.050980393, a: 0.88}
   selectedBackgroundColor: {r: 0.88235295, g: 0.023529412, b: 0, a: 1}
   normalIconColor: {r: 1, g: 1, b: 1, a: 0.55}
   selectedIconColor: {r: 1, g: 1, b: 1, a: 1}
-  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 0.495}
+  outlineColor: {r: 1, g: 0.16470589, b: 0.13333334, a: 1}
   haloColor: {r: 1, g: 0.11764706, b: 0.078431375, a: 1}
   haloHoverAlpha: 0.45
   outlineHoverBoost: 1.6
-  dimAmount: 0.55
+  dimAmount: 0.75
   baseColorProperty: _BaseColor
   legacyColorProperty: _Color
 --- !u!1 &6345176822622151623
@@ -1466,9 +1466,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6382353082685785331}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.70710678, w: 0.70710678}
-  m_LocalPosition: {x: 0, y: 0, z: -0.0006}
-  m_LocalScale: {x: 0.026, y: 0.026, z: 1}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0.0005}
+  m_LocalScale: {x: 0.034, y: 0.034, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 2363138940445930505}
@@ -1506,7 +1506,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 2e6714af9c8b40745ad3f0921bc6e5d8, type: 2}
+  - {fileID: 2100000, guid: e2be8d636cd27534892b27a8e70607fe, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1799,7 +1799,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7514882270185507491}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: -0.70710678, w: 0.70710678}
+  m_LocalRotation: {x: 0, y: 0, z: -0.70710677, w: 0.70710677}
   m_LocalPosition: {x: 0, y: 0, z: -0.0006}
   m_LocalScale: {x: 0.026, y: 0.026, z: 1}
   m_ConstrainProportionsScale: 0
@@ -1980,8 +1980,8 @@ Transform:
   m_GameObject: {fileID: 8053349645077592578}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -0.0006}
-  m_LocalScale: {x: 0.026, y: 0.026, z: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0.0005}
+  m_LocalScale: {x: 0.034, y: 0.034, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7750822468295709915}
@@ -2019,7 +2019,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 2e6714af9c8b40745ad3f0921bc6e5d8, type: 2}
+  - {fileID: 2100000, guid: b0670d7a059ac2943b7e4643b7b66f07, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
