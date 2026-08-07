@@ -1664,6 +1664,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: AIBridge
       objectReference: {fileID: 0}
+    - target: {fileID: 7897636086228883126, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      propertyPath: predictOvertake
+      value: 
+      objectReference: {fileID: 1247387148}
     - target: {fileID: 8761324872737865527, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       propertyPath: player
       value: 
@@ -1715,6 +1719,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1247387138}
+    - targetCorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1247387148}
   m_SourcePrefab: {fileID: 100100000, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
 --- !u!114 &1226495041 stripped
 MonoBehaviour:
@@ -1761,6 +1768,22 @@ MonoBehaviour:
   minConfidence: 0.6
   cooldownSec: 18
   leadSec: 2
+--- !u!114 &1247387148
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1247387126}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5cce8cf62d9113046864e544960f5cea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.PredictOvertakeRibbonHandler
+  player: {fileID: 1705380154}
+  holdSeconds: 4
+  intensityScale: 2
+  minIntensity: 0.35
 --- !u!1 &1304137257
 GameObject:
   m_ObjectHideFlags: 0

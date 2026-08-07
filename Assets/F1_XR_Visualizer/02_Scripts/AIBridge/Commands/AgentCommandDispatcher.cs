@@ -12,6 +12,7 @@ namespace F1XR.AIBridge.Commands
         public LoadSessionHandler loadSession;
         public HighlightDriverHandler highlightDriver;
         public ControlReplayHandler controlReplay;
+        public PredictOvertakeRibbonHandler predictOvertake;
 
         /// <summary>command 메시지 원문(JSON)을 받아 name별로 분기.</summary>
         public void Dispatch(string commandJson)
@@ -24,11 +25,18 @@ namespace F1XR.AIBridge.Commands
             {
                 case "loadSession":
                     loadSession?.Handle((int)args["session_key"]);
-                    // 규칙: 경기 바뀌면 강조 자동 해제
+                    // 규칙: 경기 바뀌면 강조·예측 리본 자동 해제
                     highlightDriver?.Clear();
+                    predictOvertake?.Clear();
                     break;
                 case "highlightDriver":
                     highlightDriver?.Handle((int)args["driver_number"]);
+                    break;
+                case "predictOvertake":
+                    // 능동 안내(예측): 그 차에 접근 리본을 잠깐 표시. probability 없으면 0.
+                    predictOvertake?.Handle(
+                        (int)args["driver_number"],
+                        args["probability"] != null ? (float)args["probability"] : 0f);
                     break;
                 case "controlReplay":
                     controlReplay?.Handle((string)args["action"], args["value"]);
