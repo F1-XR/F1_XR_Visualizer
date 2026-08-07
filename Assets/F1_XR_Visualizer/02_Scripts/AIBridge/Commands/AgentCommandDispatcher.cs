@@ -13,6 +13,7 @@ namespace F1XR.AIBridge.Commands
         public HighlightDriverHandler highlightDriver;
         public ControlReplayHandler controlReplay;
         public PredictOvertakeRibbonHandler predictOvertake;
+        public DroneViewHandler droneView;
 
         /// <summary>command 메시지 원문(JSON)을 받아 name별로 분기.</summary>
         public void Dispatch(string commandJson)
@@ -37,6 +38,10 @@ namespace F1XR.AIBridge.Commands
                     predictOvertake?.Handle(
                         (int)args["driver_number"],
                         args["probability"] != null ? (float)args["probability"] : 0f);
+                    break;
+                case "droneView":
+                    // 드론(공중) 시점 켜기/끄기. on 없으면 켜기로 간주.
+                    droneView?.Handle(args["on"] == null || (bool)args["on"]);
                     break;
                 case "controlReplay":
                     controlReplay?.Handle((string)args["action"], args["value"]);
