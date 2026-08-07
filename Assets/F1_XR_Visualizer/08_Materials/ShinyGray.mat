@@ -108,9 +108,9 @@ Material:
     - _Metallic: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.005
-    - _PlanarBlend: 1
+    - _PlanarBlend: 0.221
     - _ProbeIntensity: 1
-    - _ProbeRoughness: 0.02
+    - _ProbeRoughness: 0.21
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _ReflectionBlur: 0

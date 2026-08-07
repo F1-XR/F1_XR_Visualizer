@@ -10,8 +10,8 @@ namespace F1XR.Showroom
     {
         [SerializeField] Transform visualRoot;
         [SerializeField] float riseHeight = 1.5f;
-        [SerializeField] float riseDuration = 0.2f;
-        [SerializeField] Ease riseEase = Ease.OutQuad;
+        [SerializeField] float riseDuration = 0.35f;
+        [SerializeField] Ease riseEase = Ease.OutCirc;
         [SerializeField] float lowerDuration = 0.2f;
         [SerializeField] Ease lowerEase = Ease.OutQuad;
         [SerializeField] TireGlowRing glowRing;
