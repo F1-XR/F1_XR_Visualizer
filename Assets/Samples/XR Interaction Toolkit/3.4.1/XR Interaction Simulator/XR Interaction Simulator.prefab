@@ -932,7 +932,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_RemoveOtherHMDDevices: 1
-  m_HandTrackingCapability: 1
+  m_HandTrackingCapability: 0
 --- !u!114 &4976647607938919449
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -53,6 +53,21 @@ namespace F1XR.Interaction.World
 
         public bool IsOpen => isOpen;
 
+        /// <summary>items 리스트에서 이 카드의 단(gear) 번호. 없으면 -1.</summary>
+        public int IndexOf(GearUIItem item) => items.IndexOf(item);
+
+        /// <summary>
+        /// 이름으로 단(gear) 번호를 찾습니다. 기어봉이 런타임에 프리팹으로 생성되면(컨트롤러 morph)
+        /// 씬에 저장해 둔 카드 참조는 프리팹 원본을 가리키므로, 인스턴스 쪽은 이름으로 맞춥니다.
+        /// </summary>
+        public int IndexOfName(string itemName)
+        {
+            for (int i = 0; i < items.Count; i++)
+                if (items[i] != null && items[i].name == itemName)
+                    return i;
+            return -1;
+        }
+
         bool isOpen;
         Coroutine revealRoutine;
         float[] gearActiveness;

@@ -20,8 +20,11 @@ namespace F1XR.OriginalKnob
         [Serializable] public class RotationChangedEvent : UnityEvent<float, float> { }
 
         [Header("References")]
-        [Tooltip("The pivot that actually rotates. Its local Z axis is the rotation axis (panel front).")]
+        [Tooltip("The pivot that actually rotates. It spins about its local " + nameof(spinAxisLocal) + ".")]
         [SerializeField] Transform knobPivot;
+        [Tooltip("Local axis of the pivot to spin about. Default forward (local Z, panel front). " +
+                 "Set to a different axis for pivots whose spin axis isn't their local Z (e.g. imported dials).")]
+        [SerializeField] Vector3 spinAxisLocal = Vector3.forward;
 
         [Header("Direction")]
         [Tooltip("Flip the mapping between controller motion and the knob's visible rotation.")]
@@ -57,7 +60,9 @@ namespace F1XR.OriginalKnob
         public Transform Pivot => knobPivot;
         public Vector3 Center => knobPivot != null ? knobPivot.position : transform.position;
         /// <summary>World-space rotation axis (panel front). Stays fixed as the knob spins about it.</summary>
-        public Vector3 RotationAxis => knobPivot != null ? knobPivot.forward : transform.forward;
+        public Vector3 RotationAxis => knobPivot != null ? knobPivot.TransformDirection(SpinAxis).normalized : transform.forward;
+
+        Vector3 SpinAxis => spinAxisLocal.sqrMagnitude < 1e-6f ? Vector3.forward : spinAxisLocal.normalized;
 
         public bool IsRotating => isRotating;
         /// <summary>Unbounded accumulated angle in the reporting convention. Never clamped or reset.</summary>
@@ -153,9 +158,9 @@ namespace F1XR.OriginalKnob
             if (knobPivot == null)
                 return;
 
-            // Rotate about the pivot's own local Z. Because we only ever rotate about that axis, the
-            // axis itself never drifts and position/scale are untouched.
-            knobPivot.localRotation = basePivotLocalRotation * Quaternion.AngleAxis(visualTotal, Vector3.forward);
+            // Rotate about the pivot's own local spin axis. Because we only ever rotate about that axis,
+            // the axis itself never drifts and position/scale are untouched.
+            knobPivot.localRotation = basePivotLocalRotation * Quaternion.AngleAxis(visualTotal, SpinAxis);
         }
 
 #if UNITY_EDITOR

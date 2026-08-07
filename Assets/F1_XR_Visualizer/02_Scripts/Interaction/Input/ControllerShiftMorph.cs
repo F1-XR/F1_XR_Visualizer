@@ -54,6 +54,13 @@ namespace F1XR.Interaction.Input
             "-0.5 spawns it half a gear shift lower. Negative = lower, positive = higher.")]
         [SerializeField, Range(-2f, 2f)] float baseHeightOffset = -0.5f;
 
+        [Header("Toggle to show")]
+        [Tooltip("When on, a single press of Toggle Button shows the gear shift and the next press hides it " +
+            "(instead of the hold-to-show behavior below). Default: press A on the right controller.")]
+        [SerializeField] bool toggleMode = true;
+        [Tooltip("Button that toggles the gear shift on/off when Toggle Mode is on. A button = Primary Button.")]
+        [SerializeField] MorphHoldButton toggleButton = MorphHoldButton.PrimaryButton;
+
         [Header("Hold to show")]
         [Tooltip("The gear shift is shown only while this controller button is held down; releasing it restores the controller.")]
         [SerializeField] MorphHoldButton holdButton = MorphHoldButton.Trigger;
@@ -80,6 +87,7 @@ namespace F1XR.Interaction.Input
         GameObject instance;
         GearShiftController instanceShift;
         bool shown;
+        bool togglePrevPressed;
         readonly List<InputDevice> devices = new List<InputDevice>();
 
         void Awake()
@@ -106,6 +114,15 @@ namespace F1XR.Interaction.Input
 
         void Update()
         {
+            if (toggleMode)
+            {
+                bool pressed = ReadButton(toggleButton);
+                if (pressed && !togglePrevPressed) // rising edge: one flip per press
+                    SetShown(!shown);
+                togglePrevPressed = pressed;
+                return;
+            }
+
             var held = ReadHoldButton();
 
             if (held && !shown)
@@ -153,29 +170,7 @@ namespace F1XR.Interaction.Input
             return true;
         }
 
-        bool ReadButton(MorphHoldButton button)
-        {
-            var handedness = useRightHand ? InputDeviceCharacteristics.Right : InputDeviceCharacteristics.Left;
-            devices.Clear();
-            InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller | handedness, devices);
-
-            InputFeatureUsage<bool> usage;
-            switch (button)
-            {
-                case MorphHoldButton.Grip: usage = CommonUsages.gripButton; break;
-                case MorphHoldButton.PrimaryButton: usage = CommonUsages.primaryButton; break;
-                case MorphHoldButton.SecondaryButton: usage = CommonUsages.secondaryButton; break;
-                default: usage = CommonUsages.triggerButton; break;
-            }
-
-            foreach (var device in devices)
-            {
-                if (device.isValid && device.TryGetFeatureValue(usage, out var value) && value)
-                    return true;
-            }
-
-            return false;
-        }
+        bool ReadButton(MorphHoldButton button) => XRControllerButton.IsPressed(button, useRightHand);
 
         void SetShown(bool on)
         {
