@@ -1066,6 +1066,8 @@ namespace F1XR.RestAPI.Replay.Room
                 showcaseLayout.WallFramesFrozen);
             ApplyDebugVisibility();
             RefreshView();
+            setupView?.SetVisible(
+                state != RoomShowcaseSetupState.Ready);
         }
 
         private void SetSceneTrackingSuspended(bool suspended)
