@@ -333,6 +333,8 @@ MonoBehaviour:
   faceUserOnPlant: 1
   attachLocalScale: {x: 10, y: 10, z: 10}
   baseHeightOffset: -0.5
+  toggleMode: 1
+  toggleButton: 2
   holdButton: 1
   requireSecondButton: 1
   secondButton: 0
