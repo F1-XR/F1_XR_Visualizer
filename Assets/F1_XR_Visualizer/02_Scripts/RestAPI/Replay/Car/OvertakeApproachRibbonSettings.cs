@@ -10,13 +10,6 @@ namespace F1XR.RestAPI.Replay
         public AnimationCurve growth =
             AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
-        [Header("Driver Color")]
-        public bool useDriverColor = true;
-        [Range(0f, 1f)]
-        public float driverColorBlend = 1f;
-        [Range(0.25f, 1f)]
-        public float minimumDriverColorBrightness = 0.58f;
-
         [Header("Overtaker")]
         [Min(0.01f)] public float overtakerTrailSeconds = 0.95f;
         [Min(0.001f)] public float overtakerGlowWidthInCarWidths = 0.34f;

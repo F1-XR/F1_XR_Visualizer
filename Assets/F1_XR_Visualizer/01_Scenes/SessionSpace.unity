@@ -844,6 +844,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42ec8acfd8ffff14c944fe4e0b07a885, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcasePortalPresentation
+  decorativePortalPrefab: {fileID: 439682714516546187, guid: 6e2d5c22d6c4c9d4a8ff0ed264bec010, type: 3}
 --- !u!114 &493722810
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3358,6 +3359,11 @@ MonoBehaviour:
     hysteresisInCarLengths: 0.05
     allowOrderingLeadFallback: 1
     orderingLeadInCarLengths: 0.08
+    accentFlashEnabled: 1
+    accentFlashDurationReplaySeconds: 0.22
+    accentFlashSizeInCarWidths: 0.82
+    accentFlashIntensity: 2.1
+    accentFlashColor: {r: 1, g: 1, b: 1, a: 0.96}
     pulseDurationReplaySeconds: 0.5
     pulseIntensity: 1.05
     pulseColor: {r: 0.32, g: 0.88, b: 1.25, a: 0.86}
@@ -4177,7 +4183,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 0
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 20
+  m_SortingOrder: -1
   m_TargetDisplay: 0
 --- !u!224 &2100327795
 RectTransform:

@@ -8,9 +8,14 @@ namespace F1XR.RestAPI.Replay
     {
         private const int CompletionPulseSegments = 24;
         private const int CompletionStreakCount = 3;
+        private const int CompletionAccentRayCount = 4;
         private const float CompletionHudHeightInCarLengths = 2.4f;
 
         private Transform completionVfxRoot;
+        private Transform completionAccentRoot;
+        private MeshRenderer completionAccentRenderer;
+        private Mesh completionAccentMesh;
+        private Material completionAccentMaterial;
         private MeshRenderer completionPulseRenderer;
         private Mesh completionPulseMesh;
         private Vector3[] completionPulseVertices;
@@ -127,6 +132,7 @@ namespace F1XR.RestAPI.Replay
             float elapsed = Mathf.Max(
                 0f,
                 replayTime - completionVfxStartTime);
+            UpdateCompletionAccentFlash(elapsed);
             UpdateCompletionPulse(elapsed);
             UpdateCompletionSweep(elapsed);
             UpdateCompletionStreaks(elapsed);
@@ -134,8 +140,11 @@ namespace F1XR.RestAPI.Replay
 
             float totalDuration = Mathf.Max(
                 Mathf.Max(
-                    completionVfxSettings
-                        .pulseDurationReplaySeconds,
+                    Mathf.Max(
+                        completionVfxSettings
+                            .accentFlashDurationReplaySeconds,
+                        completionVfxSettings
+                            .pulseDurationReplaySeconds),
                     completionVfxSettings
                         .sweepDurationReplaySeconds),
                 Mathf.Max(
@@ -159,6 +168,8 @@ namespace F1XR.RestAPI.Replay
 
             if (completionPulseRenderer != null)
                 completionPulseRenderer.enabled = false;
+            if (completionAccentRenderer != null)
+                completionAccentRenderer.enabled = false;
             if (completionSweepRenderer != null)
                 completionSweepRenderer.enabled = false;
             if (completionStreakRenderer != null)
@@ -179,10 +190,40 @@ namespace F1XR.RestAPI.Replay
                 completionVfxRoot = root.transform;
             }
 
+            EnsureCompletionAccentFlash();
             EnsureCompletionPulse();
             EnsureCompletionSweep();
             EnsureCompletionStreaks();
             EnsureCompletionHud();
+        }
+
+        private void EnsureCompletionAccentFlash()
+        {
+            if (completionAccentRenderer != null)
+                return;
+
+            GameObject accent = new(
+                "CompletionAccentFlash",
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            completionAccentRoot = accent.transform;
+            completionAccentMesh = CreateCompletionAccentMesh();
+            accent.GetComponent<MeshFilter>().sharedMesh =
+                completionAccentMesh;
+
+            completionAccentRenderer =
+                accent.GetComponent<MeshRenderer>();
+            ConfigureCompletionRenderer(
+                completionAccentRenderer);
+            completionAccentMaterial =
+                CreateSelectionMaterial(Color.clear);
+            completionAccentMaterial.name =
+                "Runtime_OvertakeCompletionAccentFlash";
+            completionAccentMaterial.renderQueue = 3110;
+            completionAccentRenderer.sharedMaterial =
+                completionAccentMaterial;
+            completionAccentRenderer.sortingOrder = 18;
+            completionAccentRenderer.enabled = false;
         }
 
         private void EnsureCompletionPulse()
@@ -426,6 +467,95 @@ namespace F1XR.RestAPI.Replay
                 Mathf.Clamp01(intensity);
             SetMaterialColor(
                 completionPulseMaterial,
+                color);
+        }
+
+        private void UpdateCompletionAccentFlash(float elapsed)
+        {
+            if (completionAccentRoot == null ||
+                completionAccentRenderer == null ||
+                completionVfxSettings == null ||
+                !completionVfxSettings.accentFlashEnabled)
+            {
+                if (completionAccentRenderer != null)
+                    completionAccentRenderer.enabled = false;
+                return;
+            }
+
+            float duration = Mathf.Max(
+                0.01f,
+                completionVfxSettings
+                    .accentFlashDurationReplaySeconds);
+            float progress = Mathf.Clamp01(
+                elapsed / duration);
+            if (progress >= 1f ||
+                !TryGetCompletionLayout(
+                    out Bounds bounds,
+                    out float width,
+                    out _,
+                    out float height))
+            {
+                completionAccentRenderer.enabled = false;
+                return;
+            }
+
+            completionAccentRenderer.enabled = true;
+            completionAccentRoot.position =
+                bounds.center +
+                transform.up * height * 0.2f;
+
+            Camera camera = completionHudCamera;
+            if (camera == null)
+            {
+                camera = Camera.main;
+                completionHudCamera = camera;
+            }
+
+            completionAccentRoot.rotation = camera != null
+                ? camera.transform.rotation
+                : transform.rotation;
+
+            float attack = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.Clamp01(progress / 0.16f));
+            float fade = Mathf.Pow(
+                1f - progress,
+                1.65f);
+            float envelope = attack * fade;
+            float profileScale = completionVfxProfile switch
+            {
+                OvertakeCompletionVfxProfile.Counter => 0.92f,
+                OvertakeCompletionVfxProfile.Repass => 1.12f,
+                OvertakeCompletionVfxProfile.Victory => 1.24f,
+                _ => 1f
+            };
+            float size = width *
+                completionVfxSettings
+                    .accentFlashSizeInCarWidths *
+                profileScale *
+                Mathf.Lerp(
+                    0.42f,
+                    1.18f,
+                    Mathf.SmoothStep(0f, 1f, progress));
+            completionAccentRoot.localScale =
+                Vector3.one * size;
+
+            float intensity = Mathf.Max(
+                0f,
+                completionVfxSettings
+                    .accentFlashIntensity) *
+                completionIntensityScale;
+            Color color = ResolveCompletionProfileColor(
+                completionVfxSettings.accentFlashColor);
+            color.r *= intensity;
+            color.g *= intensity;
+            color.b *= intensity;
+            color.a *=
+                envelope *
+                Mathf.Clamp01(intensity);
+            SetMaterialColor(
+                completionAccentMaterial,
                 color);
         }
 
@@ -755,15 +885,10 @@ namespace F1XR.RestAPI.Replay
 
         private Color ResolveCompletionProfileColor(Color source)
         {
-            if (completionVfxSettings != null &&
-                completionVfxSettings.useDriverColor)
+            if (hasOvertakeEffectPalette || hasDriverColor)
             {
                 Color driverColor = ResolveOvertakeDriverColor(
-                    source,
-                    true,
-                    completionVfxSettings.driverColorBlend,
-                    completionVfxSettings
-                        .minimumDriverColorBrightness);
+                    source);
                 float profileIntensity = completionVfxProfile switch
                 {
                     OvertakeCompletionVfxProfile.Counter => 1.08f,
@@ -961,24 +1086,11 @@ namespace F1XR.RestAPI.Replay
             out float length,
             out float height)
         {
-            width = GetVisualWidth();
-            length = GetVisualLength();
-            if (!TryGetCarBounds(out bounds))
-            {
-                height = 0f;
-                return false;
-            }
-
-            width = Mathf.Max(
-                0.001f,
-                width);
-            length = Mathf.Max(
-                0.001f,
-                length);
-            height = Mathf.Max(
-                0.001f,
-                bounds.size.y);
-            return true;
+            return TryGetCarWorldLayout(
+                out bounds,
+                out width,
+                out length,
+                out height);
         }
 
         private static void ConfigureCompletionRenderer(
@@ -1036,6 +1148,46 @@ namespace F1XR.RestAPI.Replay
             return mesh;
         }
 
+        private static Mesh CreateCompletionAccentMesh()
+        {
+            int pointCount = CompletionAccentRayCount * 2;
+            Vector3[] vertices =
+                new Vector3[pointCount + 1];
+            int[] triangles =
+                new int[pointCount * 3];
+
+            vertices[0] = Vector3.zero;
+            for (int i = 0; i < pointCount; i++)
+            {
+                float angle =
+                    Mathf.PI * 2f * i / pointCount;
+                float radius = i % 2 == 0
+                    ? 0.5f
+                    : 0.085f;
+                vertices[i + 1] = new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    Mathf.Sin(angle) * radius,
+                    0f);
+
+                int triangle = i * 3;
+                triangles[triangle] = 0;
+                triangles[triangle + 1] = i + 1;
+                triangles[triangle + 2] =
+                    i + 1 == pointCount
+                        ? 1
+                        : i + 2;
+            }
+
+            Mesh mesh = new()
+            {
+                name = "Runtime_OvertakeCompletionAccentMesh",
+                vertices = vertices,
+                triangles = triangles
+            };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
         private bool IsOvertakeCompletionVfxRenderer(
             Renderer renderer)
         {
@@ -1047,8 +1199,12 @@ namespace F1XR.RestAPI.Replay
 
         private void DisposeOvertakeCompletionVfx()
         {
+            if (completionAccentRoot != null)
+                Destroy(completionAccentRoot.gameObject);
             if (completionHudText != null)
                 Destroy(completionHudText.gameObject);
+            if (completionAccentMaterial != null)
+                Destroy(completionAccentMaterial);
             if (completionPulseMaterial != null)
                 Destroy(completionPulseMaterial);
             if (completionSweepMaterial != null)
@@ -1061,16 +1217,22 @@ namespace F1XR.RestAPI.Replay
                 Destroy(completionHudBackgroundMaterial);
             if (completionPulseMesh != null)
                 Destroy(completionPulseMesh);
+            if (completionAccentMesh != null)
+                Destroy(completionAccentMesh);
             if (completionSweepMesh != null)
                 Destroy(completionSweepMesh);
             if (completionStreakMesh != null)
                 Destroy(completionStreakMesh);
 
+            completionAccentRoot = null;
+            completionAccentRenderer = null;
+            completionAccentMaterial = null;
             completionPulseMaterial = null;
             completionSweepMaterial = null;
             completionStreakMaterial = null;
             completionHudMaterial = null;
             completionHudBackgroundMaterial = null;
+            completionAccentMesh = null;
             completionPulseMesh = null;
             completionSweepMesh = null;
             completionStreakMesh = null;

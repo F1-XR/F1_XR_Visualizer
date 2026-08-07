@@ -8,13 +8,6 @@ namespace F1XR.RestAPI.Replay
     {
         public bool enabled = true;
 
-        [Header("Driver Color")]
-        public bool useDriverColor = true;
-        [Range(0f, 1f)]
-        public float driverColorBlend = 1f;
-        [Range(0.25f, 1f)]
-        public float minimumDriverColorBrightness = 0.58f;
-
         [Header("Phase")]
         [Range(-0.15f, 0.15f)]
         public float startOffsetNormalized;
