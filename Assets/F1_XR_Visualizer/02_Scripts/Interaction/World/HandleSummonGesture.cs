@@ -17,9 +17,11 @@ namespace F1XR.Interaction.World
         public enum State { Hidden, Ghost, Solid }
 
         [Header("References")]
-        [Tooltip("소환할 핸들 루트. 시작 시 자동으로 숨겨집니다.")]
-        [SerializeField] GameObject handle;
+        [Tooltip("소환할 핸들 프리팹. 첫 소환 때 한 번만 생성해 재사용합니다.")]
+        [SerializeField] GameObject handlePrefab;
+        [Tooltip("비우면 씬에서 이름(Left Controller)으로 자동 연결.")]
         [SerializeField] Transform leftHand;
+        [Tooltip("비우면 씬에서 이름(Right Controller)으로 자동 연결.")]
         [SerializeField] Transform rightHand;
         [Tooltip("좌우 판정 기준이 되는 머리(카메라). 비우면 Camera.main, 그것도 없으면 월드 X축.")]
         [SerializeField] Transform head;
@@ -45,6 +47,7 @@ namespace F1XR.Interaction.World
         public State Current => state;
 
         State state = State.Hidden;
+        GameObject handle;          // 프리팹에서 만든 인스턴스. 첫 소환 때 생성.
         Quaternion restRotation;
         Renderer[] renderers;
         Material[][] originalMaterials;
@@ -52,24 +55,24 @@ namespace F1XR.Interaction.World
 
         void Awake()
         {
+            // 씬마다 드래그하지 않아도 되도록, 비어 있는 참조만 이름으로 자동 연결.
             if (head == null && Camera.main != null)
                 head = Camera.main.transform;
+            if (leftHand == null)
+                leftHand = Find("Left Controller");
+            if (rightHand == null)
+                rightHand = Find("Right Controller");
+        }
 
-            if (handle == null)
-                return;
-
-            restRotation = handle.transform.rotation;
-            renderers = handle.GetComponentsInChildren<Renderer>(true);
-            originalMaterials = new Material[renderers.Length][];
-            for (int i = 0; i < renderers.Length; i++)
-                originalMaterials[i] = renderers[i].sharedMaterials;
-
-            handle.SetActive(false);
+        static Transform Find(string name)
+        {
+            var go = GameObject.Find(name);
+            return go != null ? go.transform : null;
         }
 
         void Update()
         {
-            if (handle == null || leftHand == null || rightHand == null || state == State.Solid)
+            if (handlePrefab == null || leftHand == null || rightHand == null || state == State.Solid)
                 return;
 
             float lateral = LateralDistance();
@@ -106,8 +109,27 @@ namespace F1XR.Interaction.World
             return Mathf.Abs(Vector3.Dot(rightHand.position - leftHand.position, axis));
         }
 
+        /// <summary>프리팹 인스턴스를 한 번만 만들고, 원본 재질을 캐시해 둡니다.</summary>
+        void EnsureInstance()
+        {
+            if (handle != null)
+                return;
+
+            handle = Instantiate(handlePrefab);
+            handle.name = handlePrefab.name;
+            restRotation = handlePrefab.transform.rotation;
+
+            renderers = handle.GetComponentsInChildren<Renderer>(true);
+            originalMaterials = new Material[renderers.Length][];
+            for (int i = 0; i < renderers.Length; i++)
+                originalMaterials[i] = renderers[i].sharedMaterials;
+
+            handle.SetActive(false);
+        }
+
         void ShowGhost()
         {
+            EnsureInstance();
             state = State.Ghost;
             handle.SetActive(true);
             Place();
@@ -146,7 +168,8 @@ namespace F1XR.Interaction.World
             state = State.Hidden;
             RestoreMaterials();
             RestoreColliders();
-            handle.SetActive(false);
+            if (handle != null)
+                handle.SetActive(false);
         }
 
         /// <summary>두 손 중점에 놓고, 원래 기울기는 유지한 채 yaw 만 사용자 정면으로 돌립니다.</summary>
