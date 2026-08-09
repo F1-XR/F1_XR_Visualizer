@@ -12,13 +12,16 @@ namespace F1XR.RestAPI.UI
         private RectTransform eventControls;
         private TMP_Text eventStatus;
         private Button eventOpenButton;
+        private Button eventOpenPitButton;
         private Button eventPlayButton;
         private Button eventRestartButton;
         private Button eventNextButton;
         private Button eventCloseButton;
+        private Button eventPitWallButton;
         private Slider eventSlider;
         private bool refreshingEventSlider;
         private RoomShowcaseSetupController roomSetup;
+        private PitWallShowcasePresenter pitWallPresenter;
 
         private void EnsureEventControls()
         {
@@ -47,7 +50,18 @@ namespace F1XR.RestAPI.UI
             eventStatus.richText = true;
             SetRect(eventStatus.rectTransform, 8f, -8f, 284f, 26f);
 
-            eventOpenButton = CreateEventButton("Open", 8f, -42f, 284f, OpenTestEvent);
+            eventOpenButton = CreateEventButton(
+                "Open Overtake",
+                8f,
+                -42f,
+                284f,
+                OpenTestEvent);
+            eventOpenPitButton = CreateEventButton(
+                "Open Pit Stop",
+                8f,
+                -84f,
+                284f,
+                OpenPitStop);
             eventPlayButton = CreateEventButton("Play", 8f, -42f, 86f, ToggleEventPlay);
             eventRestartButton = CreateEventButton("Restart", 104f, -42f, 86f, RestartEvent);
             eventCloseButton = CreateEventButton("Close", 200f, -42f, 92f, CloseEvent);
@@ -56,7 +70,13 @@ namespace F1XR.RestAPI.UI
                 8f,
                 -84f,
                 284f,
-                OpenNextOvertake);
+                OpenNextEvent);
+            eventPitWallButton = CreateEventButton(
+                "Change Wall",
+                200f,
+                -84f,
+                92f,
+                SelectNextPitWall);
             eventSlider = CreateEventSlider();
             eventSlider.onValueChanged.AddListener(SeekEvent);
             RefreshEventControls();
@@ -181,14 +201,17 @@ namespace F1XR.RestAPI.UI
             bool roomReady = roomSetup == null || roomSetup.IsSetupReady;
 
             eventOpenButton.gameObject.SetActive(!active && !loading);
+            eventOpenPitButton.gameObject.SetActive(!active && !loading);
             eventPlayButton.gameObject.SetActive(active);
             eventRestartButton.gameObject.SetActive(active);
             eventNextButton.gameObject.SetActive(active);
+            bool pitActive = active && eventReplay.IsPitStopActive;
+            eventPitWallButton.gameObject.SetActive(pitActive);
             eventCloseButton.gameObject.SetActive(active || loading);
             eventSlider.gameObject.SetActive(active);
             eventControls.sizeDelta = new Vector2(
                 300f,
-                active ? 184f : 142f);
+                active ? 184f : 184f);
 
             if (loading)
             {
@@ -198,26 +221,54 @@ namespace F1XR.RestAPI.UI
 
             if (!active)
             {
-                eventStatus.text = !roomReady
-                    ? "ROOM SETUP REQUIRED"
-                    : player.HasDataset
-                        ? "OVERTAKE EVENT"
-                        : "EVENT DATA NOT READY";
+                bool hasPitStop =
+                    eventReplay != null &&
+                    eventReplay.HasPitStop;
+                bool pitWallReady =
+                    roomSetup == null ||
+                    roomSetup.HasPitWallCandidate;
+                eventStatus.text = !player.HasDataset
+                    ? "EVENT DATA NOT READY"
+                    : !roomReady && !pitWallReady
+                        ? "ROOM SETUP REQUIRED"
+                        : "MANUAL SHOWCASE EVENT";
                 eventOpenButton.interactable =
                     player.HasDataset && roomReady;
+                SetButton(
+                    eventOpenPitButton,
+                    hasPitStop
+                        ? "Open Pit Stop"
+                        : "No Pit Stops In Loaded Range",
+                    player.HasDataset &&
+                    hasPitStop &&
+                    pitWallReady);
                 return;
             }
 
             string title = FormatEventTitle(
                 eventReplay.CurrentEvent);
-            eventStatus.text = $"{title}  {FormatTime(eventReplay.CurrentTime)}";
+            eventStatus.text = FormatActiveEventStatus(
+                eventReplay,
+                title);
             SetButton(eventPlayButton, eventReplay.IsPlaying ? "Pause" : "Play", true);
-            bool hasNext = eventReplay.HasNextOvertake;
+            bool hasNext = pitActive
+                ? eventReplay.HasNextPitStop
+                : eventReplay.HasNextOvertake;
+            SetRect(
+                eventNextButton.GetComponent<RectTransform>(),
+                8f,
+                -84f,
+                pitActive ? 182f : 284f,
+                36f);
             SetButton(
                 eventNextButton,
                 hasNext
-                    ? "Next Overtake"
-                    : "No More Overtakes",
+                    ? pitActive
+                        ? "Next Pit Stop"
+                        : "Next Overtake"
+                    : pitActive
+                        ? "No More Pit Stops"
+                        : "No More Overtakes",
                 hasNext);
 
             refreshingEventSlider = true;
@@ -269,6 +320,38 @@ namespace F1XR.RestAPI.UI
 
             return $"{ColorizeDriverLabel(drivers[0])}  VS  " +
                    ColorizeDriverLabel(drivers[1]);
+        }
+
+        private string FormatActiveEventStatus(
+            EventPopoutReplay eventReplay,
+            string title)
+        {
+            if (eventReplay == null)
+                return title;
+            if (!eventReplay.IsPitStopActive)
+            {
+                return $"{title}  {FormatTime(eventReplay.CurrentTime)}";
+            }
+
+            ReplayEventDto replayEvent = eventReplay.CurrentEvent;
+            int driver = replayEvent.driverNumbers != null &&
+                         replayEvent.driverNumbers.Length > 0
+                ? replayEvent.driverNumbers[0]
+                : 0;
+            DriverInfoDto info = player.GetDriverInfo(driver);
+            string team = info != null &&
+                          !string.IsNullOrWhiteSpace(info.teamName)
+                ? info.teamName
+                : "TEAM";
+            string timing = eventReplay.PitStopDriveThrough
+                ? "DRIVE THROUGH"
+                : eventReplay.PitStopReconstructed
+                    ? "RECONSTRUCTED STOP"
+                    : eventReplay.CurrentPitStopPhase
+                        .ToString()
+                        .ToUpperInvariant();
+            return $"{title} | {team} | L{replayEvent.lapNumber} | " +
+                   $"{timing}  {FormatTime(eventReplay.CurrentTime)}";
         }
 
         private string ColorizeDriverLabel(int driver)
@@ -336,6 +419,12 @@ namespace F1XR.RestAPI.UI
                     Object.FindAnyObjectByType<RoomShowcaseSetupController>(
                         FindObjectsInactive.Include);
             }
+            if (pitWallPresenter == null)
+            {
+                pitWallPresenter =
+                    Object.FindAnyObjectByType<PitWallShowcasePresenter>(
+                        FindObjectsInactive.Include);
+            }
         }
 
         private void ToggleEventPlay()
@@ -350,9 +439,35 @@ namespace F1XR.RestAPI.UI
             RefreshEventControls();
         }
 
-        private void OpenNextOvertake()
+        private void OpenPitStop()
         {
-            player?.EventReplay?.OpenNextOvertake();
+            ResolveRoomSetup();
+            if (roomSetup != null &&
+                !roomSetup.HasPitWallCandidate)
+            {
+                roomSetup.NotifyOpenBlocked();
+                RefreshEventControls();
+                return;
+            }
+
+            player?.EventReplay?.OpenTestPitStop();
+            RefreshEventControls();
+        }
+
+        private void OpenNextEvent()
+        {
+            EventPopoutReplay eventReplay = player?.EventReplay;
+            if (eventReplay != null && eventReplay.IsPitStopActive)
+                eventReplay.OpenNextPitStop();
+            else
+                eventReplay?.OpenNextOvertake();
+            RefreshEventControls();
+        }
+
+        private void SelectNextPitWall()
+        {
+            ResolveRoomSetup();
+            pitWallPresenter?.SelectNextPitWall();
             RefreshEventControls();
         }
 
