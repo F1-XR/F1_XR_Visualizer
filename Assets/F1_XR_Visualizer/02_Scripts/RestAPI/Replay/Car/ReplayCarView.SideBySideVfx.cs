@@ -6,7 +6,7 @@ namespace F1XR.RestAPI.Replay
 {
     public partial class ReplayCarView
     {
-        private const int MaximumSideBySideSparkCount = 16;
+        private const int MaximumSideBySideSparkCount = 24;
 
         private Transform sideBySideVfxRoot;
         private Transform sideBySideSweepRoot;
@@ -105,7 +105,7 @@ namespace F1XR.RestAPI.Replay
             EnsureSideBySideVfxRoot();
             EnsureSideBySideSparks(settings);
             if (sideBySideSparks == null ||
-                !overtakeVfxHasWorldBounds)
+                !TryResolveStandaloneSparkBounds())
             {
                 return;
             }
@@ -177,6 +177,48 @@ namespace F1XR.RestAPI.Replay
                     };
                 sideBySideSparks.Emit(spark, 1);
             }
+        }
+
+        private bool TryResolveStandaloneSparkBounds()
+        {
+            if (overtakeVfxHasWorldBounds)
+                return true;
+            if (!TryGetCarBounds(out Bounds bounds))
+                return false;
+
+            overtakeVfxWorldBounds = bounds;
+            overtakeRibbonWorldWidth =
+                ProjectWorldBoundsSize(
+                    bounds,
+                    transform.right);
+            overtakeRibbonWorldHeight =
+                ProjectWorldBoundsSize(
+                    bounds,
+                    transform.up);
+            overtakeRibbonWorldLength =
+                ProjectWorldBoundsSize(
+                    bounds,
+                    transform.forward);
+            overtakeVfxHasWorldBounds =
+                overtakeRibbonWorldWidth > 0.001f &&
+                overtakeRibbonWorldHeight > 0.001f &&
+                overtakeRibbonWorldLength > 0.001f;
+            return overtakeVfxHasWorldBounds;
+        }
+
+        private static float ProjectWorldBoundsSize(
+            Bounds bounds,
+            Vector3 axis)
+        {
+            if (axis.sqrMagnitude <= 0.000001f)
+                return 0f;
+
+            Vector3 direction = axis.normalized;
+            Vector3 extents = bounds.extents;
+            return 2f *
+                (Mathf.Abs(direction.x) * extents.x +
+                 Mathf.Abs(direction.y) * extents.y +
+                 Mathf.Abs(direction.z) * extents.z);
         }
 
         public void ResetOvertakeSideBySideVfx()

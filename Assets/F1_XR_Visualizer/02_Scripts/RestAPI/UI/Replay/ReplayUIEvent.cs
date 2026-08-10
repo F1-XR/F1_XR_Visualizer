@@ -23,6 +23,9 @@ namespace F1XR.RestAPI.UI
         private bool refreshingEventSlider;
         private RoomShowcaseSetupController roomSetup;
         private PitWallShowcasePresenter pitWallPresenter;
+        private AutoReplayStarter replayStarter;
+        private bool collisionDatasetLoading;
+        private string eventLoadMessage;
 
         private void EnsureEventControls()
         {
@@ -203,7 +206,9 @@ namespace F1XR.RestAPI.UI
 
             ResolveRoomSetup();
             EventPopoutReplay eventReplay = player.EventReplay;
-            bool loading = eventReplay != null && eventReplay.IsLoading;
+            bool eventLoading =
+                eventReplay != null && eventReplay.IsLoading;
+            bool loading = eventLoading || collisionDatasetLoading;
             bool active = eventReplay != null && eventReplay.IsActive;
             bool roomReady = roomSetup == null || roomSetup.IsSetupReady;
 
@@ -224,7 +229,9 @@ namespace F1XR.RestAPI.UI
 
             if (loading)
             {
-                eventStatus.text = "LOADING EVENT REPLAY";
+                eventStatus.text = collisionDatasetLoading
+                    ? "LOADING 2024 SUZUKA COLLISION"
+                    : "LOADING EVENT REPLAY";
                 return;
             }
 
@@ -233,24 +240,36 @@ namespace F1XR.RestAPI.UI
                 bool hasPitStop =
                     eventReplay != null &&
                     eventReplay.HasPitStop;
+                bool hasCollision =
+                    eventReplay != null &&
+                    eventReplay.HasCollision;
+                if (hasCollision && roomReady)
+                    eventReplay.PreloadTestCollision();
                 bool pitWallReady =
                     roomSetup == null ||
                     roomSetup.HasPitWallCandidate;
-                eventStatus.text = !roomReady
-                    ? "ROOM SETUP REQUIRED"
-                    : player.HasDataset
-                        ? "SHOWCASE EVENT"
-                        : "EVENT DATA NOT READY";
+                eventStatus.text = !string.IsNullOrWhiteSpace(
+                        eventLoadMessage)
+                    ? eventLoadMessage
+                    : !roomReady
+                        ? "ROOM SETUP REQUIRED"
+                        : player.HasDataset
+                            ? "SHOWCASE EVENT"
+                            : "EVENT DATA NOT READY";
                 eventOpenButton.interactable =
                     player.HasDataset &&
                     roomReady &&
                     eventReplay != null &&
                     eventReplay.HasOvertake;
-                eventCollisionButton.interactable =
-                    player.HasDataset &&
+                SetButton(
+                    eventCollisionButton,
+                    hasCollision
+                        ? eventReplay.IsCollisionPreloading
+                            ? "Preparing Collision"
+                            : "Collision"
+                        : "Load Collision Test",
                     roomReady &&
-                    eventReplay != null &&
-                    eventReplay.HasCollision;
+                    (hasCollision || replayStarter != null));
                 SetButton(
                     eventOpenPitButton,
                     hasPitStop
@@ -474,7 +493,48 @@ namespace F1XR.RestAPI.UI
                 return;
             }
 
-            player?.EventReplay?.OpenTestCollision();
+            EventPopoutReplay eventReplay =
+                player != null ? player.EventReplay : null;
+            if (eventReplay != null && eventReplay.HasCollision)
+            {
+                eventLoadMessage = null;
+                eventReplay.OpenTestCollision();
+                RefreshEventControls();
+                return;
+            }
+
+            if (replayStarter == null || collisionDatasetLoading)
+            {
+                eventLoadMessage =
+                    "COLLISION TEST LOADER UNAVAILABLE";
+                RefreshEventControls();
+                return;
+            }
+
+            collisionDatasetLoading = true;
+            eventLoadMessage = null;
+            eventReplay?.Close();
+            replayStarter.ReloadEventReplayTestSession(success =>
+            {
+                collisionDatasetLoading = false;
+                EventPopoutReplay loadedReplay =
+                    player != null ? player.EventReplay : null;
+                if (success &&
+                    loadedReplay != null &&
+                    loadedReplay.HasCollision)
+                {
+                    eventLoadMessage = null;
+                    loadedReplay.OpenTestCollision();
+                }
+                else
+                {
+                    eventLoadMessage = success
+                        ? "COLLISION DATA NOT READY"
+                        : "COLLISION LOAD FAILED — REPLAY PRESERVED";
+                }
+
+                RefreshEventControls();
+            });
             RefreshEventControls();
         }
 
@@ -490,6 +550,12 @@ namespace F1XR.RestAPI.UI
             {
                 pitWallPresenter =
                     Object.FindAnyObjectByType<PitWallShowcasePresenter>(
+                        FindObjectsInactive.Include);
+            }
+            if (replayStarter == null)
+            {
+                replayStarter =
+                    Object.FindAnyObjectByType<AutoReplayStarter>(
                         FindObjectsInactive.Include);
             }
         }

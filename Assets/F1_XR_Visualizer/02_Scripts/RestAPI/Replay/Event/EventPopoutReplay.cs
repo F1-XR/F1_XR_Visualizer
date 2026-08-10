@@ -967,6 +967,10 @@ namespace F1XR.RestAPI.Replay
                 StopCoroutine(openRoutine);
 
             DestroyStage(false);
+            if (IsCollisionEvent(presentation))
+                SuspendTableTrackRendering();
+            else
+                RestoreTableTrackRendering();
             currentEvent = presentation;
             openRoutine = StartCoroutine(OpenRoutine(presentation));
         }
@@ -1196,11 +1200,16 @@ namespace F1XR.RestAPI.Replay
             yield return null;
 
             bool pitStop = IsPitStopDefinition(definition);
-            float scanSeconds = Mathf.Max(
-                Mathf.Max(
-                    eventLeadSeconds,
-                    eventTailSeconds),
-                battleScanSeconds);
+            bool collision = IsCollisionEvent(definition);
+            float scanSeconds = collision
+                ? Mathf.Max(
+                    CollisionLeadSeconds,
+                    CollisionTailSeconds)
+                : Mathf.Max(
+                    Mathf.Max(
+                        eventLeadSeconds,
+                        eventTailSeconds),
+                    battleScanSeconds);
             float loadStart = Mathf.Max(
                 player.TimelineStartTime,
                 (pitStop
@@ -1252,8 +1261,11 @@ namespace F1XR.RestAPI.Replay
             isLoading = false;
             isActive = true;
             openRoutine = null;
+            if (collision)
+                ActivateCollisionPresentationStage();
             ApplyCars();
-            CreateSafetyApron();
+            if (!collision)
+                CreateSafetyApron();
             EnsureCollisionShowcase();
             UpdateCollisionShowcase(timeline.CurrentTime);
             Play();
@@ -1264,8 +1276,12 @@ namespace F1XR.RestAPI.Replay
             if (!isActive)
                 return;
 
+            bool collisionHitStop =
+                UpdateCollisionHitStop(
+                    Time.unscaledDeltaTime);
             if (timeline.IsPlaying &&
-                !showcaseTransitionHeld)
+                !showcaseTransitionHeld &&
+                !collisionHitStop)
             {
                 timeline.Advance(
                     Time.deltaTime,
@@ -1291,7 +1307,8 @@ namespace F1XR.RestAPI.Replay
                 player != null ? player.engineSound : null,
                 true,
                 timeline.IsPlaying &&
-                !showcaseTransitionHeld,
+                !showcaseTransitionHeld &&
+                !collisionHitStop,
                 null);
             ApplyCars();
         }
@@ -1405,6 +1422,8 @@ namespace F1XR.RestAPI.Replay
                 player.carPrefab,
                 player,
                 false);
+            eventCars.SetRenderLodEnabled(
+                !collisionShowcase);
             eventCars.SetOvertakePresentationMode(
                 OvertakePresentationMode.Showcase);
             eventCars.SetOvertakeVehicleSizeScale(
@@ -2838,6 +2857,7 @@ namespace F1XR.RestAPI.Replay
             }
             else if (IsCollisionEvent(currentEvent))
             {
+                FitCollisionPresentationStage();
                 UpdateCollisionShowcase(replayTime);
             }
             else
