@@ -1507,11 +1507,15 @@ namespace F1XR.RestAPI.Replay.Room
         {
             isApplyingRoomPoses = false;
             ResolveEventReplay();
-            eventReplay?.SetOvertakeVehicleSizeScale(
-                lifeSizeVehicles != null &&
-                lifeSizeVehicles.IsCommitted
-                    ? 1f
-                    : ResolveActiveShowcaseVehicleScale());
+            if (eventReplay == null ||
+                !eventReplay.IsCurrentCollision)
+            {
+                eventReplay?.SetOvertakeVehicleSizeScale(
+                    lifeSizeVehicles != null &&
+                    lifeSizeVehicles.IsCommitted
+                        ? 1f
+                        : ResolveActiveShowcaseVehicleScale());
+            }
 
             if (!mappingEnabled)
             {
@@ -1551,6 +1555,26 @@ namespace F1XR.RestAPI.Replay.Room
                 SetInactive(
                     "PitStopSingleWall",
                     "");
+                return;
+            }
+
+            if (eventReplay.IsCurrentCollision)
+            {
+                if (boundStage != null)
+                    ReleaseBinding(false, false);
+
+                Transform collisionStage =
+                    eventReplay.PresentationRoot;
+                if (collisionStage == null)
+                {
+                    SetInactive(
+                        "WaitingForCollisionStage",
+                        "Collision presentation stage is unavailable.");
+                    return;
+                }
+
+                collisionStage.gameObject.SetActive(true);
+                SetInactive("CollisionTableStage", "");
                 return;
             }
 

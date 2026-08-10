@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using F1XR.RaceFlags;
 using F1XR.RestAPI.Api;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -10,48 +12,74 @@ namespace F1XR.RestAPI.Replay
     {
         public bool enabled = true;
 
+        [Header("Hero Presentation")]
+        [Min(0.1f)] public float targetVehicleLengthMeters = 0.8f;
+        [Min(0.1f)] public float minimumStageScale = 8f;
+        [Min(0.1f)] public float maximumStageScale = 120f;
+
+        [Header("Viewer Placement")]
+        [Min(0.5f)] public float focusForwardDistanceMeters = 1.6f;
+        [Min(0f)] public float focusBelowEyeMeters = 0.75f;
+        [Min(0.2f)] public float interactionWidthMeters = 0.75f;
+        [Min(0.05f)] public float interactionHeightMeters = 0.12f;
+
         [Header("Playback")]
-        [Min(0f)] public float leadSeconds = 5f;
-        [Min(0f)] public float tailSeconds = 10f;
-        [Range(0.1f, 1f)] public float slowMotionSpeed = 0.32f;
-        [Min(0f)] public float slowMotionLeadSeconds = 0.35f;
-        [Min(0f)] public float slowMotionTailSeconds = 0.7f;
-        [Min(0.01f)] public float slowMotionBlendSeconds = 0.18f;
+        [Min(0f)] public float leadSeconds = 3f;
+        [Min(0f)] public float tailSeconds = 4.5f;
+        [Range(0.1f, 1f)] public float slowMotionSpeed = 0.78f;
+        [Min(0f)] public float slowMotionLeadSeconds = 0.03f;
+        [Min(0f)] public float slowMotionTailSeconds = 0.65f;
+        [Min(0.01f)] public float slowMotionBlendSeconds = 0.08f;
+
+        [Header("Crash Motion")]
+        [Range(0f, 0.2f)] public float impactHoldSeconds = 0.09f;
+        [Min(0.1f)] public float victimSlideDuration = 1.45f;
+        [Min(0f)] public float victimForwardSlideInRoadWidths = 1.8f;
+        [Min(0f)] public float victimOutwardSlideInRoadWidths = 1.25f;
+        [Range(0f, 90f)] public float victimYawDegrees = 32f;
+        [Min(0.05f)] public float otherJoltDuration = 0.42f;
+        [Min(0f)] public float otherJoltInRoadWidths = 0.14f;
+        [Range(0f, 30f)] public float otherYawDegrees = 7f;
 
         [Header("Contact Sparks")]
-        [Range(1, 16)] public int sparkBurstPerCar = 16;
-        [Range(0.05f, 0.8f)] public float sparkLifetime = 0.42f;
+        [Range(1, 24)] public int sparkBurstPerCar = 24;
+        [Range(0.05f, 0.8f)] public float sparkLifetime = 0.55f;
         [Range(0.005f, 0.12f)]
-        public float sparkSizeInCarWidths = 0.05f;
+        public float sparkSizeInCarWidths = 0.07f;
         [Range(0.1f, 4f)]
-        public float sparkSpeedInCarLengthsPerSecond = 2.6f;
+        public float sparkSpeedInCarLengthsPerSecond = 3f;
         public Color sparkColor =
             new(1.45f, 0.55f, 0.08f, 0.96f);
 
-        [Header("Impact Pulse")]
-        [Min(0.05f)] public float pulseDuration = 0.72f;
-        [Min(0.01f)] public float pulseStartInRoadWidths = 0.55f;
-        [Min(0.01f)] public float pulseEndInRoadWidths = 5.5f;
-        [Range(0.05f, 0.95f)] public float pulseInnerRatio = 0.62f;
-        public Color pulseColor =
-            new(1.4f, 0.22f, 0.035f, 0.92f);
-
         [Header("Carbon Debris")]
-        [Range(0, 16)] public int debrisCount = 10;
-        [Min(0.05f)] public float debrisLifetime = 1.15f;
-        [Min(0f)] public float debrisHorizontalSpeedInRoadWidths = 3.8f;
-        [Min(0f)] public float debrisVerticalSpeedInRoadWidths = 3.1f;
-        [Min(0f)] public float debrisGravityInRoadWidths = 8.5f;
-        [Min(0.001f)] public float debrisSizeInRoadWidths = 0.11f;
+        [Range(0, 16)] public int debrisCount = 16;
+        [Min(0.05f)] public float debrisLifetime = 1.35f;
+        [Min(0f)] public float debrisHorizontalSpeedInRoadWidths = 3.2f;
+        [Min(0f)] public float debrisVerticalSpeedInRoadWidths = 3.5f;
+        [Min(0f)] public float debrisGravityInRoadWidths = 7.5f;
+        [Min(0.001f)] public float debrisSizeInRoadWidths = 0.075f;
         public Color debrisColor =
             new(0.045f, 0.05f, 0.06f, 1f);
 
+        [Header("Skid And Smoke")]
+        [Min(0.001f)] public float skidWidthInRoadWidths = 0.035f;
+        public Color skidColor =
+            new(0.025f, 0.025f, 0.028f, 0.92f);
+        [Min(0.1f)] public float smokeDuration = 2.2f;
+        [Range(1, 40)] public int smokeParticlesPerSecond = 18;
+        [Min(0.01f)] public float smokeSizeInRoadWidths = 0.22f;
+        public Color smokeColor =
+            new(0.22f, 0.23f, 0.25f, 0.72f);
+
+        [Header("Race Control")]
+        [Min(0f)] public float incidentYellowSeconds = 4f;
+
         [Header("Impact Audio")]
         public bool playImpactAudio = true;
-        [Range(0f, 1f)] public float impactVolume = 0.72f;
+        [Range(0f, 1f)] public float impactVolume = 0.85f;
         [Range(0f, 1f)] public float impactSpatialBlend = 0.92f;
         [Min(0.05f)] public float impactMinDistance = 0.12f;
-        [Min(0.1f)] public float impactMaxDistance = 4f;
+        [Min(0.1f)] public float impactMaxDistance = 6f;
 
         [Header("Reset")]
         [Min(0.05f)] public float seekResetThresholdSeconds = 0.5f;
@@ -59,16 +87,12 @@ namespace F1XR.RestAPI.Replay
 
     public sealed partial class EventPopoutReplay
     {
-        private const int CollisionPulseSegments = 64;
+        private const int CollisionSkidPointCount = 18;
 
         [Header("Collision Showcase")]
         public CollisionShowcaseVfxSettings collisionShowcase = new();
 
         private Transform collisionVfxRoot;
-        private MeshRenderer collisionPulseRenderer;
-        private Mesh collisionPulseMesh;
-        private Vector3[] collisionPulseVertices;
-        private Material collisionPulseMaterial;
         private Mesh collisionDebrisMesh;
         private Material collisionDebrisMaterial;
         private Transform[] collisionDebris;
@@ -76,8 +100,29 @@ namespace F1XR.RestAPI.Replay
         private Vector3[] collisionDebrisSpins;
         private AudioSource collisionAudio;
         private AudioClip collisionImpactClip;
+        private LineRenderer[] collisionSkidLines;
+        private Material collisionSkidMaterial;
+        private ParticleSystem collisionSmoke;
+        private Material collisionSmokeMaterial;
         private OvertakeSideBySideVfxSettings collisionSparkSettings;
         private float lastCollisionVfxReplayTime = float.NaN;
+        private float collisionResolvedStageScale = 1f;
+        private bool collisionPresentationFitted;
+        private bool collisionReconstructionResolved;
+        private int collisionVictimDriver;
+        private int collisionOtherDriver;
+        private Vector3 collisionVictimAnchorLocal;
+        private Vector3 collisionOtherAnchorLocal;
+        private Vector3 collisionForwardLocal = Vector3.forward;
+        private Vector3 collisionOutwardLocal = Vector3.right;
+        private float collisionVictimHalfWidth;
+        private float collisionHitStopRemaining;
+        private RaceControlFlagPresenter collisionFlagPresenter;
+        private Transform collisionFlagPlacementRoot;
+        private bool collisionYellowFlagActive;
+        private Coroutine collisionPreloadRoutine;
+        private string collisionPreloadKey;
+        private bool collisionPreloadReady;
 
         public bool HasCollision =>
             FindClosestCollision(
@@ -95,6 +140,25 @@ namespace F1XR.RestAPI.Replay
 
         public bool IsCurrentCollision =>
             IsCollisionEvent(currentEvent);
+
+        public bool IsCollisionPreloading =>
+            collisionPreloadRoutine != null;
+
+        public bool IsCollisionPreloaded
+        {
+            get
+            {
+                ReplayEventDto definition =
+                    FindTestCollisionDefinition();
+                return definition != null &&
+                    collisionPreloadReady &&
+                    string.Equals(
+                        collisionPreloadKey,
+                        CreateCollisionPreloadKey(
+                            definition),
+                        StringComparison.Ordinal);
+            }
+        }
 
         private float CollisionLeadSeconds =>
             collisionShowcase != null
@@ -116,19 +180,8 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            ReplayEventDto definition = FindClosestCollision(
-                player.Events,
-                player.CurrentTime,
-                player.TimelineStartTime,
-                player.ReadyUntilTime);
-            if (definition == null)
-            {
-                definition = FindClosestCollision(
-                    ReplayEventFixtures.Load(player.Manifest),
-                    player.CurrentTime,
-                    player.TimelineStartTime,
-                    player.ReadyUntilTime);
-            }
+            ReplayEventDto definition =
+                FindTestCollisionDefinition();
 
             if (definition == null)
             {
@@ -139,6 +192,112 @@ namespace F1XR.RestAPI.Replay
             }
 
             Open(definition);
+        }
+
+        public void PreloadTestCollision()
+        {
+            if (player == null ||
+                !player.HasDataset ||
+                isActive ||
+                isLoading ||
+                collisionPreloadRoutine != null)
+            {
+                return;
+            }
+
+            ReplayEventDto definition =
+                FindTestCollisionDefinition();
+            if (definition == null)
+                return;
+
+            string key = CreateCollisionPreloadKey(
+                definition);
+            if (collisionPreloadReady &&
+                string.Equals(
+                    collisionPreloadKey,
+                    key,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            collisionPreloadKey = key;
+            collisionPreloadReady = false;
+            collisionPreloadRoutine = StartCoroutine(
+                PreloadCollisionRoutine(
+                    definition,
+                    key));
+        }
+
+        private ReplayEventDto FindTestCollisionDefinition()
+        {
+            if (player == null || !player.HasDataset)
+                return null;
+
+            ReplayEventDto definition =
+                FindClosestCollision(
+                    player.Events,
+                    player.CurrentTime,
+                    player.TimelineStartTime,
+                    player.ReadyUntilTime);
+            return definition ?? FindClosestCollision(
+                ReplayEventFixtures.Load(
+                    player.Manifest),
+                player.CurrentTime,
+                player.TimelineStartTime,
+                player.ReadyUntilTime);
+        }
+
+        private IEnumerator PreloadCollisionRoutine(
+            ReplayEventDto definition,
+            string key)
+        {
+            float startedAt =
+                Time.realtimeSinceStartup;
+            float scanSeconds = Mathf.Max(
+                CollisionLeadSeconds,
+                CollisionTailSeconds);
+            float loadStart = Mathf.Max(
+                player.TimelineStartTime,
+                definition.anchorTime -
+                scanSeconds -
+                trackPaddingSeconds);
+            float loadEnd = Mathf.Min(
+                player.ReadyUntilTime,
+                definition.anchorTime +
+                scanSeconds +
+                trackPaddingSeconds);
+            bool loaded = false;
+            yield return player.LoadEventRange(
+                loadStart,
+                loadEnd,
+                value => loaded = value);
+
+            bool sameDataset = string.Equals(
+                key,
+                CreateCollisionPreloadKey(
+                    definition),
+                StringComparison.Ordinal);
+            collisionPreloadReady = loaded &&
+                sameDataset;
+            collisionPreloadRoutine = null;
+            Debug.Log(
+                $"[EventReplay] Collision preload " +
+                $"ready={collisionPreloadReady}, " +
+                $"range={loadStart:0.00}-{loadEnd:0.00}, " +
+                $"elapsed={Time.realtimeSinceStartup - startedAt:0.00}s.",
+                this);
+        }
+
+        private string CreateCollisionPreloadKey(
+            ReplayEventDto definition)
+        {
+            string datasetId = player?.Manifest != null
+                ? player.Manifest.datasetId
+                : string.Empty;
+            return $"{datasetId}|" +
+                $"{definition?.eventId}|" +
+                $"{definition?.anchorTime:0.000}";
         }
 
         public void OpenNextCollision()
@@ -155,6 +314,196 @@ namespace F1XR.RestAPI.Replay
             {
                 Open(definition);
             }
+        }
+
+        private void ActivateCollisionPresentationStage()
+        {
+            if (stageRoot == null ||
+                !IsCollisionEvent(currentEvent))
+            {
+                return;
+            }
+
+            ResolveStagePose(
+                out Vector3 position,
+                out Quaternion rotation);
+            if (stageAnchor == null && player != null)
+            {
+                Transform track =
+                    player.GetTrackPlacementTransform();
+                if (track != null)
+                {
+                    position = track.position +
+                        Vector3.up * stageHeightOffset;
+                }
+            }
+
+            rotation = Quaternion.Euler(
+                0f,
+                rotation.eulerAngles.y,
+                0f);
+            collisionResolvedStageScale =
+                ResolveInitialCollisionStageScale();
+            TrySetPresentationPose(
+                position,
+                rotation,
+                collisionResolvedStageScale);
+            stageRoot.SetActive(true);
+        }
+
+        private float ResolveInitialCollisionStageScale()
+        {
+            collisionShowcase ??=
+                new CollisionShowcaseVfxSettings();
+            float minimum = Mathf.Max(
+                0.1f,
+                collisionShowcase.minimumStageScale);
+            float maximum = Mathf.Max(
+                minimum,
+                collisionShowcase.maximumStageScale);
+            return Mathf.Clamp(stageScale, minimum, maximum);
+        }
+
+        private void FitCollisionPresentationStage()
+        {
+            if (collisionPresentationFitted ||
+                eventCars == null ||
+                PresentationRoot == null ||
+                currentEvent?.driverNumbers == null)
+            {
+                return;
+            }
+
+            float sourceVehicleLength = 0f;
+            foreach (int driver in currentEvent.driverNumbers)
+            {
+                if (eventCars.TryGetVisualTransform(
+                        driver,
+                        out Transform visualTransform) &&
+                    visualTransform != null &&
+                    visualTransform.TryGetComponent(
+                        out ReplayCarView car))
+                {
+                    float visualLength =
+                        car.GetVisualLength();
+                    if (visualLength > 0.0001f)
+                    {
+                        sourceVehicleLength =
+                            visualLength;
+                        break;
+                    }
+                }
+            }
+
+            if (sourceVehicleLength <= 0.0001f)
+                return;
+
+            collisionShowcase ??=
+                new CollisionShowcaseVfxSettings();
+            float targetLength = Mathf.Max(
+                0.1f,
+                collisionShowcase.targetVehicleLengthMeters);
+            float minimum = Mathf.Max(
+                0.1f,
+                collisionShowcase.minimumStageScale);
+            float maximum = Mathf.Max(
+                minimum,
+                collisionShowcase.maximumStageScale);
+            Vector3 parentLossyScale =
+                PresentationRoot.parent != null
+                    ? PresentationRoot.parent.lossyScale
+                    : Vector3.one;
+            float parentWorldScale = Mathf.Max(
+                0.0001f,
+                Mathf.Max(
+                    Mathf.Abs(parentLossyScale.x),
+                    Mathf.Abs(parentLossyScale.z)));
+            collisionResolvedStageScale = Mathf.Clamp(
+                targetLength /
+                (sourceVehicleLength * parentWorldScale),
+                minimum,
+                maximum);
+            PresentationRoot.localScale =
+                Vector3.one * collisionResolvedStageScale;
+
+            float stageWorldScale =
+                collisionResolvedStageScale * parentWorldScale;
+            PlaceCollisionStageForViewer(
+                stageWorldScale);
+            float localStageSpan =
+                stageInteractionDefaultsCaptured
+                    ? Mathf.Max(
+                        Mathf.Abs(stageInteractionDefaultSize.x),
+                        Mathf.Abs(stageInteractionDefaultSize.z))
+                    : 0f;
+            Debug.Log(
+                $"[EventReplay] Collision hero presentation " +
+                $"stageSpan={localStageSpan * stageWorldScale:0.###}m, " +
+                $"vehicleLength={sourceVehicleLength * stageWorldScale:0.###}m, " +
+                $"stageScale={collisionResolvedStageScale:0.###}, " +
+                $"vehicleLod=Off.",
+                this);
+            collisionPresentationFitted = true;
+        }
+
+        private void PlaceCollisionStageForViewer(
+            float stageWorldScale)
+        {
+            if (PresentationRoot == null ||
+                stageInteractionCollider == null)
+            {
+                return;
+            }
+
+            Vector3 focusLocal =
+                ResolveCollisionContactPosition();
+            if (stageAnchor == null && Camera.main != null)
+            {
+                Transform viewer = Camera.main.transform;
+                Vector3 flatForward = Vector3.ProjectOnPlane(
+                    viewer.forward,
+                    Vector3.up);
+                if (flatForward.sqrMagnitude < 0.001f)
+                    flatForward = Vector3.forward;
+                else
+                    flatForward.Normalize();
+
+                Vector3 desiredFocus =
+                    viewer.position +
+                    flatForward * Mathf.Max(
+                        0.5f,
+                        collisionShowcase
+                            .focusForwardDistanceMeters) -
+                    Vector3.up * Mathf.Max(
+                        0f,
+                        collisionShowcase
+                            .focusBelowEyeMeters);
+                PresentationRoot.position +=
+                    desiredFocus -
+                    PresentationRoot.TransformPoint(
+                        focusLocal);
+            }
+
+            float safeWorldScale = Mathf.Max(
+                0.0001f,
+                stageWorldScale);
+            float localWidth = Mathf.Max(
+                    0.2f,
+                    collisionShowcase
+                        .interactionWidthMeters) /
+                safeWorldScale;
+            float localHeight = Mathf.Max(
+                    0.05f,
+                    collisionShowcase
+                        .interactionHeightMeters) /
+                safeWorldScale;
+            stageInteractionCollider.center =
+                focusLocal +
+                Vector3.up * localHeight * 0.5f;
+            stageInteractionCollider.size = new Vector3(
+                localWidth,
+                localHeight,
+                localWidth);
         }
 
         private void EnsureCollisionShowcase()
@@ -189,9 +538,14 @@ namespace F1XR.RestAPI.Replay
                 Quaternion.identity;
             collisionVfxRoot = root.transform;
 
-            CreateCollisionPulse();
+            ResolveCollisionReconstruction();
+            CreateCollisionSkids();
+            CreateCollisionSmoke();
             CreateCollisionDebris();
             CreateCollisionAudio();
+            collisionFlagPresenter =
+                FindAnyObjectByType<RaceControlFlagPresenter>();
+            CreateCollisionRaceControlPlacement();
             collisionSparkSettings =
                 CreateCollisionSparkSettings();
             ResetCollisionShowcasePlayback(
@@ -224,40 +578,358 @@ namespace F1XR.RestAPI.Replay
                 : Vector3.zero;
         }
 
-        private void CreateCollisionPulse()
+        private bool ResolveCollisionReconstruction()
         {
-            GameObject pulse =
-                new("ImpactPulse");
-            pulse.transform.SetParent(
+            if (collisionReconstructionResolved)
+                return true;
+
+            int[] drivers = currentEvent != null
+                ? currentEvent.driverNumbers
+                : null;
+            if (drivers == null ||
+                drivers.Length < 2 ||
+                !TryGetEventLocalVehiclePosition(
+                    drivers[0],
+                    currentEvent.anchorTime,
+                    out Vector3 first) ||
+                !TryGetEventLocalVehiclePosition(
+                    drivers[1],
+                    currentEvent.anchorTime,
+                    out Vector3 second))
+            {
+                return false;
+            }
+
+            float sampleOffset = 0.35f;
+            Vector3 before = Vector3.zero;
+            Vector3 center = Vector3.zero;
+            Vector3 after = Vector3.zero;
+            bool hasPath =
+                TryGetEventLocalPathPosition(
+                    currentEvent.anchorTime - sampleOffset,
+                    out before) &&
+                TryGetEventLocalPathPosition(
+                    currentEvent.anchorTime,
+                    out center) &&
+                TryGetEventLocalPathPosition(
+                    currentEvent.anchorTime + sampleOffset,
+                    out after);
+            if (!hasPath)
+            {
+                center = (first + second) * 0.5f;
+                before = center - Vector3.forward;
+                after = center + Vector3.forward;
+            }
+
+            Vector3 incoming = center - before;
+            Vector3 outgoing = after - center;
+            incoming.y = 0f;
+            outgoing.y = 0f;
+            Vector3 forward = after - before;
+            forward.y = 0f;
+            collisionForwardLocal =
+                forward.sqrMagnitude > 0.000001f
+                    ? forward.normalized
+                    : Vector3.forward;
+            Vector3 right = Vector3.Cross(
+                Vector3.up,
+                collisionForwardLocal).normalized;
+            float turn =
+                incoming.sqrMagnitude > 0.000001f &&
+                outgoing.sqrMagnitude > 0.000001f
+                    ? Vector3.Cross(
+                        incoming.normalized,
+                        outgoing.normalized).y
+                    : 0f;
+            if (Mathf.Abs(turn) > 0.0001f)
+            {
+                collisionOutwardLocal =
+                    right * -Mathf.Sign(turn);
+            }
+            else
+            {
+                float firstSide = Vector3.Dot(
+                    first - center,
+                    right);
+                float secondSide = Vector3.Dot(
+                    second - center,
+                    right);
+                float widestSide =
+                    Mathf.Abs(firstSide) >=
+                    Mathf.Abs(secondSide)
+                        ? firstSide
+                        : secondSide;
+                collisionOutwardLocal = right *
+                    (Mathf.Abs(widestSide) > 0.0001f
+                        ? Mathf.Sign(widestSide)
+                        : 1f);
+            }
+
+            bool firstIsVictim = Vector3.Dot(
+                    first - center,
+                    collisionOutwardLocal) >=
+                Vector3.Dot(
+                    second - center,
+                    collisionOutwardLocal);
+            collisionVictimDriver = firstIsVictim
+                ? drivers[0]
+                : drivers[1];
+            collisionOtherDriver = firstIsVictim
+                ? drivers[1]
+                : drivers[0];
+            collisionVictimAnchorLocal = firstIsVictim
+                ? first
+                : second;
+            collisionOtherAnchorLocal = firstIsVictim
+                ? second
+                : first;
+            collisionVictimHalfWidth =
+                roadWidth * 0.12f;
+            if (TryGetCollisionCar(
+                    collisionVictimDriver,
+                    out ReplayCarView victim))
+            {
+                collisionVictimHalfWidth = Mathf.Max(
+                    collisionVictimHalfWidth,
+                    victim.GetVisualWidth() * 0.32f);
+            }
+
+            collisionReconstructionResolved = true;
+            Debug.Log(
+                $"[EventReplay] Collision reconstruction " +
+                $"victim={collisionVictimDriver}, " +
+                $"other={collisionOtherDriver}, " +
+                $"outward={collisionOutwardLocal:F3}.",
+                this);
+            return true;
+        }
+
+        private bool TryGetCollisionCar(
+            int driver,
+            out ReplayCarView car)
+        {
+            car = null;
+            return eventCars != null &&
+                eventCars.TryGetVisualTransform(
+                    driver,
+                    out Transform visualTransform) &&
+                visualTransform != null &&
+                visualTransform.TryGetComponent(out car);
+        }
+
+        private void CreateCollisionSkids()
+        {
+            if (!collisionReconstructionResolved ||
+                PresentationRoot == null)
+            {
+                return;
+            }
+
+            collisionSkidMaterial =
+                ReplayCarVisualUtil.CreateUnlitMaterial(
+                    collisionShowcase.skidColor);
+            collisionSkidMaterial.name =
+                "Runtime_CollisionSkid";
+            collisionSkidLines = new LineRenderer[2];
+            for (int i = 0; i < 2; i++)
+            {
+                GameObject skid = new(
+                    i == 0
+                        ? "LeftTireSkid"
+                        : "RightTireSkid");
+                skid.transform.SetParent(
+                    PresentationRoot,
+                    false);
+                LineRenderer line =
+                    skid.AddComponent<LineRenderer>();
+                line.useWorldSpace = false;
+                line.alignment = LineAlignment.View;
+                line.textureMode = LineTextureMode.Stretch;
+                line.numCapVertices = 2;
+                line.numCornerVertices = 2;
+                line.widthMultiplier = roadWidth *
+                    collisionShowcase
+                        .skidWidthInRoadWidths;
+                line.sharedMaterial =
+                    collisionSkidMaterial;
+                line.shadowCastingMode =
+                    ShadowCastingMode.Off;
+                line.receiveShadows = false;
+                line.enabled = false;
+                collisionSkidLines[i] = line;
+            }
+        }
+
+        private void CreateCollisionSmoke()
+        {
+            if (!collisionReconstructionResolved ||
+                collisionVfxRoot == null)
+            {
+                return;
+            }
+
+            GameObject smokeObject =
+                new("TireSmoke");
+            smokeObject.transform.SetParent(
                 collisionVfxRoot,
                 false);
-            MeshFilter filter =
-                pulse.AddComponent<MeshFilter>();
-            collisionPulseMesh =
-                ReplayCarVisualUtil.CreateRingMesh(
-                    "Runtime_CollisionImpactPulse",
-                    CollisionPulseSegments,
-                    out collisionPulseVertices);
-            filter.sharedMesh = collisionPulseMesh;
-            collisionPulseMaterial =
-                ReplayCarVisualUtil.CreateSelectionMaterial(
-                    collisionShowcase.pulseColor);
-            collisionPulseMaterial.name =
-                "Runtime_CollisionImpactPulse";
-            collisionPulseRenderer =
-                pulse.AddComponent<MeshRenderer>();
-            collisionPulseRenderer.sharedMaterial =
-                collisionPulseMaterial;
-            collisionPulseRenderer.shadowCastingMode =
+            smokeObject.transform.localRotation =
+                Quaternion.Euler(-90f, 0f, 0f);
+            collisionSmoke =
+                smokeObject.AddComponent<ParticleSystem>();
+            collisionSmoke.Stop(
+                true,
+                ParticleSystemStopBehavior.StopEmittingAndClear);
+            ParticleSystem.MainModule main =
+                collisionSmoke.main;
+            main.playOnAwake = false;
+            main.loop = true;
+            main.duration = Mathf.Max(
+                0.1f,
+                collisionShowcase.smokeDuration);
+            main.startLifetime =
+                new ParticleSystem.MinMaxCurve(
+                    0.65f,
+                    1.25f);
+            float smokeSize = roadWidth *
+                collisionShowcase
+                    .smokeSizeInRoadWidths;
+            main.startSize =
+                new ParticleSystem.MinMaxCurve(
+                    smokeSize * 0.55f,
+                    smokeSize);
+            main.startSpeed =
+                new ParticleSystem.MinMaxCurve(
+                    roadWidth * 0.12f,
+                    roadWidth * 0.32f);
+            main.startColor =
+                collisionShowcase.smokeColor;
+            main.simulationSpace =
+                ParticleSystemSimulationSpace.Local;
+            main.scalingMode =
+                ParticleSystemScalingMode.Hierarchy;
+            main.maxParticles = 80;
+
+            ParticleSystem.EmissionModule emission =
+                collisionSmoke.emission;
+            emission.enabled = true;
+            emission.rateOverTime = Mathf.Clamp(
+                collisionShowcase
+                    .smokeParticlesPerSecond,
+                1,
+                40);
+            ParticleSystem.ShapeModule shape =
+                collisionSmoke.shape;
+            shape.enabled = true;
+            shape.shapeType =
+                ParticleSystemShapeType.Cone;
+            shape.angle = 18f;
+            shape.radius = roadWidth * 0.08f;
+            ParticleSystem.NoiseModule noise =
+                collisionSmoke.noise;
+            noise.enabled = true;
+            noise.strength = roadWidth * 0.08f;
+            noise.frequency = 0.45f;
+
+            ParticleSystem.ColorOverLifetimeModule color =
+                collisionSmoke.colorOverLifetime;
+            color.enabled = true;
+            Gradient fade = new();
+            fade.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(Color.white, 0f),
+                    new GradientColorKey(Color.white, 1f)
+                },
+                new[]
+                {
+                    new GradientAlphaKey(0f, 0f),
+                    new GradientAlphaKey(0.82f, 0.18f),
+                    new GradientAlphaKey(0f, 1f)
+                });
+            color.color = fade;
+
+            ParticleSystemRenderer renderer =
+                smokeObject.GetComponent<
+                    ParticleSystemRenderer>();
+            renderer.renderMode =
+                ParticleSystemRenderMode.Billboard;
+            renderer.alignment =
+                ParticleSystemRenderSpace.View;
+            renderer.shadowCastingMode =
                 ShadowCastingMode.Off;
-            collisionPulseRenderer.receiveShadows = false;
-            collisionPulseRenderer.motionVectorGenerationMode =
-                MotionVectorGenerationMode.ForceNoMotion;
-            collisionPulseRenderer.lightProbeUsage =
-                LightProbeUsage.Off;
-            collisionPulseRenderer.reflectionProbeUsage =
-                ReflectionProbeUsage.Off;
-            collisionPulseRenderer.enabled = false;
+            renderer.receiveShadows = false;
+            Shader shader = Shader.Find(
+                    "Universal Render Pipeline/Particles/Unlit") ??
+                Shader.Find("Particles/Standard Unlit") ??
+                Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader != null)
+            {
+                collisionSmokeMaterial =
+                    new Material(shader)
+                    {
+                        name = "Runtime_CollisionTireSmoke",
+                        renderQueue = 3000
+                    };
+                if (collisionSmokeMaterial.HasProperty(
+                        "_BaseColor"))
+                {
+                    collisionSmokeMaterial.SetColor(
+                        "_BaseColor",
+                        collisionShowcase.smokeColor);
+                }
+                if (collisionSmokeMaterial.HasProperty(
+                        "_Color"))
+                {
+                    collisionSmokeMaterial.SetColor(
+                        "_Color",
+                        collisionShowcase.smokeColor);
+                }
+                renderer.sharedMaterial =
+                    collisionSmokeMaterial;
+            }
+
+            collisionSmoke.Stop(
+                true,
+                ParticleSystemStopBehavior
+                    .StopEmittingAndClear);
+        }
+
+        private void CreateCollisionRaceControlPlacement()
+        {
+            if (collisionFlagPresenter == null ||
+                !collisionReconstructionResolved ||
+                PresentationRoot == null)
+            {
+                return;
+            }
+
+            GameObject placementObject =
+                new("CollisionRaceControlRoot");
+            Transform placement =
+                placementObject.transform;
+            placement.SetParent(
+                PresentationRoot,
+                false);
+            placement.localPosition =
+                collisionVictimAnchorLocal +
+                collisionOutwardLocal *
+                roadWidth * 1.75f -
+                collisionForwardLocal *
+                roadWidth * 0.35f;
+            placement.localRotation =
+                Quaternion.LookRotation(
+                    -collisionOutwardLocal,
+                    Vector3.up);
+            float presentationScale =
+                Mathf.Max(
+                    0.0001f,
+                    PresentationRoot.lossyScale.x);
+            placement.localScale =
+                Vector3.one / presentationScale;
+            collisionFlagPlacementRoot = placement;
+            collisionFlagPresenter
+                .SetIncidentPresentationRoot(placement);
         }
 
         private void CreateCollisionDebris()
@@ -396,7 +1068,7 @@ namespace F1XR.RestAPI.Replay
                 TriggerCollisionImpact();
             }
 
-            UpdateCollisionPulse(replayTime);
+            UpdateCollisionReconstruction(replayTime);
             UpdateCollisionDebris(replayTime);
             lastCollisionVfxReplayTime = replayTime;
         }
@@ -419,53 +1091,305 @@ namespace F1XR.RestAPI.Replay
                 collisionAudio.Stop();
                 collisionAudio.Play();
             }
+
+            collisionHitStopRemaining = Mathf.Max(
+                0f,
+                collisionShowcase.impactHoldSeconds);
+            SetCollisionYellowFlag(true);
         }
 
-        private void UpdateCollisionPulse(float replayTime)
+        private void UpdateCollisionReconstruction(
+            float replayTime)
         {
-            if (collisionPulseRenderer == null)
+            if (!ResolveCollisionReconstruction())
                 return;
 
             float age = replayTime -
                 currentEvent.anchorTime;
+            bool hasVictim = TryGetCollisionCar(
+                collisionVictimDriver,
+                out ReplayCarView victim);
+            bool hasOther = TryGetCollisionCar(
+                collisionOtherDriver,
+                out ReplayCarView other);
+            if (age < 0f)
+            {
+                victim?.ResetVisualMotion();
+                other?.ResetVisualMotion();
+                SetCollisionSkidsVisible(false);
+                StopCollisionSmoke(true);
+                SetCollisionYellowFlag(false);
+                return;
+            }
+
             float duration = Mathf.Max(
+                0.1f,
+                collisionShowcase
+                    .victimSlideDuration);
+            float progress = Mathf.Clamp01(
+                age / duration);
+            float eased = Mathf.SmoothStep(
+                0f,
+                1f,
+                progress);
+            float stopEase =
+                1f - Mathf.Pow(1f - progress, 3f);
+            Vector3 victimLocal =
+                EvaluateCollisionVictimLocal(
+                    progress,
+                    eased,
+                    stopEase);
+            float yawSign = Mathf.Sign(
+                Vector3.Dot(
+                    collisionOutwardLocal,
+                    Vector3.Cross(
+                        Vector3.up,
+                        collisionForwardLocal)));
+            if (Mathf.Approximately(yawSign, 0f))
+                yawSign = 1f;
+            float victimYaw = yawSign *
+                collisionShowcase
+                    .victimYawDegrees *
+                eased;
+            if (hasVictim)
+            {
+                Vector3 targetWorld =
+                    PresentationRoot.TransformPoint(
+                        victimLocal);
+                victim.ApplyVisualMotion(
+                    targetWorld -
+                    victim.LogicalRoot.position,
+                    victimYaw);
+            }
+
+            float joltDuration = Mathf.Max(
                 0.05f,
-                collisionShowcase.pulseDuration);
-            bool visible = age >= 0f && age <= duration;
-            collisionPulseRenderer.enabled = visible;
-            if (!visible)
+                collisionShowcase
+                    .otherJoltDuration);
+            if (hasOther && age <= joltDuration)
+            {
+                float joltProgress = Mathf.Clamp01(
+                    age / joltDuration);
+                float jolt = Mathf.Sin(
+                    joltProgress * Mathf.PI) *
+                    (1f - joltProgress * 0.35f);
+                Vector3 joltWorld =
+                    PresentationRoot.TransformVector(
+                        -collisionOutwardLocal *
+                        roadWidth *
+                        collisionShowcase
+                            .otherJoltInRoadWidths *
+                        jolt);
+                other.ApplyVisualMotion(
+                    joltWorld,
+                    -yawSign *
+                    collisionShowcase
+                        .otherYawDegrees *
+                    jolt);
+            }
+            else
+            {
+                other?.ResetVisualMotion();
+            }
+
+            UpdateCollisionSkids(
+                progress,
+                yawSign);
+            UpdateCollisionSmoke(
+                age,
+                victimLocal);
+            SetCollisionYellowFlag(
+                age <= Mathf.Max(
+                    0f,
+                    collisionShowcase
+                        .incidentYellowSeconds));
+        }
+
+        private Vector3 EvaluateCollisionVictimLocal(
+            float progress,
+            float eased,
+            float stopEase)
+        {
+            return collisionVictimAnchorLocal +
+                collisionForwardLocal *
+                roadWidth *
+                collisionShowcase
+                    .victimForwardSlideInRoadWidths *
+                stopEase +
+                collisionOutwardLocal *
+                roadWidth *
+                collisionShowcase
+                    .victimOutwardSlideInRoadWidths *
+                eased +
+                Vector3.up * roadWidth * 0.015f;
+        }
+
+        private Vector3 EvaluateCollisionVictimLocal(
+            float progress)
+        {
+            float eased = Mathf.SmoothStep(
+                0f,
+                1f,
+                progress);
+            float stopEase =
+                1f - Mathf.Pow(1f - progress, 3f);
+            return EvaluateCollisionVictimLocal(
+                progress,
+                eased,
+                stopEase);
+        }
+
+        private void UpdateCollisionSkids(
+            float progress,
+            float yawSign)
+        {
+            if (collisionSkidLines == null ||
+                progress <= 0.015f)
+            {
+                SetCollisionSkidsVisible(false);
+                return;
+            }
+
+            int pointCount = Mathf.Clamp(
+                Mathf.CeilToInt(
+                    progress *
+                    (CollisionSkidPointCount - 1)) + 1,
+                2,
+                CollisionSkidPointCount);
+            for (int lineIndex = 0;
+                 lineIndex < collisionSkidLines.Length;
+                 lineIndex++)
+            {
+                LineRenderer line =
+                    collisionSkidLines[lineIndex];
+                if (line == null)
+                    continue;
+
+                line.enabled = true;
+                line.positionCount = pointCount;
+                float tireSide = lineIndex == 0
+                    ? -1f
+                    : 1f;
+                for (int point = 0;
+                     point < pointCount;
+                     point++)
+                {
+                    float pointProgress = progress *
+                        point /
+                        (pointCount - 1f);
+                    Vector3 center =
+                        EvaluateCollisionVictimLocal(
+                            pointProgress);
+                    float pointYaw = yawSign *
+                        collisionShowcase
+                            .victimYawDegrees *
+                        Mathf.SmoothStep(
+                            0f,
+                            1f,
+                            pointProgress);
+                    Vector3 tireRight =
+                        Quaternion.AngleAxis(
+                            pointYaw,
+                            Vector3.up) *
+                        Vector3.Cross(
+                            Vector3.up,
+                            collisionForwardLocal)
+                            .normalized;
+                    line.SetPosition(
+                        point,
+                        center +
+                        tireRight *
+                        collisionVictimHalfWidth *
+                        tireSide);
+                }
+            }
+        }
+
+        private void SetCollisionSkidsVisible(
+            bool visible)
+        {
+            if (collisionSkidLines == null)
                 return;
 
-            float progress = Mathf.Clamp01(age / duration);
-            float eased =
-                1f - Mathf.Pow(1f - progress, 3f);
-            float localRadius = roadWidth * Mathf.Lerp(
-                collisionShowcase
-                    .pulseStartInRoadWidths,
-                collisionShowcase
-                    .pulseEndInRoadWidths,
-                eased);
-            Vector3 scale =
-                collisionPulseRenderer
-                    .transform.lossyScale;
-            float worldRadius = localRadius * Mathf.Max(
-                Mathf.Abs(scale.x),
-                Mathf.Abs(scale.z));
-            ReplayCarVisualUtil.UpdateRingMesh(
-                collisionPulseRenderer.transform,
-                collisionPulseMesh,
-                collisionPulseVertices,
-                CollisionPulseSegments,
-                Vector3.zero,
-                worldRadius,
-                collisionShowcase.pulseInnerRatio,
-                progress * 35f);
-            Color color =
-                collisionShowcase.pulseColor;
-            color.a *= 1f - progress;
-            ReplayCarVisualUtil.SetMaterialColor(
-                collisionPulseMaterial,
-                color);
+            foreach (LineRenderer line in collisionSkidLines)
+            {
+                if (line != null)
+                    line.enabled = visible;
+            }
+        }
+
+        private void UpdateCollisionSmoke(
+            float age,
+            Vector3 victimLocal)
+        {
+            if (collisionSmoke == null ||
+                collisionVfxRoot == null)
+            {
+                return;
+            }
+
+            collisionSmoke.transform.localPosition =
+                victimLocal -
+                collisionVfxRoot.localPosition;
+            float duration = Mathf.Max(
+                0.1f,
+                collisionShowcase.smokeDuration);
+            if (age <= duration)
+            {
+                if (!collisionSmoke.isPlaying)
+                    collisionSmoke.Play();
+            }
+            else if (collisionSmoke.isEmitting)
+            {
+                collisionSmoke.Stop(
+                    true,
+                    ParticleSystemStopBehavior
+                        .StopEmitting);
+            }
+        }
+
+        private void StopCollisionSmoke(bool clear)
+        {
+            if (collisionSmoke == null)
+                return;
+
+            collisionSmoke.Stop(
+                true,
+                clear
+                    ? ParticleSystemStopBehavior
+                        .StopEmittingAndClear
+                    : ParticleSystemStopBehavior
+                        .StopEmitting);
+        }
+
+        private void SetCollisionYellowFlag(bool active)
+        {
+            if (collisionYellowFlagActive == active)
+                return;
+
+            collisionYellowFlagActive = active;
+            if (collisionFlagPresenter == null)
+            {
+                collisionFlagPresenter =
+                    FindAnyObjectByType<
+                        RaceControlFlagPresenter>();
+            }
+
+            collisionFlagPresenter?
+                .SetIncidentYellowOverride(active);
+        }
+
+        private bool UpdateCollisionHitStop(
+            float unscaledDeltaTime)
+        {
+            if (collisionHitStopRemaining <= 0f)
+                return false;
+
+            collisionHitStopRemaining = Mathf.Max(
+                0f,
+                collisionHitStopRemaining -
+                Mathf.Max(0f, unscaledDeltaTime));
+            return true;
         }
 
         private void UpdateCollisionDebris(float replayTime)
@@ -524,7 +1448,8 @@ namespace F1XR.RestAPI.Replay
                     drivers[1]);
             }
 
-            UpdateCollisionPulse(replayTime);
+            collisionHitStopRemaining = 0f;
+            UpdateCollisionReconstruction(replayTime);
             UpdateCollisionDebris(replayTime);
         }
 
@@ -582,6 +1507,23 @@ namespace F1XR.RestAPI.Replay
             if (collisionAudio != null)
                 collisionAudio.Stop();
 
+            SetCollisionYellowFlag(false);
+            collisionFlagPresenter?
+                .SetIncidentPresentationRoot(null);
+            StopCollisionSmoke(true);
+            if (TryGetCollisionCar(
+                    collisionVictimDriver,
+                    out ReplayCarView victim))
+            {
+                victim.ResetVisualMotion();
+            }
+            if (TryGetCollisionCar(
+                    collisionOtherDriver,
+                    out ReplayCarView other))
+            {
+                other.ResetVisualMotion();
+            }
+
             int[] drivers = currentEvent != null
                 ? currentEvent.driverNumbers
                 : null;
@@ -596,22 +1538,20 @@ namespace F1XR.RestAPI.Replay
 
             if (collisionVfxRoot != null)
                 Destroy(collisionVfxRoot.gameObject);
-            if (collisionPulseMesh != null)
-                Destroy(collisionPulseMesh);
-            if (collisionPulseMaterial != null)
-                Destroy(collisionPulseMaterial);
+            if (collisionFlagPlacementRoot != null)
+                Destroy(collisionFlagPlacementRoot.gameObject);
             if (collisionDebrisMesh != null)
                 Destroy(collisionDebrisMesh);
             if (collisionDebrisMaterial != null)
                 Destroy(collisionDebrisMaterial);
+            if (collisionSkidMaterial != null)
+                Destroy(collisionSkidMaterial);
+            if (collisionSmokeMaterial != null)
+                Destroy(collisionSmokeMaterial);
             if (collisionImpactClip != null)
                 Destroy(collisionImpactClip);
 
             collisionVfxRoot = null;
-            collisionPulseRenderer = null;
-            collisionPulseMesh = null;
-            collisionPulseVertices = null;
-            collisionPulseMaterial = null;
             collisionDebrisMesh = null;
             collisionDebrisMaterial = null;
             collisionDebris = null;
@@ -619,8 +1559,26 @@ namespace F1XR.RestAPI.Replay
             collisionDebrisSpins = null;
             collisionAudio = null;
             collisionImpactClip = null;
+            collisionSkidLines = null;
+            collisionSkidMaterial = null;
+            collisionSmoke = null;
+            collisionSmokeMaterial = null;
             collisionSparkSettings = null;
             lastCollisionVfxReplayTime = float.NaN;
+            collisionResolvedStageScale = 1f;
+            collisionPresentationFitted = false;
+            collisionReconstructionResolved = false;
+            collisionVictimDriver = 0;
+            collisionOtherDriver = 0;
+            collisionVictimAnchorLocal = Vector3.zero;
+            collisionOtherAnchorLocal = Vector3.zero;
+            collisionForwardLocal = Vector3.forward;
+            collisionOutwardLocal = Vector3.right;
+            collisionVictimHalfWidth = 0f;
+            collisionHitStopRemaining = 0f;
+            collisionFlagPresenter = null;
+            collisionFlagPlacementRoot = null;
+            collisionYellowFlagActive = false;
         }
 
         private OvertakeSideBySideVfxSettings
@@ -633,7 +1591,7 @@ namespace F1XR.RestAPI.Replay
                     collisionShowcase
                         .sparkBurstPerCar,
                     1,
-                    16),
+                    24),
                 sparkLifetime =
                     collisionShowcase.sparkLifetime,
                 sparkSizeInCarWidths =
