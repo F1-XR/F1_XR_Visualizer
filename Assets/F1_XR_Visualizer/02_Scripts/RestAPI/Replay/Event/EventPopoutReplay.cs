@@ -130,6 +130,7 @@ namespace F1XR.RestAPI.Replay
 
         [Header("Pit Stop Showcase")]
         [Min(10f)] public float pitMaximumEventDuration = 45f;
+        [Min(0.5f)] public float pitVisibleApproachSeconds = 2f;
         public GameObject pitWheelGunPrefab;
         public AudioClip pitWheelGunClip;
         public PitEnvironmentProfile[] pitEnvironmentProfiles;
@@ -1538,10 +1539,15 @@ namespace F1XR.RestAPI.Replay
                         battleSequence);
                 }
             }
+            float playbackStartTime = pitStop
+                ? ResolvePitPlaybackStart(
+                    definition.startTime,
+                    pitStopSequence)
+                : definition.startTime;
             showcasePlaybackWindow =
                 CreateShowcasePlaybackWindow(
                     trackStartTime,
-                    definition.startTime,
+                    playbackStartTime,
                     transitionTime,
                     definition.endTime,
                     trackEndTime);
@@ -1878,6 +1884,24 @@ namespace F1XR.RestAPI.Replay
                 exitTime,
                 endTime,
                 portalVisualEndTime);
+        }
+
+        private float ResolvePitPlaybackStart(
+            float eventStartTime,
+            PitStopSequence sequence)
+        {
+            if (sequence == null)
+                return eventStartTime;
+
+            float focusTime = sequence.FocusTime;
+            float approachTarget = sequence.IsDriveThrough
+                ? focusTime - pitVisibleApproachSeconds
+                : sequence.ServiceStartTime -
+                  pitVisibleApproachSeconds;
+            return Mathf.Clamp(
+                approachTarget,
+                eventStartTime,
+                focusTime - 0.05f);
         }
 
         private float ProjectSourcePathDistance(

@@ -111,6 +111,7 @@ namespace F1XR.RestAPI.UI
         private void OnDisable()
         {
             RestoreCollisionCaptureProfile();
+            ReleasePitPortalEventControls();
             if (collisionOpenWhenPreparedRoutine != null)
             {
                 StopCoroutine(collisionOpenWhenPreparedRoutine);
