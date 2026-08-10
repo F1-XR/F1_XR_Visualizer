@@ -310,6 +310,13 @@ namespace F1XR.RestAPI.Replay.Room
             return float.IsFinite(floorHeight);
         }
 
+        public bool TryGetDetectedFloorPlane(out Plane floorPlane)
+        {
+            floorPlane = default;
+            return wallDiscovery != null &&
+                wallDiscovery.TryGetContainingFloorPlane(out floorPlane);
+        }
+
         [ContextMenu("Capture Hero From Current View")]
         public void CaptureHeroFromCurrentView()
         {
