@@ -9,7 +9,7 @@ namespace F1XR.RestAPI.Replay.Room
     public sealed class PitWallShowcasePresenter : MonoBehaviour
     {
         private const float TargetVehicleLengthMeters = 5.6f;
-        private const float PitDepthBehindWallMeters = 6f;
+        private const float PitDepthBehindWallMeters = 8.5f;
         private const float VehicleGroundOffsetMeters = 0.28f;
 
         private readonly List<ShowcaseWallFrame> walls = new();

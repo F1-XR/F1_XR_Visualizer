@@ -16,14 +16,21 @@ namespace F1XR.RestAPI.Replay.Room
         private const int PortalSceneLayer = 30;
         private const int PortalSurfaceLayer = 2;
         private const int TextureSize = 512;
+        private const int PitTextureMinimumWidth = 1280;
+        private const int PitTextureMinimumHeight = 768;
+        private const int PitTextureMaximumDimension = 2048;
+        private const float PitTexturePixelsPerMeter = 520f;
         private const int TextureDepthBits = 16;
-        private const int PortalArchSegments = 20;
+        private const int PortalArchSegments = 40;
         private const float FallbackPortalWidth = 2.8f;
         private const float FallbackPortalHeight = 2.1f;
         private const float MinimumPortalWidth = 2f;
         private const float MinimumPortalHeight = 1.7f;
         private const float MaximumPortalWidth = 5.5f;
         private const float MaximumPortalHeight = 3.5f;
+        private const float MaximumPitPortalWidth = 8f;
+        private const float MaximumPitPortalHeight = 4f;
+        private const float PitPortalWallFill = 0.96f;
         private const float PortalWallFill = 1.1f;
         private const float MaximumPortalSideOverflow = 0.35f;
         private const float MaximumPortalTopOverflow = 0.5f;
@@ -440,7 +447,7 @@ namespace F1XR.RestAPI.Replay.Room
             inward.Normalize();
             entryPosition = wall.Center;
             entryInward = inward;
-            entryPortalSize = ResolvePortalSize(
+            entryPortalSize = ResolvePitPortalSize(
                 new Vector2(wall.Width, wall.Height));
             Vector3 bottom =
                 wall.Center +
@@ -466,7 +473,8 @@ namespace F1XR.RestAPI.Replay.Room
                 "PitStopPortal",
                 portalPose,
                 entryPortalSize,
-                out entryCamera);
+                out entryCamera,
+                true);
             entrySurfaceRenderer =
                 entrySurface != null
                     ? entrySurface.GetComponent<Renderer>()
@@ -1741,16 +1749,26 @@ namespace F1XR.RestAPI.Replay.Room
             string name,
             Pose pose,
             Vector2 size,
-            out Camera portalCamera)
+            out Camera portalCamera,
+            bool highQuality = false)
         {
+            ResolvePortalTextureSize(
+                size,
+                highQuality,
+                out int textureWidth,
+                out int textureHeight);
             RenderTexture texture = new RenderTexture(
-                TextureSize,
-                TextureSize,
+                textureWidth,
+                textureHeight,
                 TextureDepthBits,
                 RenderTextureFormat.ARGB32)
             {
                 name = $"{name}Texture",
-                antiAliasing = 1,
+                antiAliasing = highQuality
+                    ? ResolvePitTextureAntiAliasing()
+                    : 1,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
                 useMipMap = false,
                 autoGenerateMips = false
             };
@@ -1808,7 +1826,8 @@ namespace F1XR.RestAPI.Replay.Room
             portalCamera.backgroundColor =
                 new Color(0.015f, 0.025f, 0.04f, 0f);
             portalCamera.allowHDR = false;
-            portalCamera.allowMSAA = false;
+            portalCamera.allowMSAA = highQuality;
+            portalCamera.allowDynamicResolution = false;
             portalCamera.useOcclusionCulling = false;
             portalCamera.depth =
                 viewerCamera.depth - 10f;
@@ -2228,6 +2247,80 @@ namespace F1XR.RestAPI.Replay.Room
                     MinimumPortalHeight,
                     MaximumPortalHeight));
             return new Vector2(width, height);
+        }
+
+        private static Vector2 ResolvePitPortalSize(
+            Vector2 wallSize)
+        {
+            if (wallSize.x <= 0f || wallSize.y <= 0f)
+            {
+                return new Vector2(
+                    FallbackPortalWidth,
+                    FallbackPortalHeight);
+            }
+
+            return new Vector2(
+                Mathf.Min(
+                    wallSize.x * PitPortalWallFill,
+                    MaximumPitPortalWidth),
+                Mathf.Min(
+                    wallSize.y * PitPortalWallFill,
+                    MaximumPitPortalHeight));
+        }
+
+        private static void ResolvePortalTextureSize(
+            Vector2 portalSize,
+            bool highQuality,
+            out int width,
+            out int height)
+        {
+            if (!highQuality)
+            {
+                width = TextureSize;
+                height = TextureSize;
+                return;
+            }
+
+            float safeWidth = Mathf.Max(0.1f, portalSize.x);
+            float safeHeight = Mathf.Max(0.1f, portalSize.y);
+            float targetWidth =
+                safeWidth * PitTexturePixelsPerMeter;
+            float targetHeight =
+                safeHeight * PitTexturePixelsPerMeter;
+            float minimumScale = Mathf.Max(
+                1f,
+                Mathf.Max(
+                    PitTextureMinimumWidth / targetWidth,
+                    PitTextureMinimumHeight / targetHeight));
+            targetWidth *= minimumScale;
+            targetHeight *= minimumScale;
+            float maximumScale = Mathf.Min(
+                1f,
+                PitTextureMaximumDimension /
+                Mathf.Max(targetWidth, targetHeight));
+            targetWidth *= maximumScale;
+            targetHeight *= maximumScale;
+
+            width = Mathf.Min(
+                PitTextureMaximumDimension,
+                RoundTextureDimension(
+                    Mathf.CeilToInt(targetWidth)));
+            height = Mathf.Min(
+                PitTextureMaximumDimension,
+                RoundTextureDimension(
+                    Mathf.CeilToInt(targetHeight)));
+        }
+
+        private static int RoundTextureDimension(int value)
+        {
+            return Mathf.CeilToInt(value / 32f) * 32;
+        }
+
+        private static int ResolvePitTextureAntiAliasing()
+        {
+            return Application.platform == RuntimePlatform.Android
+                ? 2
+                : 4;
         }
 
         private static Pose ResolvePortalPose(

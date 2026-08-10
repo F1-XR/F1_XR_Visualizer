@@ -2,6 +2,7 @@ using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Room;
@@ -25,9 +26,15 @@ namespace F1XR.RestAPI.UI
         private RoomShowcaseSetupController roomSetup;
         private PitWallShowcasePresenter pitWallPresenter;
         private AutoReplayStarter replayStarter;
+        private Canvas pitPortalControlsCanvas;
         private bool collisionDatasetLoading;
         private Coroutine collisionOpenWhenPreparedRoutine;
         private string eventLoadMessage;
+
+        private const string PitPortalSurfaceName =
+            "PitStopPortalSurface";
+        private const float PitPortalControlsScale = 0.0017f;
+        private const float PitPortalControlsBottomOffset = 0.42f;
 
         private void EnsureEventControls()
         {
@@ -201,6 +208,122 @@ namespace F1XR.RestAPI.UI
             rect.offsetMax = Vector2.zero;
         }
 
+        private void UpdateEventControlsPlacement(bool pitActive)
+        {
+            if (!pitActive)
+            {
+                ReleasePitPortalEventControls();
+                return;
+            }
+
+            GameObject portalSurface =
+                GameObject.Find(PitPortalSurfaceName);
+            if (portalSurface == null)
+                return;
+
+            MeshFilter portalFilter =
+                portalSurface.GetComponent<MeshFilter>();
+            if (portalFilter == null ||
+                portalFilter.sharedMesh == null)
+            {
+                return;
+            }
+
+            EnsurePitPortalControlsCanvas();
+            if (pitPortalControlsCanvas == null)
+                return;
+
+            RectTransform canvasRect =
+                pitPortalControlsCanvas.GetComponent<RectTransform>();
+            Bounds portalBounds = portalFilter.sharedMesh.bounds;
+            float panelHalfHeight =
+                eventControls.sizeDelta.y *
+                PitPortalControlsScale * 0.5f;
+            float verticalOffset = Mathf.Max(
+                PitPortalControlsBottomOffset,
+                panelHalfHeight + 0.08f);
+            Vector3 localPosition = new Vector3(
+                0f,
+                portalBounds.min.y + verticalOffset,
+                -0.045f);
+            canvasRect.position =
+                portalSurface.transform.TransformPoint(localPosition);
+
+            Camera viewCamera = Camera.main;
+            if (viewCamera != null)
+            {
+                Vector3 awayFromViewer =
+                    canvasRect.position -
+                    viewCamera.transform.position;
+                if (awayFromViewer.sqrMagnitude > 0.0001f)
+                {
+                    canvasRect.rotation = Quaternion.LookRotation(
+                        awayFromViewer.normalized,
+                        portalSurface.transform.up);
+                }
+
+                pitPortalControlsCanvas.worldCamera = viewCamera;
+            }
+            else
+            {
+                canvasRect.rotation = portalSurface.transform.rotation;
+            }
+
+            canvasRect.localScale =
+                Vector3.one * PitPortalControlsScale;
+            canvasRect.sizeDelta = eventControls.sizeDelta;
+
+            if (eventControls.parent == canvasRect)
+                return;
+
+            eventControls.SetParent(canvasRect, false);
+            eventControls.anchorMin = new Vector2(0.5f, 0.5f);
+            eventControls.anchorMax = new Vector2(0.5f, 0.5f);
+            eventControls.pivot = new Vector2(0.5f, 0.5f);
+            eventControls.anchoredPosition = Vector2.zero;
+            eventControls.localRotation = Quaternion.identity;
+            eventControls.localScale = Vector3.one;
+        }
+
+        private void EnsurePitPortalControlsCanvas()
+        {
+            if (pitPortalControlsCanvas != null)
+                return;
+
+            GameObject root = new GameObject(
+                "PitPortalEventControls",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(GraphicRaycaster),
+                typeof(TrackedDeviceGraphicRaycaster));
+            pitPortalControlsCanvas = root.GetComponent<Canvas>();
+            pitPortalControlsCanvas.renderMode =
+                RenderMode.WorldSpace;
+            pitPortalControlsCanvas.overrideSorting = true;
+            pitPortalControlsCanvas.sortingOrder = 500;
+        }
+
+        private void ReleasePitPortalEventControls()
+        {
+            if (eventControls != null &&
+                eventControls.parent != transform)
+            {
+                eventControls.SetParent(transform, false);
+                eventControls.anchorMin = new Vector2(0.5f, 1f);
+                eventControls.anchorMax = new Vector2(0.5f, 1f);
+                eventControls.pivot = new Vector2(0.5f, 1f);
+                eventControls.anchoredPosition =
+                    new Vector2(0f, 372f);
+                eventControls.localRotation = Quaternion.identity;
+                eventControls.localScale = Vector3.one;
+            }
+
+            if (pitPortalControlsCanvas != null)
+                Destroy(pitPortalControlsCanvas.gameObject);
+
+            pitPortalControlsCanvas = null;
+        }
+
         private void RefreshEventControls()
         {
             if (eventControls == null || player == null)
@@ -239,6 +362,7 @@ namespace F1XR.RestAPI.UI
             eventControls.sizeDelta = new Vector2(
                 300f,
                 active ? 184f : 184f);
+            UpdateEventControlsPlacement(pitActive);
 
             if (loading)
             {
