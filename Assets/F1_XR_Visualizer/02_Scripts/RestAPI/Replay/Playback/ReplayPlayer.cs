@@ -722,10 +722,7 @@ namespace F1XR.RestAPI.Replay
             if (manifest == null)
                 return null;
 
-            if (manifest.events != null && manifest.events.Length > 0)
-                return manifest.events;
-
-            return ReplayEventFixtures.Load(manifest);
+            return ReplayEventFixtures.Merge(manifest);
         }
 
         private void ApplyGridStartTimeline()

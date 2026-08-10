@@ -12,6 +12,7 @@ namespace F1XR.RestAPI.UI
         private RectTransform eventControls;
         private TMP_Text eventStatus;
         private Button eventOpenButton;
+        private Button eventCollisionButton;
         private Button eventPlayButton;
         private Button eventRestartButton;
         private Button eventNextButton;
@@ -47,7 +48,18 @@ namespace F1XR.RestAPI.UI
             eventStatus.richText = true;
             SetRect(eventStatus.rectTransform, 8f, -8f, 284f, 26f);
 
-            eventOpenButton = CreateEventButton("Open", 8f, -42f, 284f, OpenTestEvent);
+            eventOpenButton = CreateEventButton(
+                "Overtake",
+                8f,
+                -42f,
+                136f,
+                OpenTestEvent);
+            eventCollisionButton = CreateEventButton(
+                "Collision",
+                156f,
+                -42f,
+                136f,
+                OpenCollisionEvent);
             eventPlayButton = CreateEventButton("Play", 8f, -42f, 86f, ToggleEventPlay);
             eventRestartButton = CreateEventButton("Restart", 104f, -42f, 86f, RestartEvent);
             eventCloseButton = CreateEventButton("Close", 200f, -42f, 92f, CloseEvent);
@@ -56,7 +68,7 @@ namespace F1XR.RestAPI.UI
                 8f,
                 -84f,
                 284f,
-                OpenNextOvertake);
+                OpenNextEvent);
             eventSlider = CreateEventSlider();
             eventSlider.onValueChanged.AddListener(SeekEvent);
             RefreshEventControls();
@@ -181,6 +193,8 @@ namespace F1XR.RestAPI.UI
             bool roomReady = roomSetup == null || roomSetup.IsSetupReady;
 
             eventOpenButton.gameObject.SetActive(!active && !loading);
+            eventCollisionButton.gameObject.SetActive(
+                !active && !loading);
             eventPlayButton.gameObject.SetActive(active);
             eventRestartButton.gameObject.SetActive(active);
             eventNextButton.gameObject.SetActive(active);
@@ -201,10 +215,18 @@ namespace F1XR.RestAPI.UI
                 eventStatus.text = !roomReady
                     ? "ROOM SETUP REQUIRED"
                     : player.HasDataset
-                        ? "OVERTAKE EVENT"
+                        ? "SHOWCASE EVENT"
                         : "EVENT DATA NOT READY";
                 eventOpenButton.interactable =
-                    player.HasDataset && roomReady;
+                    player.HasDataset &&
+                    roomReady &&
+                    eventReplay != null &&
+                    eventReplay.HasOvertake;
+                eventCollisionButton.interactable =
+                    player.HasDataset &&
+                    roomReady &&
+                    eventReplay != null &&
+                    eventReplay.HasCollision;
                 return;
             }
 
@@ -212,12 +234,19 @@ namespace F1XR.RestAPI.UI
                 eventReplay.CurrentEvent);
             eventStatus.text = $"{title}  {FormatTime(eventReplay.CurrentTime)}";
             SetButton(eventPlayButton, eventReplay.IsPlaying ? "Pause" : "Play", true);
-            bool hasNext = eventReplay.HasNextOvertake;
+            bool collision =
+                eventReplay.IsCurrentCollision;
+            bool hasNext = collision
+                ? eventReplay.HasNextCollision
+                : eventReplay.HasNextOvertake;
+            string eventName = collision
+                ? "Collision"
+                : "Overtake";
             SetButton(
                 eventNextButton,
                 hasNext
-                    ? "Next Overtake"
-                    : "No More Overtakes",
+                    ? $"Next {eventName}"
+                    : $"No More {eventName}s",
                 hasNext);
 
             refreshingEventSlider = true;
@@ -232,7 +261,17 @@ namespace F1XR.RestAPI.UI
                            !string.IsNullOrWhiteSpace(
                                replayEvent.displayTitle)
                 ? replayEvent.displayTitle
-                : "Overtake Event";
+                : replayEvent != null &&
+                  (string.Equals(
+                       replayEvent.eventType,
+                       "Collision",
+                       System.StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(
+                       replayEvent.eventType,
+                       "Contact",
+                       System.StringComparison.OrdinalIgnoreCase))
+                    ? "Collision Event"
+                    : "Overtake Event";
             int[] drivers = replayEvent != null
                 ? replayEvent.driverNumbers
                 : null;
@@ -328,6 +367,21 @@ namespace F1XR.RestAPI.UI
             RefreshEventControls();
         }
 
+        private void OpenCollisionEvent()
+        {
+            ResolveRoomSetup();
+            if (roomSetup != null &&
+                !roomSetup.IsSetupReady)
+            {
+                roomSetup.NotifyOpenBlocked();
+                RefreshEventControls();
+                return;
+            }
+
+            player?.EventReplay?.OpenTestCollision();
+            RefreshEventControls();
+        }
+
         private void ResolveRoomSetup()
         {
             if (roomSetup == null)
@@ -350,9 +404,20 @@ namespace F1XR.RestAPI.UI
             RefreshEventControls();
         }
 
-        private void OpenNextOvertake()
+        private void OpenNextEvent()
         {
-            player?.EventReplay?.OpenNextOvertake();
+            EventPopoutReplay eventReplay =
+                player != null ? player.EventReplay : null;
+            if (eventReplay != null &&
+                eventReplay.IsCurrentCollision)
+            {
+                eventReplay.OpenNextCollision();
+            }
+            else
+            {
+                eventReplay?.OpenNextOvertake();
+            }
+
             RefreshEventControls();
         }
 

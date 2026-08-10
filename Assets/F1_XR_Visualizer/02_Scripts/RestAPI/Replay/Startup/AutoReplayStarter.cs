@@ -35,10 +35,13 @@ namespace F1XR.RestAPI.Replay
             if (useEventReplayTestSession)
             {
                 preferredYear = 2024;
-                preferredCircuitShortName = "Sakhir";
+                preferredCircuitShortName = "Suzuka";
                 preferredSessionName = "Race";
-                replayMinutes = 10;
-                skipWarmupLap = true;
+                replayMinutes = 6;
+                skipWarmupLap = false;
+                useCachedDatasetFastStart = false;
+                cachedDatasetId = "";
+                cachedCircuitKey = 46;
             }
 
             if (api == null)
