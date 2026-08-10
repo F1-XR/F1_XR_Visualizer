@@ -83,6 +83,8 @@ namespace F1XR.RestAPI.Replay
         private const int MaxEventDrivers = 4;
         private const float RelativeTrackRegionPadding = 0.12f;
         private const float MinimumTrackRegionPadding = 0.00005f;
+        private const float MaximumConventionalPitLaneSeconds = 120f;
+        private const float MinimumRedFlagPitOverlapSeconds = 5f;
 
         [Header("Development")]
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -131,6 +133,7 @@ namespace F1XR.RestAPI.Replay
         [Header("Pit Stop Showcase")]
         [Min(10f)] public float pitMaximumEventDuration = 45f;
         [Min(0.5f)] public float pitVisibleApproachSeconds = 2f;
+        [Min(0f)] public float pitVisibleExitSeconds = 2.5f;
         public GameObject pitWheelGunPrefab;
         public AudioClip pitWheelGunClip;
         public PitEnvironmentProfile[] pitEnvironmentProfiles;
@@ -222,9 +225,10 @@ namespace F1XR.RestAPI.Replay
                     : float.NegativeInfinity,
                 player != null
                     ? player.ReadyUntilTime
-                    : float.PositiveInfinity) != null;
+                    : float.PositiveInfinity,
+                IsUsablePitStop) != null;
         public bool HasNextPitStop =>
-            TryFindNextEvent("PitStop", out _);
+            TryFindNextPitStop(out _);
         public bool IsPitStopActive =>
             isActive && IsPitStopDefinition(currentEvent);
         public bool PitStopReconstructed =>
@@ -922,7 +926,8 @@ namespace F1XR.RestAPI.Replay
                 player.CurrentTime,
                 "PitStop",
                 player.TimelineStartTime,
-                player.ReadyUntilTime);
+                player.ReadyUntilTime,
+                IsUsablePitStop);
             if (definition == null)
             {
                 Debug.LogWarning(
@@ -939,8 +944,7 @@ namespace F1XR.RestAPI.Replay
             if (isLoading || player == null || !player.HasDataset)
                 return;
 
-            if (TryFindNextEvent(
-                    "PitStop",
+            if (TryFindNextPitStop(
                     out ReplayEventDto definition))
             {
                 Open(definition);
@@ -949,6 +953,15 @@ namespace F1XR.RestAPI.Replay
 
         public void Open(ReplayEventDto definition)
         {
+            if (IsPitStopDefinition(definition) &&
+                !IsUsablePitStop(definition))
+            {
+                Debug.LogWarning(
+                    "[EventReplay] The selected pit event is not a conventional pit stop showcase.",
+                    this);
+                return;
+            }
+
             ReplayEventDto presentation = CreatePresentationEvent(definition);
             if (!TryValidate(presentation, out string error))
             {
@@ -1544,12 +1557,17 @@ namespace F1XR.RestAPI.Replay
                     definition.startTime,
                     pitStopSequence)
                 : definition.startTime;
+            float playbackEndTime = pitStop
+                ? ResolvePitPlaybackEnd(
+                    definition.endTime,
+                    pitStopSequence)
+                : definition.endTime;
             showcasePlaybackWindow =
                 CreateShowcasePlaybackWindow(
                     trackStartTime,
                     playbackStartTime,
                     transitionTime,
-                    definition.endTime,
+                    playbackEndTime,
                     trackEndTime);
             if (!showcasePlaybackWindow.IsValid)
                 return false;
@@ -1911,6 +1929,22 @@ namespace F1XR.RestAPI.Replay
                 approachTarget,
                 eventStartTime,
                 focusTime - 0.05f);
+        }
+
+        private float ResolvePitPlaybackEnd(
+            float eventEndTime,
+            PitStopSequence sequence)
+        {
+            if (sequence == null)
+                return eventEndTime;
+
+            float exitStart = sequence.IsDriveThrough
+                ? sequence.FocusTime
+                : sequence.ReleaseEndTime;
+            return Mathf.Clamp(
+                exitStart + Mathf.Max(0f, pitVisibleExitSeconds),
+                sequence.FocusTime + 0.05f,
+                eventEndTime);
         }
 
         private float ProjectSourcePathDistance(
@@ -3796,7 +3830,8 @@ namespace F1XR.RestAPI.Replay
             float time,
             string eventType,
             float minimumAnchorTime,
-            float maximumAnchorTime)
+            float maximumAnchorTime,
+            Predicate<ReplayEventDto> predicate = null)
         {
             if (events == null)
                 return null;
@@ -3813,6 +3848,8 @@ namespace F1XR.RestAPI.Replay
                     continue;
                 if (item.anchorTime < minimumAnchorTime ||
                     item.anchorTime > maximumAnchorTime)
+                    continue;
+                if (predicate != null && !predicate(item))
                     continue;
 
                 float distance = Mathf.Abs(item.anchorTime - time);
@@ -3837,11 +3874,21 @@ namespace F1XR.RestAPI.Replay
                 ResolveEarliestAutomaticOvertakeAnchor());
         }
 
+        private bool TryFindNextPitStop(out ReplayEventDto next)
+        {
+            return TryFindNextEvent(
+                "PitStop",
+                out next,
+                float.NegativeInfinity,
+                IsUsablePitStop);
+        }
+
         private bool TryFindNextEvent(
             string eventType,
             out ReplayEventDto next,
             float minimumAnchorTime =
-                float.NegativeInfinity)
+                float.NegativeInfinity,
+            Predicate<ReplayEventDto> predicate = null)
         {
             next = null;
             ReplayEventDto[] events =
@@ -3871,7 +3918,8 @@ namespace F1XR.RestAPI.Replay
                         eventType,
                         StringComparison.OrdinalIgnoreCase) ||
                     candidate.anchorTime < minimumAnchorTime ||
-                    candidate.anchorTime > player.ReadyUntilTime)
+                    candidate.anchorTime > player.ReadyUntilTime ||
+                    predicate != null && !predicate(candidate))
                 {
                     continue;
                 }
@@ -3901,6 +3949,57 @@ namespace F1XR.RestAPI.Replay
             }
 
             return next != null;
+        }
+
+        private bool IsUsablePitStop(ReplayEventDto definition)
+        {
+            if (!IsPitStopDefinition(definition) ||
+                definition.driverNumbers == null ||
+                definition.driverNumbers.Length == 0 ||
+                definition.endTime <= definition.startTime)
+            {
+                return false;
+            }
+
+            float laneDuration = definition.pitLaneDuration;
+            if (laneDuration > MaximumConventionalPitLaneSeconds)
+                return false;
+
+            DatasetManifestDto manifest = player != null
+                ? player.Manifest
+                : null;
+            RaceControlEventDto[] redFlags = manifest != null
+                ? manifest.redFlags
+                : null;
+            if (redFlags == null || redFlags.Length == 0)
+                return true;
+
+            float pitStart = laneDuration > 0f
+                ? definition.anchorTime - laneDuration * 0.5f
+                : definition.startTime;
+            float pitEnd = laneDuration > 0f
+                ? definition.anchorTime + laneDuration * 0.5f
+                : definition.endTime;
+            for (int i = 0; i < redFlags.Length; i++)
+            {
+                RaceControlEventDto redFlag = redFlags[i];
+                if (redFlag == null)
+                    continue;
+
+                float redStart = redFlag.startT > 0f
+                    ? redFlag.startT
+                    : redFlag.t;
+                float redEnd = redFlag.endT;
+                if (redEnd <= redStart)
+                    continue;
+
+                float overlap = Mathf.Min(pitEnd, redEnd) -
+                    Mathf.Max(pitStart, redStart);
+                if (overlap >= MinimumRedFlagPitOverlapSeconds)
+                    return false;
+            }
+
+            return true;
         }
 
         private static List<LocationSample> CopyRange(

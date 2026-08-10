@@ -50,10 +50,7 @@ namespace F1XR.RestAPI.Replay
                     parent,
                     out float measuredGroundOffset))
             {
-                vehicleGroundOffset = Mathf.Clamp(
-                    measuredGroundOffset,
-                    -carLength * 0.35f,
-                    carLength * 0.15f);
+                vehicleGroundOffset = measuredGroundOffset;
             }
             Vector3 localGroundFocus =
                 localFocus +
@@ -589,7 +586,7 @@ namespace F1XR.RestAPI.Replay
                 parent,
                 new Vector3(
                     -carLength * 0.12f,
-                    -carLength * 0.004f,
+                    -carLength * 0.0075f,
                     0f),
                 new Vector3(
                     carLength * 1.62f,
