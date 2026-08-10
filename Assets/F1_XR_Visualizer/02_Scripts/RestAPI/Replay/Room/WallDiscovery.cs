@@ -401,6 +401,26 @@ namespace F1XR.RestAPI.Replay.Room
             TryGetExitWall(out _) &&
             entryWallId != exitWallId;
 
+        public bool TryGetContainingFloorPlane(out Plane floorPlane)
+        {
+            floorPlane = default;
+            if (containingFloor == null)
+                return false;
+
+            Vector3 normal = containingFloor.transform.up;
+            if (normal.sqrMagnitude <= 0.5f)
+                return false;
+
+            normal.Normalize();
+            if (Vector3.Dot(normal, Vector3.up) < 0f)
+                normal = -normal;
+
+            floorPlane = new Plane(
+                normal,
+                containingFloor.transform.position);
+            return true;
+        }
+
         private void Reset()
         {
             ResolveReferences();
