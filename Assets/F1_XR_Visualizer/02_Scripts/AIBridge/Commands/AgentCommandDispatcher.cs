@@ -15,6 +15,16 @@ namespace F1XR.AIBridge.Commands
         public PredictOvertakeRibbonHandler predictOvertake;
         public DroneViewHandler droneView;
 
+        // droneView 를 인스펙터에서 안 붙였으면 같은 오브젝트에서 자동 확보(없으면 생성).
+        // → 프리팹 수작업 없이도 droneView 명령이 DroneViewHandler로 전달된다.
+        //   (핸들러의 onEnter/onExit ↔ VRDroneCoordinator 연결은 BootstrapLoader가 런타임에 수행)
+        void Awake()
+        {
+            if (droneView == null)
+                droneView = GetComponent<DroneViewHandler>()
+                    ?? gameObject.AddComponent<DroneViewHandler>();
+        }
+
         /// <summary>command 메시지 원문(JSON)을 받아 name별로 분기.</summary>
         public void Dispatch(string commandJson)
         {

@@ -109,10 +109,36 @@ namespace F1XR.Bootstrap
                 else
                 {
                     coordinator.ConfigureHostScene(hostScene);
+                    BindDroneViewCommand(coordinator);
                 }
             }
 
             isLoadingDroneScene = false;
+        }
+
+        // AIBridge droneView 명령 ↔ VRDroneCoordinator 런타임 연결.
+        // VRDroneCoordinator 는 additive로 나중에 뜨는 VRDroneSpace 인스턴스라
+        // 인스펙터(UnityEvent)로는 참조가 안 되므로, 여기서 코드로 이어준다.
+        // 핸들러가 씬에 없으면(=AIBridge 미배치) 조용히 스킵.
+        static void BindDroneViewCommand(VRDroneCoordinator coordinator)
+        {
+#if AIBRIDGE_READY
+            var handler = Object.FindFirstObjectByType<
+                F1XR.AIBridge.Commands.DroneViewHandler>(FindObjectsInactive.Include);
+            if (handler == null)
+                return;
+
+            if (handler.onEnterDrone == null)
+                handler.onEnterDrone = new UnityEngine.Events.UnityEvent();
+            if (handler.onExitDrone == null)
+                handler.onExitDrone = new UnityEngine.Events.UnityEvent();
+
+            // 재진입(씬 재로드) 시 중복 등록 방지 후 재연결.
+            handler.onEnterDrone.RemoveListener(coordinator.EnterVrFromCommand);
+            handler.onEnterDrone.AddListener(coordinator.EnterVrFromCommand);
+            handler.onExitDrone.RemoveListener(coordinator.ExitVr);
+            handler.onExitDrone.AddListener(coordinator.ExitVr);
+#endif
         }
 
         bool IsDroneHostScene(string sceneName)

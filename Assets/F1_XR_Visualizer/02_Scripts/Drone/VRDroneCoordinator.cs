@@ -143,6 +143,7 @@ namespace F1XR.Drone
                 passthroughLayer != null;
         }
 
+        // 큐브를 잡았다 놓는 물리 상호작용으로 진입(DroneViewCubeSpawner.CubeReleased).
         void EnterVr(Transform cubeTransform)
         {
             if (isVrActive || cubeTransform == null ||
@@ -151,21 +152,58 @@ namespace F1XR.Drone
                 return;
             }
 
+            if (!TryResolvePlacementRoots())
+                return;
+
+            Vector3 cubePlacementLocal =
+                placementRoot.InverseTransformPoint(cubeTransform.position);
+            EnterVrCore(cubePlacementLocal, cubeTransform);
+        }
+
+        /// <summary>
+        /// AIBridge droneView 명령 진입점 — 잡을 큐브 없이 드론(공중) 시점으로 진입한다.
+        /// 진입 지점은 트랙 중심 상공(기본 조망)으로 자동 계산한다.
+        /// DroneViewHandler.onEnterDrone(UnityEvent)에서 이 메서드를 연결한다.
+        /// </summary>
+        public void EnterVrFromCommand()
+        {
+            if (isVrActive)
+                return;
+            if (trackPlacer == null || !trackPlacer.HasPlacement)
+            {
+                Debug.LogWarning(
+                    "[VRDrone] 트랙 배치가 없어 드론 명령 진입을 건너뜀.", this);
+                return;
+            }
+
+            if (!TryResolvePlacementRoots())
+                return;
+
+            EnterVrCore(GetDefaultEntryLocal(), null);
+        }
+
+        // placementRoot / visualRoot 를 트랙 배치에서 해석. 실패 시 false.
+        bool TryResolvePlacementRoots()
+        {
             Transform placement = trackPlacer.PlacementTransform;
             placementRoot = placement;
             visualRoot = placementRoot != null
                 ? placementRoot.Find("Visual") ?? placementRoot
                 : null;
-            if (visualRoot == null)
-                return;
+            return visualRoot != null;
+        }
 
-            Vector3 cubePlacementLocal =
-                placementRoot.InverseTransformPoint(cubeTransform.position);
+        // 진입 공통부: 큐브 유무와 무관하게 MR→드론 전환을 수행.
+        // entryPlacementLocal: (스케일 전) placementRoot 로컬 기준 진입 지점.
+        // cubeToHide: 물리 진입 시 숨길 큐브(명령 진입이면 null).
+        void EnterVrCore(Vector3 entryPlacementLocal, Transform cubeToHide)
+        {
             SaveMrState();
             LockTrackInteraction();
 
-            hiddenCube = cubeTransform;
-            hiddenCube.gameObject.SetActive(false);
+            hiddenCube = cubeToHide;
+            if (hiddenCube != null)
+                hiddenCube.gameObject.SetActive(false);
             passthroughLayer.SetActive(false);
             environment.SetActive(true);
 
@@ -173,7 +211,7 @@ namespace F1XR.Drone
                 savedPlacementLocalScale,
                 Vector3.one * vrScaleMultiplier);
 
-            Vector3 target = placementRoot.TransformPoint(cubePlacementLocal);
+            Vector3 target = placementRoot.TransformPoint(entryPlacementLocal);
             xrOrigin.MoveCameraToWorldLocation(target);
             xrCamera.clearFlags = CameraClearFlags.Skybox;
             xrCamera.backgroundColor = new Color(0.015f, 0.02f, 0.04f, 1f);
@@ -182,6 +220,69 @@ namespace F1XR.Drone
             isVrActive = true;
             droneHud?.Show(xrCamera);
             flightController?.ResetFlight();
+        }
+
+        // 명령 진입 기본 조망: 트랙 바운즈 중심의 상공(placementRoot 로컬).
+        // 바운즈를 못 구하면 원점 위 1m 로 폴백.
+        Vector3 GetDefaultEntryLocal()
+        {
+            if (!TryGetTrackLocalBounds(out Bounds bounds))
+                return new Vector3(0f, 1f, 0f);
+
+            Vector3 center = bounds.center;
+            float height = Mathf.Max(bounds.size.magnitude * 0.15f, 0.5f);
+            return new Vector3(center.x, bounds.max.y + height, center.z);
+        }
+
+        // visualRoot 아래 렌더러(차량 'Cars' 제외)를 placementRoot 로컬 공간의
+        // 축정렬 바운즈로 집계. GetTrackLocalY 와 동일한 코너 샘플링 방식.
+        bool TryGetTrackLocalBounds(out Bounds bounds)
+        {
+            bounds = new Bounds();
+            Transform cars = visualRoot.Find("Cars");
+            bool hasAny = false;
+            Vector3 min = Vector3.zero;
+            Vector3 max = Vector3.zero;
+
+            foreach (Renderer renderer in
+                visualRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null ||
+                    cars != null && renderer.transform.IsChildOf(cars))
+                {
+                    continue;
+                }
+
+                Bounds world = renderer.bounds;
+                for (int x = -1; x <= 1; x += 2)
+                {
+                    for (int y = -1; y <= 1; y += 2)
+                    {
+                        for (int z = -1; z <= 1; z += 2)
+                        {
+                            Vector3 worldPoint = world.center +
+                                Vector3.Scale(world.extents,
+                                    new Vector3(x, y, z));
+                            Vector3 localPoint =
+                                placementRoot.InverseTransformPoint(worldPoint);
+                            if (!hasAny)
+                            {
+                                min = max = localPoint;
+                                hasAny = true;
+                            }
+                            else
+                            {
+                                min = Vector3.Min(min, localPoint);
+                                max = Vector3.Max(max, localPoint);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (hasAny)
+                bounds.SetMinMax(min, max);
+            return hasAny;
         }
 
         public void ExitVr()
