@@ -1680,10 +1680,19 @@ namespace F1XR.RestAPI.Replay
             {
                 Vector3 pitLocalFocus = sourceToLocalRotation *
                     (pitFocusPosition - center);
+                ReplayCarView pitVehicle = null;
+                if (eventCars.TryGetCarTransform(
+                        referenceDriverNumber,
+                        out Transform pitVehicleRoot))
+                {
+                    pitVehicle =
+                        pitVehicleRoot.GetComponent<ReplayCarView>();
+                }
                 pitStopPresentation =
                     new PitStopShowcasePresentation();
                 pitStopPresentation.Build(
                     stageRoot.transform,
+                    pitVehicle,
                     pitLocalFocus,
                     referenceVehicleLength,
                     player.GetDriverInfo(referenceDriverNumber),

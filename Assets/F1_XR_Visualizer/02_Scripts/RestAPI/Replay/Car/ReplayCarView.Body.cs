@@ -129,6 +129,58 @@ namespace F1XR.RestAPI.Replay
             return hasBounds;
         }
 
+        internal bool TryGetVisualGroundOffset(
+            Transform referenceSpace,
+            out float offset)
+        {
+            offset = 0f;
+            if (referenceSpace == null)
+                return false;
+
+            RefreshBodyRenderers();
+            float minimumY = float.PositiveInfinity;
+            for (int rendererIndex = 0;
+                 rendererIndex < bodyRenderers.Count;
+                 rendererIndex++)
+            {
+                Renderer item = bodyRenderers[rendererIndex];
+                if (item == null)
+                    continue;
+
+                Bounds localBounds = item.localBounds;
+                Vector3 min = localBounds.min;
+                Vector3 max = localBounds.max;
+                for (int cornerIndex = 0;
+                     cornerIndex < 8;
+                     cornerIndex++)
+                {
+                    Vector3 localCorner = new Vector3(
+                        (cornerIndex & 1) == 0 ? min.x : max.x,
+                        (cornerIndex & 2) == 0 ? min.y : max.y,
+                        (cornerIndex & 4) == 0 ? min.z : max.z);
+                    Vector3 referenceCorner =
+                        referenceSpace.InverseTransformPoint(
+                            item.transform.TransformPoint(localCorner));
+                    minimumY = Mathf.Min(
+                        minimumY,
+                        referenceCorner.y);
+                }
+            }
+
+            if (float.IsInfinity(minimumY) ||
+                float.IsNaN(minimumY))
+            {
+                return false;
+            }
+
+            float logicalOriginY =
+                referenceSpace.InverseTransformPoint(
+                    LogicalRoot.position).y;
+            offset = minimumY - logicalOriginY;
+            return !float.IsInfinity(offset) &&
+                !float.IsNaN(offset);
+        }
+
         private bool TryGetCarWorldLayout(
             out Bounds bounds,
             out float width,

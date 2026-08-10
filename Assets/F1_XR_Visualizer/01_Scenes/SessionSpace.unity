@@ -3418,15 +3418,15 @@ MonoBehaviour:
   player: {fileID: 1705380154}
   autoStart: 1
   preferredYear: 2024
-  preferredCircuitShortName: Sakhir
+  preferredCircuitShortName: Suzuka
   preferredSessionName: Race
-  replayMinutes: 30
+  replayMinutes: 45
   chunkMinutes: 2
   overlapSeconds: 2
-  skipWarmupLap: 1
+  skipWarmupLap: 0
   useCachedDatasetFastStart: 1
-  cachedDatasetId: 2024_sakhir_race_9472_c2_o2_m30
-  cachedCircuitKey: 63
+  cachedDatasetId: 2024_suzuka_race_9496_c2_o2_m45
+  cachedCircuitKey: 46
   useEventReplayTestSession: 0
 --- !u!4 &1705380157
 Transform:

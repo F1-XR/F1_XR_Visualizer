@@ -25,6 +25,7 @@ namespace F1XR.RestAPI.Replay
 
         public void Build(
             Transform parent,
+            ReplayCarView vehicle,
             Vector3 localFocus,
             float localVehicleLength,
             DriverInfoDto driver,
@@ -43,10 +44,24 @@ namespace F1XR.RestAPI.Replay
             Color teamColor = ResolveTeamColor(driver);
             Color dark = new(0.025f, 0.03f, 0.04f, 1f);
             Color floor = new(0.075f, 0.08f, 0.09f, 1f);
+            float vehicleGroundOffset = 0f;
+            if (vehicle != null &&
+                vehicle.TryGetVisualGroundOffset(
+                    parent,
+                    out float measuredGroundOffset))
+            {
+                vehicleGroundOffset = Mathf.Clamp(
+                    measuredGroundOffset,
+                    -carLength * 0.35f,
+                    carLength * 0.15f);
+            }
+            Vector3 localGroundFocus =
+                localFocus +
+                Vector3.up * vehicleGroundOffset;
 
             root = new GameObject("PitStopTeamBox");
             root.transform.SetParent(parent, false);
-            root.transform.localPosition = localFocus;
+            root.transform.localPosition = localGroundFocus;
 
             CreateEnvironmentModules(
                 carLength,
@@ -116,7 +131,7 @@ namespace F1XR.RestAPI.Replay
             }
 
             LocalBounds = new Bounds(
-                localFocus +
+                localGroundFocus +
                 new Vector3(
                     carLength * 0.7f,
                     carLength * 0.55f,
