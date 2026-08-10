@@ -29,6 +29,7 @@ namespace F1XR.RestAPI.UI
         private RectTransform raceEndMarker;
         private readonly List<RectTransform> yellowFlagMarkers = new();
         private readonly List<RectTransform> redFlagMarkers = new();
+        private readonly List<TMP_Text> timelineGapMarkers = new();
         private readonly List<RectTransform> overtakeMarkers = new();
         private TMP_Text nextOvertakeLabel;
         private float displayedNextOvertakeTime = float.NaN;
@@ -61,6 +62,7 @@ namespace F1XR.RestAPI.UI
             SetTimeMarker(ref raceEndMarker, "Race End Marker", Color.black, player.RaceEndTime);
             SetRaceControlMarkers(yellowFlagMarkers, "Yellow Flag Marker", new Color(1f, 0.85f, 0f), player.YellowFlags);
             SetRaceControlMarkers(redFlagMarkers, "Red Flag Marker", Color.red, player.RedFlags);
+            SetTimelineGapMarkers(player.TimelineGaps);
             SetOvertakeMarkers(player.Events);
         }
 
@@ -163,13 +165,71 @@ namespace F1XR.RestAPI.UI
             marker.gameObject.SetActive(true);
         }
 
+        private void SetTimelineGapMarkers(
+            IReadOnlyList<ReplayTimelineGap> gaps)
+        {
+            int activeCount = gaps != null ? gaps.Count : 0;
+            for (int i = 0; i < activeCount; i++)
+            {
+                TMP_Text marker = EnsureTimelineGapMarker(i);
+                float normalized = player.TimelineToNormalized(
+                    gaps[i].SourceStart);
+                ApplyTimelineGapMarker(marker, normalized);
+            }
+
+            for (int i = activeCount; i < timelineGapMarkers.Count; i++)
+                timelineGapMarkers[i].gameObject.SetActive(false);
+        }
+
+        private TMP_Text EnsureTimelineGapMarker(int index)
+        {
+            while (timelineGapMarkers.Count <= index)
+            {
+                GameObject markerObject = new(
+                    $"Timeline Gap {timelineGapMarkers.Count + 1}",
+                    typeof(RectTransform),
+                    typeof(TextMeshProUGUI));
+                markerObject.layer = barRect.gameObject.layer;
+                markerObject.transform.SetParent(
+                    barRect,
+                    worldPositionStays: false);
+
+                TMP_Text marker =
+                    markerObject.GetComponent<TextMeshProUGUI>();
+                marker.text = "~~~";
+                marker.alignment = TextAlignmentOptions.Center;
+                marker.fontSize = 18f;
+                marker.fontStyle = FontStyles.Bold;
+                marker.color = new Color(1f, 0.78f, 0.18f, 1f);
+                marker.raycastTarget = false;
+                timelineGapMarkers.Add(marker);
+            }
+
+            return timelineGapMarkers[index];
+        }
+
+        private void ApplyTimelineGapMarker(
+            TMP_Text marker,
+            float normalized)
+        {
+            RectTransform rect = marker.rectTransform;
+            float clamped = Mathf.Clamp01(normalized);
+            rect.anchorMin = new Vector2(clamped, 0.5f);
+            rect.anchorMax = new Vector2(clamped, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(42f, barRect.rect.height + 12f);
+            rect.SetAsLastSibling();
+            marker.gameObject.SetActive(true);
+        }
+
         private void SetOvertakeMarkers(ReplayEventDto[] events)
         {
             int activeCount = 0;
             ReplayEventDto nextOvertake = null;
             RectTransform currentMarker = null;
             float timelineStart = player.TimelineStartTime;
-            float timelineEnd = timelineStart + player.Duration;
+            float timelineEnd = player.TimelineEndTime;
             EventPopoutReplay eventReplay = player.EventReplay;
             ReplayEventDto currentOvertake =
                 eventReplay != null &&
@@ -333,8 +393,10 @@ namespace F1XR.RestAPI.UI
                 return;
             }
 
+            float playbackTime = player.TimelineToPlaybackTime(
+                nextOvertake.anchorTime);
             nextOvertakeLabel.text =
-                $"NEXT OVERTAKE {FormatTime(nextOvertake.anchorTime)}";
+                $"NEXT OVERTAKE {FormatTime(playbackTime)}";
             displayedNextOvertakeTime = nextOvertake.anchorTime;
             displayedOvertakesComplete = false;
         }
@@ -424,6 +486,9 @@ namespace F1XR.RestAPI.UI
                 marker.gameObject.SetActive(visible);
 
             foreach (RectTransform marker in redFlagMarkers)
+                marker.gameObject.SetActive(visible);
+
+            foreach (TMP_Text marker in timelineGapMarkers)
                 marker.gameObject.SetActive(visible);
 
             foreach (RectTransform marker in overtakeMarkers)

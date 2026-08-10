@@ -1311,6 +1311,22 @@ namespace F1XR.RestAPI.Replay
             carPresentation.SetLabelsVisible(visible);
         }
 
+        public void SetPresentationVisible(bool visible)
+        {
+            foreach (ReplayCarView car in carInstances.Cars.Values)
+            {
+                if (car != null &&
+                    car.LogicalRoot != null &&
+                    car.LogicalRoot.gameObject.activeSelf != visible)
+                {
+                    car.LogicalRoot.gameObject.SetActive(visible);
+                }
+            }
+
+            if (!visible)
+                SetSoundPlaying(false);
+        }
+
         public void SetLeaderHighlightVisible(bool visible)
         {
             carPresentation.SetLeaderHighlightVisible(visible);

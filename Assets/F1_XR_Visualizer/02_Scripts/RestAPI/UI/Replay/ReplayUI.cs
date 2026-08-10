@@ -5,6 +5,8 @@ using UnityEngine.Serialization;
 using UnityEngine.UI;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Api;
+using F1XR.UI.WorldPanel;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace F1XR.RestAPI.UI
 {
@@ -50,11 +52,14 @@ namespace F1XR.RestAPI.UI
         private readonly List<StandingRow> standingRows = new();
         private readonly Dictionary<int, StandingRow> rowsByDriver = new();
         private readonly HashSet<int> visibleDrivers = new();
+        private readonly Dictionary<GameObject, bool>
+            collisionCaptureStates = new();
         private readonly PositionChangeTracker positionChangeTracker = new();
         private int selectedDriverNumber;
         private bool controlsStyled;
         private float lastPlayPauseTime = float.NegativeInfinity;
         private float nextRefreshTime;
+        private bool collisionCaptureApplied;
 
         private void Awake()
         {
@@ -82,6 +87,7 @@ namespace F1XR.RestAPI.UI
             StyleControls();
             EnsurePlacementControls();
             EnsureEventControls();
+            RefreshReplayPanelGrabBounds();
         }
 
         private void OnEnable()
@@ -104,6 +110,14 @@ namespace F1XR.RestAPI.UI
 
         private void OnDisable()
         {
+            RestoreCollisionCaptureProfile();
+            if (collisionOpenWhenPreparedRoutine != null)
+            {
+                StopCoroutine(collisionOpenWhenPreparedRoutine);
+                collisionOpenWhenPreparedRoutine = null;
+                collisionDatasetLoading = false;
+            }
+
             if (playPauseButton != null)
                 playPauseButton.onClick.RemoveListener(TogglePlayPause);
 
@@ -112,6 +126,96 @@ namespace F1XR.RestAPI.UI
 
             if (player != null)
                 player.SelectedDriverChanged -= OnSelectedDriverChanged;
+        }
+
+        private void RefreshReplayPanelGrabBounds()
+        {
+            XRGrabInteractable grab =
+                GetComponentInParent<XRGrabInteractable>(true);
+            if (grab == null)
+                return;
+
+            BoxCollider body = null;
+            for (int i = 0; i < grab.colliders.Count; i++)
+            {
+                if (grab.colliders[i] is BoxCollider candidate &&
+                    candidate.name == "Interaction")
+                {
+                    body = candidate;
+                    break;
+                }
+            }
+
+            if (body == null)
+                return;
+
+            Vector3 center = body.center;
+            Vector3 size = body.size;
+            float halfWidth = Mathf.Abs(size.x) * 0.5f;
+            float halfHeight = Mathf.Abs(size.y) * 0.5f;
+            EncapsulateReplayRect(
+                transform as RectTransform,
+                body.transform,
+                center,
+                ref halfWidth,
+                ref halfHeight);
+            EncapsulateReplayRect(
+                placementControls,
+                body.transform,
+                center,
+                ref halfWidth,
+                ref halfHeight);
+            EncapsulateReplayRect(
+                eventControls,
+                body.transform,
+                center,
+                ref halfWidth,
+                ref halfHeight);
+
+            body.size = new Vector3(
+                Mathf.Max(Mathf.Abs(size.x), halfWidth * 2f),
+                Mathf.Max(Mathf.Abs(size.y), halfHeight * 2f),
+                Mathf.Abs(size.z));
+
+            PanelEdgeGrab edgeGrab =
+                grab.GetComponent<PanelEdgeGrab>();
+            RectTransform panelRect = grab
+                .GetComponentInChildren<Canvas>(true)
+                ?.GetComponent<RectTransform>();
+            if (edgeGrab != null && panelRect != null)
+            {
+                edgeGrab.Configure(
+                    grab,
+                    body,
+                    panelRect,
+                    true,
+                    true);
+            }
+        }
+
+        private static void EncapsulateReplayRect(
+            RectTransform rect,
+            Transform colliderTransform,
+            Vector3 colliderCenter,
+            ref float halfWidth,
+            ref float halfHeight)
+        {
+            if (rect == null || colliderTransform == null)
+                return;
+
+            Vector3[] corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            for (int i = 0; i < corners.Length; i++)
+            {
+                Vector3 local = colliderTransform
+                    .InverseTransformPoint(corners[i]);
+                halfWidth = Mathf.Max(
+                    halfWidth,
+                    Mathf.Abs(local.x - colliderCenter.x));
+                halfHeight = Mathf.Max(
+                    halfHeight,
+                    Mathf.Abs(local.y - colliderCenter.y));
+            }
         }
 
         private void OnSelectedDriverChanged(int driverNumber)
@@ -215,7 +319,7 @@ namespace F1XR.RestAPI.UI
                 playPauseLabel.text = player.IsPlaying ? "Pause" : "Play";
 
             if (timeLabel != null)
-                timeLabel.text = $"{FormatTime(player.CurrentTime)} / {FormatTime(player.Duration)}";
+                timeLabel.text = $"{FormatTime(player.PlaybackElapsedTime)} / {FormatTime(player.Duration)}";
 
             if (bar != null)
                 bar.Refresh();
@@ -224,6 +328,95 @@ namespace F1XR.RestAPI.UI
             RefreshPlacementControls();
             RefreshEventControls();
             RefreshStandings(player.GetPositions());
+            UpdateCollisionCaptureProfile();
+        }
+
+        private void UpdateCollisionCaptureProfile()
+        {
+            EventPopoutReplay eventReplay = player != null
+                ? player.EventReplay
+                : null;
+            bool active = eventReplay != null &&
+                eventReplay.IsActive &&
+                eventReplay.IsCurrentCollision &&
+                eventReplay.UseCollisionCaptureProfile;
+            if (!active)
+            {
+                RestoreCollisionCaptureProfile();
+                return;
+            }
+
+            collisionCaptureApplied = true;
+            HideForCollisionCapture(bar != null
+                ? bar.barRect != null
+                    ? bar.barRect.gameObject
+                    : bar.gameObject
+                : null);
+            HideForCollisionCapture(
+                playPauseButton != null
+                    ? playPauseButton.gameObject
+                    : null);
+            HideForCollisionCapture(
+                speedDropdown != null
+                    ? speedDropdown.gameObject
+                    : null);
+            HideForCollisionCapture(
+                timeLabel != null
+                    ? timeLabel.gameObject
+                    : null);
+            HideForCollisionCapture(
+                standingsRoot != null
+                    ? standingsRoot.gameObject
+                    : null);
+            HideForCollisionCapture(
+                driverDetailRoot != null
+                    ? driverDetailRoot.gameObject
+                    : null);
+            HideForCollisionCapture(
+                driverOnboardRoot != null
+                    ? driverOnboardRoot.gameObject
+                    : null);
+            HideForCollisionCapture(
+                placementControls != null
+                    ? placementControls.gameObject
+                    : null);
+        }
+
+        private void HideForCollisionCapture(GameObject target)
+        {
+            if (target == null ||
+                target == gameObject ||
+                (eventControls != null &&
+                 eventControls.IsChildOf(target.transform)))
+            {
+                return;
+            }
+
+            if (!collisionCaptureStates.ContainsKey(target))
+                collisionCaptureStates.Add(target, target.activeSelf);
+            if (target.activeSelf)
+                target.SetActive(false);
+        }
+
+        private void RestoreCollisionCaptureProfile()
+        {
+            if (!collisionCaptureApplied &&
+                collisionCaptureStates.Count == 0)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<GameObject, bool> state
+                     in collisionCaptureStates)
+            {
+                if (state.Key != null &&
+                    state.Key.activeSelf != state.Value)
+                {
+                    state.Key.SetActive(state.Value);
+                }
+            }
+            collisionCaptureStates.Clear();
+            collisionCaptureApplied = false;
         }
 
         private static string FormatTime(float seconds)
