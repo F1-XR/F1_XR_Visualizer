@@ -10,7 +10,9 @@ namespace F1XR.RestAPI.Replay.Room
     {
         private const float TargetVehicleLengthMeters = 5.6f;
         private const float PitDepthBehindWallMeters = 8.5f;
-        private const float VehicleGroundOffsetMeters = 0.28f;
+        private const float VehicleGroundClearanceMeters = 0.04f;
+        private const float FallbackVehicleOriginHeightMeters = 0.28f;
+        private const float MaximumVehicleOriginHeightRatio = 0.22f;
 
         private readonly List<ShowcaseWallFrame> walls = new();
         private ReplayPlayer replayPlayer;
@@ -125,9 +127,14 @@ namespace F1XR.RestAPI.Replay.Room
             Vector3 wallBottom =
                 wall.Center +
                 wall.VerticalAxis * wall.MinVertical;
+            float vehicleOriginHeight =
+                ResolveVehicleOriginHeight(
+                    stage,
+                    vehicle,
+                    targetScale);
             Vector3 desiredFocus =
                 wallBottom +
-                up * VehicleGroundOffsetMeters -
+                up * vehicleOriginHeight -
                 inward * PitDepthBehindWallMeters;
             Vector3 position =
                 desiredFocus -
@@ -164,6 +171,38 @@ namespace F1XR.RestAPI.Replay.Room
             boundLayoutRevision = layoutRevision;
             lastFailure = "";
             return true;
+        }
+
+        private static float ResolveVehicleOriginHeight(
+            Transform stage,
+            Transform vehicle,
+            float targetScale)
+        {
+            if (stage == null ||
+                vehicle == null ||
+                !vehicle.TryGetComponent(
+                    out ReplayCarView vehicleView) ||
+                !vehicleView.TryGetVisualGroundOffset(
+                    stage,
+                    out float localGroundOffset))
+            {
+                return FallbackVehicleOriginHeightMeters;
+            }
+
+            float measuredHeight =
+                -localGroundOffset * targetScale +
+                VehicleGroundClearanceMeters;
+            if (float.IsInfinity(measuredHeight) ||
+                float.IsNaN(measuredHeight))
+            {
+                return FallbackVehicleOriginHeightMeters;
+            }
+
+            return Mathf.Clamp(
+                measuredHeight,
+                VehicleGroundClearanceMeters,
+                TargetVehicleLengthMeters *
+                MaximumVehicleOriginHeightRatio);
         }
 
         private bool TrySelectWall(out ShowcaseWallFrame selected)
