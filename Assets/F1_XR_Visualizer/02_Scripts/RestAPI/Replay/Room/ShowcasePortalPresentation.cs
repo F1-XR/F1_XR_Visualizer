@@ -89,6 +89,7 @@ namespace F1XR.RestAPI.Replay.Room
         private int excludedRoomTrackSubmeshes;
         private bool viewerMaskCaptured;
         private bool configured;
+        private bool pitStopOnly;
         private Material roomOccluderClearMaterial;
         private Material firstVehicleXRayMaterial;
         private Material secondVehicleXRayMaterial;
@@ -101,13 +102,17 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private GameObject decorativePortalPrefab;
 
         public bool IsConfigured => configured;
+        public bool IsPitStopConfigured =>
+            configured && pitStopOnly;
         public bool ExitPortalVisible =>
             configured && exitPortalVisible;
         public bool ImmersiveScaleEnabled { get; set; }
         public int AuthoritativeVehicleCount =>
-            configured && firstVehicle != null && secondVehicle != null
-                ? 2
-                : 0;
+            !configured || firstVehicle == null
+                ? 0
+                : secondVehicle != null
+                    ? 2
+                    : 1;
 
         public void SetExitPortalVisible(bool visible)
         {
@@ -398,6 +403,94 @@ namespace F1XR.RestAPI.Replay.Room
             return true;
         }
 
+        public bool ConfigureSingleWall(
+            Transform stage,
+            ShowcaseWallFrame wall,
+            Transform vehicleRoot,
+            out string failure)
+        {
+            Clear();
+            failure = "";
+            if (stage == null ||
+                vehicleRoot == null ||
+                !wall.IsValid)
+            {
+                failure =
+                    "The pit stage, vehicle, or selected wall is unavailable.";
+                return false;
+            }
+
+            viewerCamera = Camera.main;
+            if (viewerCamera == null)
+            {
+                failure = "The XR main camera is unavailable.";
+                return false;
+            }
+
+            Vector3 inward = Flat(wall.InwardNormal);
+            Vector3 up = wall.VerticalAxis.normalized;
+            if (inward.sqrMagnitude <= 0.000001f ||
+                up.sqrMagnitude <= 0.5f)
+            {
+                failure =
+                    "The selected pit wall has no stable frame.";
+                return false;
+            }
+
+            inward.Normalize();
+            entryPosition = wall.Center;
+            entryInward = inward;
+            entryPortalSize = ResolvePortalSize(
+                new Vector2(wall.Width, wall.Height));
+            Vector3 bottom =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+            Pose wallPose = new(
+                wall.Center,
+                Quaternion.LookRotation(inward, up));
+            Pose portalPose = ResolvePortalPose(
+                wallPose,
+                entryPortalSize,
+                true,
+                bottom,
+                up);
+            entryPortalRight = portalPose.right;
+            firstVehicle = vehicleRoot;
+            secondVehicle = null;
+
+            presentationRoot =
+                new GameObject("PitStopWallPresentation")
+                    .transform;
+            presentationRoot.SetParent(transform, true);
+            entrySurface = CreatePortal(
+                "PitStopPortal",
+                portalPose,
+                entryPortalSize,
+                out entryCamera);
+            entrySurfaceRenderer =
+                entrySurface != null
+                    ? entrySurface.GetComponent<Renderer>()
+                    : null;
+            if (entrySurface == null || entryCamera == null)
+            {
+                failure = "The pit stop portal could not be built.";
+                Clear();
+                return false;
+            }
+
+            originalViewerMask = viewerCamera.cullingMask;
+            viewerMaskCaptured = true;
+            viewerCamera.cullingMask &=
+                ~(1 << PortalSceneLayer);
+            CaptureAndHideSourceRenderers(stage);
+            configured = true;
+            pitStopOnly = true;
+            exitPortalVisible = false;
+            SuspendPlaneMeshVisualizers();
+            RefreshPortalViews();
+            return true;
+        }
+
         public void Clear()
         {
             plannedRoomOccluderMaterials.Clear();
@@ -415,6 +508,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             ClearOvertakePortalTransition();
             configured = false;
+            pitStopOnly = false;
             RestorePlaneMeshVisualizers();
 
             if (viewerMaskCaptured && viewerCamera != null)
