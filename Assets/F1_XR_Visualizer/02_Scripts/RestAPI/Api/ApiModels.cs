@@ -107,6 +107,10 @@ namespace F1XR.RestAPI.Api
         public string motionProfile;
         public float overtakerShare = -1f;
         public float defenderShare = -1f;
+        public int lapNumber;
+        public float pitLaneDuration = -1f;
+        public float pitStopDuration = -1f;
+        public string timingSource;
     }
     
     [System.Serializable]

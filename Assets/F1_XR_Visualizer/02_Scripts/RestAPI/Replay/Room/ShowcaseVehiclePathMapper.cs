@@ -1118,6 +1118,7 @@ namespace F1XR.RestAPI.Replay.Room
             plannedForegroundOccluders = new();
         private EventPopoutReplay eventReplay;
         private ShowcasePortalPresentation portalPresentation;
+        private PitWallShowcasePresenter pitWallPresentation;
         private LifeSizeDriveByRoadPresentation lifeSizeRoad;
         private LifeSizeDriveByVehiclePresentation lifeSizeVehicles;
         private Transform boundStage;
@@ -1543,6 +1544,16 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
+            if (eventReplay.IsPitStopActive)
+            {
+                if (boundStage != null)
+                    ReleaseBinding(false, false);
+                SetInactive(
+                    "PitStopSingleWall",
+                    "");
+                return;
+            }
+
             sourceReplayProgress = Mathf.Clamp01(
                 eventReplay.NormalizedTime);
 
@@ -1659,6 +1670,17 @@ namespace F1XR.RestAPI.Replay.Room
                 portalPresentation =
                     GetComponent<ShowcasePortalPresentation>() ??
                     gameObject.AddComponent<ShowcasePortalPresentation>();
+
+            if (pitWallPresentation == null)
+            {
+                pitWallPresentation =
+                    GetComponent<PitWallShowcasePresenter>() ??
+                    gameObject.AddComponent<PitWallShowcasePresenter>();
+            }
+            pitWallPresentation.Configure(
+                replayPlayer,
+                showcaseLayout,
+                portalPresentation);
 
             if (lifeSizeRoad == null)
                 lifeSizeRoad =
