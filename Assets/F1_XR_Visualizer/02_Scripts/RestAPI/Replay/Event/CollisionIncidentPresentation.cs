@@ -8,17 +8,17 @@ namespace F1XR.RestAPI.Replay
 {
     internal sealed class CollisionIncidentPresentation
     {
-        private const float RevealDuration = 5f;
-        private const float IslandRevealEnd = 0.35f;
-        private const float PreImpactRevealEnd = 1.1f;
-        private const float LiveApproachStart = 1.1f;
+        private const float RevealDuration = 2.9f;
+        private const float IslandRevealEnd = 0.22f;
+        private const float LiveApproachStart = 0.2f;
         private const float LiveApproachLeadSeconds = 1.15f;
-        private const float ImpactRevealTime = 2.55f;
-        private const float ImpactHoldEnd = 2.75f;
-        private const float PostImpactRevealEnd = 4.15f;
-        private const float ImpactReplayDuration = 2.7f;
-        private const float ImpactReplayContactTime = 1.25f;
-        private const float ImpactReplayHoldEnd = 1.45f;
+        private const float ImpactRevealTime = 1.02f;
+        private const float ImpactHoldEnd = 1.18f;
+        private const float PostImpactRevealEnd = 2.2f;
+        private const float ImpactReplayDuration = 2.35f;
+        private const float ImpactReplayContactTime = 0.82f;
+        private const float ImpactReplayHoldEnd = 0.98f;
+        private const float TemporalEchoFadeSeconds = 0.58f;
 
         private enum ContactPattern
         {
@@ -36,6 +36,12 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Renderer> warningRenderers = new();
         private readonly List<Renderer> pulseRenderers = new();
         private readonly List<Collider> disabledVehicleColliders = new();
+        private readonly List<LineRenderer> impactSparkLines = new();
+        private readonly List<Vector3> impactSparkEnds = new();
+        private readonly List<Transform> impactDebris = new();
+        private readonly List<Vector3> impactDebrisPositions = new();
+        private readonly List<Vector3> impactDebrisScales = new();
+        private readonly List<Quaternion> impactDebrisRotations = new();
 
         private Transform stage;
         private Transform island;
@@ -300,6 +306,7 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(impactRoot, false);
             SetRootVisible(warningRoot, false);
             SetRootVisible(impactPulseRoot, false);
+            SetImpactBurst(-1f);
             SetIncomingTrajectoryProgress(0f, 0f);
             SetPostImpactProgress(0f);
             if (island != null)
@@ -328,6 +335,7 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(impactRoot, false);
             SetRootVisible(warningRoot, false);
             SetRootVisible(impactPulseRoot, false);
+            SetImpactBurst(-1f);
             SetIncomingTrajectoryProgress(0f, 0f);
             SetPostImpactProgress(0f);
             if (island != null)
@@ -361,6 +369,11 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(postRoot, false);
             SetRootVisible(warningRoot, false);
             SetRootVisible(impactRoot, false);
+            SetRootVisible(impactPulseRoot, false);
+            SetImpactBurst(-1f);
+            SetIncomingTrajectoryProgress(0f, 0f);
+            SetMaterialAlpha(trajectoryMaterial, 0f);
+            SetPostImpactProgress(0f);
         }
 
         public float Tick(float unscaledDeltaTime)
@@ -485,6 +498,12 @@ namespace F1XR.RestAPI.Replay
             warningRenderers.Clear();
             pulseRenderers.Clear();
             disabledVehicleColliders.Clear();
+            impactSparkLines.Clear();
+            impactSparkEnds.Clear();
+            impactDebris.Clear();
+            impactDebrisPositions.Clear();
+            impactDebrisScales.Clear();
+            impactDebrisRotations.Clear();
             presentationRoot = null;
             stage = null;
             island = null;
@@ -510,6 +529,11 @@ namespace F1XR.RestAPI.Replay
             impactReplayTime = Mathf.Min(
                 ImpactReplayDuration,
                 impactReplayTime + delta);
+            ApplyTemporalEchoes(
+                impactReplayTime,
+                0f,
+                ImpactReplayContactTime,
+                0f);
             if (!impactTriggered &&
                 impactReplayTime >= ImpactReplayContactTime)
             {
@@ -523,6 +547,16 @@ namespace F1XR.RestAPI.Replay
             SetImpactFlash(flashAge >= 0f && flashAge <= 0.16f,
                 flashAge);
             SetImpactPulse(flashAge);
+            SetImpactBurst(flashAge);
+
+            float postProgress = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.InverseLerp(
+                    ImpactReplayHoldEnd,
+                    ImpactReplayDuration - 0.1f,
+                    impactReplayTime));
+            ApplyPostImpactEvidence(postProgress);
 
             if (impactReplayTime >= ImpactReplayDuration)
             {
@@ -592,41 +626,22 @@ namespace F1XR.RestAPI.Replay
                         Mathf.Lerp(0.88f, 1f, islandProgress)));
             }
 
-            bool showPre = time >= IslandRevealEnd;
-            SetRootVisible(earlyGhostRoot, showPre);
-            SetRootVisible(lateGhostRoot, time >= 0.5f);
-            float earlyAlpha = Mathf.SmoothStep(
-                0f,
-                0.1f,
-                Mathf.InverseLerp(IslandRevealEnd, 0.52f, time));
-            float lateAlpha = Mathf.SmoothStep(
-                0f,
-                0.22f,
-                Mathf.InverseLerp(0.62f, PreImpactRevealEnd, time));
-            SetRendererAlpha(earlyGhostRenderers, earlyAlpha);
-            SetRendererAlpha(lateGhostRenderers, lateAlpha);
-            SetMaterialAlpha(
-                trajectoryMaterial,
-                Mathf.Lerp(
-                    0f,
-                    0.62f,
-                    Mathf.InverseLerp(
-                        IslandRevealEnd,
-                        PreImpactRevealEnd,
-                        time)));
-            float victimPathProgress = Mathf.InverseLerp(
-                IslandRevealEnd,
-                PreImpactRevealEnd - 0.08f,
-                time);
-            float otherPathProgress = Mathf.InverseLerp(
-                IslandRevealEnd + 0.08f,
-                PreImpactRevealEnd,
-                time);
-            SetIncomingTrajectoryProgress(
-                victimPathProgress,
-                otherPathProgress);
-
             SetCarsVisible(time >= LiveApproachStart);
+
+            float warningProgress = time >= PostImpactRevealEnd
+                ? Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        PostImpactRevealEnd,
+                        RevealDuration,
+                        time))
+                : 0f;
+            ApplyTemporalEchoes(
+                time,
+                LiveApproachStart,
+                ImpactRevealTime,
+                warningProgress);
 
             if (time >= ImpactRevealTime)
             {
@@ -643,40 +658,24 @@ namespace F1XR.RestAPI.Replay
             }
             SetImpactFlash(
                 time >= ImpactRevealTime &&
-                time <= ImpactRevealTime + 0.18f,
+                time <= ImpactRevealTime + 0.16f,
                 time - ImpactRevealTime);
             SetImpactPulse(time - ImpactRevealTime);
+            SetImpactBurst(time - ImpactRevealTime);
 
-            bool showPost = time >= ImpactHoldEnd;
-            SetRootVisible(postRoot, showPost);
             float postProgress = Mathf.SmoothStep(
                 0f,
                 1f,
                 Mathf.InverseLerp(
                     ImpactHoldEnd,
-                    PostImpactRevealEnd,
-                    time));
-            SetRendererAlpha(
-                postGhostRenderers,
-                postProgress * 0.26f);
-            SetRendererAlpha(
-                postEvidenceRenderers,
-                postProgress * 0.72f);
-            SetMaterialAlpha(postGhostMaterial, postProgress * 0.26f);
-            SetMaterialAlpha(postMaterial, postProgress * 0.72f);
-            SetPostImpactProgress(postProgress);
+                        PostImpactRevealEnd,
+                        time));
+            ApplyPostImpactEvidence(postProgress);
 
             bool showWarning = time >= PostImpactRevealEnd;
             SetRootVisible(warningRoot, showWarning);
             if (showWarning)
             {
-                float warningProgress = Mathf.SmoothStep(
-                    0f,
-                    1f,
-                    Mathf.InverseLerp(
-                        PostImpactRevealEnd,
-                        RevealDuration,
-                        time));
                 SetRendererAlpha(
                     warningRenderers,
                     warningProgress * 0.92f);
@@ -690,6 +689,108 @@ namespace F1XR.RestAPI.Replay
                         Vector3.one * scale;
                 }
             }
+        }
+
+        private void ApplyTemporalEchoes(
+            float time,
+            float approachStart,
+            float contactTime,
+            float forensicProgress)
+        {
+            float approachProgress = Mathf.InverseLerp(
+                approachStart,
+                contactTime,
+                time);
+            float earlyPassTime = Mathf.Lerp(
+                approachStart,
+                contactTime,
+                (LiveApproachLeadSeconds - 1f) /
+                LiveApproachLeadSeconds);
+            float latePassTime = Mathf.Lerp(
+                approachStart,
+                contactTime,
+                (LiveApproachLeadSeconds - 0.45f) /
+                LiveApproachLeadSeconds);
+
+            float earlyAlpha = Mathf.Max(
+                ResolveTemporalEchoAlpha(
+                    time,
+                    earlyPassTime,
+                    0.16f),
+                forensicProgress * 0.06f);
+            float lateAlpha = Mathf.Max(
+                ResolveTemporalEchoAlpha(
+                    time,
+                    latePassTime,
+                    0.28f),
+                forensicProgress * 0.1f);
+            SetRootVisible(earlyGhostRoot, earlyAlpha > 0.001f);
+            SetRootVisible(lateGhostRoot, lateAlpha > 0.001f);
+            SetRendererAlpha(earlyGhostRenderers, earlyAlpha);
+            SetRendererAlpha(lateGhostRenderers, lateAlpha);
+
+            SetIncomingTrajectoryProgress(
+                approachProgress,
+                Mathf.Clamp01(approachProgress - 0.025f));
+            float pathAlpha = time < approachStart
+                ? 0f
+                : Mathf.Lerp(0.08f, 0.46f, approachProgress);
+            if (time > contactTime)
+            {
+                pathAlpha = Mathf.Lerp(
+                    0.46f,
+                    0.24f,
+                    Mathf.InverseLerp(
+                        contactTime,
+                        PostImpactRevealEnd,
+                        time));
+            }
+            pathAlpha = Mathf.Max(
+                pathAlpha,
+                forensicProgress * 0.34f);
+            SetMaterialAlpha(trajectoryMaterial, pathAlpha);
+        }
+
+        private static float ResolveTemporalEchoAlpha(
+            float time,
+            float passTime,
+            float peakAlpha)
+        {
+            if (time < passTime)
+                return 0f;
+
+            float age = time - passTime;
+            if (age <= 0.07f)
+            {
+                return Mathf.SmoothStep(
+                    0f,
+                    peakAlpha,
+                    age / 0.07f);
+            }
+
+            return peakAlpha *
+                (1f - Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        0.07f,
+                        TemporalEchoFadeSeconds,
+                        age)));
+        }
+
+        private void ApplyPostImpactEvidence(float progress)
+        {
+            float clamped = Mathf.Clamp01(progress);
+            SetRootVisible(postRoot, clamped > 0.001f);
+            SetRendererAlpha(
+                postGhostRenderers,
+                clamped * 0.22f);
+            SetRendererAlpha(
+                postEvidenceRenderers,
+                clamped * 0.78f);
+            SetMaterialAlpha(postGhostMaterial, clamped * 0.22f);
+            SetMaterialAlpha(postMaterial, clamped * 0.78f);
+            SetPostImpactProgress(clamped);
         }
 
         private void ApplyFinalTableau()
@@ -707,16 +808,17 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(impactRoot, true);
             SetRootVisible(impactFlashRoot, false);
             SetRootVisible(warningRoot, true);
-            SetRendererAlpha(earlyGhostRenderers, 0.1f);
-            SetRendererAlpha(lateGhostRenderers, 0.22f);
-            SetRendererAlpha(postGhostRenderers, 0.26f);
-            SetRendererAlpha(postEvidenceRenderers, 0.72f);
+            SetRendererAlpha(earlyGhostRenderers, 0.06f);
+            SetRendererAlpha(lateGhostRenderers, 0.1f);
+            SetRendererAlpha(postGhostRenderers, 0.22f);
+            SetRendererAlpha(postEvidenceRenderers, 0.78f);
             SetRendererAlpha(warningRenderers, 0.92f);
-            SetMaterialAlpha(trajectoryMaterial, 0.62f);
-            SetMaterialAlpha(postGhostMaterial, 0.26f);
-            SetMaterialAlpha(postMaterial, 0.72f);
+            SetMaterialAlpha(trajectoryMaterial, 0.34f);
+            SetMaterialAlpha(postGhostMaterial, 0.22f);
+            SetMaterialAlpha(postMaterial, 0.78f);
             SetIncomingTrajectoryProgress(1f, 1f);
             SetPostImpactProgress(1f);
+            SetImpactBurst(float.MaxValue);
             SetRootVisible(impactPulseRoot, false);
             if (scanRingRoot != null)
                 scanRingRoot.localScale = Vector3.one;
@@ -797,11 +899,15 @@ namespace F1XR.RestAPI.Replay
             {
                 float angle = (i * 137.508f + 17f) *
                     Mathf.Deg2Rad;
-                float rise = 0.18f + (i % 4) * 0.09f;
+                bool groundScrape = i < 5;
+                float spread = (i - 5.5f) / 5.5f;
+                float rise = groundScrape
+                    ? 0.035f + (i % 3) * 0.025f
+                    : 0.16f + (i % 4) * 0.08f;
                 Vector3 direction =
-                    outwardLocal * Mathf.Cos(angle) +
-                    forwardLocal * Mathf.Sin(angle) +
-                    impactDirectionLocal * 0.38f +
+                    impactDirectionLocal * 0.92f +
+                    forwardLocal * spread * 0.62f +
+                    outwardLocal * Mathf.Cos(angle) * 0.24f +
                     Vector3.up * rise;
                 direction.Normalize();
                 LineRenderer spark = CreateLine(
@@ -815,10 +921,11 @@ namespace F1XR.RestAPI.Replay
                     false);
                 spark.positionCount = 2;
                 spark.SetPosition(0, Vector3.zero);
-                spark.SetPosition(
-                    1,
-                    direction * carWidth *
-                    Mathf.Lerp(0.22f, 0.58f, (i % 6) / 5f));
+                Vector3 sparkEnd = direction * carWidth *
+                    Mathf.Lerp(0.24f, 0.72f, (i % 6) / 5f);
+                spark.SetPosition(1, sparkEnd);
+                impactSparkLines.Add(spark);
+                impactSparkEnds.Add(sparkEnd);
             }
 
             Mesh shardMesh = CreateShardMesh();
@@ -836,26 +943,32 @@ namespace F1XR.RestAPI.Replay
                     Mathf.Deg2Rad;
                 float radius = carWidth *
                     Mathf.Lerp(0.2f, 0.85f, (i % 7) / 6f);
-                shard.transform.localPosition = contactLocal +
+                Vector3 finalPosition = contactLocal +
                     outwardLocal * Mathf.Cos(angle) * radius +
                     forwardLocal * Mathf.Sin(angle) * radius +
-                    impactDirectionLocal * radius * 0.24f +
+                    impactDirectionLocal * radius * 0.42f +
                     Vector3.up * carWidth *
                     (0.06f + (i % 4) * 0.08f);
-                shard.transform.localRotation =
-                    Quaternion.Euler(
-                        i * 29f,
-                        i * 47f,
-                        i * 19f);
+                Quaternion finalRotation = Quaternion.Euler(
+                    i * 29f,
+                    i * 47f,
+                    i * 19f);
                 float size = carWidth * Mathf.Lerp(
                     0.03f,
                     0.07f,
                     (i % 6) / 5f);
-                shard.transform.localScale = Vector3.one * size;
+                Vector3 finalScale = Vector3.one * size;
+                shard.transform.localPosition = finalPosition;
+                shard.transform.localRotation = finalRotation;
+                shard.transform.localScale = finalScale;
                 shard.GetComponent<MeshFilter>().sharedMesh = shardMesh;
                 MeshRenderer renderer =
                     shard.GetComponent<MeshRenderer>();
                 ConfigureRenderer(renderer, shardMaterial);
+                impactDebris.Add(shard.transform);
+                impactDebrisPositions.Add(finalPosition);
+                impactDebrisScales.Add(finalScale);
+                impactDebrisRotations.Add(finalRotation);
             }
 
             CreateFrozenSmoke(settings);
@@ -1315,6 +1428,63 @@ namespace F1XR.RestAPI.Replay
             SetRendererAlpha(
                 pulseRenderers,
                 (1f - progress) * 0.94f);
+        }
+
+        private void SetImpactBurst(float age)
+        {
+            float sparkProgress = age < 0f
+                ? 0f
+                : Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(0f, 0.11f, age));
+            int sparkCount = Mathf.Min(
+                impactSparkLines.Count,
+                impactSparkEnds.Count);
+            for (int i = 0; i < sparkCount; i++)
+            {
+                LineRenderer spark = impactSparkLines[i];
+                if (spark == null)
+                    continue;
+                spark.positionCount = 2;
+                spark.SetPosition(0, Vector3.zero);
+                spark.SetPosition(
+                    1,
+                    impactSparkEnds[i] * sparkProgress);
+            }
+
+            float debrisProgress = age < 0f
+                ? 0f
+                : Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(0.025f, 0.32f, age));
+            Vector3 debrisOrigin = contactLocal +
+                Vector3.up * carWidth * 0.12f;
+            int debrisCount = Mathf.Min(
+                impactDebris.Count,
+                Mathf.Min(
+                    impactDebrisPositions.Count,
+                    Mathf.Min(
+                        impactDebrisScales.Count,
+                        impactDebrisRotations.Count)));
+            for (int i = 0; i < debrisCount; i++)
+            {
+                Transform debris = impactDebris[i];
+                if (debris == null)
+                    continue;
+
+                debris.localPosition = Vector3.Lerp(
+                    debrisOrigin,
+                    impactDebrisPositions[i],
+                    debrisProgress);
+                debris.localScale = impactDebrisScales[i] *
+                    Mathf.Lerp(0.12f, 1f, debrisProgress);
+                debris.localRotation = Quaternion.Slerp(
+                    Quaternion.identity,
+                    impactDebrisRotations[i],
+                    debrisProgress);
+            }
         }
 
         private GameObject CaptureGhost(
