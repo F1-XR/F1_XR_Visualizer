@@ -3112,6 +3112,10 @@ MonoBehaviour:
   playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
+  compressRedFlagDowntime: 1
+  redFlagVisibleTailSeconds: 15
+  restartVisibleLeadSeconds: 15
+  minimumRedFlagSkipSeconds: 60
   showCarLabels: 1
   enableCarLod: 1
   hideLeaderHighlightAfterRaceStart: 1
@@ -3413,17 +3417,17 @@ MonoBehaviour:
   api: {fileID: 1705380155}
   player: {fileID: 1705380154}
   autoStart: 1
-  preferredYear: 2025
+  preferredYear: 2024
   preferredCircuitShortName: Suzuka
   preferredSessionName: Race
-  replayMinutes: 20
+  replayMinutes: 45
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
-  useCachedDatasetFastStart: 1
-  cachedDatasetId: 2025_suzuka_race_10006_c2_o2_m20
+  useCachedDatasetFastStart: 0
+  cachedDatasetId: 
   cachedCircuitKey: 46
-  useEventReplayTestSession: 0
+  useEventReplayTestSession: 1
 --- !u!4 &1705380157
 Transform:
   m_ObjectHideFlags: 0

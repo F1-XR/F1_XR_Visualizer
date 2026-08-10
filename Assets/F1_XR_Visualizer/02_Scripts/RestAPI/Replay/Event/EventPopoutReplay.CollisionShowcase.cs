@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using F1XR.RaceFlags;
 using F1XR.RestAPI.Api;
 using UnityEngine;
@@ -7,13 +8,25 @@ using UnityEngine.Rendering;
 
 namespace F1XR.RestAPI.Replay
 {
+    public enum CollisionPresentationPhase
+    {
+        Preparing,
+        IslandReveal,
+        PreImpact,
+        Impact,
+        PostImpact,
+        ForensicHold,
+        ImpactReplay
+    }
+
     [Serializable]
     public sealed class CollisionShowcaseVfxSettings
     {
         public bool enabled = true;
 
         [Header("Hero Presentation")]
-        [Min(0.1f)] public float targetVehicleLengthMeters = 0.8f;
+        [Min(0.1f)] public float targetVehicleLengthMeters = 0.42f;
+        [Range(1f, 2.8f)] public float maximumIslandSpanMeters = 2.8f;
         [Min(0.1f)] public float minimumStageScale = 8f;
         [Min(0.1f)] public float maximumStageScale = 120f;
 
@@ -26,6 +39,7 @@ namespace F1XR.RestAPI.Replay
         [Header("Playback")]
         [Min(0f)] public float leadSeconds = 3f;
         [Min(0f)] public float tailSeconds = 4.5f;
+        [Min(0f)] public float forensicHoldSeconds = 2f;
         [Range(0.1f, 1f)] public float slowMotionSpeed = 0.78f;
         [Min(0f)] public float slowMotionLeadSeconds = 0.03f;
         [Min(0f)] public float slowMotionTailSeconds = 0.65f;
@@ -76,10 +90,14 @@ namespace F1XR.RestAPI.Replay
 
         [Header("Impact Audio")]
         public bool playImpactAudio = true;
+        public AudioClip authoredImpactClip;
         [Range(0f, 1f)] public float impactVolume = 0.85f;
         [Range(0f, 1f)] public float impactSpatialBlend = 0.92f;
         [Min(0.05f)] public float impactMinDistance = 0.12f;
         [Min(0.1f)] public float impactMaxDistance = 6f;
+
+        [Header("Capture")]
+        public bool captureProfile = true;
 
         [Header("Reset")]
         [Min(0.05f)] public float seekResetThresholdSeconds = 0.5f;
@@ -123,6 +141,7 @@ namespace F1XR.RestAPI.Replay
         private Coroutine collisionPreloadRoutine;
         private string collisionPreloadKey;
         private bool collisionPreloadReady;
+        private string collisionPreparationFailure;
 
         public bool HasCollision =>
             FindClosestCollision(
@@ -144,21 +163,15 @@ namespace F1XR.RestAPI.Replay
         public bool IsCollisionPreloading =>
             collisionPreloadRoutine != null;
 
-        public bool IsCollisionPreloaded
-        {
-            get
-            {
-                ReplayEventDto definition =
-                    FindTestCollisionDefinition();
-                return definition != null &&
-                    collisionPreloadReady &&
-                    string.Equals(
-                        collisionPreloadKey,
-                        CreateCollisionPreloadKey(
-                            definition),
-                        StringComparison.Ordinal);
-            }
-        }
+        public bool IsCollisionPreloaded =>
+            IsCollisionPrepared;
+
+        public string CollisionPreparationFailure =>
+            collisionPreparationFailure;
+
+        public bool UseCollisionCaptureProfile =>
+            collisionShowcase == null ||
+            collisionShowcase.captureProfile;
 
         private float CollisionLeadSeconds =>
             collisionShowcase != null
@@ -180,10 +193,7 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            ReplayEventDto definition =
-                FindTestCollisionDefinition();
-
-            if (definition == null)
+            if (FindTestCollisionDefinition() == null)
             {
                 Debug.LogWarning(
                     "[EventReplay] No collision event is available for this session.",
@@ -191,42 +201,12 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            Open(definition);
+            OpenPreparedCollision();
         }
 
         public void PreloadTestCollision()
         {
-            if (player == null ||
-                !player.HasDataset ||
-                isActive ||
-                isLoading ||
-                collisionPreloadRoutine != null)
-            {
-                return;
-            }
-
-            ReplayEventDto definition =
-                FindTestCollisionDefinition();
-            if (definition == null)
-                return;
-
-            string key = CreateCollisionPreloadKey(
-                definition);
-            if (collisionPreloadReady &&
-                string.Equals(
-                    collisionPreloadKey,
-                    key,
-                    StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            collisionPreloadKey = key;
-            collisionPreloadReady = false;
-            collisionPreloadRoutine = StartCoroutine(
-                PreloadCollisionRoutine(
-                    definition,
-                    key));
+            PrepareTestCollision();
         }
 
         private ReplayEventDto FindTestCollisionDefinition()
@@ -343,11 +323,26 @@ namespace F1XR.RestAPI.Replay
                 rotation.eulerAngles.y,
                 0f);
             collisionResolvedStageScale =
-                ResolveInitialCollisionStageScale();
+                collisionPresentationFitted
+                    ? Mathf.Max(
+                        0.0001f,
+                        PresentationRoot.localScale.x)
+                    : ResolveInitialCollisionStageScale();
             TrySetPresentationPose(
                 position,
                 rotation,
                 collisionResolvedStageScale);
+            Vector3 parentLossyScale =
+                PresentationRoot.parent != null
+                    ? PresentationRoot.parent.lossyScale
+                    : Vector3.one;
+            float parentWorldScale = Mathf.Max(
+                0.0001f,
+                Mathf.Max(
+                    Mathf.Abs(parentLossyScale.x),
+                    Mathf.Abs(parentLossyScale.z)));
+            PlaceCollisionStageForViewer(
+                collisionResolvedStageScale * parentWorldScale);
             stageRoot.SetActive(true);
         }
 
@@ -400,9 +395,10 @@ namespace F1XR.RestAPI.Replay
 
             collisionShowcase ??=
                 new CollisionShowcaseVfxSettings();
-            float targetLength = Mathf.Max(
-                0.1f,
-                collisionShowcase.targetVehicleLengthMeters);
+            float targetLength = Mathf.Clamp(
+                collisionShowcase.targetVehicleLengthMeters,
+                0.32f,
+                0.46f);
             float minimum = Mathf.Max(
                 0.1f,
                 collisionShowcase.minimumStageScale);
@@ -423,6 +419,24 @@ namespace F1XR.RestAPI.Replay
                 (sourceVehicleLength * parentWorldScale),
                 minimum,
                 maximum);
+            float localStageSpan =
+                stageInteractionDefaultsCaptured
+                    ? Mathf.Max(
+                        Mathf.Abs(stageInteractionDefaultSize.x),
+                        Mathf.Abs(stageInteractionDefaultSize.z))
+                    : 0f;
+            float maximumIslandSpan = Mathf.Min(
+                2.8f,
+                Mathf.Max(
+                    1f,
+                    collisionShowcase.maximumIslandSpanMeters));
+            if (localStageSpan > 0.0001f)
+            {
+                collisionResolvedStageScale = Mathf.Min(
+                    collisionResolvedStageScale,
+                    maximumIslandSpan /
+                    (localStageSpan * parentWorldScale));
+            }
             PresentationRoot.localScale =
                 Vector3.one * collisionResolvedStageScale;
 
@@ -430,14 +444,8 @@ namespace F1XR.RestAPI.Replay
                 collisionResolvedStageScale * parentWorldScale;
             PlaceCollisionStageForViewer(
                 stageWorldScale);
-            float localStageSpan =
-                stageInteractionDefaultsCaptured
-                    ? Mathf.Max(
-                        Mathf.Abs(stageInteractionDefaultSize.x),
-                        Mathf.Abs(stageInteractionDefaultSize.z))
-                    : 0f;
             Debug.Log(
-                $"[EventReplay] Collision hero presentation " +
+                $"[CollisionIncident] Dark hologram presentation " +
                 $"stageSpan={localStageSpan * stageWorldScale:0.###}m, " +
                 $"vehicleLength={sourceVehicleLength * stageWorldScale:0.###}m, " +
                 $"stageScale={collisionResolvedStageScale:0.###}, " +
@@ -1075,15 +1083,6 @@ namespace F1XR.RestAPI.Replay
 
         private void TriggerCollisionImpact()
         {
-            int[] drivers = currentEvent.driverNumbers;
-            if (drivers != null && drivers.Length >= 2)
-            {
-                eventCars.TriggerCollisionContactVfx(
-                    drivers[0],
-                    drivers[1],
-                    collisionSparkSettings);
-            }
-
             if (collisionShowcase.playImpactAudio &&
                 collisionAudio != null &&
                 collisionImpactClip != null)
@@ -1785,6 +1784,704 @@ namespace F1XR.RestAPI.Replay
             }
 
             return next != null;
+        }
+    }
+}
+
+namespace F1XR.RestAPI.Replay
+{
+    // Kept as a partial so the prepared incident cache stays isolated from the regular replay path.
+    public sealed partial class EventPopoutReplay
+    {
+        private CollisionIncidentPresentation
+            collisionIncidentPresentation;
+        private ReplayEventDto collisionPreparedDefinition;
+        private Transform collisionIslandRoot;
+        private Coroutine collisionFirstFrameRoutine;
+
+        public bool IsCollisionPrepared
+        {
+            get
+            {
+                string datasetId = player?.Manifest != null
+                    ? player.Manifest.datasetId
+                    : string.Empty;
+                return collisionPreloadReady &&
+                    collisionPreparedDefinition != null &&
+                    collisionIncidentPresentation != null &&
+                    stageRoot != null &&
+                    !string.IsNullOrWhiteSpace(datasetId) &&
+                    collisionPreloadKey.StartsWith(
+                        datasetId + "|",
+                        StringComparison.Ordinal);
+            }
+        }
+
+        public bool IsCollisionRevealComplete =>
+            isActive &&
+            IsCurrentCollision &&
+            collisionIncidentPresentation != null &&
+            collisionIncidentPresentation.RevealComplete;
+
+        public CollisionPresentationPhase CollisionPhase =>
+            collisionIncidentPresentation != null &&
+            isActive &&
+            IsCurrentCollision
+                ? collisionIncidentPresentation.Phase
+                : CollisionPresentationPhase.Preparing;
+
+        public bool IsCollisionImpactReplaying =>
+            isActive &&
+            IsCurrentCollision &&
+            collisionIncidentPresentation != null &&
+            collisionIncidentPresentation.ImpactReplaying;
+
+        public void NotifyDatasetChanged()
+        {
+            CancelCollisionPreparation();
+            RestoreTableTrackRendering();
+            hasSnapshot = false;
+            collisionPreloadReady = false;
+            collisionPreloadKey = null;
+            collisionPreparedDefinition = null;
+            collisionPreparationFailure = null;
+            if (collisionIncidentPresentation != null ||
+                IsCollisionEvent(currentEvent))
+            {
+                DestroyStage(false);
+            }
+
+            PrepareTestCollision();
+        }
+
+        public void PrepareTestCollision()
+        {
+            if (player == null ||
+                !player.HasDataset ||
+                isActive ||
+                isLoading ||
+                collisionPreloadRoutine != null)
+            {
+                return;
+            }
+
+            ReplayEventDto source = FindTestCollisionDefinition();
+            if (source == null)
+                return;
+
+            ReplayEventDto definition =
+                CreatePresentationEvent(source);
+            string key = CreateCollisionPreloadKey(definition);
+            if (IsCollisionPrepared &&
+                string.Equals(
+                    collisionPreloadKey,
+                    key,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            collisionPreloadReady = false;
+            collisionPreloadKey = key;
+            collisionPreparedDefinition = null;
+            collisionPreparationFailure = null;
+            collisionPreloadRoutine = StartCoroutine(
+                PrepareCollisionIncidentRoutine(
+                    definition,
+                    key));
+        }
+
+        public void ReplayCollisionImpact()
+        {
+            if (!IsCollisionRevealComplete ||
+                collisionIncidentPresentation == null)
+            {
+                return;
+            }
+
+            collisionIncidentPresentation.ReplayImpact();
+        }
+
+        public void RestartCollisionReveal()
+        {
+            if (!isActive ||
+                !IsCurrentCollision ||
+                collisionIncidentPresentation == null)
+            {
+                return;
+            }
+
+            timeline.SetTime(currentEvent.anchorTime);
+            timeline.Pause();
+            ResetIndices();
+            collisionIncidentPresentation.RestartReveal();
+        }
+
+        private IEnumerator PrepareCollisionIncidentRoutine(
+            ReplayEventDto definition,
+            string key)
+        {
+            float startedAt = Time.realtimeSinceStartup;
+            DestroyStage(false);
+            currentEvent = definition;
+
+            float scanSeconds = Mathf.Max(
+                CollisionLeadSeconds,
+                CollisionTailSeconds);
+            float loadStart = Mathf.Max(
+                player.TimelineStartTime,
+                definition.anchorTime -
+                scanSeconds -
+                trackPaddingSeconds);
+            float loadEnd = Mathf.Min(
+                player.ReadyUntilTime,
+                definition.anchorTime +
+                scanSeconds +
+                trackPaddingSeconds);
+            bool loaded = false;
+            yield return player.LoadEventRange(
+                loadStart,
+                loadEnd,
+                value => loaded = value);
+
+            if (!IsCollisionPreparationCurrent(key) || !loaded)
+            {
+                FailCollisionPreparation(
+                    key,
+                    "data range was unavailable");
+                yield break;
+            }
+
+            if (!BuildEventSamples(
+                    definition,
+                    loadStart,
+                    loadEnd))
+            {
+                FailCollisionPreparation(
+                    key,
+                    "vehicle samples were unavailable");
+                yield break;
+            }
+
+            // Keep data, geometry and visual allocation on separate frames.
+            yield return null;
+            if (!IsCollisionPreparationCurrent(key) ||
+                !BuildStage(definition, loadStart, loadEnd))
+            {
+                FailCollisionPreparation(
+                    key,
+                    "the incident island could not be built");
+                yield break;
+            }
+
+            yield return null;
+            timeline.Reset(
+                showcasePlaybackWindow.StartTime,
+                showcasePlaybackWindow.EndTime);
+            timeline.SetTime(definition.anchorTime);
+            timeline.Pause();
+            isActive = true;
+            ResetIndices();
+            ShowCollisionCars(definition.anchorTime);
+            FitCollisionPresentationStage();
+            if (!ResolveCollisionReconstruction() ||
+                !TryGetCollisionCar(
+                    collisionVictimDriver,
+                    out ReplayCarView victimCar) ||
+                !TryGetCollisionCar(
+                    collisionOtherDriver,
+                    out ReplayCarView otherCar))
+            {
+                isActive = false;
+                FailCollisionPreparation(
+                    key,
+                    "the collision vehicle pair could not be resolved");
+                yield break;
+            }
+
+            float vehicleLength = Mathf.Max(
+                0.001f,
+                victimCar.GetVisualLength());
+            float vehicleWidth = Mathf.Max(
+                0.001f,
+                victimCar.GetVisualWidth());
+            Vector3 contact = ResolveCollisionContactPosition();
+            Vector3[] victimIncoming =
+                BuildCollisionIncomingPath(
+                    collisionVictimDriver,
+                    definition.anchorTime);
+            Vector3[] otherIncoming =
+                BuildCollisionIncomingPath(
+                    collisionOtherDriver,
+                    definition.anchorTime);
+            string label =
+                $"{eventCars.GetDriverLabel(collisionVictimDriver)} / " +
+                eventCars.GetDriverLabel(collisionOtherDriver);
+            string victimLabel = eventCars.GetDriverLabel(
+                collisionVictimDriver);
+            string otherLabel = eventCars.GetDriverLabel(
+                collisionOtherDriver);
+            string incidentTime = FormatCollisionIncidentTime(
+                definition.anchorTime);
+            string incidentMetadata = definition.lapNumber > 0
+                ? $"L{definition.lapNumber}  {incidentTime}"
+                : incidentTime;
+
+            collisionIncidentPresentation =
+                new CollisionIncidentPresentation();
+            collisionIncidentPresentation.Build(
+                stageRoot.transform,
+                collisionIslandRoot,
+                victimCar,
+                otherCar,
+                definition.anchorTime,
+                contact,
+                collisionForwardLocal,
+                collisionOutwardLocal,
+                vehicleLength,
+                vehicleWidth,
+                victimIncoming,
+                otherIncoming,
+                label,
+                incidentMetadata,
+                victimLabel,
+                otherLabel,
+                player.GetDriverColor(collisionVictimDriver),
+                player.GetDriverColor(collisionOtherDriver),
+                collisionShowcase);
+
+            ShowCollisionCars(definition.anchorTime - 1f);
+            collisionIncidentPresentation
+                .CapturePreImpactSnapshot(
+                    victimCar,
+                    otherCar,
+                    true);
+            yield return null;
+
+            ShowCollisionCars(definition.anchorTime - 0.45f);
+            collisionIncidentPresentation
+                .CapturePreImpactSnapshot(
+                    victimCar,
+                    otherCar,
+                    false);
+            yield return null;
+
+            ShowCollisionCars(definition.anchorTime);
+            collisionIncidentPresentation
+                .CapturePostImpactSnapshot(victimCar);
+            collisionIncidentPresentation.HidePrepared();
+            eventAudio?.SetPlaying(false);
+            timeline.Pause();
+            isActive = false;
+            stageRoot.SetActive(false);
+
+            if (!IsCollisionPreparationCurrent(key))
+            {
+                FailCollisionPreparation(
+                    key,
+                    "the dataset changed during preparation");
+                yield break;
+            }
+
+            collisionPreparedDefinition = definition;
+            collisionPreloadReady = true;
+            collisionPreparationFailure = null;
+            collisionPreloadRoutine = null;
+            Debug.Log(
+                $"[CollisionIncident] Prepared '{definition.eventId}' " +
+                $"in {Time.realtimeSinceStartup - startedAt:0.00}s. " +
+                "Open path now performs placement and activation only.",
+                this);
+        }
+
+        private void OpenPreparedCollision()
+        {
+            if (!IsCollisionPrepared ||
+                collisionPreparedDefinition == null ||
+                collisionIncidentPresentation == null)
+            {
+                Debug.LogWarning(
+                    "[CollisionIncident] Collision is still preparing.",
+                    this);
+                PrepareTestCollision();
+                return;
+            }
+
+            float clickedAt = Time.realtimeSinceStartup;
+            if (!hasSnapshot)
+            {
+                snapshot = new ReplaySnapshot(player);
+                hasSnapshot = true;
+            }
+
+            player.Pause();
+            player.SetEventPresentationSuppressed(true);
+            SuspendTableTrackRendering();
+            currentEvent = collisionPreparedDefinition;
+            timeline.SetTime(currentEvent.anchorTime);
+            timeline.Pause();
+            ResetIndices();
+            isLoading = false;
+            isActive = true;
+            ActivateCollisionPresentationStage();
+            ShowCollisionCars(currentEvent.anchorTime);
+            collisionIncidentPresentation.BeginReveal();
+            eventAudio?.SetPlaying(false);
+
+            if (collisionFirstFrameRoutine != null)
+                StopCoroutine(collisionFirstFrameRoutine);
+            collisionFirstFrameRoutine = StartCoroutine(
+                LogCollisionFirstFrame(clickedAt));
+        }
+
+        private IEnumerator LogCollisionFirstFrame(float clickedAt)
+        {
+            yield return new WaitForEndOfFrame();
+            Debug.Log(
+                $"[CollisionIncident] Click-to-first-frame " +
+                $"{Time.realtimeSinceStartup - clickedAt:0.000}s; " +
+                "network=False, geometryBuild=False, vehicleCreate=False.",
+                this);
+            collisionFirstFrameRoutine = null;
+        }
+
+        private void UpdateCollisionIncidentPresentation()
+        {
+            if (collisionIncidentPresentation == null ||
+                eventCars == null ||
+                currentEvent == null)
+            {
+                return;
+            }
+
+            float replayTime = collisionIncidentPresentation.Tick(
+                Time.unscaledDeltaTime);
+            timeline.SetTime(replayTime);
+            ShowCollisionCars(replayTime);
+            collisionIncidentPresentation.ApplyVehicleMotion();
+            eventAudio?.SetPlaying(false);
+        }
+
+        private void ShowCollisionCars(float replayTime)
+        {
+            eventCars?.Show(
+                eventSamples,
+                eventIndices,
+                replayTime,
+                null,
+                eventDrivers);
+        }
+
+        private Vector3[] BuildCollisionIncomingPath(
+            int driver,
+            float anchor)
+        {
+            float[] times =
+            {
+                anchor - 1f,
+                anchor - 0.72f,
+                anchor - 0.45f,
+                anchor - 0.2f,
+                anchor
+            };
+            List<Vector3> points = new(times.Length);
+            for (int i = 0; i < times.Length; i++)
+            {
+                if (TryGetEventLocalVehiclePosition(
+                        driver,
+                        times[i],
+                        out Vector3 point))
+                {
+                    points.Add(point);
+                }
+            }
+            if (points.Count == 0)
+                points.Add(ResolveCollisionContactPosition());
+            return points.ToArray();
+        }
+
+        private static string FormatCollisionIncidentTime(float seconds)
+        {
+            seconds = Mathf.Max(0f, seconds);
+            int minutes = Mathf.FloorToInt(seconds / 60f);
+            float remaining = seconds - minutes * 60f;
+            return $"{minutes:00}:{remaining:00.00}";
+        }
+
+        private bool TryClosePreparedCollision()
+        {
+            if (!isActive ||
+                !IsCurrentCollision ||
+                collisionIncidentPresentation == null)
+            {
+                return false;
+            }
+
+            if (collisionFirstFrameRoutine != null)
+            {
+                StopCoroutine(collisionFirstFrameRoutine);
+                collisionFirstFrameRoutine = null;
+            }
+            collisionIncidentPresentation.HidePrepared();
+            eventAudio?.SetPlaying(false);
+            timeline.Pause();
+            if (stageRoot != null)
+                stageRoot.SetActive(false);
+            isActive = false;
+            RestoreTableTrackRendering();
+            player?.SetEventPresentationSuppressed(false);
+            RestoreReplay();
+            return true;
+        }
+
+        private void CancelCollisionPreparation()
+        {
+            if (collisionPreloadRoutine != null)
+            {
+                StopCoroutine(collisionPreloadRoutine);
+                collisionPreloadRoutine = null;
+            }
+        }
+
+        private bool IsCollisionPreparationCurrent(string key)
+        {
+            return !string.IsNullOrWhiteSpace(key) &&
+                string.Equals(
+                    collisionPreloadKey,
+                    key,
+                    StringComparison.Ordinal);
+        }
+
+        private void FailCollisionPreparation(
+            string key,
+            string reason)
+        {
+            if (!IsCollisionPreparationCurrent(key))
+                return;
+
+            collisionPreloadReady = false;
+            collisionPreparedDefinition = null;
+            collisionPreloadRoutine = null;
+            collisionPreparationFailure = reason;
+            DestroyStage(false);
+            Debug.LogWarning(
+                $"[CollisionIncident] Preparation failed: {reason}.",
+                this);
+        }
+
+        private void ClearCollisionIncidentPresentation()
+        {
+            if (collisionFirstFrameRoutine != null)
+            {
+                StopCoroutine(collisionFirstFrameRoutine);
+                collisionFirstFrameRoutine = null;
+            }
+            collisionIncidentPresentation?.Clear();
+            collisionIncidentPresentation = null;
+            collisionIslandRoot = null;
+            collisionPreloadReady = false;
+            collisionPreparedDefinition = null;
+            collisionPreparationFailure = null;
+            player?.SetEventPresentationSuppressed(false);
+        }
+
+        private void CreateCollisionIncidentIsland(
+            Vector3 center,
+            Quaternion sourceToLocalRotation,
+            float referenceVehicleLength,
+            out Bounds stageBounds)
+        {
+            float safeLength = Mathf.Max(
+                0.001f,
+                referenceVehicleLength);
+            Vector3 contact = ResolveRawCollisionContactLocal(
+                center,
+                sourceToLocalRotation);
+            Vector3 forward = ResolveRawCollisionForwardLocal(
+                center,
+                sourceToLocalRotation);
+            Vector3 right = Vector3.Cross(
+                Vector3.up,
+                forward).normalized;
+            float halfLength = safeLength * 3.05f;
+            float halfWidth = safeLength * 1.58f;
+            float bevel = Mathf.Min(
+                halfWidth * 0.32f,
+                safeLength * 0.42f);
+
+            collisionIslandRoot = new GameObject(
+                "CollisionIncidentIsland").transform;
+            collisionIslandRoot.SetParent(
+                stageRoot.transform,
+                false);
+            collisionIslandRoot.localPosition = contact;
+            collisionIslandRoot.localRotation =
+                Quaternion.LookRotation(forward, Vector3.up);
+
+            Vector3[] perimeter =
+            {
+                new(-halfWidth + bevel, 0f, -halfLength),
+                new(halfWidth - bevel, 0f, -halfLength),
+                new(halfWidth, 0f, -halfLength + bevel),
+                new(halfWidth, 0f, halfLength - bevel),
+                new(halfWidth - bevel, 0f, halfLength),
+                new(-halfWidth + bevel, 0f, halfLength),
+                new(-halfWidth, 0f, halfLength - bevel),
+                new(-halfWidth, 0f, -halfLength + bevel)
+            };
+            Vector3[] vertices = new Vector3[perimeter.Length + 1];
+            vertices[0] = Vector3.zero;
+            Array.Copy(
+                perimeter,
+                0,
+                vertices,
+                1,
+                perimeter.Length);
+            int[] triangles = new int[perimeter.Length * 3];
+            for (int i = 0; i < perimeter.Length; i++)
+            {
+                int offset = i * 3;
+                triangles[offset] = 0;
+                triangles[offset + 1] =
+                    (i + 1) % perimeter.Length + 1;
+                triangles[offset + 2] = i + 1;
+            }
+
+            roadMesh = new Mesh
+            {
+                name = "CollisionIncidentIslandMesh",
+                vertices = vertices,
+                triangles = triangles
+            };
+            roadMesh.RecalculateNormals();
+            roadMesh.RecalculateBounds();
+            GameObject surface = new(
+                "CharcoalIncidentSurface",
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            surface.transform.SetParent(
+                collisionIslandRoot,
+                false);
+            surface.GetComponent<MeshFilter>().sharedMesh = roadMesh;
+            roadMaterial = CreateMaterial(
+                new Color(0.025f, 0.03f, 0.038f, 1f));
+            MeshRenderer surfaceRenderer =
+                surface.GetComponent<MeshRenderer>();
+            surfaceRenderer.sharedMaterial = roadMaterial;
+            surfaceRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            surfaceRenderer.receiveShadows = false;
+
+            edgeMaterial = CreateMaterial(
+                new Color(1.15f, 0.7f, 0.015f, 1f));
+            GameObject borderObject = new(
+                "YellowIncidentBoundary",
+                typeof(LineRenderer));
+            borderObject.transform.SetParent(
+                collisionIslandRoot,
+                false);
+            LineRenderer border =
+                borderObject.GetComponent<LineRenderer>();
+            border.useWorldSpace = false;
+            border.loop = true;
+            border.positionCount = perimeter.Length;
+            border.widthMultiplier = safeLength * 0.045f;
+            border.numCapVertices = 2;
+            border.numCornerVertices = 2;
+            border.sharedMaterial = edgeMaterial;
+            border.shadowCastingMode = ShadowCastingMode.Off;
+            border.receiveShadows = false;
+            for (int i = 0; i < perimeter.Length; i++)
+            {
+                border.SetPosition(
+                    i,
+                    perimeter[i] +
+                    Vector3.up * safeLength * 0.012f);
+            }
+            leftRoadEdge = border;
+            rightRoadEdge = null;
+
+            stageBounds = roadMesh.bounds;
+            stageBounds.center =
+                collisionIslandRoot.localPosition +
+                collisionIslandRoot.localRotation *
+                stageBounds.center;
+            stageBounds.size = new Vector3(
+                halfWidth * 2f,
+                Mathf.Max(safeLength * 0.12f, 0.001f),
+                halfLength * 2f);
+        }
+
+        private Vector3 ResolveRawCollisionContactLocal(
+            Vector3 center,
+            Quaternion sourceToLocalRotation)
+        {
+            int[] drivers = currentEvent?.driverNumbers;
+            if (drivers != null && drivers.Length >= 2 &&
+                TryGetRawEventLocalVehiclePosition(
+                    drivers[0],
+                    currentEvent.anchorTime,
+                    center,
+                    sourceToLocalRotation,
+                    out Vector3 first) &&
+                TryGetRawEventLocalVehiclePosition(
+                    drivers[1],
+                    currentEvent.anchorTime,
+                    center,
+                    sourceToLocalRotation,
+                    out Vector3 second))
+            {
+                return (first + second) * 0.5f;
+            }
+
+            return Vector3.zero;
+        }
+
+        private Vector3 ResolveRawCollisionForwardLocal(
+            Vector3 center,
+            Quaternion sourceToLocalRotation)
+        {
+            List<LocationSample> samples = FindReferenceSamples();
+            if (samples != null &&
+                TryGetMappedPosition(
+                    samples,
+                    currentEvent.anchorTime - 0.35f,
+                    out Vector3 before) &&
+                TryGetMappedPosition(
+                    samples,
+                    currentEvent.anchorTime + 0.35f,
+                    out Vector3 after))
+            {
+                Vector3 forward = sourceToLocalRotation *
+                    (after - before);
+                forward.y = 0f;
+                if (forward.sqrMagnitude > 0.000001f)
+                    return forward.normalized;
+            }
+
+            return Vector3.forward;
+        }
+
+        private bool TryGetRawEventLocalVehiclePosition(
+            int driver,
+            float replayTime,
+            Vector3 center,
+            Quaternion sourceToLocalRotation,
+            out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (!eventSamples.TryGetValue(
+                    driver,
+                    out List<LocationSample> samples) ||
+                !TryGetMappedPosition(
+                    samples,
+                    replayTime,
+                    out Vector3 mapped))
+            {
+                return false;
+            }
+
+            position = sourceToLocalRotation * (mapped - center);
+            return true;
         }
     }
 }

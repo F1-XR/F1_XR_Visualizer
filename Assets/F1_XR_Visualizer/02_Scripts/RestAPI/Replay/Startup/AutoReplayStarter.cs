@@ -7,6 +7,8 @@ namespace F1XR.RestAPI.Replay
 {
     public class AutoReplayStarter : MonoBehaviour
     {
+        private const int EventReplayInitialMinutes = 6;
+
         public ApiClient api;
         public ReplayPlayer player;
 
@@ -75,7 +77,7 @@ namespace F1XR.RestAPI.Replay
             preferredYear = 2024;
             preferredCircuitShortName = "Suzuka";
             preferredSessionName = "Race";
-            replayMinutes = 6;
+            replayMinutes = 45;
             skipWarmupLap = false;
             useCachedDatasetFastStart = false;
             cachedDatasetId = "";
@@ -161,7 +163,9 @@ namespace F1XR.RestAPI.Replay
                 ? Mathf.Max(
                     1,
                     Mathf.CeilToInt(
-                        (float)Mathf.Max(1, replayMinutes) /
+                        (float)Mathf.Min(
+                            Mathf.Max(1, replayMinutes),
+                            EventReplayInitialMinutes) /
                         Mathf.Max(1, chunkMinutes)))
                 : 1;
             CreateDatasetBody body = new CreateDatasetBody

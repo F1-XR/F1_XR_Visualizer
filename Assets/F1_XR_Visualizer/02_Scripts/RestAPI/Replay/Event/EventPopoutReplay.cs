@@ -955,6 +955,15 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
+            if (IsCollisionEvent(presentation))
+            {
+                if (IsCollisionPrepared)
+                    OpenPreparedCollision();
+                else
+                    PrepareTestCollision();
+                return;
+            }
+
             if (!hasSnapshot)
             {
                 snapshot = new ReplaySnapshot(player);
@@ -1147,6 +1156,9 @@ namespace F1XR.RestAPI.Replay
 
         public void Close()
         {
+            if (TryClosePreparedCollision())
+                return;
+
             if (openRoutine != null)
             {
                 StopCoroutine(openRoutine);
@@ -1275,6 +1287,13 @@ namespace F1XR.RestAPI.Replay
         {
             if (!isActive)
                 return;
+
+            if (IsCollisionEvent(currentEvent) &&
+                collisionIncidentPresentation != null)
+            {
+                UpdateCollisionIncidentPresentation();
+                return;
+            }
 
             bool collisionHitStop =
                 UpdateCollisionHitStop(
@@ -1427,12 +1446,14 @@ namespace F1XR.RestAPI.Replay
             eventCars.SetOvertakePresentationMode(
                 OvertakePresentationMode.Showcase);
             eventCars.SetOvertakeVehicleSizeScale(
-                overtakeVehicleSizeScale);
+                collisionShowcase
+                    ? 1f
+                    : overtakeVehicleSizeScale);
             eventCars.SetMapScaleRatio(
                 player.GetTrackMapScaleRatio());
             eventCars.SetTeamPrefabs(player.teamCarPrefabs);
             eventCars.SetCalibration(player.trackCalibration, false);
-            eventCars.SetLabelsVisible(true);
+            eventCars.SetLabelsVisible(!collisionShowcase);
             eventCars.SetLeaderHighlightVisible(false);
             eventCars.SetDrivers(player.Manifest != null ? player.Manifest.drivers : null);
             eventOvertakeSettings =
@@ -1526,9 +1547,19 @@ namespace F1XR.RestAPI.Replay
                     trackEndTime);
             if (!showcasePlaybackWindow.IsValid)
                 return false;
-            if (!BuildPresentationPath(
+            float presentationStart = collisionShowcase
+                ? Mathf.Max(
                     showcasePlaybackWindow.StartTime,
-                    showcasePlaybackWindow.EndTime))
+                    definition.anchorTime - 1.1f)
+                : showcasePlaybackWindow.StartTime;
+            float presentationEnd = collisionShowcase
+                ? Mathf.Min(
+                    showcasePlaybackWindow.EndTime,
+                    definition.anchorTime + 1.2f)
+                : showcasePlaybackWindow.EndTime;
+            if (!BuildPresentationPath(
+                    presentationStart,
+                    presentationEnd))
             {
                 return false;
             }
@@ -1613,7 +1644,15 @@ namespace F1XR.RestAPI.Replay
             eventCars.SetCustomSpace(carsRoot, center, sourceToLocalRotation);
 
             Bounds stageBounds;
-            if (pitStop)
+            if (collisionShowcase)
+            {
+                CreateCollisionIncidentIsland(
+                    center,
+                    sourceToLocalRotation,
+                    referenceVehicleLength,
+                    out stageBounds);
+            }
+            else if (pitStop)
             {
                 CreateRoad(center, sourceToLocalRotation);
                 stageBounds = roadMesh.bounds;
@@ -2858,7 +2897,8 @@ namespace F1XR.RestAPI.Replay
             else if (IsCollisionEvent(currentEvent))
             {
                 FitCollisionPresentationStage();
-                UpdateCollisionShowcase(replayTime);
+                if (collisionIncidentPresentation == null)
+                    UpdateCollisionShowcase(replayTime);
             }
             else
             {
@@ -3135,6 +3175,7 @@ namespace F1XR.RestAPI.Replay
             isActive = false;
             showcaseTransitionHeld = false;
             timeline.Pause();
+            ClearCollisionIncidentPresentation();
             DestroyCollisionShowcase();
             eventAudio?.Clear();
             pitStopPresentation?.Clear();
@@ -3208,6 +3249,13 @@ namespace F1XR.RestAPI.Replay
         {
             if (!hasSnapshot || player == null)
                 return;
+
+            if (!player.isActiveAndEnabled ||
+                !player.gameObject.activeInHierarchy)
+            {
+                hasSnapshot = false;
+                return;
+            }
 
             player.SetSpeed(snapshot.Speed);
             player.Seek(snapshot.Time);
@@ -3869,6 +3917,7 @@ namespace F1XR.RestAPI.Replay
         {
             if (openRoutine != null)
                 StopCoroutine(openRoutine);
+            CancelCollisionPreparation();
 
             DestroyStage();
             RestoreReplay();
