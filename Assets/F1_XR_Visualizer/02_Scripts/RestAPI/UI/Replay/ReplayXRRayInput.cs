@@ -58,14 +58,25 @@ namespace F1XR.RestAPI.UI
         {
             if (selectAction != null && selectAction.action != null)
                 selectAction.action.performed -= OnSelectPerformed;
-            hoveredCar = null;
+            SetHoveredCar(null);   // 비활성화 시 hover 정리
         }
 
         void Update()
         {
             if (rayOrigin == null)
                 return;
-            hoveredCar = FindCar();   // 매 프레임 가리키는 차 갱신(hover)
+            SetHoveredCar(FindCar());   // 매 프레임 가리키는 차 갱신 + hover 시각효과
+        }
+
+        // 마우스(ReplayDesktopInput)와 동일한 hover 처리 —
+        // 가리키는 차가 바뀔 때만 이전 차 해제 + 새 차에 SetHovered(true) → 라벨/하이라이트 미리보기.
+        void SetHoveredCar(ReplayCarView car)
+        {
+            if (hoveredCar == car)
+                return;
+            hoveredCar?.SetHovered(false);
+            hoveredCar = car;
+            hoveredCar?.SetHovered(true);
         }
 
         void OnSelectPerformed(InputAction.CallbackContext _) => SelectHovered();

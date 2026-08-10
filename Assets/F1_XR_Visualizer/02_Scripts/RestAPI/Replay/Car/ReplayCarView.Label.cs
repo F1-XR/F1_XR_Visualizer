@@ -22,6 +22,10 @@ namespace F1XR.RestAPI.Replay
         private Material labelDotMaterial;
         private MaterialPropertyBlock labelDotBlock;
         private Color labelColor = Color.white;
+        private bool hasDriverColor;
+        private Color overtakeEffectColor = Color.white;
+        private Color overtakeCoreColor = Color.white;
+        private bool hasOvertakeEffectPalette;
         private string driverLabel;
         private int rank;
         private bool labelVisible = true;
@@ -94,6 +98,7 @@ namespace F1XR.RestAPI.Replay
         public void SetColor(Color color)
         {
             labelColor = color;
+            hasDriverColor = true;
             if (label != null)
                 label.color = labelColor;
 
@@ -102,6 +107,15 @@ namespace F1XR.RestAPI.Replay
             SetSelectionColor(color);
             ApplyBodyHighlight();
             UpdateRenderLodColor();
+        }
+
+        public void SetOvertakeEffectPalette(
+            Color effectColor,
+            Color coreColor)
+        {
+            overtakeEffectColor = effectColor;
+            overtakeCoreColor = coreColor;
+            hasOvertakeEffectPalette = true;
         }
 
         private void RefreshLabelText()

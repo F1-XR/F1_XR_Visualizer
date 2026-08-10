@@ -18,6 +18,7 @@ namespace F1XR.Showroom
         [SerializeField] Color offColor = new Color(0.05f, 0.2f, 0.08f, 0.35f);
         [SerializeField] Color onColor = new Color(0.25f, 1f, 0.35f, 0.95f);
         [SerializeField] float fadeDuration = 0.2f;
+        [SerializeField] float fadeOutDuration = 0.06f;
 
         static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
@@ -116,11 +117,13 @@ namespace F1XR.Showroom
                 return;
             }
 
+            float duration = isOn ? fadeDuration : fadeOutDuration;
+
             progressTween = DOTween.To(() => progress, p =>
             {
                 progress = p;
                 Apply(p);
-            }, target, fadeDuration).SetEase(Ease.OutQuad);
+            }, target, duration).SetEase(Ease.OutQuad);
         }
 
         void Apply(float t)

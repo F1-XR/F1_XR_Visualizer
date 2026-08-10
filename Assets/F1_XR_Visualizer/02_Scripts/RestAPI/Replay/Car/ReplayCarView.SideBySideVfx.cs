@@ -222,7 +222,8 @@ namespace F1XR.RestAPI.Replay
                 sideBySideSweepMesh;
             sideBySideSweepMaterial =
                 CreateSelectionMaterial(
-                    settings.lightSweepColor);
+                    ResolveOvertakeDriverColor(
+                        settings.lightSweepColor));
             sideBySideSweepMaterial.name =
                 "Runtime_OvertakeBodyLightSweep";
             sideBySideSweepRenderer =
@@ -322,7 +323,11 @@ namespace F1XR.RestAPI.Replay
         {
             if (sideBySideSweepRoot == null ||
                 sideBySideSweepRenderer == null ||
-                !overtakeVfxHasWorldBounds)
+                !TryGetCarWorldLayout(
+                    out Bounds carBounds,
+                    out float carWidth,
+                    out float carLength,
+                    out float carHeight))
             {
                 StopSideBySideSweep();
                 return;
@@ -331,26 +336,28 @@ namespace F1XR.RestAPI.Replay
             float longitudinal =
                 Mathf.Lerp(0.46f, -0.46f, progress);
             Vector3 position =
-                overtakeVfxWorldBounds.center +
+                carBounds.center +
                 transform.forward *
-                overtakeRibbonWorldLength *
+                carLength *
                 longitudinal +
                 transform.up *
-                overtakeRibbonWorldHeight *
-                (0.5f +
+                carHeight *
+                (0.42f +
                  settings.lightSweepTopOffsetInCarHeights);
             sideBySideSweepRoot.localPosition =
-                transform.InverseTransformPoint(position);
+                sideBySideSweepRoot.parent
+                    .InverseTransformPoint(position);
             sideBySideSweepRoot.localRotation =
                 Quaternion.identity;
 
-            Vector3 scale = transform.lossyScale;
+            Vector3 scale =
+                sideBySideSweepRoot.parent.lossyScale;
             float localWidth =
-                overtakeRibbonWorldWidth *
+                carWidth *
                 1.08f /
                 Mathf.Max(0.0001f, Mathf.Abs(scale.x));
             float localLength =
-                overtakeRibbonWorldLength *
+                carLength *
                 settings.lightSweepWidthInCarLengths /
                 Mathf.Max(0.0001f, Mathf.Abs(scale.z));
             sideBySideSweepRoot.localScale =
@@ -358,8 +365,8 @@ namespace F1XR.RestAPI.Replay
 
             float envelope =
                 Mathf.Sin(Mathf.PI * progress);
-            Color color =
-                settings.lightSweepColor;
+            Color color = ResolveOvertakeDriverColor(
+                settings.lightSweepColor);
             color.r *=
                 settings.lightSweepIntensity *
                 envelope;

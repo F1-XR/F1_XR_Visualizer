@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.XR.ARSubsystems;
@@ -67,6 +68,7 @@ namespace F1XR.RestAPI.Replay.Room
         private TrackableId exitBoundsWarningWallId;
         private ShowcaseWallFrame frozenEntryWall;
         private ShowcaseWallFrame frozenExitWall;
+        private readonly List<ShowcaseWallFrame> frozenWallFrames = new();
         private bool wallFramesFrozen;
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation;
@@ -247,6 +249,44 @@ namespace F1XR.RestAPI.Replay.Room
             return size.x > 0f &&
                 size.y > 0f &&
                 verticalAxis.sqrMagnitude > 0.5f;
+        }
+
+        internal int CopyAvailableWallFrames(
+            List<ShowcaseWallFrame> destination)
+        {
+            if (destination == null)
+                return 0;
+
+            destination.Clear();
+            if (wallFramesFrozen && frozenWallFrames.Count > 0)
+            {
+                destination.AddRange(frozenWallFrames);
+                return destination.Count;
+            }
+
+            if (wallDiscovery == null)
+                return 0;
+
+            for (int index = 0;
+                 index < wallDiscovery.CandidateCount;
+                 index++)
+            {
+                if (!wallDiscovery.TryGetCandidate(
+                        index,
+                        out WallCandidateInfo candidate) ||
+                    !candidate.IsAvailable ||
+                    !wallDiscovery.TryGetCandidateFrameById(
+                        candidate.Id,
+                        out ShowcaseWallFrame frame) ||
+                    !frame.IsValid)
+                {
+                    continue;
+                }
+
+                destination.Add(frame);
+            }
+
+            return destination.Count;
         }
 
         public bool TryGetRoomFloorHeight(out float floorHeight)
@@ -430,6 +470,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            CaptureFrozenWallFrames(entry, exit);
             frozenEntryWall = entry;
             frozenExitWall = exit;
             wallFramesFrozen = true;
@@ -440,14 +481,62 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void ClearFrozenWallFrames()
         {
-            if (!wallFramesFrozen)
+            if (!wallFramesFrozen && frozenWallFrames.Count == 0)
                 return;
 
             wallFramesFrozen = false;
             frozenEntryWall = default;
             frozenExitWall = default;
+            frozenWallFrames.Clear();
             rebuildRequested = true;
             RebuildLayout();
+        }
+
+        private void CaptureFrozenWallFrames(
+            ShowcaseWallFrame entry,
+            ShowcaseWallFrame exit)
+        {
+            frozenWallFrames.Clear();
+            if (wallDiscovery != null)
+            {
+                for (int index = 0;
+                     index < wallDiscovery.CandidateCount;
+                     index++)
+                {
+                    if (!wallDiscovery.TryGetCandidate(
+                            index,
+                            out WallCandidateInfo candidate) ||
+                        !candidate.IsAvailable ||
+                        !wallDiscovery.TryGetCandidateFrameById(
+                            candidate.Id,
+                            out ShowcaseWallFrame frame) ||
+                        !frame.IsValid)
+                    {
+                        continue;
+                    }
+
+                    frozenWallFrames.Add(frame);
+                }
+            }
+
+            AddFrozenWallFrameIfMissing(entry);
+            AddFrozenWallFrameIfMissing(exit);
+        }
+
+        private void AddFrozenWallFrameIfMissing(ShowcaseWallFrame frame)
+        {
+            if (!frame.IsValid)
+                return;
+
+            for (int index = 0;
+                 index < frozenWallFrames.Count;
+                 index++)
+            {
+                if (frozenWallFrames[index].Id == frame.Id)
+                    return;
+            }
+
+            frozenWallFrames.Add(frame);
         }
 
         public void SetDebugVisible(bool visible)

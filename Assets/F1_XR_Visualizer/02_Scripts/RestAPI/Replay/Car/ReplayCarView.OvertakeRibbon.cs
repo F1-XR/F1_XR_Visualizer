@@ -81,9 +81,11 @@ namespace F1XR.RestAPI.Replay
 
             float brightnessBoost =
                 Mathf.Max(1f, intensity);
-            Color glowColor = overtaker
+            Color fallbackGlowColor = overtaker
                 ? settings.overtakerGlowColor
                 : settings.defenderGlowColor;
+            Color glowColor = ResolveOvertakeDriverColor(
+                fallbackGlowColor);
             glowColor.r *= brightnessBoost;
             glowColor.g *= brightnessBoost;
             glowColor.b *= brightnessBoost;
@@ -92,7 +94,8 @@ namespace F1XR.RestAPI.Replay
                 (allowEmission
                     ? brightnessBoost
                     : Mathf.Clamp01(intensity)));
-            Color coreColor = settings.coreColor;
+            Color coreColor = ResolveOvertakeCoreColor(
+                settings.coreColor);
             coreColor.r *= brightnessBoost;
             coreColor.g *= brightnessBoost;
             coreColor.b *= brightnessBoost;
@@ -125,6 +128,51 @@ namespace F1XR.RestAPI.Replay
                 intensity;
         }
 
+        private Color ResolveOvertakeDriverColor(
+            Color fallback)
+        {
+            if (!hasOvertakeEffectPalette && !hasDriverColor)
+                return fallback;
+
+            Color sourceColor = hasOvertakeEffectPalette
+                ? overtakeEffectColor
+                : labelColor;
+
+            Color.RGBToHSV(
+                sourceColor,
+                out float hue,
+                out float saturation,
+                out float value);
+            value = Mathf.Max(
+                value,
+                0.58f);
+
+            Color driverColor = Color.HSVToRGB(
+                hue,
+                saturation,
+                value,
+                true);
+            float emissionGain = Mathf.Max(
+                1f,
+                Mathf.Max(fallback.r, Mathf.Max(fallback.g, fallback.b)));
+            driverColor.r *= emissionGain;
+            driverColor.g *= emissionGain;
+            driverColor.b *= emissionGain;
+            driverColor.a = fallback.a;
+
+            return driverColor;
+        }
+
+        private Color ResolveOvertakeCoreColor(Color fallback)
+        {
+            if (!hasOvertakeEffectPalette)
+                return fallback;
+
+            Color coreColor = overtakeCoreColor;
+            coreColor.a = fallback.a;
+            return coreColor;
+        }
+
         public void ClearOvertakeApproachRibbon()
         {
             if (overtakeRibbonGlow != null)
@@ -150,10 +198,19 @@ namespace F1XR.RestAPI.Replay
             Color glowColor = overtaker
                 ? settings.overtakerGlowColor
                 : settings.defenderGlowColor;
-            overtakeRibbonGlowMaterial ??=
-                CreateSelectionMaterial(glowColor);
-            overtakeRibbonCoreMaterial ??=
-                CreateUnlitMaterial(settings.coreColor);
+            glowColor = ResolveOvertakeDriverColor(glowColor);
+            Color coreColor = ResolveOvertakeCoreColor(
+                settings.coreColor);
+            if (overtakeRibbonGlowMaterial == null)
+            {
+                overtakeRibbonGlowMaterial =
+                    CreateSelectionMaterial(glowColor);
+            }
+            if (overtakeRibbonCoreMaterial == null)
+            {
+                overtakeRibbonCoreMaterial =
+                    CreateUnlitMaterial(coreColor);
+            }
 
             overtakeRibbonGlow ??= CreateOvertakeTrail(
                 "Glow",
@@ -163,13 +220,6 @@ namespace F1XR.RestAPI.Replay
                 "WhiteCore",
                 overtakeRibbonCoreMaterial,
                 1);
-
-            SetMaterialColor(
-                overtakeRibbonGlowMaterial,
-                glowColor);
-            SetMaterialColor(
-                overtakeRibbonCoreMaterial,
-                settings.coreColor);
 
         }
 
