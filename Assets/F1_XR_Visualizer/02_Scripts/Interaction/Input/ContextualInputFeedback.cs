@@ -255,10 +255,10 @@ namespace F1XR.Interaction.Input
                     continue;
 
                 SetTaperedEnd(visual.noValidHitProperties);
-                SetTaperedEnd(visual.uiHitProperties);
-                SetTaperedEnd(visual.uiPressHitProperties);
-                SetTaperedEnd(visual.hoverHitProperties);
-                SetTaperedEnd(visual.selectHitProperties);
+                SetVisibleEnd(visual.uiHitProperties);
+                SetVisibleEnd(visual.uiPressHitProperties);
+                SetVisibleEnd(visual.hoverHitProperties);
+                SetVisibleEnd(visual.selectHitProperties);
 
                 if (visual.lineRenderer != null)
                     visual.lineRenderer.numCapVertices = 0;
@@ -269,6 +269,25 @@ namespace F1XR.Interaction.Input
         {
             properties.endWidth = 0f;
             properties.endWidthScaleDistanceFactor = 0f;
+        }
+
+        static void SetVisibleEnd(LineProperties properties)
+        {
+            properties.endWidth = properties.startWidth;
+            properties.endWidthScaleDistanceFactor = 0f;
+
+            Gradient gradient = properties.gradient;
+            if (gradient == null)
+                return;
+
+            GradientAlphaKey[] alphaKeys = gradient.alphaKeys;
+            if (alphaKeys.Length == 0)
+                return;
+
+            int endKeyIndex = alphaKeys.Length - 1;
+            alphaKeys[endKeyIndex].alpha = 1f;
+            alphaKeys[endKeyIndex].time = 1f;
+            gradient.SetKeys(gradient.colorKeys, alphaKeys);
         }
 
         static void ConfigureHandFarPointer(
