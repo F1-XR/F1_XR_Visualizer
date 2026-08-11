@@ -83,11 +83,11 @@ namespace F1XR.RestAPI.Replay.Room
         public static CollisionRoomPlacementSettings Default => new()
         {
             FullMinimumLengthMeters = 4f,
-            FullPreferredLengthMeters = 5f,
-            FullMaximumLengthMeters = 6f,
+            FullPreferredLengthMeters = 7f,
+            FullMaximumLengthMeters = 8f,
             FullMinimumVehicleLengthMeters = 0.5f,
             FullMaximumVehicleLengthMeters = 0.7f,
-            FullMaximumWidthMeters = 2.4f,
+            FullMaximumWidthMeters = 3.2f,
             FullMaximumHeroShiftMeters = 0.6f,
 
             CompactMinimumLengthMeters = 2.4f,
@@ -95,7 +95,7 @@ namespace F1XR.RestAPI.Replay.Room
             CompactMaximumLengthMeters = 3.8f,
             CompactMinimumVehicleLengthMeters = 0.36f,
             CompactMaximumVehicleLengthMeters = 0.5f,
-            CompactMaximumWidthMeters = 1.8f,
+            CompactMaximumWidthMeters = 2.2f,
             CompactMaximumHeroShiftMeters = 0.45f,
 
             ViewerPreferredVehicleLengthMeters = 0.42f,

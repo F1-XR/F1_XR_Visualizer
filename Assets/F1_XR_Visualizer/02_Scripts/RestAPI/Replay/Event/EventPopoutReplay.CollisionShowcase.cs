@@ -39,9 +39,9 @@ namespace F1XR.RestAPI.Replay
         [Min(0.05f)] public float interactionHeightMeters = 0.12f;
 
         [Header("Room Trajectory Corridor")]
-        [Min(2.4f)] public float preferredCorridorLengthMeters = 5f;
+        [Min(2.4f)] public float preferredCorridorLengthMeters = 7f;
         [Min(2.4f)] public float minimumRoomCorridorLengthMeters = 4f;
-        [Min(4f)] public float maximumRoomCorridorLengthMeters = 6f;
+        [Min(4f)] public float maximumRoomCorridorLengthMeters = 8f;
         [Min(1.5f)] public float minimumCompactCorridorLengthMeters = 2.4f;
         [Min(2.4f)] public float maximumCompactCorridorLengthMeters = 3.8f;
         [Min(0.2f)] public float roomVehicleLengthMeters = 0.7f;
@@ -686,9 +686,9 @@ namespace F1XR.RestAPI.Replay
             float preferredLength = Mathf.Clamp(
                 collisionShowcase != null
                     ? collisionShowcase.preferredCorridorLengthMeters
-                    : 5f,
+                    : 7f,
                 4f,
-                6f);
+                8f);
             float localLength = sourceVehicleLength *
                 preferredLength / targetVehicleLength;
             Vector3 right = Vector3.Cross(
@@ -852,8 +852,10 @@ namespace F1XR.RestAPI.Replay
             }
             float lateralPadding = sourceVehicleWidth *
                 CollisionFootprintLateralPadding;
-            minimumLateral -= Mathf.Max(lateralPadding, trackHalfWidth);
-            maximumLateral += Mathf.Max(lateralPadding, trackHalfWidth);
+            float stationPanelPadding = sourceVehicleWidth * 1.65f;
+            float visualHalfWidth = trackHalfWidth + stationPanelPadding;
+            minimumLateral -= Mathf.Max(lateralPadding, visualHalfWidth);
+            maximumLateral += Mathf.Max(lateralPadding, visualHalfWidth);
             return new[]
             {
                 contact + forward * minimumLongitudinal +
