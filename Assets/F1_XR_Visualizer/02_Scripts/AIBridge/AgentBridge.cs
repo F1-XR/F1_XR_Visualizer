@@ -66,11 +66,9 @@ namespace F1XR.AIBridge
             {
                 case "transcript":
                     Debug.Log($"[STT] {o["text"]}");
-                    // TODO: 사용자 발화 자막 UI
                     break;
                 case "assistant_text":
                     Debug.Log($"[답변] {o["text"]}");
-                    // TODO: 답변 자막 UI
                     break;
                 case "tts_audio":
                     ttsPlayer?.Play((string)o["data"]);          // 답변: 최신 우선(이전 끊음)
@@ -150,7 +148,7 @@ namespace F1XR.AIBridge
             {
                 target_type = "driver",
                 driver_number = sel,
-                input_modality = "click",   // 데스크톱 클릭 선택. Quest에선 "controller_ray"로 교체
+                input_modality = InputModality.Current,   // XR 활성 시 controller_ray, 아니면 click
             };
         }
     }

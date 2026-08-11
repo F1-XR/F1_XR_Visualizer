@@ -1777,13 +1777,20 @@ MonoBehaviour:
   m_GameObject: {fileID: 1247387126}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5cce8cf62d9113046864e544960f5cea, type: 3}
+  m_Script: {fileID: 11500000, guid: 4647f4e86fe9f8448892f686284ef08f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.PredictOvertakeRibbonHandler
   player: {fileID: 1705380154}
   holdSeconds: 4
   intensityScale: 2
   minIntensity: 0.35
+  predictionGlowColor: {r: 0.9685534, g: 0.15533389, b: 0.29024497, a: 0.85}
+  showLabel: 1
+  labelFormat: '{0}%'
+  labelHeight: 2.2
+  labelFontSize: 12
+  pingClip: {fileID: 0}
+  pingVolume: 0.9
 --- !u!1 &1304137257
 GameObject:
   m_ObjectHideFlags: 0
@@ -2765,6 +2772,11 @@ MonoBehaviour:
     hysteresisInCarLengths: 0.05
     allowOrderingLeadFallback: 1
     orderingLeadInCarLengths: 0.08
+    accentFlashEnabled: 1
+    accentFlashDurationReplaySeconds: 0.22
+    accentFlashSizeInCarWidths: 0.82
+    accentFlashIntensity: 2.1
+    accentFlashColor: {r: 1, g: 1, b: 1, a: 0.96}
     pulseDurationReplaySeconds: 0.4
     pulseIntensity: 1.35
     pulseColor: {r: 0.32, g: 0.88, b: 1.25, a: 0.86}

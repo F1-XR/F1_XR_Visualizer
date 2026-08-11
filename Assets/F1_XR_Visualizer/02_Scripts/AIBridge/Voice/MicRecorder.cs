@@ -64,7 +64,7 @@ namespace F1XR.AIBridge.Voice
                 {
                     target_type = "driver",
                     driver_number = p.SelectedDriverNumber,
-                    input_modality = "click",
+                    input_modality = InputModality.Current,   // XR 활성 시 controller_ray
                 };
 
             byte[] wav = WavUtil.FromAudioClip(_clip, pos);

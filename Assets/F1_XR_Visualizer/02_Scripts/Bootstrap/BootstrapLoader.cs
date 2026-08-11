@@ -117,6 +117,7 @@ namespace F1XR.Bootstrap
         }
 
         // AIBridge droneView 명령 ↔ VRDroneCoordinator 런타임 연결.
+        // (AIBridge는 세션 씬에 직접 배치. 배치돼 있지 않으면 handler를 못 찾아 조용히 스킵)
         // VRDroneCoordinator 는 additive로 나중에 뜨는 VRDroneSpace 인스턴스라
         // 인스펙터(UnityEvent)로는 참조가 안 되므로, 여기서 코드로 이어준다.
         // 핸들러가 씬에 없으면(=AIBridge 미배치) 조용히 스킵.

@@ -27,8 +27,10 @@ namespace F1XR.AIBridge.Commands
         public bool showLabel = true;
         [Tooltip("{0}=확률%. 한글 쓰면 폰트 필요 → 기본은 숫자만")]
         public string labelFormat = "{0}%";
-        public float labelHeight = 2.2f;    // 차 위 높이(월드). 트랙 스케일 보고 튜닝
-        public float labelFontSize = 12f;
+        [Tooltip("차 위로 띄우는 높이(차 스케일 배수). 트랙이 작아도 비율 유지 — 너무 높으면 낮추기")]
+        public float labelHeight = 1.5f;
+        [Tooltip("라벨 글자 크기(차 스케일에 비례해 자동 축소). 여전히 크면 더 낮추기")]
+        public float labelFontSize = 6f;
 
         [Header("방향 효과음 큐(선택)")]
         [Tooltip("짧은 핑/휙 사운드. 비우면 소리 없음(에러 아님)")]
@@ -129,7 +131,13 @@ namespace F1XR.AIBridge.Commands
             _label.fontSize = labelFontSize;
             _label.text = string.Format(labelFormat, Mathf.RoundToInt(lastProbability * 100f));
 
-            _label.transform.position = targetView.transform.position + Vector3.up * labelHeight;
+            // 라벨을 대상 차의 월드 스케일에 맞춘다 → 테이블탑/실물 어느 배율에서도 비율 일정.
+            // (전엔 절대 크기라 작은 트랙에서 글자가 거대해지고 너무 높이(천장) 떴다.)
+            float carScale = targetView.transform.lossyScale.y;
+            if (carScale <= 0f) carScale = 1f;
+            _label.transform.localScale = Vector3.one * carScale;
+            _label.transform.position =
+                targetView.transform.position + Vector3.up * (labelHeight * carScale);
             Camera cam = Camera.main;
             if (cam != null)
                 _label.transform.rotation = Quaternion.LookRotation(
