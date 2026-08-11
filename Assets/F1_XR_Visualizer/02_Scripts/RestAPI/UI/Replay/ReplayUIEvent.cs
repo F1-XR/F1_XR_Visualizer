@@ -341,6 +341,8 @@ namespace F1XR.RestAPI.UI
                 eventReplay.IsCurrentCollision;
             bool collisionRevealComplete = collisionActive &&
                 eventReplay.IsCollisionRevealComplete;
+            bool collisionTimeLensGrabbed = collisionActive &&
+                eventReplay.IsCollisionTimeLensGrabbed;
 
             eventOpenButton.gameObject.SetActive(!active && !loading);
             eventCollisionButton.gameObject.SetActive(
@@ -449,14 +451,16 @@ namespace F1XR.RestAPI.UI
                         ? "Pause"
                         : "Play",
                 !collisionActive ||
-                !eventReplay.IsCollisionImpactReplaying);
+                (!eventReplay.IsCollisionImpactReplaying &&
+                 !collisionTimeLensGrabbed));
             SetButton(
                 eventRestartButton,
                 collisionActive
                     ? "Restart Reveal"
                     : "Restart",
                 !collisionActive ||
-                !eventReplay.IsCollisionImpactReplaying);
+                (!eventReplay.IsCollisionImpactReplaying &&
+                 !collisionTimeLensGrabbed));
             bool hasNext = pitActive
                 ? eventReplay.HasNextPitStop
                 : collisionActive
@@ -502,13 +506,33 @@ namespace F1XR.RestAPI.UI
                 CollisionPresentationPhase.Impact =>
                     "CONTACT  /  IMPACT",
                 CollisionPresentationPhase.PostImpact =>
-                    "RECONSTRUCTED AFTERMATH",
+                    "AFTERMATH  /  EVIDENCE",
                 CollisionPresentationPhase.ForensicHold =>
-                    "INCIDENT  /  FORENSIC HOLD",
+                    FormatCollisionForensicHoldStatus(eventReplay),
                 CollisionPresentationPhase.ImpactReplay =>
                     "REPLAYING IMPACT",
                 _ => "PREPARING COLLISION"
             };
+        }
+
+        private static string FormatCollisionForensicHoldStatus(
+            EventPopoutReplay eventReplay)
+        {
+            string status = eventReplay.CollisionTimeLensStatus;
+            if (!eventReplay.IsCollisionTimeLensAvailable)
+            {
+                return string.IsNullOrWhiteSpace(status)
+                    ? "INCIDENT  /  FORENSIC HOLD"
+                    : $"INCIDENT  /  {status.Trim()}";
+            }
+
+            string lensLabel = eventReplay.IsCollisionTimeLensGrabbed
+                ? "LENS GRAB"
+                : "TIME LENS";
+            string detail = string.IsNullOrWhiteSpace(status)
+                ? "FORENSIC HOLD"
+                : status.Trim();
+            return $"{lensLabel}  /  {detail}";
         }
 
         private string FormatEventTitle(
@@ -738,6 +762,8 @@ namespace F1XR.RestAPI.UI
                            : null,
                        expectedReplay) &&
                    !expectedReplay.IsCollisionPrepared &&
+                   string.IsNullOrWhiteSpace(
+                       expectedReplay.CollisionPreparationFailure) &&
                    Time.realtimeSinceStartup < timeoutAt)
             {
                 if (!expectedReplay.IsCollisionPreloading)
@@ -790,7 +816,8 @@ namespace F1XR.RestAPI.UI
             if (eventReplay != null &&
                 eventReplay.IsCurrentCollision)
             {
-                eventReplay.ReplayCollisionImpact();
+                if (!eventReplay.IsCollisionTimeLensGrabbed)
+                    eventReplay.ReplayCollisionImpact();
             }
             else
             {
@@ -806,7 +833,8 @@ namespace F1XR.RestAPI.UI
             if (eventReplay != null &&
                 eventReplay.IsCurrentCollision)
             {
-                eventReplay.RestartCollisionReveal();
+                if (!eventReplay.IsCollisionTimeLensGrabbed)
+                    eventReplay.RestartCollisionReveal();
             }
             else
             {

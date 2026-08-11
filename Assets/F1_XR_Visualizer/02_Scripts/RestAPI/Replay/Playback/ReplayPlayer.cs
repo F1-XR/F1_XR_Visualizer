@@ -113,6 +113,20 @@ namespace F1XR.RestAPI.Replay
         internal DatasetManifestDto Manifest => _manifest;
         internal Dictionary<int, List<LocationSample>> LocationsByDriver =>
             replayChunks != null ? replayChunks.LocationsByDriver : null;
+
+        internal bool CopyLocationSourceRange(
+            int driverNumber,
+            float startTime,
+            float endTime,
+            List<LocationSample> destination)
+        {
+            return replayChunks != null &&
+                replayChunks.CopyLocationSourceRange(
+                    driverNumber,
+                    startTime,
+                    endTime,
+                    destination);
+        }
         public int SelectedDriverNumber => selectedDriverNumber;
         public bool IsTrackPlaced => HasPlacedTrack();
         public bool IsTrackPlacementActive => buildPlacer != null && buildPlacer.IsPlacementActive;

@@ -18,6 +18,52 @@ namespace F1XR.RestAPI.Replay
         public Dictionary<int, List<LocationSample>> ByDriver => samples;
         public Dictionary<int, int> Indices => indices;
 
+        internal bool CopySourceRange(
+            int driverNumber,
+            float startTime,
+            float endTime,
+            List<LocationSample> destination)
+        {
+            if (destination == null)
+                return false;
+
+            destination.Clear();
+            if (!sourceSamples.TryGetValue(
+                    driverNumber,
+                    out List<LocationSample> source) ||
+                source.Count < 2)
+            {
+                return false;
+            }
+
+            float minimum = Mathf.Min(startTime, endTime);
+            float maximum = Mathf.Max(startTime, endTime);
+            int first = LowerBound(source, minimum);
+            if (first > 0)
+                first--;
+
+            int lastExclusive = LowerBound(source, maximum);
+            while (lastExclusive < source.Count &&
+                   source[lastExclusive].t <= maximum)
+            {
+                lastExclusive++;
+            }
+            if (lastExclusive < source.Count)
+                lastExclusive++;
+
+            lastExclusive = Mathf.Min(
+                source.Count,
+                Mathf.Max(first + 2, lastExclusive));
+            for (int index = first;
+                 index < lastExclusive;
+                 index++)
+            {
+                destination.Add(Copy(source[index]));
+            }
+
+            return destination.Count >= 2;
+        }
+
         public void Add(ReplayChunkDto chunk)
         {
             foreach (LocationSample sample in chunk.samples)
@@ -79,6 +125,24 @@ namespace F1XR.RestAPI.Replay
                 return result;
             result = a.y.CompareTo(b.y);
             return result != 0 ? result : a.z.CompareTo(b.z);
+        }
+
+        private static int LowerBound(
+            List<LocationSample> source,
+            float time)
+        {
+            int low = 0;
+            int high = source.Count;
+            while (low < high)
+            {
+                int middle = low + (high - low) / 2;
+                if (source[middle].t < time)
+                    low = middle + 1;
+                else
+                    high = middle;
+            }
+
+            return low;
         }
 
         private static bool HasTelemetry(LocationSample sample)
