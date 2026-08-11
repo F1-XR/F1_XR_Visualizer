@@ -1,6 +1,8 @@
+using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Room;
@@ -12,13 +14,27 @@ namespace F1XR.RestAPI.UI
         private RectTransform eventControls;
         private TMP_Text eventStatus;
         private Button eventOpenButton;
+        private Button eventCollisionButton;
+        private Button eventOpenPitButton;
         private Button eventPlayButton;
         private Button eventRestartButton;
         private Button eventNextButton;
         private Button eventCloseButton;
+        private Button eventPitWallButton;
         private Slider eventSlider;
         private bool refreshingEventSlider;
         private RoomShowcaseSetupController roomSetup;
+        private PitWallShowcasePresenter pitWallPresenter;
+        private AutoReplayStarter replayStarter;
+        private Canvas pitPortalControlsCanvas;
+        private bool collisionDatasetLoading;
+        private Coroutine collisionOpenWhenPreparedRoutine;
+        private string eventLoadMessage;
+
+        private const string PitPortalSurfaceName =
+            "PitStopPortalSurface";
+        private const float PitPortalControlsScale = 0.0017f;
+        private const float PitPortalControlsBottomOffset = 0.42f;
 
         private void EnsureEventControls()
         {
@@ -47,7 +63,24 @@ namespace F1XR.RestAPI.UI
             eventStatus.richText = true;
             SetRect(eventStatus.rectTransform, 8f, -8f, 284f, 26f);
 
-            eventOpenButton = CreateEventButton("Open", 8f, -42f, 284f, OpenTestEvent);
+            eventOpenButton = CreateEventButton(
+                "Overtake",
+                8f,
+                -42f,
+                136f,
+                OpenTestEvent);
+            eventCollisionButton = CreateEventButton(
+                "Collision",
+                156f,
+                -42f,
+                136f,
+                OpenCollisionEvent);
+            eventOpenPitButton = CreateEventButton(
+                "Pit Stop",
+                8f,
+                -84f,
+                284f,
+                OpenPitStop);
             eventPlayButton = CreateEventButton("Play", 8f, -42f, 86f, ToggleEventPlay);
             eventRestartButton = CreateEventButton("Restart", 104f, -42f, 86f, RestartEvent);
             eventCloseButton = CreateEventButton("Close", 200f, -42f, 92f, CloseEvent);
@@ -56,7 +89,13 @@ namespace F1XR.RestAPI.UI
                 8f,
                 -84f,
                 284f,
-                OpenNextOvertake);
+                OpenNextEvent);
+            eventPitWallButton = CreateEventButton(
+                "Change Wall",
+                200f,
+                -84f,
+                92f,
+                SelectNextPitWall);
             eventSlider = CreateEventSlider();
             eventSlider.onValueChanged.AddListener(SeekEvent);
             RefreshEventControls();
@@ -169,6 +208,122 @@ namespace F1XR.RestAPI.UI
             rect.offsetMax = Vector2.zero;
         }
 
+        private void UpdateEventControlsPlacement(bool pitActive)
+        {
+            if (!pitActive)
+            {
+                ReleasePitPortalEventControls();
+                return;
+            }
+
+            GameObject portalSurface =
+                GameObject.Find(PitPortalSurfaceName);
+            if (portalSurface == null)
+                return;
+
+            MeshFilter portalFilter =
+                portalSurface.GetComponent<MeshFilter>();
+            if (portalFilter == null ||
+                portalFilter.sharedMesh == null)
+            {
+                return;
+            }
+
+            EnsurePitPortalControlsCanvas();
+            if (pitPortalControlsCanvas == null)
+                return;
+
+            RectTransform canvasRect =
+                pitPortalControlsCanvas.GetComponent<RectTransform>();
+            Bounds portalBounds = portalFilter.sharedMesh.bounds;
+            float panelHalfHeight =
+                eventControls.sizeDelta.y *
+                PitPortalControlsScale * 0.5f;
+            float verticalOffset = Mathf.Max(
+                PitPortalControlsBottomOffset,
+                panelHalfHeight + 0.08f);
+            Vector3 localPosition = new Vector3(
+                0f,
+                portalBounds.min.y + verticalOffset,
+                -0.045f);
+            canvasRect.position =
+                portalSurface.transform.TransformPoint(localPosition);
+
+            Camera viewCamera = Camera.main;
+            if (viewCamera != null)
+            {
+                Vector3 awayFromViewer =
+                    canvasRect.position -
+                    viewCamera.transform.position;
+                if (awayFromViewer.sqrMagnitude > 0.0001f)
+                {
+                    canvasRect.rotation = Quaternion.LookRotation(
+                        awayFromViewer.normalized,
+                        portalSurface.transform.up);
+                }
+
+                pitPortalControlsCanvas.worldCamera = viewCamera;
+            }
+            else
+            {
+                canvasRect.rotation = portalSurface.transform.rotation;
+            }
+
+            canvasRect.localScale =
+                Vector3.one * PitPortalControlsScale;
+            canvasRect.sizeDelta = eventControls.sizeDelta;
+
+            if (eventControls.parent == canvasRect)
+                return;
+
+            eventControls.SetParent(canvasRect, false);
+            eventControls.anchorMin = new Vector2(0.5f, 0.5f);
+            eventControls.anchorMax = new Vector2(0.5f, 0.5f);
+            eventControls.pivot = new Vector2(0.5f, 0.5f);
+            eventControls.anchoredPosition = Vector2.zero;
+            eventControls.localRotation = Quaternion.identity;
+            eventControls.localScale = Vector3.one;
+        }
+
+        private void EnsurePitPortalControlsCanvas()
+        {
+            if (pitPortalControlsCanvas != null)
+                return;
+
+            GameObject root = new GameObject(
+                "PitPortalEventControls",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(GraphicRaycaster),
+                typeof(TrackedDeviceGraphicRaycaster));
+            pitPortalControlsCanvas = root.GetComponent<Canvas>();
+            pitPortalControlsCanvas.renderMode =
+                RenderMode.WorldSpace;
+            pitPortalControlsCanvas.overrideSorting = true;
+            pitPortalControlsCanvas.sortingOrder = 500;
+        }
+
+        private void ReleasePitPortalEventControls()
+        {
+            if (eventControls != null &&
+                eventControls.parent != transform)
+            {
+                eventControls.SetParent(transform, false);
+                eventControls.anchorMin = new Vector2(0.5f, 1f);
+                eventControls.anchorMax = new Vector2(0.5f, 1f);
+                eventControls.pivot = new Vector2(0.5f, 1f);
+                eventControls.anchoredPosition =
+                    new Vector2(0f, 372f);
+                eventControls.localRotation = Quaternion.identity;
+                eventControls.localScale = Vector3.one;
+            }
+
+            if (pitPortalControlsCanvas != null)
+                Destroy(pitPortalControlsCanvas.gameObject);
+
+            pitPortalControlsCanvas = null;
+        }
+
         private void RefreshEventControls()
         {
             if (eventControls == null || player == null)
@@ -176,48 +331,158 @@ namespace F1XR.RestAPI.UI
 
             ResolveRoomSetup();
             EventPopoutReplay eventReplay = player.EventReplay;
-            bool loading = eventReplay != null && eventReplay.IsLoading;
+            bool eventLoading =
+                eventReplay != null && eventReplay.IsLoading;
+            bool loading = eventLoading || collisionDatasetLoading;
             bool active = eventReplay != null && eventReplay.IsActive;
             bool roomReady = roomSetup == null || roomSetup.IsSetupReady;
+            bool collisionActive = active &&
+                eventReplay != null &&
+                eventReplay.IsCurrentCollision;
+            bool collisionRevealComplete = collisionActive &&
+                eventReplay.IsCollisionRevealComplete;
 
             eventOpenButton.gameObject.SetActive(!active && !loading);
-            eventPlayButton.gameObject.SetActive(active);
-            eventRestartButton.gameObject.SetActive(active);
-            eventNextButton.gameObject.SetActive(active);
+            eventCollisionButton.gameObject.SetActive(
+                !active && !loading);
+            eventOpenPitButton.gameObject.SetActive(!active && !loading);
+            eventPlayButton.gameObject.SetActive(
+                active &&
+                (!collisionActive || collisionRevealComplete));
+            eventRestartButton.gameObject.SetActive(
+                active &&
+                (!collisionActive || collisionRevealComplete));
+            eventNextButton.gameObject.SetActive(
+                active && !collisionActive);
+            bool pitActive = active && eventReplay.IsPitStopActive;
+            eventPitWallButton.gameObject.SetActive(pitActive);
             eventCloseButton.gameObject.SetActive(active || loading);
-            eventSlider.gameObject.SetActive(active);
+            eventSlider.gameObject.SetActive(
+                active && !collisionActive);
             eventControls.sizeDelta = new Vector2(
                 300f,
-                active ? 184f : 142f);
+                active ? 184f : 184f);
+            UpdateEventControlsPlacement(pitActive);
 
             if (loading)
             {
-                eventStatus.text = "LOADING EVENT REPLAY";
+                eventStatus.text = collisionDatasetLoading
+                    ? "LOADING 2024 SUZUKA COLLISION"
+                    : "LOADING EVENT REPLAY";
                 return;
             }
 
             if (!active)
             {
-                eventStatus.text = !roomReady
-                    ? "ROOM SETUP REQUIRED"
-                    : player.HasDataset
-                        ? "OVERTAKE EVENT"
-                        : "EVENT DATA NOT READY";
+                bool hasPitStop =
+                    eventReplay != null &&
+                    eventReplay.HasPitStop;
+                bool hasCollision =
+                    eventReplay != null &&
+                    eventReplay.HasCollision;
+                string collisionFailure = hasCollision
+                    ? eventReplay.CollisionPreparationFailure
+                    : null;
+                if (hasCollision &&
+                    string.IsNullOrWhiteSpace(collisionFailure))
+                    eventReplay.PrepareTestCollision();
+                bool pitWallReady =
+                    roomSetup == null ||
+                    roomSetup.HasPitWallCandidate;
+                eventStatus.text = !string.IsNullOrWhiteSpace(
+                        eventLoadMessage)
+                    ? eventLoadMessage
+                    : !string.IsNullOrWhiteSpace(collisionFailure)
+                        ? $"COLLISION FAILED  /  {collisionFailure}"
+                    : hasCollision &&
+                      eventReplay.IsCollisionPrepared
+                        ? "COLLISION READY"
+                    : hasCollision &&
+                      eventReplay.IsCollisionPreloading
+                        ? "PREPARING COLLISION"
+                    : !roomReady
+                        ? "ROOM SETUP REQUIRED"
+                        : player.HasDataset
+                            ? "SHOWCASE EVENT"
+                            : "EVENT DATA NOT READY";
                 eventOpenButton.interactable =
-                    player.HasDataset && roomReady;
+                    player.HasDataset &&
+                    roomReady &&
+                    eventReplay != null &&
+                    eventReplay.HasOvertake;
+                SetButton(
+                    eventCollisionButton,
+                    hasCollision
+                        ? !string.IsNullOrWhiteSpace(collisionFailure)
+                            ? "Retry Collision"
+                        : !eventReplay.IsCollisionPrepared
+                            ? "Preparing Collision"
+                            : "Collision"
+                        : "Load Collision Test",
+                    hasCollision
+                        ? eventReplay.IsCollisionPrepared ||
+                          !string.IsNullOrWhiteSpace(collisionFailure)
+                        : replayStarter != null);
+                SetButton(
+                    eventOpenPitButton,
+                    hasPitStop
+                        ? "Open Pit Stop"
+                        : "No Pit Stops In Loaded Range",
+                    player.HasDataset &&
+                    hasPitStop &&
+                    pitWallReady);
                 return;
             }
 
             string title = FormatEventTitle(
                 eventReplay.CurrentEvent);
-            eventStatus.text = $"{title}  {FormatTime(eventReplay.CurrentTime)}";
-            SetButton(eventPlayButton, eventReplay.IsPlaying ? "Pause" : "Play", true);
-            bool hasNext = eventReplay.HasNextOvertake;
+            eventStatus.text = collisionActive
+                ? FormatCollisionStatus(eventReplay)
+                : FormatActiveEventStatus(
+                    eventReplay,
+                    title);
+            SetButton(
+                eventPlayButton,
+                collisionActive
+                    ? "Replay Impact"
+                    : eventReplay.IsPlaying
+                        ? "Pause"
+                        : "Play",
+                !collisionActive ||
+                !eventReplay.IsCollisionImpactReplaying);
+            SetButton(
+                eventRestartButton,
+                collisionActive
+                    ? "Restart Reveal"
+                    : "Restart",
+                !collisionActive ||
+                !eventReplay.IsCollisionImpactReplaying);
+            bool hasNext = pitActive
+                ? eventReplay.HasNextPitStop
+                : collisionActive
+                    ? eventReplay.HasNextCollision
+                    : eventReplay.HasNextOvertake;
+            string eventName = pitActive
+                ? "Pit Stop"
+                : collisionActive
+                    ? "Collision"
+                    : "Overtake";
+            string noMoreLabel = pitActive
+                ? "No More Pit Stops"
+                : collisionActive
+                    ? "No More Collisions"
+                    : "No More Overtakes";
+            SetRect(
+                eventNextButton.GetComponent<RectTransform>(),
+                8f,
+                -84f,
+                pitActive ? 182f : 284f,
+                36f);
             SetButton(
                 eventNextButton,
                 hasNext
-                    ? "Next Overtake"
-                    : "No More Overtakes",
+                    ? $"Next {eventName}"
+                    : noMoreLabel,
                 hasNext);
 
             refreshingEventSlider = true;
@@ -225,14 +490,57 @@ namespace F1XR.RestAPI.UI
             refreshingEventSlider = false;
         }
 
+        private static string FormatCollisionStatus(
+            EventPopoutReplay eventReplay)
+        {
+            return eventReplay.CollisionPhase switch
+            {
+                CollisionPresentationPhase.IslandReveal =>
+                    "INCIDENT STAGE  /  INITIALIZING",
+                CollisionPresentationPhase.PreImpact =>
+                    "OBSERVED PATH  /  PRE-IMPACT",
+                CollisionPresentationPhase.Impact =>
+                    "CONTACT  /  IMPACT",
+                CollisionPresentationPhase.PostImpact =>
+                    "RECONSTRUCTED AFTERMATH",
+                CollisionPresentationPhase.ForensicHold =>
+                    "INCIDENT  /  FORENSIC HOLD",
+                CollisionPresentationPhase.ImpactReplay =>
+                    "REPLAYING IMPACT",
+                _ => "PREPARING COLLISION"
+            };
+        }
+
         private string FormatEventTitle(
             ReplayEventDto replayEvent)
         {
+            string fallbackTitle = "Overtake Event";
+            if (replayEvent != null &&
+                string.Equals(
+                    replayEvent.eventType,
+                    "PitStop",
+                    System.StringComparison.OrdinalIgnoreCase))
+            {
+                fallbackTitle = "Pit Stop Event";
+            }
+            else if (replayEvent != null &&
+                     (string.Equals(
+                          replayEvent.eventType,
+                          "Collision",
+                          System.StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(
+                          replayEvent.eventType,
+                          "Contact",
+                          System.StringComparison.OrdinalIgnoreCase)))
+            {
+                fallbackTitle = "Collision Event";
+            }
+
             string title = replayEvent != null &&
                            !string.IsNullOrWhiteSpace(
                                replayEvent.displayTitle)
                 ? replayEvent.displayTitle
-                : "Overtake Event";
+                : fallbackTitle;
             int[] drivers = replayEvent != null
                 ? replayEvent.driverNumbers
                 : null;
@@ -269,6 +577,41 @@ namespace F1XR.RestAPI.UI
 
             return $"{ColorizeDriverLabel(drivers[0])}  VS  " +
                    ColorizeDriverLabel(drivers[1]);
+        }
+
+        private string FormatActiveEventStatus(
+            EventPopoutReplay eventReplay,
+            string title)
+        {
+            if (eventReplay == null)
+                return title;
+            if (!eventReplay.IsPitStopActive)
+            {
+                return $"{title}  {FormatTime(eventReplay.CurrentTime)}";
+            }
+
+            ReplayEventDto replayEvent = eventReplay.CurrentEvent;
+            if (replayEvent == null)
+                return title;
+
+            int driver = replayEvent.driverNumbers != null &&
+                         replayEvent.driverNumbers.Length > 0
+                ? replayEvent.driverNumbers[0]
+                : 0;
+            DriverInfoDto info = player.GetDriverInfo(driver);
+            string team = info != null &&
+                          !string.IsNullOrWhiteSpace(info.teamName)
+                ? info.teamName
+                : "TEAM";
+            string timing = eventReplay.PitStopDriveThrough
+                ? "DRIVE THROUGH"
+                : eventReplay.PitStopReconstructed
+                    ? "RECONSTRUCTED STOP"
+                    : eventReplay.CurrentPitStopPhase
+                        .ToString()
+                        .ToUpperInvariant();
+            return $"{title} | {team} | L{replayEvent.lapNumber} | " +
+                   $"{timing}  {FormatTime(eventReplay.CurrentTime)}";
         }
 
         private string ColorizeDriverLabel(int driver)
@@ -328,6 +671,96 @@ namespace F1XR.RestAPI.UI
             RefreshEventControls();
         }
 
+        private void OpenCollisionEvent()
+        {
+            EventPopoutReplay eventReplay =
+                player != null ? player.EventReplay : null;
+            if (eventReplay != null && eventReplay.HasCollision)
+            {
+                eventLoadMessage = null;
+                eventReplay.OpenTestCollision();
+                RefreshEventControls();
+                return;
+            }
+
+            if (replayStarter == null || collisionDatasetLoading)
+            {
+                eventLoadMessage =
+                    "COLLISION TEST LOADER UNAVAILABLE";
+                RefreshEventControls();
+                return;
+            }
+
+            collisionDatasetLoading = true;
+            eventLoadMessage = null;
+            eventReplay?.Close();
+            replayStarter.ReloadEventReplayTestSession(success =>
+            {
+                EventPopoutReplay loadedReplay =
+                    player != null ? player.EventReplay : null;
+                if (success &&
+                    loadedReplay != null &&
+                    loadedReplay.HasCollision)
+                {
+                    eventLoadMessage = null;
+                    loadedReplay.PrepareTestCollision();
+                    if (collisionOpenWhenPreparedRoutine != null)
+                    {
+                        StopCoroutine(
+                            collisionOpenWhenPreparedRoutine);
+                    }
+                    collisionOpenWhenPreparedRoutine =
+                        StartCoroutine(
+                            OpenCollisionWhenPrepared(
+                                loadedReplay));
+                }
+                else
+                {
+                    collisionDatasetLoading = false;
+                    eventLoadMessage = success
+                        ? "COLLISION DATA NOT READY"
+                        : "COLLISION LOAD FAILED — REPLAY PRESERVED";
+                }
+
+                RefreshEventControls();
+            });
+            RefreshEventControls();
+        }
+
+        private IEnumerator OpenCollisionWhenPrepared(
+            EventPopoutReplay expectedReplay)
+        {
+            float timeoutAt = Time.realtimeSinceStartup + 10f;
+            while (expectedReplay != null &&
+                   ReferenceEquals(
+                       player != null
+                           ? player.EventReplay
+                           : null,
+                       expectedReplay) &&
+                   !expectedReplay.IsCollisionPrepared &&
+                   Time.realtimeSinceStartup < timeoutAt)
+            {
+                if (!expectedReplay.IsCollisionPreloading)
+                    expectedReplay.PrepareTestCollision();
+                yield return null;
+            }
+
+            collisionDatasetLoading = false;
+            collisionOpenWhenPreparedRoutine = null;
+            if (expectedReplay != null &&
+                expectedReplay.IsCollisionPrepared)
+            {
+                eventLoadMessage = null;
+                expectedReplay.OpenTestCollision();
+            }
+            else
+            {
+                eventLoadMessage =
+                    "COLLISION PREPARATION FAILED";
+            }
+            RefreshEventControls();
+        }
+
         private void ResolveRoomSetup()
         {
             if (roomSetup == null)
@@ -336,23 +769,83 @@ namespace F1XR.RestAPI.UI
                     Object.FindAnyObjectByType<RoomShowcaseSetupController>(
                         FindObjectsInactive.Include);
             }
+            if (pitWallPresenter == null)
+            {
+                pitWallPresenter =
+                    Object.FindAnyObjectByType<PitWallShowcasePresenter>(
+                        FindObjectsInactive.Include);
+            }
+            if (replayStarter == null)
+            {
+                replayStarter =
+                    Object.FindAnyObjectByType<AutoReplayStarter>(
+                        FindObjectsInactive.Include);
+            }
         }
 
         private void ToggleEventPlay()
         {
-            player?.EventReplay?.TogglePlay();
+            EventPopoutReplay eventReplay =
+                player?.EventReplay;
+            if (eventReplay != null &&
+                eventReplay.IsCurrentCollision)
+            {
+                eventReplay.ReplayCollisionImpact();
+            }
+            else
+            {
+                eventReplay?.TogglePlay();
+            }
             RefreshEventControls();
         }
 
         private void RestartEvent()
         {
-            player?.EventReplay?.Restart();
+            EventPopoutReplay eventReplay =
+                player?.EventReplay;
+            if (eventReplay != null &&
+                eventReplay.IsCurrentCollision)
+            {
+                eventReplay.RestartCollisionReveal();
+            }
+            else
+            {
+                eventReplay?.Restart();
+            }
             RefreshEventControls();
         }
 
-        private void OpenNextOvertake()
+        private void OpenPitStop()
         {
-            player?.EventReplay?.OpenNextOvertake();
+            ResolveRoomSetup();
+            if (roomSetup != null &&
+                !roomSetup.HasPitWallCandidate)
+            {
+                roomSetup.NotifyOpenBlocked();
+                RefreshEventControls();
+                return;
+            }
+
+            player?.EventReplay?.OpenTestPitStop();
+            RefreshEventControls();
+        }
+
+        private void OpenNextEvent()
+        {
+            EventPopoutReplay eventReplay = player?.EventReplay;
+            if (eventReplay != null && eventReplay.IsPitStopActive)
+                eventReplay.OpenNextPitStop();
+            else if (eventReplay != null && eventReplay.IsCurrentCollision)
+                eventReplay.OpenNextCollision();
+            else
+                eventReplay?.OpenNextOvertake();
+            RefreshEventControls();
+        }
+
+        private void SelectNextPitWall()
+        {
+            ResolveRoomSetup();
+            pitWallPresenter?.SelectNextPitWall();
             RefreshEventControls();
         }
 

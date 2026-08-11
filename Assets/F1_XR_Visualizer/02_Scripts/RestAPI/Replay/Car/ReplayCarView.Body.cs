@@ -129,6 +129,158 @@ namespace F1XR.RestAPI.Replay
             return hasBounds;
         }
 
+        internal bool TryGetVisualGroundOffset(
+            Transform referenceSpace,
+            out float offset)
+        {
+            offset = 0f;
+            if (referenceSpace == null)
+                return false;
+
+            RefreshBodyRenderers();
+            float minimumY = float.PositiveInfinity;
+            for (int rendererIndex = 0;
+                 rendererIndex < bodyRenderers.Count;
+                 rendererIndex++)
+            {
+                Renderer item = bodyRenderers[rendererIndex];
+                if (item == null)
+                    continue;
+
+                Bounds localBounds = item.localBounds;
+                Vector3 min = localBounds.min;
+                Vector3 max = localBounds.max;
+                for (int cornerIndex = 0;
+                     cornerIndex < 8;
+                     cornerIndex++)
+                {
+                    Vector3 localCorner = new Vector3(
+                        (cornerIndex & 1) == 0 ? min.x : max.x,
+                        (cornerIndex & 2) == 0 ? min.y : max.y,
+                        (cornerIndex & 4) == 0 ? min.z : max.z);
+                    Vector3 referenceCorner =
+                        referenceSpace.InverseTransformPoint(
+                            item.transform.TransformPoint(localCorner));
+                    minimumY = Mathf.Min(
+                        minimumY,
+                        referenceCorner.y);
+                }
+            }
+
+            if (float.IsInfinity(minimumY) ||
+                float.IsNaN(minimumY))
+            {
+                return false;
+            }
+
+            float logicalOriginY =
+                referenceSpace.InverseTransformPoint(
+                    LogicalRoot.position).y;
+            offset = minimumY - logicalOriginY;
+            return !float.IsInfinity(offset) &&
+                !float.IsNaN(offset);
+        }
+
+        private bool TryGetCarWorldLayout(
+            out Bounds bounds,
+            out float width,
+            out float length,
+            out float height)
+        {
+            RefreshBodyRenderers();
+            bounds = default;
+            width = 0f;
+            length = 0f;
+            height = 0f;
+
+            Vector3 right = transform.right.normalized;
+            Vector3 forward = transform.forward.normalized;
+            Vector3 up = transform.up.normalized;
+            float minimumRight = float.PositiveInfinity;
+            float maximumRight = float.NegativeInfinity;
+            float minimumForward = float.PositiveInfinity;
+            float maximumForward = float.NegativeInfinity;
+            float minimumUp = float.PositiveInfinity;
+            float maximumUp = float.NegativeInfinity;
+            bool hasBounds = false;
+
+            foreach (Renderer item in bodyRenderers)
+            {
+                if (item == null)
+                    continue;
+
+                if (!hasBounds)
+                {
+                    bounds = item.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(item.bounds);
+                }
+
+                Bounds localBounds = item.localBounds;
+                Vector3 minimum = localBounds.min;
+                Vector3 maximum = localBounds.max;
+                Matrix4x4 rendererToWorld =
+                    item.transform.localToWorldMatrix;
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    Vector3 localPoint = new(
+                        (corner & 1) == 0
+                            ? minimum.x
+                            : maximum.x,
+                        (corner & 2) == 0
+                            ? minimum.y
+                            : maximum.y,
+                        (corner & 4) == 0
+                            ? minimum.z
+                            : maximum.z);
+                    Vector3 worldPoint =
+                        rendererToWorld.MultiplyPoint3x4(
+                            localPoint);
+                    float rightValue =
+                        Vector3.Dot(worldPoint, right);
+                    float forwardValue =
+                        Vector3.Dot(worldPoint, forward);
+                    float upValue =
+                        Vector3.Dot(worldPoint, up);
+                    minimumRight = Mathf.Min(
+                        minimumRight,
+                        rightValue);
+                    maximumRight = Mathf.Max(
+                        maximumRight,
+                        rightValue);
+                    minimumForward = Mathf.Min(
+                        minimumForward,
+                        forwardValue);
+                    maximumForward = Mathf.Max(
+                        maximumForward,
+                        forwardValue);
+                    minimumUp = Mathf.Min(
+                        minimumUp,
+                        upValue);
+                    maximumUp = Mathf.Max(
+                        maximumUp,
+                        upValue);
+                }
+            }
+
+            if (!hasBounds)
+                return false;
+
+            width = Mathf.Max(
+                0.001f,
+                maximumRight - minimumRight);
+            length = Mathf.Max(
+                0.001f,
+                maximumForward - minimumForward);
+            height = Mathf.Max(
+                0.001f,
+                maximumUp - minimumUp);
+            return true;
+        }
+
         public float GetVisualWidth()
         {
             if (!bodyRenderersDirty && visualWidth > 0f)
@@ -145,6 +297,26 @@ namespace F1XR.RestAPI.Replay
 
             visualLength = GetVisualSize(Vector3.forward);
             return visualLength;
+        }
+
+        internal bool TryGetVisualWorldHeight(
+            Vector3 up,
+            out float height)
+        {
+            height = 0f;
+            if (!TryGetCarBounds(out Bounds bounds) ||
+                up.sqrMagnitude <= 0.000001f)
+            {
+                return false;
+            }
+
+            Vector3 direction = up.normalized;
+            Vector3 extents = bounds.extents;
+            height = 2f *
+                (Mathf.Abs(direction.x) * extents.x +
+                 Mathf.Abs(direction.y) * extents.y +
+                 Mathf.Abs(direction.z) * extents.z);
+            return height > 0.0001f;
         }
 
         private float GetVisualSize(Vector3 axis)
