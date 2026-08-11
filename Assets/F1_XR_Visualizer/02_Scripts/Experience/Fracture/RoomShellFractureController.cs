@@ -67,12 +67,24 @@ namespace F1XR.Experience.Fracture
             "manager, so the fade does not start on top of the break.")]
         [SerializeField, Min(0f)] float tailSeconds = 0.15f;
 
+        [Header("Visual mode")]
+        [Tooltip("Force the flat debug colour even during real transitions. Off means MR to " +
+            "VR uses the passthrough mask and VR to MR uses the VR snapshot.")]
+        [SerializeField] bool forceDebugGray;
+
+        [Tooltip("Camera whose view is frozen for the VR->MR snapshot. Falls back to " +
+            "Camera.main.")]
+        [SerializeField] Camera vrCamera;
+
         [Header("Look")]
         [SerializeField] Color shellColor = new(0.78f, 0.76f, 0.72f, 1f);
 
         readonly List<ShellFractureRig> rigs = new();
         readonly List<Transform> planeSpaces = new();
-        Material sharedShellMaterial;
+        Material sharedShellMaterial;   // debug gray
+        Material maskMaterial;          // MR->VR passthrough mask
+        Material snapshotMaterial;      // VR->MR VR snapshot
+        RenderTexture snapshotTexture;
         Coroutine activeRoutine;
 
         public int RigCount => rigs.Count;
@@ -124,25 +136,86 @@ namespace F1XR.Experience.Fracture
         {
             ClearRigs();
             DestroySafely(sharedShellMaterial);
+            DestroySafely(maskMaterial);
+            DestroySafely(snapshotMaterial);
+            if (snapshotTexture != null)
+            {
+                snapshotTexture.Release();
+                DestroySafely(snapshotTexture);
+            }
         }
 
         // ---------------------------------------------------------------- hooks
 
-        /// <summary>Runs on the way into VR: the shell comes apart.</summary>
+        /// <summary>Hook for the manager on the way into VR. Breaks the outgoing MR shell.</summary>
         public IEnumerator PlayBreakSequence()
         {
+            return RunBreak(towardVR: true);
+        }
+
+        /// <summary>
+        /// Hook for the manager on the way back to MR. Breaks the outgoing VR shell, using
+        /// the same proxy geometry. It used to only clear the fragments and restore the
+        /// proxies, which is why VR to MR showed no fracture at all.
+        /// </summary>
+        public IEnumerator PlayRebuildSequence()
+        {
+            return RunBreak(towardVR: false);
+        }
+
+        /// <summary>
+        /// One break, both directions. The only per-direction differences are which way
+        /// passthrough fades and whether the proxy renderers come back at the end, so the
+        /// two transitions share this and cannot drift apart.
+        /// </summary>
+        IEnumerator RunBreak(bool towardVR)
+        {
+            string tag = towardVR ? "MR2VR" : "VR2MR";
+            Debug.Log($"[{tag}][build] break requested, clearing any previous rigs.", this);
+
             ClearRigs();
             EnsureProxiesExist();
 
-            if (!BuildRigs())
+            // Pick how the fragments are drawn. MR to VR masks passthrough; VR to MR shows a
+            // frozen VR snapshot. DebugGray is editor only.
+            ShellVisualMode mode = forceDebugGray
+                ? ShellVisualMode.DebugGray
+                : (towardVR ? ShellVisualMode.MRMask : ShellVisualMode.VRSnapshot);
+
+            // The VR snapshot must be captured before anything moves, and it must never fall
+            // back to gray: if it fails, the transition should not pretend to work.
+            if (mode == ShellVisualMode.VRSnapshot && !CaptureVRSnapshot())
             {
-                Debug.LogWarning(
-                    "[ShellFracture] Nothing to break: proxies=" +
-                    $"{(proxyGenerator != null ? proxyGenerator.Proxies.Count : -1)}. " +
-                    "The transition continues without the effect.",
+                Debug.LogError(
+                    "[VR2MR][FATAL VISUAL] Snapshot unavailable; not starting the fracture. " +
+                    "The mode change continues without the effect rather than showing gray.",
                     this);
                 yield break;
             }
+
+            Material material = MaterialFor(mode);
+
+            if (!BuildRigs(mode, material))
+            {
+                Debug.LogWarning(
+                    $"[{tag}][build] Nothing to break: proxies=" +
+                    $"{(proxyGenerator != null ? proxyGenerator.Proxies.Count : -1)}. " +
+                    "Transition continues without the effect.",
+                    this);
+                yield break;
+            }
+
+            // Freeze the VR view onto the fragments before they move.
+            if (mode == ShellVisualMode.VRSnapshot)
+            {
+                Camera cam = ResolveVRCamera();
+                foreach (ShellFractureRig rig in rigs)
+                    rig.BakeSnapshotUVs(cam);
+
+                Debug.Log($"[{tag}][snapshot] UV baked onto {TotalFragments} fragments.", this);
+            }
+
+            Debug.Log($"[{tag}][visual] mode={mode} material={(material != null ? material.name : "NULL")}.", this);
 
             SetProxyRenderersVisible(false);
 
@@ -150,18 +223,27 @@ namespace F1XR.Experience.Fracture
             foreach (ShellFractureRig rig in rigs)
                 total = Mathf.Max(total, rig.TotalSeconds);
 
-            // Fade the real world out in parallel with the break. The VR environment is
-            // already active behind the shell (the mode manager turns it on before this
-            // runs), so as passthrough drops and the holes open, VR is what shows through.
-            // The manager fades again after this returns, which is a harmless confirmation
-            // because passthrough is already at VR by then.
-            if (revealDuringBreak && passthrough != null)
-                passthrough.EnterVR(total * revealFinishFraction);
-
             Debug.Log(
-                $"[ShellFracture] Breaking {rigs.Count} surfaces, " +
-                $"{TotalFragments} fragments, {total:F2}s, reveal={revealDuringBreak}.",
+                $"[{tag}][build] {rigs.Count} surfaces, {TotalFragments} fragments, {total:F2}s.",
                 this);
+
+            // Passthrough fades in parallel, in the direction of travel. Going to VR the real
+            // world fades out so the holes reveal VR; going to MR it fades in so the holes
+            // reveal the real room. The manager's own fade afterwards is a harmless confirm.
+            if (revealDuringBreak && passthrough != null)
+            {
+                if (towardVR)
+                    passthrough.EnterVR(total * revealFinishFraction);
+                else
+                    passthrough.EnterMR(total * revealFinishFraction);
+
+                Debug.Log($"[{tag}][passthrough] fade started over {total * revealFinishFraction:F2}s.", this);
+            }
+
+            bool loggedFirstCrack = false;
+            bool loggedFirstDetach = false;
+            float firstDetachTime = rigs[0].MinDelay +
+                fractureSettings.liftDuration + fractureSettings.holdDuration;
 
             float elapsed = 0f;
             while (elapsed < total)
@@ -170,20 +252,34 @@ namespace F1XR.Experience.Fracture
                 for (int i = 0; i < rigs.Count; i++)
                     rigs[i].Step(elapsed);
 
+                if (!loggedFirstCrack && elapsed >= rigs[0].MinDelay)
+                {
+                    loggedFirstCrack = true;
+                    Debug.Log($"[{tag}][crack] first fragment cracked at {elapsed:F2}s.", this);
+                }
+
+                if (!loggedFirstDetach && elapsed >= firstDetachTime)
+                {
+                    loggedFirstDetach = true;
+                    Debug.Log($"[{tag}][detach] first fragment detached at {elapsed:F2}s.", this);
+                }
+
                 yield return null;
             }
 
+            Debug.Log($"[{tag}][done] fracture finished.", this);
+
             if (tailSeconds > 0f)
                 yield return new WaitForSeconds(tailSeconds);
-        }
 
-        /// <summary>Runs on the way back to MR: the fragments are cleared and the proxies return.</summary>
-        public IEnumerator PlayRebuildSequence()
-        {
-            ClearRigs();
-            SetProxyRenderersVisible(true);
-            Debug.Log("[ShellFracture] Shell restored.", this);
-            yield break;
+            // Going back to MR, the proxies represent the real room, so restore them. Going
+            // to VR they stay hidden.
+            if (!towardVR)
+            {
+                ClearRigs();
+                SetProxyRenderersVisible(true);
+                Debug.Log($"[{tag}][cleanup] fragments cleared, proxies restored.", this);
+            }
         }
 
         [ContextMenu("Test Break Now")]
@@ -248,7 +344,7 @@ namespace F1XR.Experience.Fracture
             proxyGenerator.BuildRoomProxies();
         }
 
-        bool BuildRigs()
+        bool BuildRigs(ShellVisualMode mode, Material material)
         {
             if (proxyGenerator == null || proxyGenerator.Proxies.Count == 0)
                 return false;
@@ -281,8 +377,8 @@ namespace F1XR.Experience.Fracture
                 if (emitter != null)
                     rig.FragmentReleased += emitter.EmitAt;
 
-                if (rig.Build(boundary, origin, space.transform, GetSharedMaterial(),
-                        SettingsFor(proxy.Type), proxy.GameObject.name + "_Fragments"))
+                if (rig.Build(boundary, origin, space.transform, material,
+                        SettingsFor(proxy.Type), proxy.GameObject.name + "_Fragments", mode))
                 {
                     rigs.Add(rig);
                 }
@@ -409,6 +505,86 @@ namespace F1XR.Experience.Fracture
 
             sharedShellMaterial = FractureMaterial.Create(shader, shellColor, "RoomShellFracture");
             return sharedShellMaterial;
+        }
+
+        Material MaterialFor(ShellVisualMode mode)
+        {
+            switch (mode)
+            {
+                case ShellVisualMode.MRMask:
+                    if (maskMaterial == null)
+                    {
+                        Shader s = Shader.Find("F1XR/ShellPassthroughMask");
+                        if (s == null)
+                        {
+                            Debug.LogError("[ShellFracture] ShellPassthroughMask shader missing.", this);
+                            return GetSharedMaterial();
+                        }
+                        maskMaterial = new Material(s) { name = "ShellPassthroughMask" };
+                    }
+                    return maskMaterial;
+
+                case ShellVisualMode.VRSnapshot:
+                    if (snapshotMaterial == null)
+                    {
+                        Shader s = Shader.Find("F1XR/ShellSnapshot");
+                        if (s == null)
+                        {
+                            Debug.LogError("[ShellFracture] ShellSnapshot shader missing.", this);
+                            return GetSharedMaterial();
+                        }
+                        snapshotMaterial = new Material(s) { name = "ShellSnapshot" };
+                    }
+                    if (snapshotTexture != null)
+                        snapshotMaterial.SetTexture("_SnapshotTex", snapshotTexture);
+                    return snapshotMaterial;
+
+                default:
+                    return GetSharedMaterial();
+            }
+        }
+
+        Camera ResolveVRCamera()
+        {
+            return vrCamera != null ? vrCamera : Camera.main;
+        }
+
+        /// <summary>
+        /// Renders the VR view once into a RenderTexture. Returns false on any failure so the
+        /// caller can refuse to start rather than fall back to gray.
+        /// </summary>
+        bool CaptureVRSnapshot()
+        {
+            Camera cam = ResolveVRCamera();
+            if (cam == null)
+            {
+                Debug.LogError("[VR2MR][snapshot] No camera to capture.", this);
+                return false;
+            }
+
+            int w = Mathf.Max(2, cam.pixelWidth);
+            int h = Mathf.Max(2, cam.pixelHeight);
+
+            if (snapshotTexture == null || snapshotTexture.width != w || snapshotTexture.height != h)
+            {
+                if (snapshotTexture != null)
+                    snapshotTexture.Release();
+
+                snapshotTexture = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
+                {
+                    name = "VRTransitionRT"
+                };
+                snapshotTexture.Create();
+            }
+
+            // Render the current VR view into the texture without disturbing the live camera.
+            RenderTexture previous = cam.targetTexture;
+            cam.targetTexture = snapshotTexture;
+            cam.Render();
+            cam.targetTexture = previous;
+
+            Debug.Log($"[VR2MR][snapshot] captured {w}x{h} valid={snapshotTexture.IsCreated()}.", this);
+            return snapshotTexture.IsCreated();
         }
 
         static void DestroySafely(Object target)

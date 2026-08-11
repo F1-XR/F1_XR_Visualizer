@@ -3854,6 +3854,7 @@ MonoBehaviour:
   wallColor: {r: 0.2, g: 0.55, b: 1, a: 0.25}
   floorColor: {r: 0.2, g: 1, b: 0.45, a: 0.25}
   ceilingColor: {r: 1, g: 0.55, b: 0.15, a: 0.25}
+  debugAlpha: 0.2
   normalGizmoLength: 0.5
 --- !u!114 &1510071734
 MonoBehaviour:
@@ -3994,6 +3995,8 @@ MonoBehaviour:
   revealDuringBreak: 1
   revealFinishFraction: 0.85
   tailSeconds: 0.15
+  forceDebugGray: 0
+  vrCamera: {fileID: 0}
   shellColor: {r: 0.78, g: 0.76, b: 0.72, a: 0.55}
 --- !u!1 &1617710085
 GameObject:

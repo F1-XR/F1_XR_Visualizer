@@ -16,6 +16,22 @@ namespace F1XR.Experience.Fracture
     /// The polygon is taken in 2D and built in local XY with the normal along local +Z.
     /// Callers that need another orientation rotate the parent instead of the geometry.
     /// </summary>
+    /// <summary>
+    /// How a fragment is drawn. The geometry and motion are identical for all three; only
+    /// the material and how alpha behaves differ.
+    /// </summary>
+    public enum ShellVisualMode
+    {
+        /// <summary>Flat colour. Editor and diagnostics only; never a real transition.</summary>
+        DebugGray,
+
+        /// <summary>MR to VR: a passthrough mask. Present = real room shows, gone = VR shows.</summary>
+        MRMask,
+
+        /// <summary>VR to MR: a frozen piece of the VR view, from a snapshot texture.</summary>
+        VRSnapshot
+    }
+
     public sealed class ShellFractureRig
     {
         [System.Serializable]
@@ -132,6 +148,9 @@ namespace F1XR.Experience.Fracture
 
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         static readonly int ColorId = Shader.PropertyToID("_Color");
+        static readonly int AlphaId = Shader.PropertyToID("_Alpha");
+
+        ShellVisualMode visualMode = ShellVisualMode.DebugGray;
 
         readonly List<Mesh> ownedMeshes = new();
         Transform[] fragments;
@@ -168,10 +187,12 @@ namespace F1XR.Experience.Fracture
             Transform parent,
             Material sharedMaterial,
             Settings rigSettings,
-            string rootName = "ShellFragments")
+            string rootName = "ShellFragments",
+            ShellVisualMode mode = ShellVisualMode.DebugGray)
         {
             Dispose();
             settings = rigSettings;
+            visualMode = mode;
             settings.liftCurve ??= AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
             settings.breakCurve ??= AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
@@ -452,16 +473,64 @@ namespace F1XR.Experience.Fracture
             if (renderer == null)
                 return;
 
-            Color color = baseColor;
-            // Multiply by the material's own alpha so a translucent shell stays translucent
-            // while intact and still fades all the way to zero.
-            color.a = baseColor.a * Mathf.Clamp01(alpha);
+            float a = Mathf.Clamp01(alpha);
 
+            if (visualMode == ShellVisualMode.MRMask)
+            {
+                // The mask always outputs alpha 0 so passthrough shows through it. Fading it
+                // toward 1 would paint black, not reveal VR, so instead the piece is simply
+                // switched off once it has faded out, and VR shows where it was.
+                bool visible = a > 0.02f;
+                if (renderer.enabled != visible)
+                    renderer.enabled = visible;
+                return;
+            }
+
+            // DebugGray and VRSnapshot: drive the material alpha. DebugGray keeps its base
+            // translucency; VRSnapshot is fully opaque while present.
             propertyBlock ??= new MaterialPropertyBlock();
             renderer.GetPropertyBlock(propertyBlock);
+
+            Color color = baseColor;
+            color.a = baseColor.a * a;
             propertyBlock.SetColor(BaseColorId, color);
             propertyBlock.SetColor(ColorId, color);
+            propertyBlock.SetFloat(AlphaId, a);
             renderer.SetPropertyBlock(propertyBlock);
+        }
+
+        /// <summary>
+        /// Freezes each fragment's mesh UVs to the screen position it occupied when this was
+        /// called, so a snapshot shader shows the exact VR pixels that were there. Call once,
+        /// right after Build and before the break moves anything. VRSnapshot only.
+        /// </summary>
+        public void BakeSnapshotUVs(Camera camera)
+        {
+            if (fragments == null || camera == null)
+                return;
+
+            for (int i = 0; i < fragments.Length; i++)
+            {
+                Transform piece = fragments[i];
+                if (piece == null)
+                    continue;
+
+                MeshFilter filter = piece.GetComponent<MeshFilter>();
+                Mesh mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null)
+                    continue;
+
+                Vector3[] verts = mesh.vertices;
+                var uvs = new Vector2[verts.Length];
+                for (int v = 0; v < verts.Length; v++)
+                {
+                    Vector3 world = piece.TransformPoint(verts[v]);
+                    Vector3 screen = camera.WorldToViewportPoint(world);
+                    uvs[v] = new Vector2(screen.x, screen.y);
+                }
+
+                mesh.SetUVs(0, uvs);
+            }
         }
 
         public float MinDelay
