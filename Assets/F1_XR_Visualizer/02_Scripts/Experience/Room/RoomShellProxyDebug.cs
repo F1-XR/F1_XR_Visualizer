@@ -23,6 +23,10 @@ namespace F1XR.Experience.Room
         [SerializeField] Color floorColor = new(0.20f, 1f, 0.45f, 0.25f);
         [SerializeField] Color ceilingColor = new(1f, 0.55f, 0.15f, 0.25f);
 
+        [Tooltip("Transparency of the detection overlay. Low enough that the real room " +
+            "shows through. Overrides the alpha of the colours above; editable live in Play.")]
+        [SerializeField, Range(0f, 1f)] float debugAlpha = 0.1f;
+
         [Tooltip("Length of the normal ray drawn in the Scene view.")]
         [SerializeField] float normalGizmoLength = 0.5f;
 
@@ -169,15 +173,45 @@ namespace F1XR.Experience.Room
             switch (type)
             {
                 case RoomSurfaceType.Floor:
-                    return floorMaterial ??= CreateDebugMaterial(floorColor, "RoomShellFloorDebug");
+                    floorMaterial ??= CreateDebugMaterial(floorColor, "RoomShellFloorDebug");
+                    return floorMaterial;
                 case RoomSurfaceType.Ceiling:
-                    return ceilingMaterial ??= CreateDebugMaterial(ceilingColor, "RoomShellCeilingDebug");
+                    ceilingMaterial ??= CreateDebugMaterial(ceilingColor, "RoomShellCeilingDebug");
+                    return ceilingMaterial;
                 default:
-                    return wallMaterial ??= CreateDebugMaterial(wallColor, "RoomShellWallDebug");
+                    wallMaterial ??= CreateDebugMaterial(wallColor, "RoomShellWallDebug");
+                    return wallMaterial;
             }
         }
 
-        static Material CreateDebugMaterial(Color color, string name)
+        /// <summary>Applies the current debugAlpha to the existing overlay materials.</summary>
+        void RefreshMaterialAlpha()
+        {
+            SetMaterialAlpha(wallMaterial, wallColor);
+            SetMaterialAlpha(floorMaterial, floorColor);
+            SetMaterialAlpha(ceilingMaterial, ceilingColor);
+        }
+
+        void SetMaterialAlpha(Material material, Color rgb)
+        {
+            if (material == null)
+                return;
+
+            Color c = rgb;
+            c.a = debugAlpha;
+            material.SetColor("_BaseColor", c);
+            material.color = c;
+        }
+
+        void OnValidate()
+        {
+            // Live editing in Play mode: dragging debugAlpha reapplies to already-built
+            // materials immediately.
+            if (Application.isPlaying)
+                RefreshMaterialAlpha();
+        }
+
+        Material CreateDebugMaterial(Color color, string name)
         {
             // Shader.Find only resolves shaders that made it into the build. If the URP
             // Unlit shader was stripped, fall back rather than constructing a Material
@@ -207,8 +241,13 @@ namespace F1XR.Experience.Room
             material.SetFloat("_ZWrite", 0f);
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             material.renderQueue = (int)RenderQueue.Transparent;
-            material.SetColor("_BaseColor", color);
-            material.color = color;
+
+            // Keep the surface's RGB, force the alpha from the shared debugAlpha so the real
+            // room shows through.
+            Color c = color;
+            c.a = debugAlpha;
+            material.SetColor("_BaseColor", c);
+            material.color = c;
             return material;
         }
 
