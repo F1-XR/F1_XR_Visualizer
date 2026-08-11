@@ -57,7 +57,7 @@ namespace F1XR.RestAPI.Replay
         [Min(0.05f)] public float forensicRunoffWidthInCarWidths = 0.75f;
 
         [Header("Trajectory Evidence")]
-        [Min(0.25f)] public float observedLeadSeconds = 0.9f;
+        [Min(0.25f)] public float observedLeadSeconds = 1.35f;
         [Min(0.1f)] public float observedTailSeconds = 0.45f;
         [Range(10, 60)] public int trajectorySamplesPerSecond = 20;
         [Min(0.05f)] public float temporalTailSeconds = 0.15f;
@@ -2752,10 +2752,10 @@ namespace F1XR.RestAPI.Replay
             CollisionTrajectoryForensicsOptions options = new()
             {
                 visibleLeadSeconds = Mathf.Max(
-                    0.25f,
+                    1.35f,
                     collisionShowcase.observedLeadSeconds),
                 vehicleRevealLeadSeconds = Mathf.Max(
-                    0.25f,
+                    1.35f,
                     collisionShowcase.observedLeadSeconds),
                 visibleTailSeconds = Mathf.Max(
                     0.1f,
