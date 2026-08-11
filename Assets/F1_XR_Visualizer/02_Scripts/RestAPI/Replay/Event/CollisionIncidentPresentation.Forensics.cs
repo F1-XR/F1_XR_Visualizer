@@ -9,14 +9,14 @@ namespace F1XR.RestAPI.Replay
     internal sealed partial class CollisionIncidentPresentation
     {
         private const float ForensicsRailRevealEnd = 0.45f;
-        private const float ForensicsApproachEnd = 1.35f;
-        private const float ForensicsHitStopEnd = 1.44f;
-        private const float ForensicsObservedPostEnd = 1.99f;
-        private const float ForensicsAnnotationEnd = 2.70f;
-        private const float ForensicsRevealEnd = 4.70f;
-        private const float ForensicsReplayApproachEnd = 0.90f;
-        private const float ForensicsReplayHitStopEnd = 0.99f;
-        private const float ForensicsReplayEnd = 1.54f;
+        private const float ForensicsApproachEnd = 1.80f;
+        private const float ForensicsHitStopEnd = 1.89f;
+        private const float ForensicsObservedPostEnd = 2.44f;
+        private const float ForensicsAnnotationEnd = 3.15f;
+        private const float ForensicsRevealEnd = 5.15f;
+        private const float ForensicsReplayApproachEnd = 1.35f;
+        private const float ForensicsReplayHitStopEnd = 1.44f;
+        private const float ForensicsReplayEnd = 1.99f;
         private const float ForensicsVehicleHoldPostSeconds = 0.35f;
         private const float ForensicsManualContactResetMeters = 0.085f;
         private const float ForensicsImpactVisibleSeconds = 1.20f;
@@ -53,40 +53,21 @@ namespace F1XR.RestAPI.Replay
                 Transform root,
                 float time,
                 int driverNumber,
-                LineRenderer body,
-                LineRenderer wheels,
-                LineRenderer arrow,
-                LineRenderer slice,
-                LineRenderer cage)
+                Vector3 basePosition,
+                Vector3 baseScale)
             {
                 Root = root;
                 Time = time;
                 DriverNumber = driverNumber;
-                Body = body;
-                Wheels = wheels;
-                Arrow = arrow;
-                Slice = slice;
-                Cage = cage;
-                BodyWidth = body != null ? body.widthMultiplier : 0f;
-                WheelsWidth = wheels != null ? wheels.widthMultiplier : 0f;
-                ArrowWidth = arrow != null ? arrow.widthMultiplier : 0f;
-                SliceWidth = slice != null ? slice.widthMultiplier : 0f;
-                CageWidth = cage != null ? cage.widthMultiplier : 0f;
+                BasePosition = basePosition;
+                BaseScale = baseScale;
             }
 
             public Transform Root { get; }
             public float Time { get; }
             public int DriverNumber { get; }
-            public LineRenderer Body { get; }
-            public LineRenderer Wheels { get; }
-            public LineRenderer Arrow { get; }
-            public LineRenderer Slice { get; }
-            public LineRenderer Cage { get; }
-            public float BodyWidth { get; }
-            public float WheelsWidth { get; }
-            public float ArrowWidth { get; }
-            public float SliceWidth { get; }
-            public float CageWidth { get; }
+            public Vector3 BasePosition { get; }
+            public Vector3 BaseScale { get; }
         }
 
         private CollisionTrajectoryAnalysis forensicsAnalysis;
@@ -119,6 +100,7 @@ namespace F1XR.RestAPI.Replay
         private Material forensicsTrackEdgeMaterial;
         private Material forensicsTrackRunoffMaterial;
         private Material forensicsTrackWarningMaterial;
+        private Material forensicsLegendBackdropMaterial;
         private TextMeshPro forensicsLegend;
         private TextMeshPro forensicsLensHud;
         private readonly List<Material> forensicsMaterials = new();
@@ -127,6 +109,7 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3[]> forensicsTrackWarningPoints = new();
         private readonly List<ForensicMarker> forensicsMarkers = new();
         private readonly List<ForensicOutline> forensicsOutlines = new();
+        private readonly List<Renderer> forensicsGhostRenderers = new();
         private ForensicOutline forensicsVictimContactOutline;
         private ForensicOutline forensicsOtherContactOutline;
         private readonly List<Vector3> forensicsVictimTailPoints = new(32);
@@ -636,6 +619,7 @@ namespace F1XR.RestAPI.Replay
             forensicsTrackWarningPoints.Clear();
             forensicsMarkers.Clear();
             forensicsOutlines.Clear();
+            forensicsGhostRenderers.Clear();
             forensicsVictimContactOutline = default;
             forensicsOtherContactOutline = default;
             forensicsVictimTailPoints.Clear();
@@ -670,6 +654,7 @@ namespace F1XR.RestAPI.Replay
             forensicsTrackEdgeMaterial = null;
             forensicsTrackRunoffMaterial = null;
             forensicsTrackWarningMaterial = null;
+            forensicsLegendBackdropMaterial = null;
             forensicsTrackMesh = null;
             forensicsTrackTriangles = null;
             forensicsTrackOuterHalfWidth = 0f;
@@ -841,12 +826,12 @@ namespace F1XR.RestAPI.Replay
             forensicsOtherStableMaterial = CreateForensicsOpaqueMaterial(
                 "Runtime_ForensicsDriverBStable",
                 new Color(0.04f, 0.78f, 0.94f, 1f));
-            forensicsVictimOutlineMaterial = CreateForensicsOpaqueMaterial(
+            forensicsVictimOutlineMaterial = CreateForensicsMaterial(
                 "Runtime_ForensicsDriverAOutline",
-                new Color(0.94f, 0.98f, 1f, 1f));
-            forensicsOtherOutlineMaterial = CreateForensicsOpaqueMaterial(
+                new Color(0.94f, 0.98f, 1f, 0.58f));
+            forensicsOtherOutlineMaterial = CreateForensicsMaterial(
                 "Runtime_ForensicsDriverBOutline",
-                new Color(0.05f, 0.86f, 1f, 1f));
+                new Color(0.05f, 0.86f, 1f, 0.62f));
             forensicsVictimTailMaterial = CreateForensicsMaterial(
                 "Runtime_ForensicsDriverATail",
                 new Color(1f, 1f, 1f, 0.94f),
@@ -871,18 +856,17 @@ namespace F1XR.RestAPI.Replay
                 new Color(1.25f, 0.82f, 0.08f, 0.88f),
                 true);
 
-            float railWidth = Mathf.Max(0.0001f, carWidth * 0.035f);
             forensicsVictimPath.Rail = CreateLine(
                 "DriverAObservedRail",
                 forensicsRailRoot,
                 forensicsVictimMaterial,
-                railWidth,
+                Mathf.Max(0.0001f, carWidth * 0.1f),
                 true);
             forensicsOtherPath.Rail = CreateLine(
                 "DriverBObservedRail",
                 forensicsRailRoot,
                 forensicsOtherMaterial,
-                railWidth,
+                Mathf.Max(0.0001f, carWidth * 0.065f),
                 true);
             forensicsVictimPath.Tail = CreateLine(
                 "DriverARecentTail",
@@ -925,13 +909,13 @@ namespace F1XR.RestAPI.Replay
             legendObject.transform.SetParent(forensicsRoot, false);
             legendObject.transform.localPosition = contactLocal -
                 forensicsCorridorRight * Mathf.Max(
-                    carWidth * 1.45f,
-                    forensicsTrackOuterHalfWidth + carWidth * 0.34f) +
-                Vector3.up * carWidth * 0.48f;
+                    carWidth * 1.8f,
+                    forensicsTrackOuterHalfWidth + carWidth * 0.72f) +
+                Vector3.up * carWidth * 1.7f;
             legendObject.transform.localRotation =
                 Quaternion.LookRotation(Vector3.up, forensicsCorridorForward);
             legendObject.transform.localScale =
-                Vector3.one * carLength * 0.06f;
+                Vector3.one * carLength * 0.085f;
             forensicsLegend = legendObject.GetComponent<TextMeshPro>();
             string tier = forensicsAnalysis.Tier switch
             {
@@ -952,13 +936,52 @@ namespace F1XR.RestAPI.Replay
                 $"REPORTED {forensicsReportedTime} | {closest}";
             forensicsLegend.alignment = TextAlignmentOptions.Left;
             forensicsLegend.richText = true;
-            forensicsLegend.fontSize = 5.2f;
+            forensicsLegend.fontSize = 5.6f;
             forensicsLegend.fontStyle = FontStyles.Bold;
             forensicsLegend.enableAutoSizing = false;
             forensicsLegend.color = new Color(0.82f, 0.9f, 0.98f, 0.94f);
-            forensicsLegend.rectTransform.sizeDelta = new Vector2(23f, 5.5f);
+            forensicsLegend.rectTransform.sizeDelta = new Vector2(21f, 5.6f);
             forensicsLegend.renderer.shadowCastingMode = ShadowCastingMode.Off;
             forensicsLegend.renderer.receiveShadows = false;
+
+            forensicsLegendBackdropMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsLegendBackdrop",
+                new Color(0.012f, 0.018f, 0.026f, 1f));
+            Mesh backdropMesh = new()
+            {
+                name = "Runtime_ForensicsLegendBackdrop"
+            };
+            backdropMesh.vertices = new[]
+            {
+                new Vector3(-11.2f, -3.2f, 0.055f),
+                new Vector3(11.2f, -3.2f, 0.055f),
+                new Vector3(-11.2f, 3.2f, 0.055f),
+                new Vector3(11.2f, 3.2f, 0.055f)
+            };
+            backdropMesh.uv = new[]
+            {
+                Vector2.zero,
+                Vector2.right,
+                Vector2.up,
+                Vector2.one
+            };
+            backdropMesh.triangles = new[] { 0, 2, 3, 0, 3, 1 };
+            backdropMesh.RecalculateNormals();
+            backdropMesh.RecalculateBounds();
+            meshes.Add(backdropMesh);
+            forensicsMeshes.Add(backdropMesh);
+            GameObject backdrop = new(
+                "LegendBackdrop",
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            backdrop.transform.SetParent(legendObject.transform, false);
+            backdrop.GetComponent<MeshFilter>().sharedMesh = backdropMesh;
+            MeshRenderer backdropRenderer = backdrop.GetComponent<MeshRenderer>();
+            backdropRenderer.sharedMaterial = forensicsLegendBackdropMaterial;
+            backdropRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            backdropRenderer.receiveShadows = false;
+            backdropRenderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
         }
 
         private void UpdateBaseForensicsIncidentPanel()
@@ -1252,18 +1275,24 @@ namespace F1XR.RestAPI.Replay
             BuildStableForensicsRail(
                 forensicsVictimPath,
                 "DriverAObservedRibbon",
-                forensicsVictimStableMaterial);
+                forensicsVictimStableMaterial,
+                0.055f,
+                0.068f);
             BuildStableForensicsRail(
                 forensicsOtherPath,
                 "DriverBObservedRibbon",
-                forensicsOtherStableMaterial);
+                forensicsOtherStableMaterial,
+                0.035f,
+                0.084f);
             SetRootVisible(forensicsStableRailRoot, false);
         }
 
         private void BuildStableForensicsRail(
             ForensicPath path,
             string name,
-            Material material)
+            Material material,
+            float halfWidthInCarWidths,
+            float liftInCarWidths)
         {
             if (path?.Points == null ||
                 path.Points.Length < 2 ||
@@ -1278,9 +1307,9 @@ namespace F1XR.RestAPI.Replay
             Vector2[] uv = new Vector2[vertices.Length];
             int[] triangles = new int[(count - 1) * 6];
             float halfWidth = Mathf.Max(
-                carWidth * 0.035f,
+                carWidth * halfWidthInCarWidths,
                 0.0001f);
-            Vector3 lift = Vector3.up * carWidth * 0.072f;
+            Vector3 lift = Vector3.up * carWidth * liftInCarWidths;
             Vector3 previousRight = forensicsCorridorRight;
             float distance = 0f;
             for (int i = 0; i < count; i++)
@@ -1593,7 +1622,7 @@ namespace F1XR.RestAPI.Replay
 
         private void BuildForensicsOutlines()
         {
-            float[] offsets = { -0.90f, -0.55f, -0.25f };
+            float[] offsets = { -1.30f, -0.90f, -0.50f };
             for (int i = 0; i < offsets.Length; i++)
             {
                 float time = forensicsAnalysis.PresentationTime + offsets[i];
@@ -1644,128 +1673,32 @@ namespace F1XR.RestAPI.Replay
                 return default;
             }
 
-            Transform root = CreateRoot(name, forensicsOutlineRoot);
+            ReplayCarView source = driverNumber == forensicsVictimDriver
+                ? victim
+                : driverNumber == forensicsOtherDriver
+                    ? other
+                    : null;
+            GameObject clone = CaptureGhost(
+                source,
+                name,
+                forensicsOutlineRoot,
+                material,
+                forensicsGhostRenderers);
+            if (clone == null)
+                return default;
+
+            Transform root = clone.transform;
             Vector3 forward = FlattenNormalized(tangent, forensicsCorridorForward);
-            Vector3 right = FlattenNormalized(
-                Vector3.Cross(Vector3.up, forward),
-                forensicsCorridorRight);
-            float halfLength = carLength * 0.42f;
-            float halfWidth = carWidth * 0.38f;
-            Vector3 lift = ForensicsLineLift() * 1.25f;
-
-            LineRenderer body = CreateLine(
-                "BodyOutline",
-                root,
-                material,
-                carWidth * 0.055f,
-                true);
-            body.loop = true;
-            body.positionCount = 4;
-            body.SetPosition(0, point + forward * halfLength - right * halfWidth + lift);
-            body.SetPosition(1, point + forward * halfLength + right * halfWidth + lift);
-            body.SetPosition(2, point - forward * halfLength + right * halfWidth + lift);
-            body.SetPosition(3, point - forward * halfLength - right * halfWidth + lift);
-
-            LineRenderer wheels = CreateLine(
-                "WheelOutline",
-                root,
-                material,
-                carWidth * 0.065f,
-                true);
-            wheels.positionCount = 4;
-            wheels.SetPosition(0, point + forward * halfLength * 0.62f - right * halfWidth * 1.15f + lift);
-            wheels.SetPosition(1, point - forward * halfLength * 0.62f - right * halfWidth * 1.15f + lift);
-            wheels.SetPosition(2, point - forward * halfLength * 0.62f + right * halfWidth * 1.15f + lift);
-            wheels.SetPosition(3, point + forward * halfLength * 0.62f + right * halfWidth * 1.15f + lift);
-
-            LineRenderer arrow = CreateLine(
-                "ForwardOutline",
-                root,
-                material,
-                carWidth * 0.05f,
-                true);
-            Vector3 tip = point + forward * carLength * 0.72f + lift;
-            arrow.positionCount = 4;
-            arrow.SetPosition(0, point + forward * halfLength * 0.2f + lift);
-            arrow.SetPosition(1, tip);
-            arrow.SetPosition(2, tip - forward * carLength * 0.13f - right * carWidth * 0.12f);
-            arrow.SetPosition(3, tip);
-
-            // A floor footprint becomes edge-on when the corridor points away
-            // from the viewer. The upright scan section keeps each timestamp
-            // readable without cloning another high-detail car.
-            LineRenderer slice = CreateLine(
-                "VehicleScanSection",
-                root,
-                material,
-                carWidth * 0.055f,
-                true);
-            slice.positionCount = 7;
-            Vector3 sliceBase = point + lift;
-            slice.SetPosition(0, sliceBase - right * halfWidth * 1.08f);
-            slice.SetPosition(
-                1,
-                sliceBase - right * halfWidth * 0.82f +
-                Vector3.up * carWidth * 0.2f);
-            slice.SetPosition(
-                2,
-                sliceBase - right * halfWidth * 0.38f +
-                Vector3.up * carWidth * 0.38f);
-            slice.SetPosition(
-                3,
-                sliceBase + Vector3.up * carWidth * 0.44f);
-            slice.SetPosition(
-                4,
-                sliceBase + right * halfWidth * 0.38f +
-                Vector3.up * carWidth * 0.38f);
-            slice.SetPosition(
-                5,
-                sliceBase + right * halfWidth * 0.82f +
-                Vector3.up * carWidth * 0.2f);
-            slice.SetPosition(6, sliceBase + right * halfWidth * 1.08f);
-
-            LineRenderer cage = CreateLine(
-                "VehicleWireCage",
-                root,
-                material,
-                carWidth * 0.05f,
-                true);
-            cage.loop = true;
-            cage.positionCount = 10;
-            Vector3 cageRear = point - forward * carLength * 0.4f + lift;
-            Vector3 cageCockpitRear =
-                point - forward * carLength * 0.16f +
-                Vector3.up * carWidth * 0.28f + lift;
-            Vector3 cageCockpitTop =
-                point + forward * carLength * 0.04f +
-                Vector3.up * carWidth * 0.43f + lift;
-            Vector3 cageNose =
-                point + forward * carLength * 0.38f +
-                Vector3.up * carWidth * 0.14f + lift;
-            Vector3 cageTip =
-                point + forward * carLength * 0.64f +
-                Vector3.up * carWidth * 0.05f + lift;
-            cage.SetPosition(0, cageRear - right * carWidth * 0.3f);
-            cage.SetPosition(1, cageCockpitRear - right * carWidth * 0.3f);
-            cage.SetPosition(2, cageCockpitTop - right * carWidth * 0.2f);
-            cage.SetPosition(3, cageNose - right * carWidth * 0.16f);
-            cage.SetPosition(4, cageTip - right * carWidth * 0.08f);
-            cage.SetPosition(5, cageTip + right * carWidth * 0.08f);
-            cage.SetPosition(6, cageNose + right * carWidth * 0.16f);
-            cage.SetPosition(7, cageCockpitTop + right * carWidth * 0.2f);
-            cage.SetPosition(8, cageCockpitRear + right * carWidth * 0.3f);
-            cage.SetPosition(9, cageRear + right * carWidth * 0.3f);
+            root.localPosition = point + ForensicsLineLift() * 1.3f;
+            root.localRotation = Quaternion.LookRotation(forward, Vector3.up);
 
             root.gameObject.SetActive(false);
             return new ForensicOutline(
                 root,
                 time,
                 driverNumber,
-                body,
-                wheels,
-                arrow,
-                slice,
-                cage);
+                root.localPosition,
+                root.localScale);
         }
 
         private void BuildForensicsTimeLens(
@@ -2284,17 +2217,16 @@ namespace F1XR.RestAPI.Replay
             if (useStableMesh)
                 return;
 
-            Vector3 lift = ForensicsLineLift();
             SetLineProgress(
                 forensicsVictimPath?.Rail,
                 forensicsVictimPath?.Points,
                 clamped,
-                lift);
+                Vector3.up * carWidth * 0.068f);
             SetLineProgress(
                 forensicsOtherPath?.Rail,
                 forensicsOtherPath?.Points,
                 clamped,
-                lift);
+                Vector3.up * carWidth * 0.084f);
         }
 
         private void SetForensicsTail(
@@ -2452,40 +2384,8 @@ namespace F1XR.RestAPI.Replay
                 bool highlighted = visible &&
                     highlightNearest &&
                     Mathf.Abs(outline.Time - nearestTime) <= 0.001f;
-                float widthMultiplier = highlighted ? 1.55f : 1f;
-                SetForensicsOutlineWidth(
-                    outline.Body,
-                    outline.BodyWidth,
-                    widthMultiplier);
-                SetForensicsOutlineWidth(
-                    outline.Wheels,
-                    outline.WheelsWidth,
-                    widthMultiplier);
-                SetForensicsOutlineWidth(
-                    outline.Arrow,
-                    outline.ArrowWidth,
-                    widthMultiplier);
-                SetForensicsOutlineWidth(
-                    outline.Slice,
-                    outline.SliceWidth,
-                    widthMultiplier);
-                SetForensicsOutlineWidth(
-                    outline.Cage,
-                    outline.CageWidth,
-                    widthMultiplier);
-            }
-        }
-
-        private static void SetForensicsOutlineWidth(
-            LineRenderer line,
-            float baseWidth,
-            float multiplier)
-        {
-            if (line != null)
-            {
-                line.widthMultiplier = Mathf.Max(
-                    0.00001f,
-                    baseWidth * Mathf.Max(0.1f, multiplier));
+                outline.Root.localScale = outline.BaseScale *
+                    (highlighted ? 1.08f : 1f);
             }
         }
 
@@ -2512,31 +2412,11 @@ namespace F1XR.RestAPI.Replay
             if (outline.Root == null)
                 return;
 
-            outline.Root.localPosition = visible
-                ? offset
-                : Vector3.zero;
+            outline.Root.localPosition = outline.BasePosition +
+                (visible ? offset : Vector3.zero);
             outline.Root.gameObject.SetActive(visible);
-            float widthMultiplier = visible ? 1.35f : 1f;
-            SetForensicsOutlineWidth(
-                outline.Body,
-                outline.BodyWidth,
-                widthMultiplier);
-            SetForensicsOutlineWidth(
-                outline.Wheels,
-                outline.WheelsWidth,
-                widthMultiplier);
-            SetForensicsOutlineWidth(
-                outline.Arrow,
-                outline.ArrowWidth,
-                widthMultiplier);
-            SetForensicsOutlineWidth(
-                outline.Slice,
-                outline.SliceWidth,
-                widthMultiplier);
-            SetForensicsOutlineWidth(
-                outline.Cage,
-                outline.CageWidth,
-                widthMultiplier);
+            outline.Root.localScale = outline.BaseScale *
+                (visible ? 1.06f : 1f);
         }
 
         private void ApplyForensicCarPose(
