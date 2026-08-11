@@ -50,6 +50,12 @@ namespace F1XR.RestAPI.Replay
         [Min(0f)] public float selectedWallMarginMeters = 0.35f;
         [Min(0f)] public float otherWallMarginMeters = 0.25f;
 
+        [Header("Forensic Track Slice")]
+        public bool enableForensicTrack = true;
+        [Min(1f)] public float forensicRoadWidthInCarWidths = 5.4f;
+        [Min(0.05f)] public float forensicKerbWidthInCarWidths = 0.42f;
+        [Min(0.05f)] public float forensicRunoffWidthInCarWidths = 0.75f;
+
         [Header("Trajectory Evidence")]
         [Min(0.25f)] public float observedLeadSeconds = 0.9f;
         [Min(0.1f)] public float observedTailSeconds = 0.45f;
@@ -813,10 +819,41 @@ namespace F1XR.RestAPI.Replay
                 CollisionFootprintLongitudinalPadding;
             maximumLongitudinal += sourceVehicleLength *
                 CollisionFootprintLongitudinalPadding;
-            minimumLateral -= sourceVehicleWidth *
+            float trackHalfWidth = 0f;
+            bool missingSerializedTrackDefaults =
+                collisionShowcase != null &&
+                collisionShowcase.forensicRoadWidthInCarWidths <= 0f &&
+                collisionShowcase.forensicKerbWidthInCarWidths <= 0f &&
+                collisionShowcase.forensicRunoffWidthInCarWidths <= 0f;
+            if (collisionShowcase == null ||
+                collisionShowcase.enableForensicTrack ||
+                missingSerializedTrackDefaults)
+            {
+                float configuredRoadWidth = collisionShowcase != null
+                    ? collisionShowcase.forensicRoadWidthInCarWidths
+                    : 5.4f;
+                float configuredKerbWidth = collisionShowcase != null
+                    ? collisionShowcase.forensicKerbWidthInCarWidths
+                    : 0.42f;
+                float configuredRunoffWidth = collisionShowcase != null
+                    ? collisionShowcase.forensicRunoffWidthInCarWidths
+                    : 0.75f;
+                float roadHalfWidth = (configuredRoadWidth > 0f
+                    ? configuredRoadWidth
+                    : 5.4f) * 0.5f;
+                float kerbWidth = configuredKerbWidth > 0f
+                    ? configuredKerbWidth
+                    : 0.42f;
+                float runoffWidth = configuredRunoffWidth > 0f
+                    ? configuredRunoffWidth
+                    : 0.75f;
+                trackHalfWidth = sourceVehicleWidth *
+                    (roadHalfWidth + kerbWidth + runoffWidth);
+            }
+            float lateralPadding = sourceVehicleWidth *
                 CollisionFootprintLateralPadding;
-            maximumLateral += sourceVehicleWidth *
-                CollisionFootprintLateralPadding;
+            minimumLateral -= Mathf.Max(lateralPadding, trackHalfWidth);
+            maximumLateral += Mathf.Max(lateralPadding, trackHalfWidth);
             return new[]
             {
                 contact + forward * minimumLongitudinal +
@@ -3086,8 +3123,8 @@ namespace F1XR.RestAPI.Replay
                 sourceToLocalRotation);
             Quaternion islandRotation =
                 Quaternion.LookRotation(forward, Vector3.up);
-            float halfLength = safeLength * 0.68f;
-            float halfWidth = safeLength * 0.62f;
+            float halfLength = safeLength * 0.34f;
+            float halfWidth = safeLength * 0.36f;
             float bevel = Mathf.Min(
                 halfWidth * 0.32f,
                 safeLength * 0.2f);
@@ -3144,9 +3181,11 @@ namespace F1XR.RestAPI.Replay
             surface.transform.SetParent(
                 collisionIslandRoot,
                 false);
+            surface.transform.localPosition =
+                Vector3.up * safeLength * 0.008f;
             surface.GetComponent<MeshFilter>().sharedMesh = roadMesh;
             roadMaterial = CreateMaterial(
-                new Color(0.025f, 0.03f, 0.038f, 1f));
+                new Color(0.018f, 0.016f, 0.015f, 1f));
             MeshRenderer surfaceRenderer =
                 surface.GetComponent<MeshRenderer>();
             surfaceRenderer.sharedMaterial = roadMaterial;

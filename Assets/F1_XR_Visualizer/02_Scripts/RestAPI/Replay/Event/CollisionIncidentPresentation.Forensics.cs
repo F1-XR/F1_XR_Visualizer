@@ -20,6 +20,8 @@ namespace F1XR.RestAPI.Replay
         private const float ForensicsVehicleHoldPostSeconds = 0.35f;
         private const float ForensicsManualContactResetMeters = 0.085f;
         private const float ForensicsImpactVisibleSeconds = 1.20f;
+        private const float ForensicsTrackRevealEnd = 0.25f;
+        private const int ForensicsTrackSubmeshCount = 5;
 
         private sealed class ForensicPath
         {
@@ -30,6 +32,7 @@ namespace F1XR.RestAPI.Replay
             public Vector3[] Tangents;
             public LineRenderer Rail;
             public LineRenderer Tail;
+            public MeshRenderer StableRail;
         }
 
         private readonly struct ForensicMarker
@@ -90,6 +93,9 @@ namespace F1XR.RestAPI.Replay
         private ForensicPath forensicsVictimPath;
         private ForensicPath forensicsOtherPath;
         private Transform forensicsRoot;
+        private Transform forensicsTrackRoot;
+        private Transform forensicsStableRailRoot;
+        private Transform forensicsTrackWarningRoot;
         private Transform forensicsRailRoot;
         private Transform forensicsTailRoot;
         private Transform forensicsMarkerRoot;
@@ -97,21 +103,40 @@ namespace F1XR.RestAPI.Replay
         private CollisionTimeLensGate forensicsTimeLensGate;
         private Material forensicsVictimMaterial;
         private Material forensicsOtherMaterial;
+        private Material forensicsVictimStableMaterial;
+        private Material forensicsOtherStableMaterial;
+        private Material forensicsVictimOutlineMaterial;
+        private Material forensicsOtherOutlineMaterial;
         private Material forensicsVictimTailMaterial;
         private Material forensicsOtherTailMaterial;
         private Material forensicsConnectorMaterial;
         private Material forensicsBrakeMaterial;
         private Material forensicsReconstructedMaterial;
         private Material forensicsLensMaterial;
+        private Material forensicsTrackAsphaltMaterial;
+        private Material forensicsTrackKerbRedMaterial;
+        private Material forensicsTrackKerbWhiteMaterial;
+        private Material forensicsTrackEdgeMaterial;
+        private Material forensicsTrackRunoffMaterial;
+        private Material forensicsTrackWarningMaterial;
         private TextMeshPro forensicsLegend;
         private TextMeshPro forensicsLensHud;
         private readonly List<Material> forensicsMaterials = new();
+        private readonly List<Mesh> forensicsMeshes = new();
+        private readonly List<LineRenderer> forensicsTrackWarningLines = new();
+        private readonly List<Vector3[]> forensicsTrackWarningPoints = new();
         private readonly List<ForensicMarker> forensicsMarkers = new();
         private readonly List<ForensicOutline> forensicsOutlines = new();
         private ForensicOutline forensicsVictimContactOutline;
         private ForensicOutline forensicsOtherContactOutline;
         private readonly List<Vector3> forensicsVictimTailPoints = new(32);
         private readonly List<Vector3> forensicsOtherTailPoints = new(32);
+        private Mesh forensicsTrackMesh;
+        private int[][] forensicsTrackTriangles;
+        private float forensicsTrackOuterHalfWidth;
+        private float forensicsLastTrackProgress = -1f;
+        private Color forensicsTrackWarningColor;
+        private bool forensicsTrackEnabled;
         private Vector3 forensicsCorridorForward = Vector3.forward;
         private Vector3 forensicsCorridorRight = Vector3.right;
         private float forensicsCorridorScale = 1f;
@@ -302,6 +327,8 @@ namespace F1XR.RestAPI.Replay
             SetIncomingTrajectoryProgress(0f, 0f);
             SetPostImpactProgress(0f);
             SetForensicsRailProgress(0f);
+            SetForensicsTrackProgress(0f);
+            SetForensicsTrackWarningPulse(-1f);
             SetForensicsTail(float.NaN);
             SetForensicsAnnotations(0f);
             UpdateForensicsOutlines(
@@ -396,6 +423,8 @@ namespace F1XR.RestAPI.Replay
             float safeDelta = Mathf.Max(0f, delta);
             TickSecondaryImpactHaptic(safeDelta);
             TickForensicsManualContactPulse(safeDelta);
+            if (IsTimeLensGrabbed)
+                FaceReadableTextToViewer(forensicsLensHud);
             if (forensicsImpactReplaying)
                 return TickForensicsImpactReplay(safeDelta);
             if (!forensicsRevealRunning)
@@ -540,6 +569,8 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(earlyGhostRoot, false);
             SetRootVisible(lateGhostRoot, false);
             SetForensicsRailProgress(1f);
+            SetForensicsTrackProgress(1f);
+            SetForensicsTrackWarningPulse(-1f);
             SetForensicsTail(float.NaN);
             SetForensicsAnnotations(1f);
             SetRootVisible(
@@ -573,6 +604,8 @@ namespace F1XR.RestAPI.Replay
             {
                 forensicsTimeLensGate.ValueChanged -=
                     OnForensicsTimeLensChanged;
+                forensicsTimeLensGate.GrabStateChanged -=
+                    OnForensicsTimeLensGrabStateChanged;
                 UnityEngine.Object.Destroy(
                     forensicsTimeLensGate.gameObject);
             }
@@ -580,6 +613,14 @@ namespace F1XR.RestAPI.Replay
                 UnityEngine.Object.Destroy(forensicsRoot.gameObject);
 
             ResetVehicleMotion();
+            for (int i = 0; i < forensicsMeshes.Count; i++)
+            {
+                Mesh mesh = forensicsMeshes[i];
+                if (mesh == null)
+                    continue;
+                meshes.Remove(mesh);
+                UnityEngine.Object.Destroy(mesh);
+            }
             for (int i = 0; i < forensicsMaterials.Count; i++)
             {
                 Material material = forensicsMaterials[i];
@@ -590,6 +631,9 @@ namespace F1XR.RestAPI.Replay
             }
 
             forensicsMaterials.Clear();
+            forensicsMeshes.Clear();
+            forensicsTrackWarningLines.Clear();
+            forensicsTrackWarningPoints.Clear();
             forensicsMarkers.Clear();
             forensicsOutlines.Clear();
             forensicsVictimContactOutline = default;
@@ -600,6 +644,9 @@ namespace F1XR.RestAPI.Replay
             forensicsVictimPath = null;
             forensicsOtherPath = null;
             forensicsRoot = null;
+            forensicsTrackRoot = null;
+            forensicsStableRailRoot = null;
+            forensicsTrackWarningRoot = null;
             forensicsRailRoot = null;
             forensicsTailRoot = null;
             forensicsMarkerRoot = null;
@@ -607,12 +654,27 @@ namespace F1XR.RestAPI.Replay
             forensicsTimeLensGate = null;
             forensicsVictimMaterial = null;
             forensicsOtherMaterial = null;
+            forensicsVictimStableMaterial = null;
+            forensicsOtherStableMaterial = null;
+            forensicsVictimOutlineMaterial = null;
+            forensicsOtherOutlineMaterial = null;
             forensicsVictimTailMaterial = null;
             forensicsOtherTailMaterial = null;
             forensicsConnectorMaterial = null;
             forensicsBrakeMaterial = null;
             forensicsReconstructedMaterial = null;
             forensicsLensMaterial = null;
+            forensicsTrackAsphaltMaterial = null;
+            forensicsTrackKerbRedMaterial = null;
+            forensicsTrackKerbWhiteMaterial = null;
+            forensicsTrackEdgeMaterial = null;
+            forensicsTrackRunoffMaterial = null;
+            forensicsTrackWarningMaterial = null;
+            forensicsTrackMesh = null;
+            forensicsTrackTriangles = null;
+            forensicsTrackOuterHalfWidth = 0f;
+            forensicsLastTrackProgress = -1f;
+            forensicsTrackEnabled = false;
             forensicsLegend = null;
             forensicsLensHud = null;
             forensicsDefaultLensNormalized = 1f;
@@ -755,6 +817,13 @@ namespace F1XR.RestAPI.Replay
             forensicsRoot = CreateRoot(
                 "CollisionTrajectoryForensics",
                 presentationRoot);
+            forensicsTrackRoot = CreateRoot("ForensicTrackSlice", forensicsRoot);
+            forensicsStableRailRoot = CreateRoot(
+                "StableObservedRibbons",
+                forensicsRoot);
+            forensicsTrackWarningRoot = CreateRoot(
+                "TrackContactWarning",
+                forensicsRoot);
             forensicsRailRoot = CreateRoot("ObservedRails", forensicsRoot);
             forensicsTailRoot = CreateRoot("TemporalTails", forensicsRoot);
             forensicsMarkerRoot = CreateRoot("EvidenceTicks", forensicsRoot);
@@ -766,6 +835,18 @@ namespace F1XR.RestAPI.Replay
             forensicsOtherMaterial = CreateForensicsMaterial(
                 "Runtime_ForensicsDriverB",
                 new Color(0.12f, 0.82f, 1f, 0.92f));
+            forensicsVictimStableMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsDriverAStable",
+                new Color(0.92f, 0.97f, 1f, 1f));
+            forensicsOtherStableMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsDriverBStable",
+                new Color(0.04f, 0.78f, 0.94f, 1f));
+            forensicsVictimOutlineMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsDriverAOutline",
+                new Color(0.94f, 0.98f, 1f, 1f));
+            forensicsOtherOutlineMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsDriverBOutline",
+                new Color(0.05f, 0.86f, 1f, 1f));
             forensicsVictimTailMaterial = CreateForensicsMaterial(
                 "Runtime_ForensicsDriverATail",
                 new Color(1f, 1f, 1f, 0.94f),
@@ -816,6 +897,17 @@ namespace F1XR.RestAPI.Replay
                 carWidth * 0.06f,
                 true);
 
+            bool missingSerializedTrackDefaults =
+                settings != null &&
+                settings.forensicRoadWidthInCarWidths <= 0f &&
+                settings.forensicKerbWidthInCarWidths <= 0f &&
+                settings.forensicRunoffWidthInCarWidths <= 0f;
+            forensicsTrackEnabled = settings == null ||
+                settings.enableForensicTrack ||
+                missingSerializedTrackDefaults;
+            if (forensicsTrackEnabled)
+                BuildForensicsTrack(settings);
+            BuildStableForensicsRails();
             BuildForensicsMarkers();
             BuildForensicsOutlines();
             BuildForensicsContactOutlines();
@@ -832,37 +924,39 @@ namespace F1XR.RestAPI.Replay
                 typeof(TextMeshPro));
             legendObject.transform.SetParent(forensicsRoot, false);
             legendObject.transform.localPosition = contactLocal -
-                forensicsCorridorRight * carWidth * 1.45f +
-                Vector3.up * carWidth * 0.62f;
+                forensicsCorridorRight * Mathf.Max(
+                    carWidth * 1.45f,
+                    forensicsTrackOuterHalfWidth + carWidth * 0.34f) +
+                Vector3.up * carWidth * 0.48f;
             legendObject.transform.localRotation =
                 Quaternion.LookRotation(Vector3.up, forensicsCorridorForward);
             legendObject.transform.localScale =
-                Vector3.one * carLength * 0.07f;
+                Vector3.one * carLength * 0.06f;
             forensicsLegend = legendObject.GetComponent<TextMeshPro>();
             string tier = forensicsAnalysis.Tier switch
             {
                 CollisionEvidenceTier.ObservedContactAndPost =>
-                    "OBSERVED AFTERMATH",
+                    "<color=#34D8FF>OBSERVED AFTERMATH</color>",
                 CollisionEvidenceTier.ObservedContactRequiresReconstruction =>
-                    "DASHED RED = RECONSTRUCTED",
-                _ => "INCIDENT REPORTED | CONTACT UNRESOLVED"
+                    "<color=#FF3A32>RECONSTRUCTED</color>",
+                _ => "CONTACT UNRESOLVED"
             };
             string closest = forensicsAnalysis.Tier ==
                              CollisionEvidenceTier.ContactUnresolved
                 ? "CLOSEST UNRESOLVED"
                 : $"CLOSEST {forensicsObservedTime}";
             forensicsLegend.text =
-                "FORENSIC TRAJECTORY\n" +
-                "OBSERVED | STABILIZED | TIME-COMPRESSED\n" +
-                $"REPORTED {forensicsReportedTime} | {closest}\n" +
-                $"WHITE A | CYAN B | YELLOW BRAKE | {tier}";
+                "TRACK CONTEXT | TIME-COMPRESSED\n" +
+                "<color=#F1FAFF>OBSERVED</color> | " +
+                "<color=#FF922E>CONTACT</color> | " + tier + "\n" +
+                $"REPORTED {forensicsReportedTime} | {closest}";
             forensicsLegend.alignment = TextAlignmentOptions.Left;
             forensicsLegend.richText = true;
-            forensicsLegend.fontSize = 4.6f;
+            forensicsLegend.fontSize = 5.2f;
             forensicsLegend.fontStyle = FontStyles.Bold;
             forensicsLegend.enableAutoSizing = false;
             forensicsLegend.color = new Color(0.82f, 0.9f, 0.98f, 0.94f);
-            forensicsLegend.rectTransform.sizeDelta = new Vector2(24f, 7f);
+            forensicsLegend.rectTransform.sizeDelta = new Vector2(23f, 5.5f);
             forensicsLegend.renderer.shadowCastingMode = ShadowCastingMode.Off;
             forensicsLegend.renderer.receiveShadows = false;
         }
@@ -904,6 +998,508 @@ namespace F1XR.RestAPI.Replay
                 additive);
             forensicsMaterials.Add(material);
             return material;
+        }
+
+        private Material CreateForensicsOpaqueMaterial(
+            string name,
+            Color color)
+        {
+            Material material = CreateOpaqueMaterial(name, color);
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            material.doubleSidedGI = true;
+            forensicsMaterials.Add(material);
+            return material;
+        }
+
+        private void BuildForensicsTrack(
+            CollisionShowcaseVfxSettings settings)
+        {
+            int count = Mathf.Min(
+                forensicsVictimPath?.Points?.Length ?? 0,
+                forensicsOtherPath?.Points?.Length ?? 0);
+            if (count < 2 || forensicsTrackRoot == null)
+            {
+                forensicsTrackEnabled = false;
+                return;
+            }
+
+            float configuredRoadWidth = settings != null
+                ? settings.forensicRoadWidthInCarWidths
+                : 5.4f;
+            float configuredKerbWidth = settings != null
+                ? settings.forensicKerbWidthInCarWidths
+                : 0.42f;
+            float configuredRunoffWidth = settings != null
+                ? settings.forensicRunoffWidthInCarWidths
+                : 0.75f;
+            float roadWidth = (configuredRoadWidth > 0f
+                ? configuredRoadWidth
+                : 5.4f) * carWidth;
+            float kerbWidth = (configuredKerbWidth > 0f
+                ? configuredKerbWidth
+                : 0.42f) * carWidth;
+            float runoffWidth = (configuredRunoffWidth > 0f
+                ? configuredRunoffWidth
+                : 0.75f) * carWidth;
+            float roadHalfWidth = roadWidth * 0.5f;
+            float kerbOuter = roadHalfWidth + kerbWidth;
+            forensicsTrackOuterHalfWidth = kerbOuter + runoffWidth;
+            float edgeWidth = Mathf.Min(
+                roadHalfWidth * 0.12f,
+                Mathf.Max(carWidth * 0.055f, roadWidth * 0.014f));
+            float[] lateralOffsets =
+            {
+                -forensicsTrackOuterHalfWidth,
+                -kerbOuter,
+                -roadHalfWidth,
+                -roadHalfWidth + edgeWidth,
+                roadHalfWidth - edgeWidth,
+                roadHalfWidth,
+                kerbOuter,
+                forensicsTrackOuterHalfWidth
+            };
+
+            Vector3[] centers = new Vector3[count];
+            Vector3[] rights = new Vector3[count];
+            float[] cumulative = new float[count];
+            for (int i = 0; i < count; i++)
+            {
+                centers[i] =
+                    (forensicsVictimPath.Points[i] +
+                     forensicsOtherPath.Points[i]) * 0.5f;
+                if (i > 0)
+                {
+                    cumulative[i] = cumulative[i - 1] +
+                        Vector3.Distance(centers[i - 1], centers[i]);
+                }
+            }
+            for (int i = 0; i < count; i++)
+            {
+                int before = Mathf.Max(0, i - 1);
+                int after = Mathf.Min(count - 1, i + 1);
+                Vector3 tangent = FlattenNormalized(
+                    centers[after] - centers[before],
+                    forensicsCorridorForward);
+                Vector3 right = FlattenNormalized(
+                    Vector3.Cross(Vector3.up, tangent),
+                    i > 0 ? rights[i - 1] : forensicsCorridorRight);
+                if (i > 0 && Vector3.Dot(right, rights[i - 1]) < 0f)
+                    right = -right;
+                rights[i] = right;
+            }
+
+            const int verticesPerRow = 8;
+            Vector3[] vertices = new Vector3[count * verticesPerRow];
+            Vector3[] normals = new Vector3[vertices.Length];
+            Vector2[] uv = new Vector2[vertices.Length];
+            float lift = carWidth * 0.012f;
+            float uvLength = Mathf.Max(carLength, cumulative[count - 1]);
+            for (int i = 0; i < count; i++)
+            {
+                for (int band = 0; band < verticesPerRow; band++)
+                {
+                    int index = i * verticesPerRow + band;
+                    vertices[index] = centers[i] +
+                        rights[i] * lateralOffsets[band] +
+                        Vector3.up * lift;
+                    normals[index] = Vector3.up;
+                    uv[index] = new Vector2(
+                        band / (verticesPerRow - 1f),
+                        cumulative[i] / uvLength);
+                }
+            }
+
+            List<int>[] triangles = new List<int>[ForensicsTrackSubmeshCount];
+            for (int i = 0; i < triangles.Length; i++)
+                triangles[i] = new List<int>((count - 1) * 12);
+            float stripeLength = Mathf.Max(
+                carWidth * 0.6f,
+                carLength * 0.42f);
+            for (int segment = 0; segment < count - 1; segment++)
+            {
+                AddForensicsTrackQuad(
+                    triangles[4], segment, 0, 1, verticesPerRow);
+                AddForensicsTrackQuad(
+                    triangles[4], segment, 6, 7, verticesPerRow);
+                int kerbSubmesh = Mathf.FloorToInt(
+                    (cumulative[segment] + cumulative[segment + 1]) *
+                    0.5f / stripeLength) % 2 == 0
+                        ? 1
+                        : 2;
+                AddForensicsTrackQuad(
+                    triangles[kerbSubmesh], segment, 1, 2, verticesPerRow);
+                AddForensicsTrackQuad(
+                    triangles[kerbSubmesh], segment, 5, 6, verticesPerRow);
+                AddForensicsTrackQuad(
+                    triangles[3], segment, 2, 3, verticesPerRow);
+                AddForensicsTrackQuad(
+                    triangles[3], segment, 4, 5, verticesPerRow);
+                AddForensicsTrackQuad(
+                    triangles[0], segment, 3, 4, verticesPerRow);
+            }
+
+            forensicsTrackMesh = new Mesh
+            {
+                name = "Runtime_CollisionForensicTrackSlice"
+            };
+            forensicsTrackMesh.vertices = vertices;
+            forensicsTrackMesh.normals = normals;
+            forensicsTrackMesh.uv = uv;
+            forensicsTrackMesh.subMeshCount = ForensicsTrackSubmeshCount;
+            forensicsTrackTriangles = new int[ForensicsTrackSubmeshCount][];
+            for (int i = 0; i < ForensicsTrackSubmeshCount; i++)
+            {
+                forensicsTrackTriangles[i] = triangles[i].ToArray();
+                forensicsTrackMesh.SetTriangles(
+                    forensicsTrackTriangles[i],
+                    i,
+                    false);
+            }
+            forensicsTrackMesh.RecalculateBounds();
+            meshes.Add(forensicsTrackMesh);
+            forensicsMeshes.Add(forensicsTrackMesh);
+
+            forensicsTrackAsphaltMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsTrackAsphalt",
+                new Color(0.075f, 0.085f, 0.095f, 1f));
+            forensicsTrackKerbRedMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsTrackKerbRed",
+                new Color(0.72f, 0.035f, 0.045f, 1f));
+            forensicsTrackKerbWhiteMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsTrackKerbWhite",
+                new Color(0.88f, 0.91f, 0.92f, 1f));
+            forensicsTrackEdgeMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsTrackEdge",
+                new Color(0.96f, 0.97f, 0.94f, 1f));
+            forensicsTrackRunoffMaterial = CreateForensicsOpaqueMaterial(
+                "Runtime_ForensicsTrackRunoff",
+                new Color(0.035f, 0.22f, 0.095f, 1f));
+            GameObject trackObject = new(
+                "SuzukaForensicTrackContext",
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            trackObject.transform.SetParent(forensicsTrackRoot, false);
+            trackObject.GetComponent<MeshFilter>().sharedMesh =
+                forensicsTrackMesh;
+            MeshRenderer renderer = trackObject.GetComponent<MeshRenderer>();
+            renderer.sharedMaterials = new[]
+            {
+                forensicsTrackAsphaltMaterial,
+                forensicsTrackKerbRedMaterial,
+                forensicsTrackKerbWhiteMaterial,
+                forensicsTrackEdgeMaterial,
+                forensicsTrackRunoffMaterial
+            };
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
+
+            Vector3[] leftRoadEdge = new Vector3[count];
+            Vector3[] rightRoadEdge = new Vector3[count];
+            Vector3[] leftKerbEdge = new Vector3[count];
+            Vector3[] rightKerbEdge = new Vector3[count];
+            int closestContactIndex = 0;
+            float closestContactDistance = float.PositiveInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                leftRoadEdge[i] = vertices[i * verticesPerRow + 2] +
+                    Vector3.up * carWidth * 0.03f;
+                rightRoadEdge[i] = vertices[i * verticesPerRow + 5] +
+                    Vector3.up * carWidth * 0.03f;
+                leftKerbEdge[i] = vertices[i * verticesPerRow + 1] +
+                    Vector3.up * carWidth * 0.03f;
+                rightKerbEdge[i] = vertices[i * verticesPerRow + 6] +
+                    Vector3.up * carWidth * 0.03f;
+                float distance = (centers[i] - contactLocal).sqrMagnitude;
+                if (distance < closestContactDistance)
+                {
+                    closestContactDistance = distance;
+                    closestContactIndex = i;
+                }
+            }
+            BuildForensicsTrackWarning(
+                leftRoadEdge,
+                rightRoadEdge,
+                leftKerbEdge,
+                rightKerbEdge,
+                closestContactIndex);
+            SetForensicsTrackProgress(0f);
+        }
+
+        private static void AddForensicsTrackQuad(
+            List<int> destination,
+            int segment,
+            int leftBand,
+            int rightBand,
+            int rowWidth)
+        {
+            int a = segment * rowWidth + leftBand;
+            int b = segment * rowWidth + rightBand;
+            int c = (segment + 1) * rowWidth + leftBand;
+            int d = (segment + 1) * rowWidth + rightBand;
+            destination.Add(a);
+            destination.Add(c);
+            destination.Add(d);
+            destination.Add(a);
+            destination.Add(d);
+            destination.Add(b);
+        }
+
+        private void BuildStableForensicsRails()
+        {
+            BuildStableForensicsRail(
+                forensicsVictimPath,
+                "DriverAObservedRibbon",
+                forensicsVictimStableMaterial);
+            BuildStableForensicsRail(
+                forensicsOtherPath,
+                "DriverBObservedRibbon",
+                forensicsOtherStableMaterial);
+            SetRootVisible(forensicsStableRailRoot, false);
+        }
+
+        private void BuildStableForensicsRail(
+            ForensicPath path,
+            string name,
+            Material material)
+        {
+            if (path?.Points == null ||
+                path.Points.Length < 2 ||
+                forensicsStableRailRoot == null)
+            {
+                return;
+            }
+
+            int count = path.Points.Length;
+            Vector3[] vertices = new Vector3[count * 2];
+            Vector3[] normals = new Vector3[vertices.Length];
+            Vector2[] uv = new Vector2[vertices.Length];
+            int[] triangles = new int[(count - 1) * 6];
+            float halfWidth = Mathf.Max(
+                carWidth * 0.035f,
+                0.0001f);
+            Vector3 lift = Vector3.up * carWidth * 0.072f;
+            Vector3 previousRight = forensicsCorridorRight;
+            float distance = 0f;
+            for (int i = 0; i < count; i++)
+            {
+                if (i > 0)
+                {
+                    distance += Vector3.Distance(
+                        path.Points[i - 1],
+                        path.Points[i]);
+                }
+                Vector3 right = FlattenNormalized(
+                    Vector3.Cross(Vector3.up, path.Tangents[i]),
+                    previousRight);
+                if (i > 0 && Vector3.Dot(right, previousRight) < 0f)
+                    right = -right;
+                previousRight = right;
+                vertices[i * 2] = path.Points[i] - right * halfWidth + lift;
+                vertices[i * 2 + 1] = path.Points[i] + right * halfWidth + lift;
+                normals[i * 2] = Vector3.up;
+                normals[i * 2 + 1] = Vector3.up;
+                uv[i * 2] = new Vector2(0f, distance);
+                uv[i * 2 + 1] = new Vector2(1f, distance);
+            }
+            for (int i = 0; i < count - 1; i++)
+            {
+                int triangle = i * 6;
+                int vertex = i * 2;
+                triangles[triangle] = vertex;
+                triangles[triangle + 1] = vertex + 2;
+                triangles[triangle + 2] = vertex + 3;
+                triangles[triangle + 3] = vertex;
+                triangles[triangle + 4] = vertex + 3;
+                triangles[triangle + 5] = vertex + 1;
+            }
+
+            Mesh mesh = new()
+            {
+                name = $"Runtime_{name}"
+            };
+            mesh.vertices = vertices;
+            mesh.normals = normals;
+            mesh.uv = uv;
+            mesh.triangles = triangles;
+            mesh.RecalculateBounds();
+            meshes.Add(mesh);
+            forensicsMeshes.Add(mesh);
+            GameObject ribbon = new(
+                name,
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            ribbon.transform.SetParent(forensicsStableRailRoot, false);
+            ribbon.GetComponent<MeshFilter>().sharedMesh = mesh;
+            MeshRenderer renderer = ribbon.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
+            path.StableRail = renderer;
+        }
+
+        private void BuildForensicsTrackWarning(
+            Vector3[] leftRoad,
+            Vector3[] rightRoad,
+            Vector3[] leftKerb,
+            Vector3[] rightKerb,
+            int contactIndex)
+        {
+            if (forensicsTrackWarningRoot == null ||
+                leftRoad == null || rightRoad == null ||
+                leftKerb == null || rightKerb == null ||
+                leftRoad.Length < 2 ||
+                rightRoad.Length != leftRoad.Length ||
+                leftKerb.Length != leftRoad.Length ||
+                rightKerb.Length != leftRoad.Length)
+            {
+                return;
+            }
+
+            forensicsTrackWarningColor =
+                new Color(1.45f, 0.72f, 0.035f, 0.96f);
+            forensicsTrackWarningMaterial = CreateForensicsMaterial(
+                "Runtime_ForensicsTrackContactWarning",
+                forensicsTrackWarningColor,
+                true);
+            AddForensicsTrackWarningLine(
+                leftRoad,
+                contactIndex,
+                0,
+                "LeftWarningEntry");
+            AddForensicsTrackWarningLine(
+                leftRoad,
+                contactIndex,
+                leftRoad.Length - 1,
+                "LeftWarningExit");
+            AddForensicsTrackWarningLine(
+                rightRoad,
+                contactIndex,
+                0,
+                "RightWarningEntry");
+            AddForensicsTrackWarningLine(
+                rightRoad,
+                contactIndex,
+                rightRoad.Length - 1,
+                "RightWarningExit");
+            AddForensicsTrackWarningLine(
+                leftKerb,
+                contactIndex,
+                0,
+                "LeftKerbWarningEntry");
+            AddForensicsTrackWarningLine(
+                leftKerb,
+                contactIndex,
+                leftKerb.Length - 1,
+                "LeftKerbWarningExit");
+            AddForensicsTrackWarningLine(
+                rightKerb,
+                contactIndex,
+                0,
+                "RightKerbWarningEntry");
+            AddForensicsTrackWarningLine(
+                rightKerb,
+                contactIndex,
+                rightKerb.Length - 1,
+                "RightKerbWarningExit");
+            SetRootVisible(forensicsTrackWarningRoot, false);
+        }
+
+        private void AddForensicsTrackWarningLine(
+            Vector3[] source,
+            int start,
+            int end,
+            string name)
+        {
+            int step = end >= start ? 1 : -1;
+            int count = Mathf.Abs(end - start) + 1;
+            if (count < 2)
+                return;
+            Vector3[] points = new Vector3[count];
+            for (int i = 0; i < count; i++)
+                points[i] = source[start + step * i];
+            LineRenderer line = CreateLine(
+                name,
+                forensicsTrackWarningRoot,
+                forensicsTrackWarningMaterial,
+                carWidth * 0.065f,
+                true);
+            line.positionCount = 0;
+            forensicsTrackWarningLines.Add(line);
+            forensicsTrackWarningPoints.Add(points);
+        }
+
+        private void SetForensicsTrackProgress(float progress)
+        {
+            if (!forensicsTrackEnabled ||
+                forensicsTrackRoot == null ||
+                forensicsTrackMesh == null ||
+                forensicsTrackTriangles == null)
+            {
+                SetRootVisible(forensicsTrackRoot, false);
+                return;
+            }
+
+            float clamped = Mathf.Clamp01(progress);
+            SetRootVisible(forensicsTrackRoot, clamped > 0.0001f);
+            if (Mathf.Abs(clamped - forensicsLastTrackProgress) < 0.001f)
+                return;
+            forensicsLastTrackProgress = clamped;
+            for (int i = 0; i < forensicsTrackTriangles.Length; i++)
+            {
+                int[] full = forensicsTrackTriangles[i];
+                int quadCount = full.Length / 6;
+                int visibleIndices = clamped >= 0.9999f
+                    ? full.Length
+                    : Mathf.Clamp(
+                        Mathf.FloorToInt(quadCount * clamped) * 6,
+                        0,
+                        full.Length);
+                forensicsTrackMesh.SetTriangles(
+                    full,
+                    0,
+                    visibleIndices,
+                    i,
+                    false);
+            }
+        }
+
+        private void SetForensicsTrackWarningPulse(float age)
+        {
+            if (forensicsTrackWarningRoot == null ||
+                forensicsTrackWarningMaterial == null ||
+                age < 0f || age > 0.55f)
+            {
+                SetRootVisible(forensicsTrackWarningRoot, false);
+                return;
+            }
+
+            float progress = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.InverseLerp(0f, 0.42f, age));
+            float fade = 1f - Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.InverseLerp(0.18f, 0.55f, age));
+            Color color = forensicsTrackWarningColor;
+            color.a *= fade;
+            ReplayCarVisualUtil.SetMaterialColor(
+                forensicsTrackWarningMaterial,
+                color);
+            SetRootVisible(forensicsTrackWarningRoot, fade > 0.001f);
+            for (int i = 0; i < forensicsTrackWarningLines.Count; i++)
+            {
+                SetLineProgress(
+                    forensicsTrackWarningLines[i],
+                    forensicsTrackWarningPoints[i],
+                    progress,
+                    Vector3.zero);
+            }
         }
 
         private void BuildForensicsMarkers()
@@ -1005,14 +1601,14 @@ namespace F1XR.RestAPI.Replay
                     forensicsVictimDriver,
                     time,
                     $"DriverAOutline_{offsets[i]:0.00}",
-                    forensicsVictimMaterial);
+                    forensicsVictimOutlineMaterial);
                 if (victimOutline.Root != null)
                     forensicsOutlines.Add(victimOutline);
                 ForensicOutline otherOutline = CreateForensicsOutline(
                     forensicsOtherDriver,
                     time,
                     $"DriverBOutline_{offsets[i]:0.00}",
-                    forensicsOtherMaterial);
+                    forensicsOtherOutlineMaterial);
                 if (otherOutline.Root != null)
                     forensicsOutlines.Add(otherOutline);
             }
@@ -1025,12 +1621,12 @@ namespace F1XR.RestAPI.Replay
                 forensicsVictimDriver,
                 contact,
                 "DriverAContactOutline",
-                forensicsVictimTailMaterial);
+                forensicsVictimOutlineMaterial);
             forensicsOtherContactOutline = CreateForensicsOutline(
                 forensicsOtherDriver,
                 contact,
                 "DriverBContactOutline",
-                forensicsOtherTailMaterial);
+                forensicsOtherOutlineMaterial);
         }
 
         private ForensicOutline CreateForensicsOutline(
@@ -1061,7 +1657,7 @@ namespace F1XR.RestAPI.Replay
                 "BodyOutline",
                 root,
                 material,
-                carWidth * 0.04f,
+                carWidth * 0.055f,
                 true);
             body.loop = true;
             body.positionCount = 4;
@@ -1074,7 +1670,7 @@ namespace F1XR.RestAPI.Replay
                 "WheelOutline",
                 root,
                 material,
-                carWidth * 0.05f,
+                carWidth * 0.065f,
                 true);
             wheels.positionCount = 4;
             wheels.SetPosition(0, point + forward * halfLength * 0.62f - right * halfWidth * 1.15f + lift);
@@ -1086,7 +1682,7 @@ namespace F1XR.RestAPI.Replay
                 "ForwardOutline",
                 root,
                 material,
-                carWidth * 0.035f,
+                carWidth * 0.05f,
                 true);
             Vector3 tip = point + forward * carLength * 0.72f + lift;
             arrow.positionCount = 4;
@@ -1102,7 +1698,7 @@ namespace F1XR.RestAPI.Replay
                 "VehicleScanSection",
                 root,
                 material,
-                carWidth * 0.04f,
+                carWidth * 0.055f,
                 true);
             slice.positionCount = 7;
             Vector3 sliceBase = point + lift;
@@ -1132,7 +1728,7 @@ namespace F1XR.RestAPI.Replay
                 "VehicleWireCage",
                 root,
                 material,
-                carWidth * 0.035f,
+                carWidth * 0.05f,
                 true);
             cage.loop = true;
             cage.positionCount = 10;
@@ -1328,6 +1924,8 @@ namespace F1XR.RestAPI.Replay
                 localHeight);
             forensicsTimeLensGate.ValueChanged +=
                 OnForensicsTimeLensChanged;
+            forensicsTimeLensGate.GrabStateChanged +=
+                OnForensicsTimeLensGrabStateChanged;
             forensicsTimeLensGate.SetAvailable(false);
         }
 
@@ -1360,6 +1958,7 @@ namespace F1XR.RestAPI.Replay
                 ShadowCastingMode.Off;
             forensicsLensHud.renderer.receiveShadows = false;
             UpdateForensicsLensHud();
+            forensicsLensHud.gameObject.SetActive(false);
         }
 
         private void UpdateForensicsLensHud()
@@ -1416,10 +2015,15 @@ namespace F1XR.RestAPI.Replay
         private void ApplyForensicsReveal(float time)
         {
             float contact = forensicsAnalysis.PresentationTime;
+            float trackProgress = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.InverseLerp(0f, ForensicsTrackRevealEnd, time));
+            SetForensicsTrackProgress(trackProgress);
             float railProgress = Mathf.SmoothStep(
                 0f,
                 1f,
-                Mathf.InverseLerp(0f, ForensicsRailRevealEnd, time));
+                Mathf.InverseLerp(0.15f, ForensicsRailRevealEnd, time));
             SetForensicsRailProgress(railProgress);
             SetForensicsAnnotations(0f);
 
@@ -1645,6 +2249,7 @@ namespace F1XR.RestAPI.Replay
             SetImpactTransient(-1f);
             SetImpactWarningWave(-1f);
             SetImpactBurst(-1f);
+            SetForensicsTrackWarningPulse(-1f);
         }
 
         private void UpdateForensicsImpactVisuals(float age)
@@ -1659,6 +2264,7 @@ namespace F1XR.RestAPI.Replay
             SetImpactFlash(age >= 0f && age <= 0.13f, age);
             SetImpactPulse(age);
             SetImpactWarningWave(age);
+            SetForensicsTrackWarningPulse(age);
             SetImpactTransient(age);
             if (age <= ForensicsImpactVisibleSeconds)
                 SetImpactBurst(age);
@@ -1668,16 +2274,26 @@ namespace F1XR.RestAPI.Replay
 
         private void SetForensicsRailProgress(float progress)
         {
+            float clamped = Mathf.Clamp01(progress);
+            bool useStableMesh = clamped >= 0.999f;
+            SetRootVisible(forensicsStableRailRoot, useStableMesh);
+            if (forensicsVictimPath?.Rail != null)
+                forensicsVictimPath.Rail.enabled = !useStableMesh;
+            if (forensicsOtherPath?.Rail != null)
+                forensicsOtherPath.Rail.enabled = !useStableMesh;
+            if (useStableMesh)
+                return;
+
             Vector3 lift = ForensicsLineLift();
             SetLineProgress(
                 forensicsVictimPath?.Rail,
                 forensicsVictimPath?.Points,
-                progress,
+                clamped,
                 lift);
             SetLineProgress(
                 forensicsOtherPath?.Rail,
                 forensicsOtherPath?.Points,
-                progress,
+                clamped,
                 lift);
         }
 
@@ -2162,6 +2778,16 @@ namespace F1XR.RestAPI.Replay
             float normalized)
         {
             ApplyForensicsTimeLensValue(normalized);
+        }
+
+        private void OnForensicsTimeLensGrabStateChanged(bool grabbed)
+        {
+            if (forensicsLensHud == null)
+                return;
+
+            forensicsLensHud.gameObject.SetActive(grabbed);
+            if (grabbed)
+                UpdateForensicsLensHud();
         }
 
         private void ApplyForensicsTimeLensValue(float normalized)
