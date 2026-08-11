@@ -80,8 +80,16 @@ namespace F1XR.RestAPI.Replay
         {
             public Transform Root;
             public float Time;
-            public TextMeshPro Panel;
-            public Vector3 PanelBaseScale;
+            public bool Contact;
+            public TextMeshPro Header;
+            public TextMeshPro Gap;
+            public TextMeshPro VictimTelemetry;
+            public TextMeshPro OtherTelemetry;
+            public Vector3 HeaderBaseScale;
+            public Vector3 GapBaseScale;
+            public Vector3 TelemetryBaseScale;
+            public Transform PulseRoot;
+            public Vector3 PulseBaseScale;
         }
 
         private CollisionTrajectoryAnalysis forensicsAnalysis;
@@ -115,7 +123,6 @@ namespace F1XR.RestAPI.Replay
         private Material forensicsTrackEdgeMaterial;
         private Material forensicsTrackRunoffMaterial;
         private Material forensicsTrackWarningMaterial;
-        private Material forensicsLegendBackdropMaterial;
         private Material forensicsStationMaterial;
         private TextMeshPro forensicsLegend;
         private TextMeshPro forensicsLensHud;
@@ -132,7 +139,6 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> forensicsVictimTailPoints = new(32);
         private readonly List<Vector3> forensicsOtherTailPoints = new(32);
         private Mesh forensicsTrackMesh;
-        private Mesh forensicsStationBackdropMesh;
         private int[][] forensicsTrackTriangles;
         private float forensicsTrackOuterHalfWidth;
         private float forensicsLastTrackProgress = -1f;
@@ -426,6 +432,7 @@ namespace F1XR.RestAPI.Replay
             TickSecondaryImpactHaptic(safeDelta);
             TickForensicsManualContactPulse(safeDelta);
             OrientForensicsReadableText();
+            UpdateForensicsContactStationPulse();
             if (IsTimeLensGrabbed)
                 FaceReadableTextToViewer(forensicsLensHud);
             if (forensicsImpactReplaying)
@@ -676,10 +683,8 @@ namespace F1XR.RestAPI.Replay
             forensicsTrackEdgeMaterial = null;
             forensicsTrackRunoffMaterial = null;
             forensicsTrackWarningMaterial = null;
-            forensicsLegendBackdropMaterial = null;
             forensicsStationMaterial = null;
             forensicsTrackMesh = null;
-            forensicsStationBackdropMesh = null;
             forensicsTrackTriangles = null;
             forensicsTrackOuterHalfWidth = 0f;
             forensicsLastTrackProgress = -1f;
@@ -886,9 +891,6 @@ namespace F1XR.RestAPI.Replay
             forensicsStationMaterial = CreateForensicsMaterial(
                 "Runtime_ForensicsStation",
                 new Color(0.78f, 0.9f, 1f, 0.88f));
-            forensicsLegendBackdropMaterial = CreateForensicsOpaqueMaterial(
-                "Runtime_ForensicsLegendBackdrop",
-                new Color(0.012f, 0.018f, 0.026f, 1f));
 
             forensicsVictimPath.Rail = CreateLine(
                 "DriverAObservedRail",
@@ -943,13 +945,13 @@ namespace F1XR.RestAPI.Replay
             legendObject.transform.SetParent(forensicsRoot, false);
             legendObject.transform.localPosition = contactLocal -
                 forensicsCorridorRight * Mathf.Max(
-                    carWidth * 1.8f,
-                    forensicsTrackOuterHalfWidth + carWidth * 0.72f) +
-                Vector3.up * carWidth * 1.7f;
+                    carWidth * 1.35f,
+                    forensicsTrackOuterHalfWidth + carWidth * 0.38f) +
+                Vector3.up * carWidth * 1.32f;
             legendObject.transform.localRotation =
                 Quaternion.LookRotation(Vector3.up, forensicsCorridorForward);
             legendObject.transform.localScale =
-                Vector3.one * carLength * 0.085f;
+                Vector3.one * carLength * 0.055f;
             forensicsLegend = legendObject.GetComponent<TextMeshPro>();
             string tier = forensicsAnalysis.Tier switch
             {
@@ -970,49 +972,13 @@ namespace F1XR.RestAPI.Replay
                 $"REPORTED {forensicsReportedTime} | {closest}";
             forensicsLegend.alignment = TextAlignmentOptions.Left;
             forensicsLegend.richText = true;
-            forensicsLegend.fontSize = 5.6f;
+            forensicsLegend.fontSize = 4.8f;
             forensicsLegend.fontStyle = FontStyles.Bold;
             forensicsLegend.enableAutoSizing = false;
             forensicsLegend.color = new Color(0.82f, 0.9f, 0.98f, 0.94f);
-            forensicsLegend.rectTransform.sizeDelta = new Vector2(21f, 5.6f);
+            forensicsLegend.rectTransform.sizeDelta = new Vector2(22f, 5.6f);
             forensicsLegend.renderer.shadowCastingMode = ShadowCastingMode.Off;
             forensicsLegend.renderer.receiveShadows = false;
-
-            Mesh backdropMesh = new()
-            {
-                name = "Runtime_ForensicsLegendBackdrop"
-            };
-            backdropMesh.vertices = new[]
-            {
-                new Vector3(-11.2f, -3.2f, 0.055f),
-                new Vector3(11.2f, -3.2f, 0.055f),
-                new Vector3(-11.2f, 3.2f, 0.055f),
-                new Vector3(11.2f, 3.2f, 0.055f)
-            };
-            backdropMesh.uv = new[]
-            {
-                Vector2.zero,
-                Vector2.right,
-                Vector2.up,
-                Vector2.one
-            };
-            backdropMesh.triangles = new[] { 0, 2, 3, 0, 3, 1 };
-            backdropMesh.RecalculateNormals();
-            backdropMesh.RecalculateBounds();
-            meshes.Add(backdropMesh);
-            forensicsMeshes.Add(backdropMesh);
-            GameObject backdrop = new(
-                "LegendBackdrop",
-                typeof(MeshFilter),
-                typeof(MeshRenderer));
-            backdrop.transform.SetParent(legendObject.transform, false);
-            backdrop.GetComponent<MeshFilter>().sharedMesh = backdropMesh;
-            MeshRenderer backdropRenderer = backdrop.GetComponent<MeshRenderer>();
-            backdropRenderer.sharedMaterial = forensicsLegendBackdropMaterial;
-            backdropRenderer.shadowCastingMode = ShadowCastingMode.Off;
-            backdropRenderer.receiveShadows = false;
-            backdropRenderer.motionVectorGenerationMode =
-                MotionVectorGenerationMode.ForceNoMotion;
         }
 
         private void UpdateBaseForensicsIncidentPanel()
@@ -1706,6 +1672,11 @@ namespace F1XR.RestAPI.Replay
                 $"EvidenceStation_{stationIndex + 1:00}",
                 forensicsStationRoot);
             root.localPosition = midpoint;
+            Vector3 victimLocal = victimPoint - midpoint;
+            Vector3 otherLocal = otherPoint - midpoint;
+            Vector3 gapDirection = FlattenNormalized(
+                otherLocal - victimLocal,
+                forensicsCorridorRight);
             Material accent = contactStation
                 ? impactMaterial
                 : outcomeStation
@@ -1720,8 +1691,43 @@ namespace F1XR.RestAPI.Replay
                 true);
             gap.positionCount = 2;
             Vector3 gapLift = Vector3.up * carWidth * 0.13f;
-            gap.SetPosition(0, victimPoint - midpoint + gapLift);
-            gap.SetPosition(1, otherPoint - midpoint + gapLift);
+            gap.SetPosition(0, victimLocal + gapLift);
+            gap.SetPosition(1, otherLocal + gapLift);
+
+            CreateForensicsStationRing(
+                "DriverANode",
+                root,
+                victimLocal,
+                carWidth * 0.19f,
+                forensicsVictimMaterial,
+                false);
+            CreateForensicsStationRing(
+                "DriverBNode",
+                root,
+                otherLocal,
+                carWidth * 0.19f,
+                forensicsOtherMaterial,
+                false);
+            if (IsForensicsBraking(forensicsVictimDriver, time))
+            {
+                CreateForensicsStationRing(
+                    "DriverABrakeHalo",
+                    root,
+                    victimLocal,
+                    carWidth * 0.29f,
+                    forensicsBrakeMaterial,
+                    false);
+            }
+            if (IsForensicsBraking(forensicsOtherDriver, time))
+            {
+                CreateForensicsStationRing(
+                    "DriverBBrakeHalo",
+                    root,
+                    otherLocal,
+                    carWidth * 0.29f,
+                    forensicsBrakeMaterial,
+                    false);
+            }
 
             LineRenderer beacon = CreateLine(
                 "StationBeacon",
@@ -1737,103 +1743,247 @@ namespace F1XR.RestAPI.Replay
                 1,
                 Vector3.up * carWidth * (contactStation ? 1.05f : 0.78f));
 
-            float sideSign = stationIndex % 2 == 0 ? -1f : 1f;
-            Vector3 panelOffset =
-                forensicsCorridorRight * sideSign *
-                (forensicsTrackOuterHalfWidth + carWidth * 0.72f) +
-                Vector3.up * carWidth * 0.72f;
-            LineRenderer tether = CreateLine(
-                "StationTether",
-                root,
-                forensicsConnectorMaterial,
-                carWidth * 0.015f,
-                false);
-            tether.positionCount = 2;
-            tether.SetPosition(
-                0,
-                Vector3.up * carWidth * 0.22f);
-            tether.SetPosition(1, panelOffset);
+            Transform pulseRoot = null;
+            if (contactStation)
+            {
+                pulseRoot = CreateRoot("ContactSpatialPulse", root);
+                pulseRoot.localPosition = Vector3.up * carWidth * 0.12f;
+                CreateForensicsStationRing(
+                    "ContactGroundRing",
+                    pulseRoot,
+                    Vector3.zero,
+                    carWidth * 0.62f,
+                    impactMaterial,
+                    false);
+                CreateForensicsStationRing(
+                    "ContactVerticalRing",
+                    pulseRoot,
+                    Vector3.up * carWidth * 0.42f,
+                    carWidth * 0.52f,
+                    impactMaterial,
+                    true);
+            }
 
-            GameObject panelObject = new(
-                "StationPanel",
-                typeof(TextMeshPro));
-            panelObject.transform.SetParent(root, false);
-            panelObject.transform.localPosition = panelOffset;
-            panelObject.transform.localRotation =
-                Quaternion.LookRotation(Vector3.up, forensicsCorridorForward);
-            panelObject.transform.localScale =
-                Vector3.one * carLength * 0.052f;
-            TextMeshPro panel = panelObject.GetComponent<TextMeshPro>();
-            panel.text = BuildForensicsStationText(
-                time,
-                stationIndex,
-                contactStation,
-                outcomeStation);
-            panel.alignment = TextAlignmentOptions.Left;
-            panel.richText = true;
-            panel.fontSize = 4.8f;
-            panel.fontStyle = FontStyles.Bold;
-            panel.enableAutoSizing = false;
-            panel.color = new Color(0.86f, 0.93f, 1f, 0.98f);
-            panel.rectTransform.sizeDelta = new Vector2(12f, 6.4f);
-            panel.renderer.shadowCastingMode = ShadowCastingMode.Off;
-            panel.renderer.receiveShadows = false;
-            panel.renderer.sortingOrder = 1;
-            CreateForensicsStationBackdrop(panelObject.transform);
+            TextMeshPro header = CreateForensicsSpatialLabel(
+                "TimeLabel",
+                root,
+                Vector3.up * carWidth * (contactStation ? 1.18f : 0.9f),
+                ResolveForensicsStationHeading(
+                    time,
+                    contactStation,
+                    outcomeStation),
+                contactStation
+                    ? new Color(1f, 0.57f, 0.2f, 1f)
+                    : outcomeStation
+                        ? new Color(0.2f, 0.85f, 1f, 1f)
+                        : new Color(0.9f, 0.96f, 1f, 1f),
+                0.048f,
+                5.6f,
+                TextAlignmentOptions.Center);
+            TextMeshPro gapLabel = CreateForensicsSpatialLabel(
+                "GapLabel",
+                root,
+                gapLift + Vector3.up * carWidth * 0.2f,
+                ResolveForensicsStationGapText(time, outcomeStation),
+                contactStation
+                    ? new Color(1f, 0.66f, 0.26f, 1f)
+                    : new Color(0.76f, 0.86f, 0.94f, 1f),
+                0.033f,
+                4.7f,
+                TextAlignmentOptions.Center);
+
+            Vector3 victimLabelPosition = victimLocal -
+                gapDirection * carWidth * 0.45f +
+                Vector3.up * carWidth * 0.52f;
+            Vector3 otherLabelPosition = otherLocal +
+                gapDirection * carWidth * 0.45f +
+                Vector3.up * carWidth * 0.52f;
+            TextMeshPro victimTelemetry = CreateForensicsSpatialLabel(
+                "DriverATelemetry",
+                root,
+                victimLabelPosition,
+                FormatForensicsStationTelemetry(
+                    forensicsVictimDriver,
+                    time),
+                new Color(0.94f, 0.98f, 1f, 1f),
+                0.031f,
+                4.5f,
+                TextAlignmentOptions.Center);
+            TextMeshPro otherTelemetry = CreateForensicsSpatialLabel(
+                "DriverBTelemetry",
+                root,
+                otherLabelPosition,
+                FormatForensicsStationTelemetry(
+                    forensicsOtherDriver,
+                    time),
+                new Color(0.08f, 0.85f, 1f, 1f),
+                0.031f,
+                4.5f,
+                TextAlignmentOptions.Center);
+            CreateForensicsLabelTether(
+                "DriverATelemetryTether",
+                root,
+                victimLocal + Vector3.up * carWidth * 0.16f,
+                victimLabelPosition,
+                forensicsVictimMaterial);
+            CreateForensicsLabelTether(
+                "DriverBTelemetryTether",
+                root,
+                otherLocal + Vector3.up * carWidth * 0.16f,
+                otherLabelPosition,
+                forensicsOtherMaterial);
 
             root.gameObject.SetActive(false);
             forensicsStations.Add(new ForensicStation
             {
                 Root = root,
                 Time = time,
-                Panel = panel,
-                PanelBaseScale = panelObject.transform.localScale
+                Contact = contactStation,
+                Header = header,
+                Gap = gapLabel,
+                VictimTelemetry = victimTelemetry,
+                OtherTelemetry = otherTelemetry,
+                HeaderBaseScale = header.transform.localScale,
+                GapBaseScale = gapLabel.transform.localScale,
+                TelemetryBaseScale = victimTelemetry.transform.localScale,
+                PulseRoot = pulseRoot,
+                PulseBaseScale = pulseRoot != null
+                    ? pulseRoot.localScale
+                    : Vector3.one
             });
         }
 
-        private string BuildForensicsStationText(
+        private string ResolveForensicsStationHeading(
             float time,
-            int stationIndex,
             bool contactStation,
             bool outcomeStation)
         {
-            float contact = forensicsAnalysis.PresentationTime;
-            float relative = time - contact;
-            string heading;
             if (contactStation)
             {
-                heading = "<color=#FF9838>CONTACT</color> | OBSERVED CLOSEST";
+                return forensicsContactSnapshotsSeparated
+                    ? "CONTACT  |  OBSERVED CLOSEST\n" +
+                      "MODEL OFFSET  |  OBSERVED POINTS UNCHANGED"
+                    : "CONTACT  |  OBSERVED CLOSEST";
             }
-            else if (outcomeStation)
+            if (outcomeStation)
             {
-                heading = forensicsAnalysis.Tier ==
-                          CollisionEvidenceTier.ObservedContactAndPost
-                    ? "<color=#35D8FF>T+0.35s | OBSERVED AFTERMATH</color>"
-                    : "<color=#FF4038>RECONSTRUCTED OUTCOME</color>";
-            }
-            else
-            {
-                heading = $"T{relative:+0.00;-0.00;0.00}s | OBSERVED";
+                return forensicsAnalysis.Tier ==
+                       CollisionEvidenceTier.ObservedContactAndPost
+                    ? "T+0.35s  |  OBSERVED AFTERMATH"
+                    : "RECONSTRUCTED OUTCOME";
             }
 
-            string gap = TryResolveForensicsGapMeters(
+            float relative = time - forensicsAnalysis.PresentationTime;
+            return $"T{relative:+0.00;-0.00;0.00}s  |  OBSERVED";
+        }
+
+        private string ResolveForensicsStationGapText(
+            float time,
+            bool outcomeStation)
+        {
+            if (TryResolveForensicsGapMeters(
                     time,
                     outcomeStation,
-                    out float gapMeters)
-                ? $"OBSERVED GAP {FormatForensicsGap(gapMeters)}"
-                : outcomeStation && forensicsAnalysis.RequiresReconstructedPost
-                    ? "GAP NOT OBSERVED"
-                    : "OBSERVED GAP UNAVAILABLE";
-            string separationNote = contactStation &&
-                                    forensicsContactSnapshotsSeparated
-                ? "\nMODELS OFFSET FOR VISIBILITY"
-                : string.Empty;
-            return
-                $"EVIDENCE {stationIndex + 1:00}  {heading}\n" +
-                $"{gap}\n" +
-                $"{FormatForensicsStationTelemetry(forensicsVictimDriver, time)}\n" +
-                $"{FormatForensicsStationTelemetry(forensicsOtherDriver, time)}\n" +
-                $"NEAREST TELEMETRY{separationNote}";
+                    out float gapMeters))
+            {
+                string suffix = Mathf.Abs(
+                        time - forensicsAnalysis.PresentationTime) <= 0.001f
+                    ? "  CLOSEST"
+                    : "  OBSERVED GAP";
+                return $"{FormatForensicsGap(gapMeters)}{suffix}";
+            }
+            return outcomeStation && forensicsAnalysis.RequiresReconstructedPost
+                ? "GAP NOT OBSERVED"
+                : "OBSERVED GAP UNAVAILABLE";
+        }
+
+        private TextMeshPro CreateForensicsSpatialLabel(
+            string name,
+            Transform parent,
+            Vector3 localPosition,
+            string text,
+            Color color,
+            float scaleInCarLengths,
+            float fontSize,
+            TextAlignmentOptions alignment)
+        {
+            GameObject labelObject = new(name, typeof(TextMeshPro));
+            labelObject.transform.SetParent(parent, false);
+            labelObject.transform.localPosition = localPosition;
+            labelObject.transform.localRotation =
+                Quaternion.LookRotation(Vector3.up, forensicsCorridorForward);
+            labelObject.transform.localScale =
+                Vector3.one * carLength * scaleInCarLengths;
+            TextMeshPro label = labelObject.GetComponent<TextMeshPro>();
+            label.text = text;
+            label.alignment = alignment;
+            label.richText = true;
+            label.fontSize = fontSize;
+            label.fontStyle = FontStyles.Bold;
+            label.enableAutoSizing = false;
+            label.color = color;
+            label.rectTransform.sizeDelta = new Vector2(15f, 2.6f);
+            label.renderer.shadowCastingMode = ShadowCastingMode.Off;
+            label.renderer.receiveShadows = false;
+            label.renderer.sortingOrder = 1;
+            return label;
+        }
+
+        private void CreateForensicsLabelTether(
+            string name,
+            Transform parent,
+            Vector3 start,
+            Vector3 end,
+            Material material)
+        {
+            LineRenderer tether = CreateLine(
+                name,
+                parent,
+                material,
+                carWidth * 0.012f,
+                false);
+            tether.positionCount = 2;
+            tether.SetPosition(0, start);
+            tether.SetPosition(1, end);
+        }
+
+        private void CreateForensicsStationRing(
+            string name,
+            Transform parent,
+            Vector3 center,
+            float radius,
+            Material material,
+            bool vertical)
+        {
+            LineRenderer ring = CreateLine(
+                name,
+                parent,
+                material,
+                carWidth * 0.02f,
+                true);
+            ring.loop = true;
+            const int pointCount = 20;
+            ring.positionCount = pointCount;
+            for (int i = 0; i < pointCount; i++)
+            {
+                float angle = i * Mathf.PI * 2f / pointCount;
+                Vector3 radial = vertical
+                    ? forensicsCorridorRight * Mathf.Cos(angle) * radius +
+                      Vector3.up * Mathf.Sin(angle) * radius
+                    : forensicsCorridorRight * Mathf.Cos(angle) * radius +
+                      forensicsCorridorForward * Mathf.Sin(angle) * radius;
+                ring.SetPosition(i, center + radial);
+            }
+        }
+
+        private bool IsForensicsBraking(int driverNumber, float time)
+        {
+            return forensicsAnalysis.TryGetTelemetry(
+                    driverNumber,
+                    time,
+                    out CollisionForensicTelemetry telemetry) &&
+                telemetry.Available &&
+                telemetry.Brake > 0;
         }
 
         private bool TryResolveForensicsGapMeters(
@@ -1914,54 +2064,6 @@ namespace F1XR.RestAPI.Replay
             return meters < 1f
                 ? $"{meters:0.00} m"
                 : $"{meters:0.0} m";
-        }
-
-        private void CreateForensicsStationBackdrop(Transform parent)
-        {
-            if (parent == null)
-                return;
-            if (forensicsStationBackdropMesh == null)
-            {
-                forensicsStationBackdropMesh = new Mesh
-                {
-                    name = "Runtime_ForensicsStationBackdrop"
-                };
-                forensicsStationBackdropMesh.vertices = new[]
-                {
-                    new Vector3(-6.35f, -3.55f, 0.055f),
-                    new Vector3(6.35f, -3.55f, 0.055f),
-                    new Vector3(-6.35f, 3.55f, 0.055f),
-                    new Vector3(6.35f, 3.55f, 0.055f)
-                };
-                forensicsStationBackdropMesh.uv = new[]
-                {
-                    Vector2.zero,
-                    Vector2.right,
-                    Vector2.up,
-                    Vector2.one
-                };
-                forensicsStationBackdropMesh.triangles =
-                    new[] { 0, 2, 3, 0, 3, 1 };
-                forensicsStationBackdropMesh.RecalculateNormals();
-                forensicsStationBackdropMesh.RecalculateBounds();
-                meshes.Add(forensicsStationBackdropMesh);
-                forensicsMeshes.Add(forensicsStationBackdropMesh);
-            }
-
-            GameObject backdrop = new(
-                "StationBackdrop",
-                typeof(MeshFilter),
-                typeof(MeshRenderer));
-            backdrop.transform.SetParent(parent, false);
-            backdrop.GetComponent<MeshFilter>().sharedMesh =
-                forensicsStationBackdropMesh;
-            MeshRenderer renderer = backdrop.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = forensicsLegendBackdropMaterial;
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            renderer.motionVectorGenerationMode =
-                MotionVectorGenerationMode.ForceNoMotion;
-            renderer.sortingOrder = 0;
         }
 
         private void BuildForensicsOutlines()
@@ -2818,16 +2920,53 @@ namespace F1XR.RestAPI.Replay
                     currentTime >= station.Time +
                     forensicsEchoDelaySeconds;
                 station.Root.gameObject.SetActive(visible);
-                if (station.Panel != null)
-                {
-                    bool highlighted = visible &&
-                        highlightNearest &&
-                        Mathf.Abs(station.Time - nearestTime) <= 0.001f;
-                    station.Panel.transform.localScale =
-                        station.PanelBaseScale *
-                        (highlighted ? 1.1f : 1f);
-                }
+                bool highlighted = visible &&
+                    highlightNearest &&
+                    Mathf.Abs(station.Time - nearestTime) <= 0.001f;
+                SetForensicsStationLabelScale(
+                    station.Header,
+                    station.HeaderBaseScale,
+                    highlighted ? 1.15f : 1f);
+                SetForensicsStationLabelScale(
+                    station.Gap,
+                    station.GapBaseScale,
+                    highlighted ? 1.1f : 1f);
+                SetForensicsStationLabelScale(
+                    station.VictimTelemetry,
+                    station.TelemetryBaseScale,
+                    highlighted ? 1.06f : 1f);
+                SetForensicsStationLabelScale(
+                    station.OtherTelemetry,
+                    station.TelemetryBaseScale,
+                    highlighted ? 1.06f : 1f);
             }
+        }
+
+        private void UpdateForensicsContactStationPulse()
+        {
+            for (int i = 0; i < forensicsStations.Count; i++)
+            {
+                ForensicStation station = forensicsStations[i];
+                if (station?.PulseRoot == null)
+                    continue;
+                bool visible = station.Contact &&
+                    station.Root != null &&
+                    station.Root.gameObject.activeInHierarchy;
+                float pulse = visible
+                    ? 1f + Mathf.Sin(Time.unscaledTime * 3.6f) * 0.08f
+                    : 1f;
+                station.PulseRoot.localScale =
+                    station.PulseBaseScale * pulse;
+            }
+        }
+
+        private static void SetForensicsStationLabelScale(
+            TextMeshPro label,
+            Vector3 baseScale,
+            float multiplier)
+        {
+            if (label != null)
+                label.transform.localScale = baseScale * multiplier;
         }
 
         private void SetForensicsContactOutlines(
@@ -3078,7 +3217,15 @@ namespace F1XR.RestAPI.Replay
             FaceReadableTextToViewer(victimLabel);
             FaceReadableTextToViewer(otherLabel);
             for (int i = 0; i < forensicsStations.Count; i++)
-                FaceReadableTextToViewer(forensicsStations[i]?.Panel);
+            {
+                ForensicStation station = forensicsStations[i];
+                if (station == null)
+                    continue;
+                FaceReadableTextToViewer(station.Header);
+                FaceReadableTextToViewer(station.Gap);
+                FaceReadableTextToViewer(station.VictimTelemetry);
+                FaceReadableTextToViewer(station.OtherTelemetry);
+            }
 
             Transform incidentPanel = warningRoot != null
                 ? warningRoot.Find("IncidentPanel")
