@@ -4,6 +4,28 @@ using UnityEngine.Rendering;
 
 namespace F1XR.RestAPI.Replay
 {
+    internal enum ShowcaseOccluderKind
+    {
+        Unknown,
+        Decorative
+    }
+
+    internal readonly struct ShowcaseOcclusionHit
+    {
+        public ShowcaseOcclusionHit(
+            Material material,
+            ShowcaseOccluderKind kind)
+        {
+            Material = material;
+            Kind = kind;
+            IsOccluded = true;
+        }
+
+        public bool IsOccluded { get; }
+        public Material Material { get; }
+        public ShowcaseOccluderKind Kind { get; }
+    }
+
     internal sealed class EventTrackSegment
     {
         private const int MaxPathSamples = 48;
@@ -13,6 +35,9 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Mesh> meshes = new();
         private readonly List<RoadTriangle> roadTriangles = new();
         private readonly List<RoadTriangle> drivableTriangles = new();
+        private readonly List<OcclusionTriangle> occlusionTriangles = new();
+        private readonly HashSet<Material> ignoredOcclusionMaterials = new();
+        private Transform segmentRoot;
 
         public bool Build(
             Transform parent,
@@ -36,8 +61,9 @@ namespace F1XR.RestAPI.Replay
             if (visualRoot == null)
                 visualRoot = sourceRoot;
 
-            GameObject segmentRoot = new GameObject("ActualTrackRegion");
-            segmentRoot.transform.SetParent(parent, false);
+            GameObject segmentObject = new GameObject("ActualTrackRegion");
+            segmentObject.transform.SetParent(parent, false);
+            segmentRoot = segmentObject.transform;
 
             Vector3[] localPath = BuildLocalPath(
                 sourcePath,
@@ -55,7 +81,7 @@ namespace F1XR.RestAPI.Replay
 
                 triangleCount += CopyMesh(
                     filter,
-                    segmentRoot.transform,
+                    segmentRoot,
                     sourceRoot,
                     sourceCenter,
                     sourceToLocalRotation,
@@ -70,7 +96,7 @@ namespace F1XR.RestAPI.Replay
                 float surfaceOffset = FindMedianSurfaceOffset(
                     localPath,
                     nearestSurfaceY);
-                segmentRoot.transform.localPosition = Vector3.up * surfaceOffset;
+                segmentRoot.localPosition = Vector3.up * surfaceOffset;
 
                 Bounds copiedBounds = meshes[0].bounds;
                 for (int i = 1; i < meshes.Count; i++)
@@ -85,7 +111,7 @@ namespace F1XR.RestAPI.Replay
                 return true;
             }
 
-            Object.Destroy(segmentRoot);
+            Object.Destroy(segmentObject);
             Clear();
             return false;
         }
@@ -101,6 +127,149 @@ namespace F1XR.RestAPI.Replay
             meshes.Clear();
             roadTriangles.Clear();
             drivableTriangles.Clear();
+            occlusionTriangles.Clear();
+            ignoredOcclusionMaterials.Clear();
+            segmentRoot = null;
+        }
+
+        public void SetIgnoredOcclusionMaterials(
+            IReadOnlyCollection<Material> materials)
+        {
+            ignoredOcclusionMaterials.Clear();
+            if (materials == null)
+                return;
+
+            foreach (Material material in materials)
+            {
+                if (material != null)
+                    ignoredOcclusionMaterials.Add(material);
+            }
+        }
+
+        public bool TryCollectRemovableOccluders(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            HashSet<Material> destination,
+            out bool occluded,
+            out bool hasNonRemovableOccluder)
+        {
+            occluded = false;
+            hasNonRemovableOccluder = false;
+            if (segmentRoot == null || occlusionTriangles.Count == 0)
+                return false;
+
+            Vector3 origin = segmentRoot.InverseTransformPoint(worldOrigin);
+            Vector3 target = segmentRoot.InverseTransformPoint(worldTarget);
+            Vector3 ray = target - origin;
+            float distance = ray.magnitude;
+            if (distance <= 0.0001f)
+                return true;
+
+            float worldScale = Mathf.Max(
+                Mathf.Abs(segmentRoot.lossyScale.x),
+                Mathf.Abs(segmentRoot.lossyScale.y),
+                Mathf.Abs(segmentRoot.lossyScale.z));
+            float targetClearance = worldScale > 0.0001f
+                ? Mathf.Max(0f, worldTargetClearance) / worldScale
+                : 0f;
+            float maximumHitDistance = distance - targetClearance;
+            if (maximumHitDistance <= 0.0001f)
+                return true;
+
+            Vector3 direction = ray / distance;
+            for (int i = 0; i < occlusionTriangles.Count; i++)
+            {
+                OcclusionTriangle triangle = occlusionTriangles[i];
+                if (ignoredOcclusionMaterials.Contains(triangle.Material) ||
+                    !triangle.Intersects(
+                        origin,
+                        direction,
+                        maximumHitDistance))
+                {
+                    continue;
+                }
+
+                occluded = true;
+                if (triangle.Kind == ShowcaseOccluderKind.Decorative &&
+                    triangle.Material != null)
+                {
+                    destination?.Add(triangle.Material);
+                }
+                else
+                {
+                    hasNonRemovableOccluder = true;
+                }
+            }
+
+            return true;
+        }
+
+        public bool TryIsTerrainOccluded(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            out bool occluded)
+        {
+            bool available = TryGetOcclusion(
+                worldOrigin,
+                worldTarget,
+                worldTargetClearance,
+                out ShowcaseOcclusionHit hit);
+            occluded = hit.IsOccluded;
+            return available;
+        }
+
+        public bool TryGetOcclusion(
+            Vector3 worldOrigin,
+            Vector3 worldTarget,
+            float worldTargetClearance,
+            out ShowcaseOcclusionHit hit)
+        {
+            hit = default;
+            if (segmentRoot == null || occlusionTriangles.Count == 0)
+                return false;
+
+            Vector3 origin = segmentRoot.InverseTransformPoint(worldOrigin);
+            Vector3 target = segmentRoot.InverseTransformPoint(worldTarget);
+            Vector3 ray = target - origin;
+            float distance = ray.magnitude;
+            if (distance <= 0.0001f)
+                return true;
+
+            float worldScale = Mathf.Max(
+                Mathf.Abs(segmentRoot.lossyScale.x),
+                Mathf.Abs(segmentRoot.lossyScale.y),
+                Mathf.Abs(segmentRoot.lossyScale.z));
+            float targetClearance = worldScale > 0.0001f
+                ? Mathf.Max(0f, worldTargetClearance) / worldScale
+                : 0f;
+            float maximumHitDistance = distance - targetClearance;
+            if (maximumHitDistance <= 0.0001f)
+                return true;
+
+            Vector3 direction = ray / distance;
+            for (int i = 0; i < occlusionTriangles.Count; i++)
+            {
+                if (ignoredOcclusionMaterials.Contains(
+                        occlusionTriangles[i].Material))
+                {
+                    continue;
+                }
+
+                if (occlusionTriangles[i].Intersects(
+                        origin,
+                        direction,
+                        maximumHitDistance))
+                {
+                    hit = new ShowcaseOcclusionHit(
+                        occlusionTriangles[i].Material,
+                        occlusionTriangles[i].Kind);
+                    break;
+                }
+            }
+
+            return true;
         }
 
         public bool TryBuildSafetyApronEdges(
@@ -390,6 +559,21 @@ namespace F1XR.RestAPI.Replay
                     IsDrivableSurfaceSubmesh(
                         sourceRenderer,
                         submesh);
+                Material sourceMaterial =
+                    sourceMaterials.Length > 0
+                        ? sourceMaterials[
+                            Mathf.Min(
+                                submesh,
+                                sourceMaterials.Length - 1)]
+                        : null;
+                ShowcaseOccluderKind occluderKind =
+                    IsRemovableForegroundOccluder(
+                        sourceFilter,
+                        sourceMaterial,
+                        isRoadSurface,
+                        isDrivableSurface)
+                        ? ShowcaseOccluderKind.Decorative
+                        : ShowcaseOccluderKind.Unknown;
                 int[] indices = source.GetIndices(submesh);
                 for (int index = 0; index + 2 < indices.Length; index += 3)
                 {
@@ -405,6 +589,14 @@ namespace F1XR.RestAPI.Replay
                             localPath,
                             padding))
                         continue;
+
+                    occlusionTriangles.Add(
+                        new OcclusionTriangle(
+                            positions[a],
+                            positions[b],
+                            positions[c],
+                            sourceMaterial,
+                            occluderKind));
 
                     RecordNearestSurfaceHeights(
                         positions[a],
@@ -439,13 +631,7 @@ namespace F1XR.RestAPI.Replay
                     continue;
 
                 submeshes.Add(triangles);
-                materials.Add(
-                    sourceMaterials.Length > 0
-                        ? sourceMaterials[
-                            Mathf.Min(
-                                submesh,
-                                sourceMaterials.Length - 1)]
-                        : null);
+                materials.Add(sourceMaterial);
             }
 
             if (keptTriangles == 0)
@@ -508,6 +694,46 @@ namespace F1XR.RestAPI.Replay
                     colors.Add(sourceColors[sourceIndex]);
                 return copied;
             }
+        }
+
+        private static bool IsRemovableForegroundOccluder(
+            MeshFilter filter,
+            Material material,
+            bool isRoadSurface,
+            bool isDrivableSurface)
+        {
+            if (isRoadSurface || isDrivableSurface)
+                return false;
+
+            string name =
+                $"{filter?.name} {material?.name}"
+                    .ToLowerInvariant();
+            if (name.Contains("grass") ||
+                name.Contains("ground") ||
+                name.Contains("terrain") ||
+                name.Contains("grvl") ||
+                name.Contains("gravel") ||
+                name.Contains("runoff") ||
+                name.Contains("sand") ||
+                name.Contains("dirt") ||
+                name.Contains("earth") ||
+                name.Contains("water"))
+            {
+                return false;
+            }
+
+            if (material == null)
+            {
+                return name.Contains("grandstand") ||
+                    name.Contains("grand stand") ||
+                    name.Contains("tribune") ||
+                    name.Contains("bleacher") ||
+                    name.Contains("spectator") ||
+                    name.Contains("audience") ||
+                    name.Contains("scaffold");
+            }
+
+            return true;
         }
 
         private bool TryFindRoadSpan(
@@ -815,6 +1041,62 @@ namespace F1XR.RestAPI.Replay
             public Vector3 A { get; }
             public Vector3 B { get; }
             public Vector3 C { get; }
+        }
+
+        private readonly struct OcclusionTriangle
+        {
+            private const float IntersectionTolerance = 0.00001f;
+
+            public OcclusionTriangle(
+                Vector3 a,
+                Vector3 b,
+                Vector3 c,
+                Material material,
+                ShowcaseOccluderKind kind)
+            {
+                A = a;
+                EdgeAB = b - a;
+                EdgeAC = c - a;
+                Material = material;
+                Kind = kind;
+            }
+
+            public Material Material { get; }
+            public ShowcaseOccluderKind Kind { get; }
+            private Vector3 A { get; }
+            private Vector3 EdgeAB { get; }
+            private Vector3 EdgeAC { get; }
+
+            public bool Intersects(
+                Vector3 origin,
+                Vector3 direction,
+                float maximumDistance)
+            {
+                Vector3 perpendicular =
+                    Vector3.Cross(direction, EdgeAC);
+                float determinant =
+                    Vector3.Dot(EdgeAB, perpendicular);
+                if (Mathf.Abs(determinant) <= IntersectionTolerance)
+                    return false;
+
+                float inverse = 1f / determinant;
+                Vector3 fromA = origin - A;
+                float u =
+                    Vector3.Dot(fromA, perpendicular) * inverse;
+                if (u < 0f || u > 1f)
+                    return false;
+
+                Vector3 cross = Vector3.Cross(fromA, EdgeAB);
+                float v =
+                    Vector3.Dot(direction, cross) * inverse;
+                if (v < 0f || u + v > 1f)
+                    return false;
+
+                float distance =
+                    Vector3.Dot(EdgeAC, cross) * inverse;
+                return distance > IntersectionTolerance &&
+                    distance < maximumDistance;
+            }
         }
 
         private struct RoadInterval
