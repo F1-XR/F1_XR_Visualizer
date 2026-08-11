@@ -229,6 +229,65 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        internal bool TryGetMappedPositionsContinuously(
+            IReadOnlyList<LocationSample> samples,
+            Vector3[] destination)
+        {
+            if (samples == null ||
+                destination == null ||
+                destination.Length != samples.Count)
+            {
+                return false;
+            }
+
+            bool useRouteContinuity =
+                calibration != null &&
+                calibration.active &&
+                calibration.mappingMode ==
+                    TrackCalibration.MappingMode.Route;
+            int previousSegmentIndex = -1;
+            LocationSample previousSample = null;
+            for (int index = 0; index < samples.Count; index++)
+            {
+                LocationSample sample = samples[index];
+                if (sample == null)
+                    return false;
+
+                if (!useRouteContinuity)
+                {
+                    if (!TryGetMappedPosition(
+                            sample,
+                            out destination[index]))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (previousSample == null ||
+                    sample.t <= previousSample.t ||
+                    sample.t - previousSample.t >
+                        RouteContinuityMaximumGap)
+                {
+                    previousSegmentIndex = -1;
+                }
+
+                if (!calibration.TryMapContinuous(
+                        sample,
+                        previousSegmentIndex,
+                        out destination[index],
+                        out int mappedSegmentIndex))
+                {
+                    return false;
+                }
+
+                previousSegmentIndex = mappedSegmentIndex;
+                previousSample = sample;
+            }
+
+            return true;
+        }
+
         public void Move(
             ReplayCarView car,
             LocationSample a,

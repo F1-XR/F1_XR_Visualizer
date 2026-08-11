@@ -1395,6 +1395,21 @@ namespace F1XR.RestAPI.Replay
             return carMotion.TryGetMappedPosition(sample, out position);
         }
 
+        internal bool TryGetMappedPositionsContinuously(
+            IReadOnlyList<LocationSample> samples,
+            Vector3[] destination)
+        {
+            return carMotion.TryGetMappedPositionsContinuously(
+                samples,
+                destination);
+        }
+
+        internal void PrepareMappedPositions(
+            Dictionary<int, List<LocationSample>> samplesByDriver)
+        {
+            carMotion.PrepareMappedPositions(samplesByDriver);
+        }
+
         private void UpdateEngineSound(
             ReplayCarView car,
             LocationSample a,
