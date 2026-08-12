@@ -84,6 +84,7 @@ namespace F1XR.RestAPI.Replay
         private ReplayManifestPoller manifestPoller;
         private ReplayCarSet replayCars;
         private ReplayAudio replayAudio;
+        private float engineAudioDistanceScale = 1f;
         private EventPopoutReplay eventReplay;
         private int selectedDriverNumber;
         private bool eventPresentationSuppressed;
@@ -137,6 +138,19 @@ namespace F1XR.RestAPI.Replay
         public bool CanUndoTrackManipulation => buildPlacer != null && buildPlacer.CanUndo;
         public event Action<int> SelectedDriverChanged;
 
+        public void SetEngineAudioDistanceScale(float value)
+        {
+            float nextScale = Mathf.Max(0.0001f, value);
+            if (Mathf.Approximately(engineAudioDistanceScale, nextScale))
+                return;
+
+            engineAudioDistanceScale = nextScale;
+            replayAudio?.SetDistanceScale(
+                engineAudioDistanceScale,
+                engineSound,
+                ApplyDriverMetadata);
+        }
+
         public float TimelineToNormalized(float time)
         {
             return timeline.ToNormalized(time);
@@ -175,6 +189,7 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetLeaderHighlightVisible(false);
             replayCars.SetOvertakeSettings(overtakeMotion);
             replayAudio = new ReplayAudio(replayCars);
+            replayAudio.SetDistanceScale(engineAudioDistanceScale);
             replayAudio.Reset(
                 engineSound,
                 AreReplayCarsReady(),
@@ -245,6 +260,7 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetOvertakeSettings(overtakeMotion);
             replayCars.SetReplayEvents(replayEvents);
             replayAudio ??= new ReplayAudio(replayCars);
+            replayAudio.SetDistanceScale(engineAudioDistanceScale);
             replayAudio.Reset(
                 engineSound,
                 AreReplayCarsReady(),

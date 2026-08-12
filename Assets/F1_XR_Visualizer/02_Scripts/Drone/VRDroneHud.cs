@@ -7,12 +7,43 @@ namespace F1XR.Drone
     [DisallowMultipleComponent]
     public sealed class VRDroneHud : MonoBehaviour
     {
+        enum SpeedIndicatorStyle
+        {
+            [InspectorName("Tick Version")] Tick,
+            [InspectorName("Bar Version")] Bar
+        }
+
         const float DistanceFromCamera = 1.2f;
+        const int SpeedMarkerCount = 81;
+        const int WhiteTickCount = 17;
+        const int SpeedOutlineSegmentCount = 73;
+        const float SpeedArcDegrees = 288f;
+        const float SpeedArcStartDegrees = -54f;
+        const float SpeedometerScale = 0.49f;
+        const int SpeedWarningKph = 300;
+        const int HighSpeedUpdateThresholdKph = 100;
         static readonly Vector2 CanvasSize = new(2200f, 1238f);
+
+        [Header("Speedometer")]
+        [SerializeField] TMP_FontAsset f1NumberFont;
+        [SerializeField, Min(0.0001f)] float hudScale = 0.0014f;
+        [SerializeField, Min(1f)] float maxDisplaySpeedKph = 342f;
+        [SerializeField, Min(0.02f)] float highSpeedUpdateInterval = 0.05f;
+        [SerializeField, Min(1f)] float speedValueFontSize = 110f;
+        [SerializeField] SpeedIndicatorStyle speedIndicatorStyle =
+            SpeedIndicatorStyle.Tick;
 
         Canvas canvas;
         Camera xrCamera;
         Image exitProgress;
+        Image[] speedMarkers;
+        Image[] whiteTicks;
+        TextMeshProUGUI speedValue;
+        float targetSpeedKph;
+        float displayedSpeedKph;
+        float nextSpeedUpdateTime;
+        int displayedSpeed = -1;
+        int activeSpeedMarkers = -1;
         bool isVisible;
 
         public void Configure(Transform environmentTransform)
@@ -20,18 +51,27 @@ namespace F1XR.Drone
             if (canvas != null || environmentTransform == null)
                 return;
 
+            if (f1NumberFont == null)
+            {
+                Debug.LogError(
+                    "[VRDrone] VRDroneHud requires the Formula1-Bold SDF font asset.",
+                    this);
+                return;
+            }
+
             canvas = CreateCanvas(environmentTransform);
             canvas.gameObject.SetActive(false);
         }
 
         public void Show(Camera camera)
         {
-            if (camera == null)
+            if (camera == null || canvas == null)
                 return;
 
             xrCamera = camera;
             canvas.gameObject.SetActive(true);
             SetExitHoldProgress(0f);
+            ResetSpeedometer();
             isVisible = true;
             UpdatePose();
         }
@@ -40,6 +80,7 @@ namespace F1XR.Drone
         {
             isVisible = false;
             xrCamera = null;
+            ResetSpeedometer();
             if (canvas != null)
                 canvas.gameObject.SetActive(false);
         }
@@ -50,10 +91,18 @@ namespace F1XR.Drone
                 exitProgress.fillAmount = Mathf.Clamp01(normalizedProgress);
         }
 
+        public void SetSpeedKph(float speedKph)
+        {
+            targetSpeedKph = Mathf.Max(0f, speedKph);
+        }
+
         void LateUpdate()
         {
             if (isVisible)
+            {
                 UpdatePose();
+                UpdateSpeedometer();
+            }
         }
 
         void UpdatePose()
@@ -83,12 +132,13 @@ namespace F1XR.Drone
             result.renderMode = RenderMode.WorldSpace;
             RectTransform rect = canvasObject.GetComponent<RectTransform>();
             rect.sizeDelta = CanvasSize;
-            rect.localScale = Vector3.one * 0.001f;
+            rect.localScale = Vector3.one * hudScale;
 
             CreateFrame(rect);
             CreateHeader(rect);
             CreateCrosshair(rect);
             CreateExitHint(rect);
+            CreateSpeedometer(rect);
             return result;
         }
 
@@ -196,6 +246,182 @@ namespace F1XR.Drone
             exitProgress.rectTransform.anchorMax = Vector2.one;
             exitProgress.rectTransform.offsetMin = Vector2.zero;
             exitProgress.rectTransform.offsetMax = Vector2.zero;
+        }
+
+        void CreateSpeedometer(RectTransform parent)
+        {
+            RectTransform group = CreateRect("Speedometer", parent);
+            group.anchorMin = new Vector2(0.5f, 0f);
+            group.anchorMax = new Vector2(0.5f, 0f);
+            group.pivot = new Vector2(0.5f, 0.5f);
+            group.anchoredPosition = new Vector2(0f, 200f);
+            group.sizeDelta = new Vector2(470f, 470f);
+            group.localScale = Vector3.one * SpeedometerScale;
+
+            const float outlineRadius = 205f;
+            const float innerOutlineRadius = 150f;
+            const float gaugeRadius = 177f;
+            const float outlineThickness = 6f;
+            const float tickInnerOverlap = 18f;
+            float outlineStep = SpeedArcDegrees / (SpeedOutlineSegmentCount - 1);
+            for (int i = 0; i < SpeedOutlineSegmentCount; i++)
+            {
+                float angle = SpeedArcStartDegrees + outlineStep * i;
+                Image segment = CreateImage("Outline", group,
+                    new Color(1f, 1f, 1f, 0.72f));
+                RectTransform segmentRect = segment.rectTransform;
+                segmentRect.anchoredPosition = Direction(angle) * outlineRadius;
+                segmentRect.sizeDelta = new Vector2(
+                    outlineRadius * Mathf.Deg2Rad * outlineStep + 1f,
+                    outlineThickness);
+                segmentRect.localRotation = Quaternion.Euler(0f, 0f, angle + 90f);
+            }
+
+            for (int i = 0; i < SpeedOutlineSegmentCount; i++)
+            {
+                float angle = SpeedArcStartDegrees + outlineStep * i;
+                Image segment = CreateImage("Inner Outline", group,
+                    new Color(1f, 1f, 1f, 0.55f));
+                RectTransform segmentRect = segment.rectTransform;
+                segmentRect.anchoredPosition =
+                    Direction(angle) * innerOutlineRadius;
+                segmentRect.sizeDelta = new Vector2(
+                    innerOutlineRadius * Mathf.Deg2Rad * outlineStep + 1f,
+                    outlineThickness);
+                segmentRect.localRotation = Quaternion.Euler(0f, 0f, angle + 90f);
+            }
+
+            speedMarkers = new Image[SpeedMarkerCount];
+            float markerStep = SpeedArcDegrees / (SpeedMarkerCount - 1);
+            float markerWidth = speedIndicatorStyle == SpeedIndicatorStyle.Bar
+                ? gaugeRadius * Mathf.Deg2Rad * markerStep + 1f
+                : 6f;
+            for (int i = 0; i < SpeedMarkerCount; i++)
+            {
+                float angle = SpeedArcStartDegrees + SpeedArcDegrees -
+                    markerStep * i;
+                Image marker = CreateImage("Speed Marker", group,
+                    new Color(0.95f, 0.12f, 0.16f, 1f));
+                RectTransform markerRect = marker.rectTransform;
+                markerRect.anchoredPosition = Direction(angle) * gaugeRadius;
+                markerRect.sizeDelta = new Vector2(markerWidth, 43f);
+                markerRect.localRotation = Quaternion.Euler(0f, 0f, angle - 90f);
+                marker.enabled = false;
+                speedMarkers[i] = marker;
+            }
+
+            whiteTicks = new Image[WhiteTickCount];
+            float tickStep = SpeedArcDegrees / (WhiteTickCount - 1);
+            for (int i = 0; i < WhiteTickCount; i++)
+            {
+                float angle = SpeedArcStartDegrees + SpeedArcDegrees - tickStep * i;
+                Image tick = CreateImage("Speed Tick", group,
+                    new Color(1f, 1f, 1f, 0.72f));
+                RectTransform tickRect = tick.rectTransform;
+                float tickLength = i % 4 == 0 ? 73f : 60f;
+                float tickRadius = innerOutlineRadius - tickInnerOverlap +
+                    tickLength * 0.5f;
+                tickRect.anchoredPosition = Direction(angle) * tickRadius;
+                tickRect.sizeDelta = new Vector2(3f, tickLength);
+                tickRect.localRotation = Quaternion.Euler(0f, 0f, angle - 90f);
+                whiteTicks[i] = tick;
+            }
+
+            foreach (Image marker in speedMarkers)
+                marker.transform.SetAsLastSibling();
+
+            speedValue = CreateText("Speed Value", group, "0", speedValueFontSize);
+            speedValue.font = f1NumberFont;
+            speedValue.alignment = TextAlignmentOptions.Center;
+            RectTransform valueRect = speedValue.rectTransform;
+            valueRect.anchorMin = new Vector2(0.5f, 0.5f);
+            valueRect.anchorMax = new Vector2(0.5f, 0.5f);
+            valueRect.pivot = new Vector2(0.5f, 0.5f);
+            valueRect.anchoredPosition = new Vector2(0f, -5f);
+            valueRect.sizeDelta = new Vector2(300f, 145f);
+
+            TextMeshProUGUI unit = CreateText("Speed Unit", group, "KMH", 28f);
+            unit.font = f1NumberFont;
+            unit.alignment = TextAlignmentOptions.Center;
+            unit.color = new Color(1f, 1f, 1f, 0.72f);
+            unit.characterSpacing = 6f;
+            RectTransform unitRect = unit.rectTransform;
+            unitRect.anchorMin = new Vector2(0.5f, 0.5f);
+            unitRect.anchorMax = new Vector2(0.5f, 0.5f);
+            unitRect.pivot = new Vector2(0.5f, 0.5f);
+            unitRect.anchoredPosition = new Vector2(0f, -96f);
+            unitRect.sizeDelta = new Vector2(200f, 40f);
+        }
+
+        void UpdateSpeedometer()
+        {
+            bool isHighSpeed = targetSpeedKph >= HighSpeedUpdateThresholdKph;
+            if (isHighSpeed && Time.time < nextSpeedUpdateTime)
+                return;
+
+            nextSpeedUpdateTime = isHighSpeed
+                ? Time.time + highSpeedUpdateInterval
+                : 0f;
+            displayedSpeedKph = targetSpeedKph;
+
+            int roundedSpeed = Mathf.RoundToInt(displayedSpeedKph);
+            if (roundedSpeed != displayedSpeed)
+            {
+                displayedSpeed = roundedSpeed;
+                speedValue.text = roundedSpeed.ToString();
+                speedValue.color = roundedSpeed > SpeedWarningKph
+                    ? new Color(0.95f, 0.12f, 0.16f, 1f)
+                    : Color.white;
+            }
+
+            float normalizedSpeed = Mathf.Clamp01(
+                displayedSpeedKph / maxDisplaySpeedKph);
+            int markerCount = normalizedSpeed <= 0f
+                ? 0
+                : Mathf.Clamp(
+                    Mathf.RoundToInt(normalizedSpeed *
+                        (SpeedMarkerCount - 1)) + 1,
+                    1,
+                    SpeedMarkerCount);
+            if (markerCount == activeSpeedMarkers)
+                return;
+
+            activeSpeedMarkers = markerCount;
+            for (int i = 0; i < speedMarkers.Length; i++)
+                speedMarkers[i].enabled = i < markerCount;
+        }
+
+        void ResetSpeedometer()
+        {
+            targetSpeedKph = 0f;
+            displayedSpeedKph = 0f;
+            nextSpeedUpdateTime = 0f;
+            displayedSpeed = -1;
+            activeSpeedMarkers = -1;
+
+            if (speedValue != null)
+            {
+                speedValue.text = "0";
+                speedValue.color = Color.white;
+            }
+
+            if (speedMarkers != null)
+            {
+                foreach (Image marker in speedMarkers)
+                    marker.enabled = false;
+            }
+
+            if (whiteTicks == null)
+                return;
+
+            foreach (Image tick in whiteTicks)
+                tick.enabled = true;
+        }
+
+        static Vector2 Direction(float angle)
+        {
+            float radians = angle * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(radians), Mathf.Sin(radians));
         }
 
         static RectTransform CreateRect(string name, Transform parent)
