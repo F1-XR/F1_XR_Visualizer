@@ -1,32 +1,49 @@
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
+using Unity.VisualScripting;
+using F1XR.RestAPI.Replay.Room;
 #if UNITY_ANDROID
 using UnityEngine.Android;
 #endif
 
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
+    [RenamedFrom("F1XR.AR.QuestScenePermissionRequester")]
     public sealed class QuestScenePermissionRequester : MonoBehaviour
     {
         const string ScenePermission = "com.oculus.permission.USE_SCENE";
 
         [SerializeField] ARPlaneManager planeManager;
         [SerializeField] ARRaycastManager raycastManager;
+        [SerializeField] MetaSceneRoomSource metaSceneSource;
         [SerializeField] bool disableManagersUntilPermissionGranted = true;
+
+        bool scenePermissionGranted;
+        bool metaSceneSubscribed;
 
         void Reset()
         {
-            planeManager = GetComponent<ARPlaneManager>();
-            raycastManager = GetComponent<ARRaycastManager>();
+            planeManager = GetComponentInParent<ARPlaneManager>();
+            raycastManager = GetComponentInParent<ARRaycastManager>();
         }
 
         void Awake()
         {
-            if (planeManager == null)
-                planeManager = GetComponent<ARPlaneManager>();
+            scenePermissionGranted = !disableManagersUntilPermissionGranted;
+            ResolveReferences();
+            SubscribeMetaScene();
+            ApplySceneManagerState();
+        }
 
-            if (raycastManager == null)
-                raycastManager = GetComponent<ARRaycastManager>();
+        void OnEnable()
+        {
+            ResolveReferences();
+            SubscribeMetaScene();
+        }
+
+        void OnDisable()
+        {
+            UnsubscribeMetaScene();
         }
 
         void Start()
@@ -34,8 +51,9 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 #if UNITY_ANDROID && !UNITY_EDITOR
             if (Permission.HasUserAuthorizedPermission(ScenePermission))
             {
-                SetSceneManagersEnabled(true);
-                Debug.Log("Quest scene permission already granted. AR scene managers enabled.");
+                scenePermissionGranted = true;
+                ApplySceneManagerState();
+                Debug.Log("Quest scene permission already granted.");
                 return;
             }
 
@@ -50,7 +68,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             Debug.Log($"Requesting Quest scene permission: {ScenePermission}");
             Permission.RequestUserPermission(ScenePermission, callbacks);
 #else
-            SetSceneManagersEnabled(true);
+            scenePermissionGranted = true;
+            ApplySceneManagerState();
 #endif
         }
 
@@ -58,14 +77,72 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         void OnScenePermissionGranted(string permission)
         {
             Debug.Log($"Quest scene permission granted: {permission}");
-            SetSceneManagersEnabled(true);
+            scenePermissionGranted = true;
+            ApplySceneManagerState();
         }
 
         void OnScenePermissionDenied(string permission)
         {
+            scenePermissionGranted = false;
+            ApplySceneManagerState();
             Debug.LogWarning($"Quest scene permission denied: {permission}. Plane, mesh, and environment raycast data will not be available.");
         }
 #endif
+
+        void ResolveReferences()
+        {
+            if (planeManager == null)
+                planeManager = GetComponentInParent<ARPlaneManager>();
+
+            if (raycastManager == null)
+                raycastManager = GetComponentInParent<ARRaycastManager>();
+
+            if (metaSceneSource == null)
+            {
+                metaSceneSource = FindAnyObjectByType<MetaSceneRoomSource>(
+                    FindObjectsInactive.Include);
+            }
+        }
+
+        void SubscribeMetaScene()
+        {
+            if (metaSceneSubscribed || metaSceneSource == null)
+                return;
+
+            metaSceneSource.StatusChanged += OnMetaSceneStatusChanged;
+            metaSceneSubscribed = true;
+        }
+
+        void UnsubscribeMetaScene()
+        {
+            if (!metaSceneSubscribed || metaSceneSource == null)
+                return;
+
+            metaSceneSource.StatusChanged -= OnMetaSceneStatusChanged;
+            metaSceneSubscribed = false;
+        }
+
+        void OnMetaSceneStatusChanged(MetaSceneRoomStatus status)
+        {
+            ApplySceneManagerState();
+        }
+
+        void ApplySceneManagerState()
+        {
+            bool metaSceneQueryActive = metaSceneSource != null &&
+                metaSceneSource.isActiveAndEnabled &&
+                IsMetaSceneQueryStatus(metaSceneSource.Status);
+            SetSceneManagersEnabled(
+                scenePermissionGranted && !metaSceneQueryActive);
+        }
+
+        static bool IsMetaSceneQueryStatus(MetaSceneRoomStatus status)
+        {
+            return status == MetaSceneRoomStatus.Idle ||
+                status == MetaSceneRoomStatus.WaitingForPermission ||
+                status == MetaSceneRoomStatus.Loading ||
+                status == MetaSceneRoomStatus.OpeningSpaceSetup;
+        }
 
         void SetSceneManagersEnabled(bool enabled)
         {

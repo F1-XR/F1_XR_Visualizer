@@ -1,9 +1,11 @@
 using UnityEngine;
 using UnityEngine.XR;
 using UnityEngine.XR.Hands;
+using Unity.VisualScripting;
 
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
+    [RenamedFrom("F1XR.AR.RedPointer")]
     public sealed class RedPointer : MonoBehaviour
     {
         [SerializeField] ARPlanePlacementController placementController;
