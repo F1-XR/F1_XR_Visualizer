@@ -44,7 +44,11 @@ namespace F1XR.RestAPI.Replay.Track.Build
             Vector3 position = surfaceCenter + Vector3.up * CalculateSurfaceYOffset(target);
             target.transform.SetPositionAndRotation(position, rotation);
 
-            currentAnchor = CreateAnchor(new Pose(surfaceCenter, rotation), currentPlane);
+            bool canCreateAnchor = !hasAutomaticSurface ||
+                currentAutomaticSurface.CanCreateAnchor;
+            currentAnchor = canCreateAnchor
+                ? CreateAnchor(new Pose(surfaceCenter, rotation), currentPlane)
+                : null;
 
             if (currentAnchor != null)
             {
@@ -149,8 +153,22 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 return placementFallbackRotation;
             }
 
-            if (!useHitRotation || !alignLongAxisToSurface || currentPlane == null || target == null)
+            if (!useHitRotation || !alignLongAxisToSurface || target == null)
                 return fallback;
+
+            if (currentPlane == null)
+            {
+                return hasAutomaticSurface &&
+                    TryGetSurfaceLongAxis(
+                        out Vector3 managedLongAxis,
+                        out float managedAspectRatio) &&
+                    managedAspectRatio >= minimumSurfaceAspectRatio
+                        ? CalculateSurfaceAlignedRotation(
+                            target,
+                            managedLongAxis,
+                            fallback)
+                        : fallback;
+            }
 
             if (!hasPlacementFallbackRotation)
             {
@@ -279,12 +297,70 @@ namespace F1XR.RestAPI.Replay.Track.Build
             return true;
         }
 
+        bool TryGetSurfaceLongAxis(
+            out Vector3 axis,
+            out float aspectRatio)
+        {
+            if (currentPlane != null)
+                return TryGetSurfaceLongAxis(currentPlane, out axis, out aspectRatio);
+
+            axis = default;
+            aspectRatio = 1f;
+            if (!hasAutomaticSurface || !currentAutomaticSurface.HasBounds)
+                return false;
+
+            float shortSide = Mathf.Min(
+                currentAutomaticSurface.Size.x,
+                currentAutomaticSurface.Size.y);
+            float longSide = Mathf.Max(
+                currentAutomaticSurface.Size.x,
+                currentAutomaticSurface.Size.y);
+            if (shortSide <= 0.001f)
+                return false;
+
+            axis = Vector3.ProjectOnPlane(
+                currentAutomaticSurface.LongAxis,
+                Vector3.up);
+            if (axis.sqrMagnitude <= 0.001f)
+                return false;
+
+            axis.Normalize();
+            aspectRatio = longSide / shortSide;
+            return true;
+        }
+
+        static Quaternion CalculateSurfaceAlignedRotation(
+            GameObject target,
+            Vector3 surfaceLongAxis,
+            Quaternion fallback)
+        {
+            if (!TryCalculateLocalBounds(target, out Bounds trackBounds))
+                return fallback;
+
+            bool trackLongAxisIsX = trackBounds.size.x >= trackBounds.size.z;
+            Vector3 fallbackLongAxis = fallback *
+                (trackLongAxisIsX ? Vector3.right : Vector3.forward);
+            fallbackLongAxis = Vector3.ProjectOnPlane(
+                fallbackLongAxis,
+                Vector3.up);
+            if (Vector3.Dot(surfaceLongAxis, fallbackLongAxis) < 0f)
+                surfaceLongAxis = -surfaceLongAxis;
+
+            return trackLongAxisIsX
+                ? Quaternion.LookRotation(
+                    Vector3.Cross(surfaceLongAxis, Vector3.up),
+                    Vector3.up)
+                : Quaternion.LookRotation(surfaceLongAxis, Vector3.up);
+        }
+
         Vector3 CalculatePlacementCenter()
         {
-            if (placementMode == TrackPlacementMode.Free || !centerOnSurface || currentPlane == null)
+            if (placementMode == TrackPlacementMode.Free || !centerOnSurface)
                 return currentPose.position;
 
-            return currentPlane.center;
+            return currentPlane != null
+                ? currentPlane.center
+                : currentPose.position;
         }
 
         Vector3 CalculatePlacementScale(GameObject target)
@@ -296,7 +372,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
                     : target != null ? target.transform.localScale : Vector3.one;
             }
 
-            if (!fitToSurfaceBounds || currentPlane == null || target == null ||
+            if (!fitToSurfaceBounds || target == null ||
                 !TryCalculateLocalBounds(target, out Bounds trackBounds))
             {
                 return target != null ? target.transform.localScale : Vector3.one;
@@ -304,8 +380,13 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
             float trackLong = Mathf.Max(trackBounds.size.x, trackBounds.size.z);
             float trackShort = Mathf.Min(trackBounds.size.x, trackBounds.size.z);
-            float surfaceLong = Mathf.Max(currentPlane.size.x, currentPlane.size.y);
-            float surfaceShort = Mathf.Min(currentPlane.size.x, currentPlane.size.y);
+            Vector2 surfaceSize = currentPlane != null
+                ? currentPlane.size
+                : hasAutomaticSurface
+                    ? currentAutomaticSurface.Size
+                    : Vector2.zero;
+            float surfaceLong = Mathf.Max(surfaceSize.x, surfaceSize.y);
+            float surfaceShort = Mathf.Min(surfaceSize.x, surfaceSize.y);
             if (trackLong <= 0.001f || trackShort <= 0.001f ||
                 surfaceLong <= 0.001f || surfaceShort <= 0.001f)
             {

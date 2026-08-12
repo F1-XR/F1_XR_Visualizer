@@ -95,7 +95,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         Pose currentPose;
         ARPlane currentPlane;
+        AutomaticTableSurface currentAutomaticSurface;
         bool hasCurrentHit;
+        bool hasAutomaticSurface;
         ARPlane rotationCandidatePlane;
         Quaternion rotationCandidate;
         float rotationCandidateSince;
@@ -503,15 +505,21 @@ namespace F1XR.RestAPI.Replay.Track.Build
         void UpdatePlacementHit()
         {
             hasCurrentHit = false;
+            hasAutomaticSurface = false;
             if (placementController != null)
             {
                 if (placementMode ==
                     TrackPlacementMode.TableAutomatic)
                 {
-                    hasCurrentHit =
-                        placementController.TryGetAutomaticTableHit(
-                            out currentPose,
-                            out currentPlane);
+                    hasCurrentHit = placementController
+                        .TryGetAutomaticTableSurface(
+                            out currentAutomaticSurface);
+                    if (hasCurrentHit)
+                    {
+                        currentPose = currentAutomaticSurface.Pose;
+                        currentPlane = currentAutomaticSurface.Plane;
+                        hasAutomaticSurface = true;
+                    }
                 }
                 else
                 {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Unity.XR.CoreUtils;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
@@ -332,6 +333,7 @@ namespace F1XR.RestAPI.Replay.Room
         }
     }
 
+    [DefaultExecutionOrder(-900)]
     [DisallowMultipleComponent]
     public sealed class WallDiscovery : MonoBehaviour, IShowcaseWallProvider
     {
@@ -450,14 +452,25 @@ namespace F1XR.RestAPI.Replay.Room
         {
             get
             {
-#if UNITY_EDITOR
-                // Quest Link uses the Unity Meta OpenXR scene-plane provider.
-                // A parallel Meta Core room query can leave overlapping
-                // spatial requests alive during Play Mode shutdown.
+#if UNITY_EDITOR || UNITY_STANDALONE
+                // Editor/Link uses the deterministic managed room profile.
+                // Native spatial discovery is reserved for the Quest player.
                 return false;
 #else
                 // Quest players use the direct Meta Core room snapshot.
                 return useMetaSceneApi;
+#endif
+            }
+        }
+
+        private bool UseManagedRoomProfile
+        {
+            get
+            {
+#if UNITY_EDITOR || UNITY_STANDALONE
+                return true;
+#else
+                return false;
 #endif
             }
         }
@@ -488,6 +501,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void Awake()
         {
             ResolveReferences();
+            DisableNativePlaneDiscoveryForManagedProfile();
             readOnlyCandidates = candidates.AsReadOnly();
         }
 
@@ -498,6 +512,13 @@ namespace F1XR.RestAPI.Replay.Room
             observedEntryIndex = entryCandidateIndex;
             observedExitIndex = exitCandidateIndex;
             RememberRootPose();
+
+            if (UseManagedRoomProfile)
+            {
+                DisableNativePlaneDiscoveryForManagedProfile();
+                SyncManagedRoomProfile();
+                return;
+            }
 
             if (UseMetaSceneRuntime)
             {
@@ -540,11 +561,13 @@ namespace F1XR.RestAPI.Replay.Room
             ClearCandidates("Wall discovery disabled.");
             ClearContainingFloor();
             DestroyDebugMaterial();
+            if (UseManagedRoomProfile)
+                ManagedEditorRoomProfile.Reset();
         }
 
         private void Update()
         {
-            if (!UseMetaSceneRuntime)
+            if (!UseManagedRoomProfile && !UseMetaSceneRuntime)
             {
                 var managerIsActive =
                     planeManager != null &&
@@ -919,6 +942,13 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void RetryMetaRoomSetup()
         {
+            if (UseManagedRoomProfile)
+            {
+                ManagedEditorRoomProfile.Reset();
+                SyncManagedRoomProfile();
+                return;
+            }
+
             if (!UseMetaSceneRuntime)
                 return;
 
@@ -940,6 +970,31 @@ namespace F1XR.RestAPI.Replay.Room
 
             if (orientationCamera == null && Camera.main != null)
                 orientationCamera = Camera.main.transform;
+        }
+
+        private void DisableNativePlaneDiscoveryForManagedProfile()
+        {
+            if (!UseManagedRoomProfile || planeManager == null)
+                return;
+
+            planeManager.enabled = false;
+        }
+
+        private void SyncManagedRoomProfile()
+        {
+            ResolveReferences();
+            XROrigin xrOrigin = FindAnyObjectByType<XROrigin>(
+                FindObjectsInactive.Include);
+            Transform origin = xrOrigin != null
+                ? xrOrigin.transform
+                : transform;
+            MetaSceneRoomSnapshot room =
+                ManagedEditorRoomProfile.GetOrCreate(
+                    origin,
+                    orientationCamera);
+            SyncRoomSnapshot(
+                room,
+                "Managed room wall is no longer in the fixed profile.");
         }
 
         private void SubscribeMetaScene()
@@ -988,6 +1043,15 @@ namespace F1XR.RestAPI.Replay.Room
         private void SyncMetaRoom()
         {
             MetaSceneRoomSnapshot room = metaSceneSource?.CurrentRoom;
+            SyncRoomSnapshot(
+                room,
+                "Meta wall anchor is no longer in the current room.");
+        }
+
+        private void SyncRoomSnapshot(
+            MetaSceneRoomSnapshot room,
+            string removedReason)
+        {
             if (room == null)
             {
                 ClearContainingFloor();
@@ -1015,7 +1079,7 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 RemoveCandidate(
                     candidateIdScratch[i],
-                    "Meta wall anchor is no longer in the current room.");
+                    removedReason);
             }
 
             AttemptPendingReacquisitions();
