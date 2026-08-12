@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using F1XR.RaceFlags;
 using F1XR.RestAPI.Api;
+using F1XR.RestAPI.Replay.Room;
+using F1XR.RestAPI.Utility;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -35,6 +37,41 @@ namespace F1XR.RestAPI.Replay
         [Min(0f)] public float focusBelowEyeMeters = 0.75f;
         [Min(0.2f)] public float interactionWidthMeters = 0.75f;
         [Min(0.05f)] public float interactionHeightMeters = 0.12f;
+
+        [Header("Room Trajectory Corridor")]
+        [Min(2.4f)] public float preferredCorridorLengthMeters = 7f;
+        [Min(2.4f)] public float minimumRoomCorridorLengthMeters = 4f;
+        [Min(4f)] public float maximumRoomCorridorLengthMeters = 8f;
+        [Min(1.5f)] public float minimumCompactCorridorLengthMeters = 2.4f;
+        [Min(2.4f)] public float maximumCompactCorridorLengthMeters = 3.8f;
+        [Min(0.2f)] public float roomVehicleLengthMeters = 0.7f;
+        [Min(0.2f)] public float compactVehicleLengthMeters = 0.46f;
+        [Min(0f)] public float floorSurfaceOffsetMeters = 0.02f;
+        [Min(0f)] public float selectedWallMarginMeters = 0.35f;
+        [Min(0f)] public float otherWallMarginMeters = 0.25f;
+
+        [Header("Forensic Track Slice")]
+        public bool enableForensicTrack = true;
+        [Min(1f)] public float forensicRoadWidthInCarWidths = 5.4f;
+        [Min(0.05f)] public float forensicKerbWidthInCarWidths = 0.42f;
+        [Min(0.05f)] public float forensicRunoffWidthInCarWidths = 0.75f;
+
+        [Header("Trajectory Evidence")]
+        [Min(0.25f)] public float observedLeadSeconds = 1.35f;
+        [Min(0.1f)] public float observedTailSeconds = 0.45f;
+        [Range(10, 60)] public int trajectorySamplesPerSecond = 20;
+        [Min(0.05f)] public float temporalTailSeconds = 0.15f;
+        [Min(0.05f)] public float evidenceEchoDelaySeconds = 0.12f;
+        [Min(0.05f)] public float evidenceTickSeconds = 0.25f;
+
+        [Header("Time Lens")]
+        public bool enableTimeLens = true;
+        [Min(0.2f)] public float timeLensHandleHeightMeters = 0.75f;
+        [Min(0.01f)] public float timeLensHandleRadiusMeters = 0.06f;
+        [Min(0.01f)] public float timeLensDeadzoneMeters = 0.007f;
+        [Min(0.001f)] public float timeLensVisualSmoothSeconds = 0.035f;
+        [Min(0f)] public float timeLensContactDetentMeters = 0.04f;
+        [Min(0f)] public float timeLensEndpointDetentMeters = 0.03f;
 
         [Header("Playback")]
         [Min(0f)] public float leadSeconds = 3f;
@@ -96,6 +133,16 @@ namespace F1XR.RestAPI.Replay
         [Min(0.05f)] public float impactMinDistance = 0.12f;
         [Min(0.1f)] public float impactMaxDistance = 6f;
 
+        [Header("MR Impact Feedback")]
+        public bool playImpactHaptics = true;
+        [Range(0f, 1f)] public float primaryHapticAmplitude = 0.55f;
+        [Min(0.01f)] public float primaryHapticDuration = 0.08f;
+        [Range(0f, 1f)] public float secondaryHapticAmplitude = 0.2f;
+        [Min(0.01f)] public float secondaryHapticDuration = 0.05f;
+        [Min(0f)] public float secondaryHapticDelaySeconds = 0.09f;
+        [Range(0f, 2f)] public float warningWaveIntensity = 1f;
+        [Min(0.1f)] public float warningWaveDurationSeconds = 0.62f;
+
         [Header("Capture")]
         public bool captureProfile = true;
 
@@ -142,6 +189,24 @@ namespace F1XR.RestAPI.Replay
         private string collisionPreloadKey;
         private bool collisionPreloadReady;
         private string collisionPreparationFailure;
+        private float collisionPresentationContactTime;
+        private CollisionTrajectoryAnalysis collisionTrajectoryAnalysis;
+        private readonly CollisionRoomPlacementResolver
+            collisionRoomPlacementResolver = new();
+        private CollisionRoomPlacementResult collisionRoomPlacement;
+        private ShowcaseLayout collisionShowcaseLayout;
+        private bool collisionShowcaseLayoutResolved;
+        private Vector3[] collisionVictimMappedForensicPath;
+        private Vector3[] collisionOtherMappedForensicPath;
+        private const float CollisionFootprintLongitudinalPadding = 0.75f;
+        private const float CollisionFootprintLateralPadding = 3.1f;
+
+        private float CollisionPresentationContactTime =>
+            collisionPresentationContactTime > 0f
+                ? collisionPresentationContactTime
+                : currentEvent != null
+                    ? currentEvent.anchorTime
+                    : 0f;
 
         public bool HasCollision =>
             FindClosestCollision(
@@ -234,19 +299,12 @@ namespace F1XR.RestAPI.Replay
         {
             float startedAt =
                 Time.realtimeSinceStartup;
-            float scanSeconds = Mathf.Max(
-                CollisionLeadSeconds,
-                CollisionTailSeconds);
             float loadStart = Mathf.Max(
                 player.TimelineStartTime,
-                definition.anchorTime -
-                scanSeconds -
-                trackPaddingSeconds);
+                definition.startTime - 0.6f);
             float loadEnd = Mathf.Min(
                 player.ReadyUntilTime,
-                definition.anchorTime +
-                scanSeconds +
-                trackPaddingSeconds);
+                definition.endTime + 0.6f);
             bool loaded = false;
             yield return player.LoadEventRange(
                 loadStart,
@@ -275,9 +333,26 @@ namespace F1XR.RestAPI.Replay
             string datasetId = player?.Manifest != null
                 ? player.Manifest.datasetId
                 : string.Empty;
+            int layoutRevision = ResolveCollisionShowcaseLayout() != null
+                ? collisionShowcaseLayout.LayoutRevision
+                : -1;
             return $"{datasetId}|" +
                 $"{definition?.eventId}|" +
-                $"{definition?.anchorTime:0.000}";
+                $"{definition?.anchorTime:0.000}|" +
+                $"layout:{layoutRevision}";
+        }
+
+        private ShowcaseLayout ResolveCollisionShowcaseLayout()
+        {
+            if (collisionShowcaseLayoutResolved)
+                return collisionShowcaseLayout;
+
+            collisionShowcaseLayoutResolved = true;
+            collisionShowcaseLayout =
+                GetComponent<ShowcaseLayout>() ??
+                FindAnyObjectByType<ShowcaseLayout>(
+                    FindObjectsInactive.Include);
+            return collisionShowcaseLayout;
         }
 
         public void OpenNextCollision()
@@ -301,6 +376,18 @@ namespace F1XR.RestAPI.Replay
             if (stageRoot == null ||
                 !IsCollisionEvent(currentEvent))
             {
+                return;
+            }
+
+            if (collisionRoomPlacement.IsValid)
+            {
+                TryApplyRoomStagePlacement(
+                    collisionRoomPlacement.StagePose.position,
+                    collisionRoomPlacement.StagePose.rotation,
+                    collisionResolvedStageScale,
+                    ResolveCollisionContactPosition(),
+                    0.12f);
+                stageRoot.SetActive(true);
                 return;
             }
 
@@ -343,7 +430,65 @@ namespace F1XR.RestAPI.Replay
                     Mathf.Abs(parentLossyScale.z)));
             PlaceCollisionStageForViewer(
                 collisionResolvedStageScale * parentWorldScale);
+            SetStageInteractionEnabled(false);
             stageRoot.SetActive(true);
+        }
+
+        private bool TryRefreshCollisionPlacementForActivation()
+        {
+            if (!collisionRoomPlacement.IsValid ||
+                collisionPreparedDefinition == null)
+            {
+                return false;
+            }
+
+            string currentKey = CreateCollisionPreloadKey(
+                collisionPreparedDefinition);
+            if (!string.Equals(
+                    collisionPreloadKey,
+                    currentKey,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            CollisionRoomPlacementResult refreshed;
+            if (collisionRoomPlacement.Mode ==
+                CollisionRoomPlacementMode.ViewerCompact)
+            {
+                if (!collisionRoomPlacementResolver
+                        .TryRefreshViewerCompact(
+                            Camera.main,
+                            out refreshed))
+                {
+                    return false;
+                }
+            }
+            else if (!collisionRoomPlacementResolver.TryGetCached(
+                         collisionShowcaseLayout,
+                         sourceGeometryRevision,
+                         out refreshed))
+            {
+                return false;
+            }
+
+            collisionRoomPlacement = refreshed;
+            Vector3 parentScale = PresentationRoot != null &&
+                                  PresentationRoot.parent != null
+                ? PresentationRoot.parent.lossyScale
+                : Vector3.one;
+            float parentUniformScale = Mathf.Max(
+                0.0001f,
+                Mathf.Max(
+                    Mathf.Abs(parentScale.x),
+                    Mathf.Max(
+                        Mathf.Abs(parentScale.y),
+                        Mathf.Abs(parentScale.z))));
+            collisionResolvedStageScale =
+                collisionRoomPlacement.UniformScale /
+                parentUniformScale;
+            return float.IsFinite(collisionResolvedStageScale) &&
+                collisionResolvedStageScale > 0f;
         }
 
         private float ResolveInitialCollisionStageScale()
@@ -370,6 +515,7 @@ namespace F1XR.RestAPI.Replay
             }
 
             float sourceVehicleLength = 0f;
+            float sourceVehicleWidth = 0f;
             foreach (int driver in currentEvent.driverNumbers)
             {
                 if (eventCars.TryGetVisualTransform(
@@ -385,6 +531,9 @@ namespace F1XR.RestAPI.Replay
                     {
                         sourceVehicleLength =
                             visualLength;
+                        sourceVehicleWidth = Mathf.Max(
+                            0.0001f,
+                            car.GetVisualWidth());
                         break;
                     }
                 }
@@ -395,63 +544,431 @@ namespace F1XR.RestAPI.Replay
 
             collisionShowcase ??=
                 new CollisionShowcaseVfxSettings();
-            float targetLength = Mathf.Clamp(
-                collisionShowcase.targetVehicleLengthMeters,
-                0.32f,
-                0.46f);
-            float minimum = Mathf.Max(
-                0.1f,
-                collisionShowcase.minimumStageScale);
-            float maximum = Mathf.Max(
-                minimum,
-                collisionShowcase.maximumStageScale);
-            Vector3 parentLossyScale =
-                PresentationRoot.parent != null
-                    ? PresentationRoot.parent.lossyScale
-                    : Vector3.one;
-            float parentWorldScale = Mathf.Max(
-                0.0001f,
+            Vector3 contact = ResolveCollisionContactPosition();
+            Vector3 forward = collisionForwardLocal;
+            forward.y = 0f;
+            if (forward.sqrMagnitude <= 0.000001f)
+                forward = Vector3.forward;
+            else
+                forward.Normalize();
+            Vector3[] footprint = BuildCollisionRoomFootprint(
+                contact,
+                forward,
+                sourceVehicleLength,
+                sourceVehicleWidth);
+            CollisionRoomPlacementContent content = new(
+                contact,
+                forward,
+                footprint,
+                sourceVehicleLength);
+            CollisionRoomPlacementSettings settings =
+                CollisionRoomPlacementSettings.Default;
+            settings.FullMinimumLengthMeters = Mathf.Max(
+                4f,
+                collisionShowcase.minimumRoomCorridorLengthMeters);
+            settings.FullPreferredLengthMeters = Mathf.Clamp(
+                collisionShowcase.preferredCorridorLengthMeters,
+                settings.FullMinimumLengthMeters,
                 Mathf.Max(
-                    Mathf.Abs(parentLossyScale.x),
-                    Mathf.Abs(parentLossyScale.z)));
-            collisionResolvedStageScale = Mathf.Clamp(
-                targetLength /
-                (sourceVehicleLength * parentWorldScale),
-                minimum,
-                maximum);
-            float localStageSpan =
-                stageInteractionDefaultsCaptured
-                    ? Mathf.Max(
-                        Mathf.Abs(stageInteractionDefaultSize.x),
-                        Mathf.Abs(stageInteractionDefaultSize.z))
-                    : 0f;
-            float maximumIslandSpan = Mathf.Min(
+                    settings.FullMinimumLengthMeters,
+                    collisionShowcase.maximumRoomCorridorLengthMeters));
+            settings.FullMaximumLengthMeters = Mathf.Max(
+                settings.FullPreferredLengthMeters,
+                collisionShowcase.maximumRoomCorridorLengthMeters);
+            settings.FullMinimumVehicleLengthMeters = 0.55f;
+            settings.FullMaximumVehicleLengthMeters = Mathf.Clamp(
+                collisionShowcase.roomVehicleLengthMeters,
+                0.55f,
+                0.7f);
+            settings.CompactMinimumLengthMeters = Mathf.Max(
+                2.4f,
+                collisionShowcase.minimumCompactCorridorLengthMeters);
+            settings.CompactMaximumLengthMeters = Mathf.Max(
+                settings.CompactMinimumLengthMeters,
+                collisionShowcase.maximumCompactCorridorLengthMeters);
+            settings.CompactPreferredLengthMeters = Mathf.Clamp(
+                3.2f,
+                settings.CompactMinimumLengthMeters,
+                settings.CompactMaximumLengthMeters);
+            settings.CompactMaximumVehicleLengthMeters = Mathf.Clamp(
+                collisionShowcase.compactVehicleLengthMeters,
+                0.36f,
+                0.5f);
+            settings.ViewerPreferredVehicleLengthMeters = Mathf.Clamp(
+                collisionShowcase.targetVehicleLengthMeters,
+                0.42f,
+                0.46f);
+            settings.ViewerMinimumVehicleLengthMeters = 0.42f;
+            settings.ViewerMaximumVehicleLengthMeters = 0.46f;
+            settings.ViewerMaximumSpanMeters = Mathf.Min(
                 2.8f,
                 Mathf.Max(
-                    1f,
+                    1.2f,
                     collisionShowcase.maximumIslandSpanMeters));
-            if (localStageSpan > 0.0001f)
-            {
-                collisionResolvedStageScale = Mathf.Min(
-                    collisionResolvedStageScale,
-                    maximumIslandSpan /
-                    (localStageSpan * parentWorldScale));
-            }
-            PresentationRoot.localScale =
-                Vector3.one * collisionResolvedStageScale;
+            settings.ViewerForwardDistanceMeters = Mathf.Max(
+                0.5f,
+                collisionShowcase.focusForwardDistanceMeters);
+            settings.ViewerBelowEyeMeters = Mathf.Max(
+                0f,
+                collisionShowcase.focusBelowEyeMeters);
+            settings.FloorOffsetMeters = Mathf.Max(
+                0f,
+                collisionShowcase.floorSurfaceOffsetMeters);
+            settings.EntryExitWallMarginMeters = Mathf.Max(
+                0f,
+                collisionShowcase.selectedWallMarginMeters);
+            settings.SideWallMarginMeters = Mathf.Max(
+                0f,
+                collisionShowcase.otherWallMarginMeters);
 
-            float stageWorldScale =
-                collisionResolvedStageScale * parentWorldScale;
-            PlaceCollisionStageForViewer(
-                stageWorldScale);
+            bool placementReady = collisionRoomPlacementResolver.Prepare(
+                ResolveCollisionShowcaseLayout(),
+                Camera.main,
+                sourceGeometryRevision,
+                content,
+                settings,
+                out collisionRoomPlacement);
+            if (!placementReady || !collisionRoomPlacement.IsValid)
+            {
+                Debug.LogWarning(
+                    "[CollisionForensics] No safe room or viewer placement was available.",
+                    this);
+                return;
+            }
+
+            Vector3 parentScale = PresentationRoot.parent != null
+                ? PresentationRoot.parent.lossyScale
+                : Vector3.one;
+            float parentUniformScale = Mathf.Max(
+                0.0001f,
+                Mathf.Max(
+                    Mathf.Abs(parentScale.x),
+                    Mathf.Max(
+                        Mathf.Abs(parentScale.y),
+                        Mathf.Abs(parentScale.z))));
+            collisionResolvedStageScale =
+                collisionRoomPlacement.UniformScale /
+                parentUniformScale;
+            if (!TryApplyRoomStagePlacement(
+                    collisionRoomPlacement.StagePose.position,
+                    collisionRoomPlacement.StagePose.rotation,
+                    collisionResolvedStageScale,
+                    contact,
+                    0.12f))
+            {
+                collisionRoomPlacement = default;
+                return;
+            }
+
             Debug.Log(
-                $"[CollisionIncident] Dark hologram presentation " +
-                $"stageSpan={localStageSpan * stageWorldScale:0.###}m, " +
-                $"vehicleLength={sourceVehicleLength * stageWorldScale:0.###}m, " +
+                $"[CollisionForensics] placement=" +
+                $"{collisionRoomPlacement.Mode}, " +
+                $"corridor={collisionRoomPlacement.PhysicalLengthMeters:0.###}m, " +
+                $"vehicle={collisionRoomPlacement.TargetVehicleLengthMeters:0.###}m, " +
                 $"stageScale={collisionResolvedStageScale:0.###}, " +
-                $"vehicleLod=Off.",
+                $"fallback={collisionRoomPlacement.RoomFallbackReason}.",
                 this);
             collisionPresentationFitted = true;
+        }
+
+        private Vector3[] BuildCollisionRoomFootprint(
+            Vector3 contact,
+            Vector3 forward,
+            float sourceVehicleLength,
+            float sourceVehicleWidth)
+        {
+            float targetVehicleLength = Mathf.Clamp(
+                collisionShowcase != null
+                    ? collisionShowcase.roomVehicleLengthMeters
+                    : 0.7f,
+                0.55f,
+                0.7f);
+            float preferredLength = Mathf.Clamp(
+                collisionShowcase != null
+                    ? collisionShowcase.preferredCorridorLengthMeters
+                    : 7f,
+                4f,
+                8f);
+            float localLength = sourceVehicleLength *
+                preferredLength / targetVehicleLength;
+            Vector3 right = Vector3.Cross(
+                Vector3.up,
+                forward).normalized;
+            float rawMinimumLongitudinal = float.PositiveInfinity;
+            float rawMaximumLongitudinal = float.NegativeInfinity;
+            AccumulateCollisionForensicBounds(
+                collisionVictimMappedForensicPath,
+                contact,
+                forward,
+                right,
+                1f,
+                ref rawMinimumLongitudinal,
+                ref rawMaximumLongitudinal,
+                out _,
+                out _);
+            AccumulateCollisionForensicBounds(
+                collisionOtherMappedForensicPath,
+                contact,
+                forward,
+                right,
+                1f,
+                ref rawMinimumLongitudinal,
+                ref rawMaximumLongitudinal,
+                out _,
+                out _);
+            float rawSpan = rawMaximumLongitudinal -
+                rawMinimumLongitudinal;
+            float railLength = Mathf.Max(
+                sourceVehicleLength * 2f,
+                localLength -
+                sourceVehicleLength *
+                CollisionFootprintLongitudinalPadding * 2f);
+            float compression = float.IsFinite(rawSpan) &&
+                                rawSpan > 0.0001f
+                ? railLength / rawSpan
+                : 1f;
+
+            float minimumLongitudinal = float.PositiveInfinity;
+            float maximumLongitudinal = float.NegativeInfinity;
+            float minimumLateral = float.PositiveInfinity;
+            float maximumLateral = float.NegativeInfinity;
+            AccumulateCollisionForensicBounds(
+                collisionVictimMappedForensicPath,
+                contact,
+                forward,
+                right,
+                compression,
+                ref minimumLongitudinal,
+                ref maximumLongitudinal,
+                out float victimMinimumLateral,
+                out float victimMaximumLateral);
+            minimumLateral = Mathf.Min(
+                minimumLateral,
+                victimMinimumLateral);
+            maximumLateral = Mathf.Max(
+                maximumLateral,
+                victimMaximumLateral);
+            AccumulateCollisionForensicBounds(
+                collisionOtherMappedForensicPath,
+                contact,
+                forward,
+                right,
+                compression,
+                ref minimumLongitudinal,
+                ref maximumLongitudinal,
+                out float otherMinimumLateral,
+                out float otherMaximumLateral);
+            minimumLateral = Mathf.Min(
+                minimumLateral,
+                otherMinimumLateral);
+            maximumLateral = Mathf.Max(
+                maximumLateral,
+                otherMaximumLateral);
+
+            if (collisionTrajectoryAnalysis != null &&
+                collisionTrajectoryAnalysis.Tier ==
+                    CollisionEvidenceTier
+                        .ObservedContactRequiresReconstruction)
+            {
+                AccumulateCollisionReconstructedVehicleBounds(
+                    collisionVictimMappedForensicPath,
+                    contact,
+                    forward,
+                    right,
+                    collisionOutwardLocal,
+                    compression,
+                    sourceVehicleLength,
+                    sourceVehicleWidth,
+                    1f,
+                    0.7f,
+                    28f,
+                    ref minimumLongitudinal,
+                    ref maximumLongitudinal,
+                    ref minimumLateral,
+                    ref maximumLateral);
+                AccumulateCollisionReconstructedVehicleBounds(
+                    collisionOtherMappedForensicPath,
+                    contact,
+                    forward,
+                    right,
+                    -collisionOutwardLocal,
+                    compression,
+                    sourceVehicleLength,
+                    sourceVehicleWidth,
+                    0f,
+                    0.18f,
+                    5f,
+                    ref minimumLongitudinal,
+                    ref maximumLongitudinal,
+                    ref minimumLateral,
+                    ref maximumLateral);
+            }
+
+            if (!float.IsFinite(minimumLongitudinal) ||
+                !float.IsFinite(maximumLongitudinal) ||
+                !float.IsFinite(minimumLateral) ||
+                !float.IsFinite(maximumLateral))
+            {
+                minimumLongitudinal = -railLength * (2f / 3f);
+                maximumLongitudinal = railLength * (1f / 3f);
+                minimumLateral = -sourceVehicleWidth;
+                maximumLateral = sourceVehicleWidth;
+            }
+
+            minimumLongitudinal -= sourceVehicleLength *
+                CollisionFootprintLongitudinalPadding;
+            maximumLongitudinal += sourceVehicleLength *
+                CollisionFootprintLongitudinalPadding;
+            float trackHalfWidth = 0f;
+            bool missingSerializedTrackDefaults =
+                collisionShowcase != null &&
+                collisionShowcase.forensicRoadWidthInCarWidths <= 0f &&
+                collisionShowcase.forensicKerbWidthInCarWidths <= 0f &&
+                collisionShowcase.forensicRunoffWidthInCarWidths <= 0f;
+            if (collisionShowcase == null ||
+                collisionShowcase.enableForensicTrack ||
+                missingSerializedTrackDefaults)
+            {
+                float configuredRoadWidth = collisionShowcase != null
+                    ? collisionShowcase.forensicRoadWidthInCarWidths
+                    : 5.4f;
+                float configuredKerbWidth = collisionShowcase != null
+                    ? collisionShowcase.forensicKerbWidthInCarWidths
+                    : 0.42f;
+                float configuredRunoffWidth = collisionShowcase != null
+                    ? collisionShowcase.forensicRunoffWidthInCarWidths
+                    : 0.75f;
+                float roadHalfWidth = (configuredRoadWidth > 0f
+                    ? configuredRoadWidth
+                    : 5.4f) * 0.5f;
+                float kerbWidth = configuredKerbWidth > 0f
+                    ? configuredKerbWidth
+                    : 0.42f;
+                float runoffWidth = configuredRunoffWidth > 0f
+                    ? configuredRunoffWidth
+                    : 0.75f;
+                trackHalfWidth = sourceVehicleWidth *
+                    (roadHalfWidth + kerbWidth + runoffWidth);
+            }
+            float lateralPadding = sourceVehicleWidth *
+                CollisionFootprintLateralPadding;
+            float stationPanelPadding = sourceVehicleWidth * 1.65f;
+            float visualHalfWidth = trackHalfWidth + stationPanelPadding;
+            minimumLateral -= Mathf.Max(lateralPadding, visualHalfWidth);
+            maximumLateral += Mathf.Max(lateralPadding, visualHalfWidth);
+            return new[]
+            {
+                contact + forward * minimumLongitudinal +
+                    right * minimumLateral,
+                contact + forward * minimumLongitudinal +
+                    right * maximumLateral,
+                contact + forward * maximumLongitudinal +
+                    right * maximumLateral,
+                contact + forward * maximumLongitudinal +
+                    right * minimumLateral
+            };
+        }
+
+        private static void AccumulateCollisionReconstructedVehicleBounds(
+            IReadOnlyList<Vector3> observedPath,
+            Vector3 contact,
+            Vector3 forward,
+            Vector3 right,
+            Vector3 lateralDirection,
+            float compression,
+            float vehicleLength,
+            float vehicleWidth,
+            float forwardInVehicleLengths,
+            float lateralInVehicleWidths,
+            float yawDegrees,
+            ref float minimumLongitudinal,
+            ref float maximumLongitudinal,
+            ref float minimumLateral,
+            ref float maximumLateral)
+        {
+            if (observedPath == null || observedPath.Count == 0)
+                return;
+
+            Vector3 relative = observedPath[observedPath.Count - 1] -
+                contact;
+            relative.y = 0f;
+            Vector3 flatLateral = lateralDirection;
+            flatLateral.y = 0f;
+            if (flatLateral.sqrMagnitude <= 0.000001f)
+                flatLateral = right;
+            else
+                flatLateral.Normalize();
+
+            float centerLongitudinal =
+                Vector3.Dot(relative, forward) * compression +
+                vehicleLength * forwardInVehicleLengths;
+            float centerLateral =
+                Vector3.Dot(relative, right) * compression +
+                Vector3.Dot(flatLateral, right) *
+                vehicleWidth * lateralInVehicleWidths;
+            float radians = Mathf.Abs(yawDegrees) * Mathf.Deg2Rad;
+            float cosine = Mathf.Abs(Mathf.Cos(radians));
+            float sine = Mathf.Abs(Mathf.Sin(radians));
+            float longitudinalExtent =
+                cosine * vehicleLength * 0.5f +
+                sine * vehicleWidth * 0.5f;
+            float lateralExtent =
+                sine * vehicleLength * 0.5f +
+                cosine * vehicleWidth * 0.5f;
+
+            minimumLongitudinal = Mathf.Min(
+                minimumLongitudinal,
+                centerLongitudinal - longitudinalExtent);
+            maximumLongitudinal = Mathf.Max(
+                maximumLongitudinal,
+                centerLongitudinal + longitudinalExtent);
+            minimumLateral = Mathf.Min(
+                minimumLateral,
+                centerLateral - lateralExtent);
+            maximumLateral = Mathf.Max(
+                maximumLateral,
+                centerLateral + lateralExtent);
+        }
+
+        private static void AccumulateCollisionForensicBounds(
+            IReadOnlyList<Vector3> path,
+            Vector3 contact,
+            Vector3 forward,
+            Vector3 right,
+            float scale,
+            ref float minimumLongitudinal,
+            ref float maximumLongitudinal,
+            out float minimumLateral,
+            out float maximumLateral)
+        {
+            minimumLateral = float.PositiveInfinity;
+            maximumLateral = float.NegativeInfinity;
+            if (path == null)
+                return;
+
+            for (int index = 0; index < path.Count; index++)
+            {
+                Vector3 relative = path[index] - contact;
+                relative.y = 0f;
+                float longitudinal = Vector3.Dot(
+                    relative,
+                    forward) * scale;
+                float lateral = Vector3.Dot(
+                    relative,
+                    right) * scale;
+                minimumLongitudinal = Mathf.Min(
+                    minimumLongitudinal,
+                    longitudinal);
+                maximumLongitudinal = Mathf.Max(
+                    maximumLongitudinal,
+                    longitudinal);
+                minimumLateral = Mathf.Min(
+                    minimumLateral,
+                    lateral);
+                maximumLateral = Mathf.Max(
+                    maximumLateral,
+                    lateral);
+            }
         }
 
         private void PlaceCollisionStageForViewer(
@@ -562,6 +1079,7 @@ namespace F1XR.RestAPI.Replay
 
         private Vector3 ResolveCollisionContactPosition()
         {
+            float contactTime = CollisionPresentationContactTime;
             int[] drivers = currentEvent != null
                 ? currentEvent.driverNumbers
                 : null;
@@ -569,18 +1087,18 @@ namespace F1XR.RestAPI.Replay
                 drivers.Length >= 2 &&
                 TryGetEventLocalVehiclePosition(
                     drivers[0],
-                    currentEvent.anchorTime,
+                    contactTime,
                     out Vector3 first) &&
                 TryGetEventLocalVehiclePosition(
                     drivers[1],
-                    currentEvent.anchorTime,
+                    contactTime,
                     out Vector3 second))
             {
                 return (first + second) * 0.5f;
             }
 
             return TryGetEventLocalPathPosition(
-                    currentEvent.anchorTime,
+                    contactTime,
                     out Vector3 pathPosition)
                 ? pathPosition
                 : Vector3.zero;
@@ -594,15 +1112,16 @@ namespace F1XR.RestAPI.Replay
             int[] drivers = currentEvent != null
                 ? currentEvent.driverNumbers
                 : null;
+            float contactTime = CollisionPresentationContactTime;
             if (drivers == null ||
                 drivers.Length < 2 ||
                 !TryGetEventLocalVehiclePosition(
                     drivers[0],
-                    currentEvent.anchorTime,
+                    contactTime,
                     out Vector3 first) ||
                 !TryGetEventLocalVehiclePosition(
                     drivers[1],
-                    currentEvent.anchorTime,
+                    contactTime,
                     out Vector3 second))
             {
                 return false;
@@ -614,13 +1133,13 @@ namespace F1XR.RestAPI.Replay
             Vector3 after = Vector3.zero;
             bool hasPath =
                 TryGetEventLocalPathPosition(
-                    currentEvent.anchorTime - sampleOffset,
+                    contactTime - sampleOffset,
                     out before) &&
                 TryGetEventLocalPathPosition(
-                    currentEvent.anchorTime,
+                    contactTime,
                     out center) &&
                 TryGetEventLocalPathPosition(
-                    currentEvent.anchorTime + sampleOffset,
+                    contactTime + sampleOffset,
                     out after);
             if (!hasPath)
             {
@@ -1803,16 +2322,18 @@ namespace F1XR.RestAPI.Replay
         {
             get
             {
-                string datasetId = player?.Manifest != null
-                    ? player.Manifest.datasetId
+                string currentKey = collisionPreparedDefinition != null
+                    ? CreateCollisionPreloadKey(
+                        collisionPreparedDefinition)
                     : string.Empty;
                 return collisionPreloadReady &&
                     collisionPreparedDefinition != null &&
                     collisionIncidentPresentation != null &&
                     stageRoot != null &&
-                    !string.IsNullOrWhiteSpace(datasetId) &&
-                    collisionPreloadKey.StartsWith(
-                        datasetId + "|",
+                    !string.IsNullOrWhiteSpace(currentKey) &&
+                    string.Equals(
+                        collisionPreloadKey,
+                        currentKey,
                         StringComparison.Ordinal);
             }
         }
@@ -1835,6 +2356,39 @@ namespace F1XR.RestAPI.Replay
             IsCurrentCollision &&
             collisionIncidentPresentation != null &&
             collisionIncidentPresentation.ImpactReplaying;
+
+        public bool IsCollisionTimeLensAvailable =>
+            isActive &&
+            IsCurrentCollision &&
+            collisionIncidentPresentation != null &&
+            collisionIncidentPresentation.IsTimeLensAvailable;
+
+        public bool IsCollisionTimeLensGrabbed =>
+            IsCollisionTimeLensAvailable &&
+            collisionIncidentPresentation.IsTimeLensGrabbed;
+
+        public float CollisionTimeLensNormalized =>
+            collisionIncidentPresentation != null
+                ? collisionIncidentPresentation.TimeLensNormalized
+                : 1f;
+
+        public float CollisionTimeLensTimeSeconds =>
+            collisionIncidentPresentation != null
+                ? collisionIncidentPresentation.TimeLensTimeSeconds
+                : CollisionPresentationContactTime;
+
+        public string CollisionTimeLensStatus =>
+            collisionIncidentPresentation != null
+                ? collisionIncidentPresentation.TimeLensStatus
+                : string.Empty;
+
+        public void SetCollisionTimeLensNormalized(float value)
+        {
+            if (!IsCollisionTimeLensAvailable)
+                return;
+
+            collisionIncidentPresentation.SetTimeLensNormalized(value);
+        }
 
         public void NotifyDatasetChanged()
         {
@@ -1894,6 +2448,7 @@ namespace F1XR.RestAPI.Replay
         public void ReplayCollisionImpact()
         {
             if (!IsCollisionRevealComplete ||
+                IsCollisionTimeLensGrabbed ||
                 collisionIncidentPresentation == null)
             {
                 return;
@@ -1906,12 +2461,13 @@ namespace F1XR.RestAPI.Replay
         {
             if (!isActive ||
                 !IsCurrentCollision ||
+                IsCollisionTimeLensGrabbed ||
                 collisionIncidentPresentation == null)
             {
                 return;
             }
 
-            timeline.SetTime(currentEvent.anchorTime);
+            timeline.SetTime(CollisionPresentationContactTime);
             timeline.Pause();
             ResetIndices();
             collisionIncidentPresentation.RestartReveal();
@@ -1923,21 +2479,18 @@ namespace F1XR.RestAPI.Replay
         {
             float startedAt = Time.realtimeSinceStartup;
             DestroyStage(false);
+            collisionTrajectoryAnalysis = null;
+            collisionPresentationContactTime = 0f;
+            collisionRoomPlacement = default;
+            collisionRoomPlacementResolver.Invalidate();
             currentEvent = definition;
 
-            float scanSeconds = Mathf.Max(
-                CollisionLeadSeconds,
-                CollisionTailSeconds);
             float loadStart = Mathf.Max(
                 player.TimelineStartTime,
-                definition.anchorTime -
-                scanSeconds -
-                trackPaddingSeconds);
+                definition.startTime - 0.6f);
             float loadEnd = Mathf.Min(
                 player.ReadyUntilTime,
-                definition.anchorTime +
-                scanSeconds +
-                trackPaddingSeconds);
+                definition.endTime + 0.6f);
             bool loaded = false;
             yield return player.LoadEventRange(
                 loadStart,
@@ -1952,7 +2505,7 @@ namespace F1XR.RestAPI.Replay
                 yield break;
             }
 
-            if (!BuildEventSamples(
+            if (!BuildCollisionSourceSnapshot(
                     definition,
                     loadStart,
                     loadEnd))
@@ -1960,6 +2513,14 @@ namespace F1XR.RestAPI.Replay
                 FailCollisionPreparation(
                     key,
                     "vehicle samples were unavailable");
+                yield break;
+            }
+
+            if (!TryBuildCollisionTrajectoryAnalysis(definition))
+            {
+                FailCollisionPreparation(
+                    key,
+                    "the incident trajectory could not be resolved");
                 yield break;
             }
 
@@ -1978,12 +2539,11 @@ namespace F1XR.RestAPI.Replay
             timeline.Reset(
                 showcasePlaybackWindow.StartTime,
                 showcasePlaybackWindow.EndTime);
-            timeline.SetTime(definition.anchorTime);
+            timeline.SetTime(CollisionPresentationContactTime);
             timeline.Pause();
             isActive = true;
             ResetIndices();
-            ShowCollisionCars(definition.anchorTime);
-            FitCollisionPresentationStage();
+            ShowCollisionCars(CollisionPresentationContactTime);
             if (!ResolveCollisionReconstruction() ||
                 !TryGetCollisionCar(
                     collisionVictimDriver,
@@ -1998,6 +2558,29 @@ namespace F1XR.RestAPI.Replay
                     "the collision vehicle pair could not be resolved");
                 yield break;
             }
+            if (!TryBuildMappedCollisionForensicPath(
+                    collisionVictimDriver,
+                    out collisionVictimMappedForensicPath) ||
+                !TryBuildMappedCollisionForensicPath(
+                    collisionOtherDriver,
+                    out collisionOtherMappedForensicPath))
+            {
+                isActive = false;
+                FailCollisionPreparation(
+                    key,
+                    "the calibrated incident trajectory could not be mapped");
+                yield break;
+            }
+            FitCollisionPresentationStage();
+            if (!collisionPresentationFitted ||
+                !collisionRoomPlacement.IsValid)
+            {
+                isActive = false;
+                FailCollisionPreparation(
+                    key,
+                    "no safe collision presentation placement was available");
+                yield break;
+            }
 
             float vehicleLength = Mathf.Max(
                 0.001f,
@@ -2009,11 +2592,11 @@ namespace F1XR.RestAPI.Replay
             Vector3[] victimIncoming =
                 BuildCollisionIncomingPath(
                     collisionVictimDriver,
-                    definition.anchorTime);
+                    CollisionPresentationContactTime);
             Vector3[] otherIncoming =
                 BuildCollisionIncomingPath(
                     collisionOtherDriver,
-                    definition.anchorTime);
+                    CollisionPresentationContactTime);
             string label =
                 $"{eventCars.GetDriverLabel(collisionVictimDriver)} / " +
                 eventCars.GetDriverLabel(collisionOtherDriver);
@@ -2021,20 +2604,24 @@ namespace F1XR.RestAPI.Replay
                 collisionVictimDriver);
             string otherLabel = eventCars.GetDriverLabel(
                 collisionOtherDriver);
-            string incidentTime = FormatCollisionIncidentTime(
+            string reportedTime = FormatCollisionIncidentTime(
                 definition.anchorTime);
+            string observedTime = FormatCollisionIncidentTime(
+                CollisionPresentationContactTime);
             string incidentMetadata = definition.lapNumber > 0
-                ? $"L{definition.lapNumber}  {incidentTime}"
-                : incidentTime;
+                ? $"L{definition.lapNumber}  REPORTED {reportedTime}  |  " +
+                  $"OBSERVED {observedTime}"
+                : $"REPORTED {reportedTime}  |  OBSERVED {observedTime}";
 
             collisionIncidentPresentation =
                 new CollisionIncidentPresentation();
             collisionIncidentPresentation.Build(
                 stageRoot.transform,
                 collisionIslandRoot,
+                leftRoadEdge,
                 victimCar,
                 otherCar,
-                definition.anchorTime,
+                CollisionPresentationContactTime,
                 contact,
                 collisionForwardLocal,
                 collisionOutwardLocal,
@@ -2050,25 +2637,22 @@ namespace F1XR.RestAPI.Replay
                 player.GetDriverColor(collisionOtherDriver),
                 collisionShowcase);
 
-            ShowCollisionCars(definition.anchorTime - 1f);
-            collisionIncidentPresentation
-                .CapturePreImpactSnapshot(
-                    victimCar,
-                    otherCar,
-                    true);
             yield return null;
 
-            ShowCollisionCars(definition.anchorTime - 0.45f);
             collisionIncidentPresentation
-                .CapturePreImpactSnapshot(
-                    victimCar,
-                    otherCar,
-                    false);
+                .ConfigureTrajectoryForensics(
+                    collisionTrajectoryAnalysis,
+                    collisionVictimDriver,
+                    collisionOtherDriver,
+                    collisionVictimMappedForensicPath,
+                    collisionOtherMappedForensicPath,
+                    ResolveCollisionCorridorLengthLocal(),
+                    reportedTime,
+                    observedTime,
+                    collisionShowcase);
             yield return null;
 
-            ShowCollisionCars(definition.anchorTime);
-            collisionIncidentPresentation
-                .CapturePostImpactSnapshot(victimCar);
+            ShowCollisionCars(CollisionPresentationContactTime);
             collisionIncidentPresentation.HidePrepared();
             eventAudio?.SetPlaying(false);
             timeline.Pause();
@@ -2094,6 +2678,223 @@ namespace F1XR.RestAPI.Replay
                 this);
         }
 
+        private bool BuildCollisionSourceSnapshot(
+            ReplayEventDto definition,
+            float loadStart,
+            float loadEnd)
+        {
+            eventSamples.Clear();
+            eventIndices.Clear();
+            eventDrivers.Clear();
+            referenceDriverNumber = 0;
+
+            int[] requestedDrivers = definition?.driverNumbers;
+            if (player == null ||
+                requestedDrivers == null ||
+                requestedDrivers.Length < 2)
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < requestedDrivers.Length &&
+                 eventDrivers.Count < MaxEventDrivers;
+                 index++)
+            {
+                int driver = requestedDrivers[index];
+                if (driver <= 0 || eventDrivers.Contains(driver))
+                    continue;
+
+                List<LocationSample> snapshot = new();
+                if (!player.CopyLocationSourceRange(
+                        driver,
+                        loadStart,
+                        loadEnd,
+                        snapshot) ||
+                    snapshot.Count < 2)
+                {
+                    continue;
+                }
+
+                LocationMotionStabilizer.Apply(snapshot);
+                eventDrivers.Add(driver);
+                eventSamples.Add(driver, snapshot);
+                eventIndices.Add(driver, 0);
+                if (referenceDriverNumber == 0)
+                    referenceDriverNumber = driver;
+            }
+
+            return eventDrivers.Count >= 2;
+        }
+
+        private bool TryBuildCollisionTrajectoryAnalysis(
+            ReplayEventDto definition)
+        {
+            collisionTrajectoryAnalysis = null;
+            collisionPresentationContactTime = 0f;
+            if (definition?.driverNumbers == null ||
+                definition.driverNumbers.Length < 2)
+            {
+                return false;
+            }
+
+            int firstDriver = definition.driverNumbers[0];
+            int secondDriver = definition.driverNumbers[1];
+            if (!eventSamples.TryGetValue(
+                    firstDriver,
+                    out List<LocationSample> firstSamples) ||
+                !eventSamples.TryGetValue(
+                    secondDriver,
+                    out List<LocationSample> secondSamples))
+            {
+                return false;
+            }
+
+            collisionShowcase ??= new CollisionShowcaseVfxSettings();
+            CollisionTrajectoryForensicsOptions options = new()
+            {
+                visibleLeadSeconds = Mathf.Max(
+                    1.35f,
+                    collisionShowcase.observedLeadSeconds),
+                vehicleRevealLeadSeconds = Mathf.Max(
+                    1.35f,
+                    collisionShowcase.observedLeadSeconds),
+                visibleTailSeconds = Mathf.Max(
+                    0.1f,
+                    collisionShowcase.observedTailSeconds),
+                visibleSampleStepSeconds = 1f / Mathf.Clamp(
+                    collisionShowcase.trajectorySamplesPerSecond,
+                    10,
+                    60)
+            };
+            if (!CollisionTrajectoryForensics.TryAnalyze(
+                    firstSamples,
+                    firstDriver,
+                    secondSamples,
+                    secondDriver,
+                    definition.anchorTime,
+                    definition.startTime,
+                    definition.endTime,
+                    options,
+                    out collisionTrajectoryAnalysis) ||
+                collisionTrajectoryAnalysis == null)
+            {
+                return false;
+            }
+
+            collisionPresentationContactTime =
+                collisionTrajectoryAnalysis.PresentationTime;
+            Debug.Log(
+                $"[CollisionForensics] tier=" +
+                $"{collisionTrajectoryAnalysis.Tier}, " +
+                $"reported={definition.anchorTime:0.000}, " +
+                $"observed={collisionPresentationContactTime:0.000}, " +
+                $"separation=" +
+                $"{collisionTrajectoryAnalysis.Contact.SeparationMeters:0.000}m.",
+                this);
+            return true;
+        }
+
+        private float ResolveCollisionCorridorLengthLocal()
+        {
+            float physicalLength = collisionRoomPlacement.IsValid
+                ? collisionRoomPlacement.PhysicalLengthMeters
+                : Mathf.Min(
+                    2.8f,
+                    Mathf.Max(
+                        1.2f,
+                        collisionShowcase != null
+                            ? collisionShowcase
+                                .maximumIslandSpanMeters
+                            : 2.8f));
+            Vector3 worldScale = PresentationRoot != null
+                ? PresentationRoot.lossyScale
+                : Vector3.one;
+            float uniformWorldScale = Mathf.Max(
+                0.0001f,
+                Mathf.Max(
+                    Mathf.Abs(worldScale.x),
+                    Mathf.Max(
+                        Mathf.Abs(worldScale.y),
+                        Mathf.Abs(worldScale.z))));
+            float physicalVehicleLength = collisionRoomPlacement.IsValid
+                ? collisionRoomPlacement.TargetVehicleLengthMeters
+                : 0f;
+            float physicalRailLength = Mathf.Max(
+                physicalLength * 0.5f,
+                physicalLength -
+                physicalVehicleLength *
+                CollisionFootprintLongitudinalPadding * 2f);
+            return physicalRailLength / uniformWorldScale;
+        }
+
+        private bool TryBuildMappedCollisionForensicPath(
+            int driver,
+            out Vector3[] mappedLocalPath)
+        {
+            mappedLocalPath = null;
+            if (collisionTrajectoryAnalysis == null ||
+                eventCars == null)
+            {
+                return false;
+            }
+
+            CollisionObservedTrajectory trajectory =
+                collisionTrajectoryAnalysis.First.DriverNumber == driver
+                    ? collisionTrajectoryAnalysis.First
+                    : collisionTrajectoryAnalysis.Second.DriverNumber == driver
+                        ? collisionTrajectoryAnalysis.Second
+                        : null;
+            if (trajectory == null || trajectory.VisibleSamples.Count < 2)
+                return false;
+
+            int sampleCount = trajectory.VisibleSamples.Count;
+            LocationSample[] mappingSamples = new LocationSample[sampleCount];
+            float inverseScale = 1f / Mathf.Max(
+                0.000001f,
+                ReplayCoordinate.scale);
+            for (int index = 0;
+                 index < sampleCount;
+                 index++)
+            {
+                CollisionTrajectorySample source =
+                    trajectory.VisibleSamples[index];
+                mappingSamples[index] = new LocationSample
+                {
+                    t = source.Time,
+                    driverNumber = driver,
+                    x = source.SourcePosition.x * inverseScale,
+                    y = source.SourcePosition.z * inverseScale,
+                    z = source.SourcePosition.y * inverseScale,
+                    speed = source.Telemetry.SpeedKph,
+                    throttle = source.Telemetry.ThrottlePercent,
+                    brake = source.Telemetry.Brake,
+                    rpm = source.Telemetry.Rpm,
+                    nGear = source.Telemetry.Gear,
+                    n_gear = source.Telemetry.Gear,
+                    drs = source.Telemetry.Drs
+                };
+            }
+
+            Vector3[] mappedPath = new Vector3[sampleCount];
+            if (!eventCars.TryGetMappedPositionsContinuously(
+                    mappingSamples,
+                    mappedPath))
+            {
+                return false;
+            }
+
+            mappedLocalPath = new Vector3[sampleCount];
+            for (int index = 0; index < sampleCount; index++)
+            {
+                Vector3 mapped = mappedPath[index];
+                mappedLocalPath[index] = sourceToEventRotation *
+                    (mapped - eventSpaceCenter);
+            }
+
+            return true;
+        }
+
         private void OpenPreparedCollision()
         {
             if (!IsCollisionPrepared ||
@@ -2103,6 +2904,18 @@ namespace F1XR.RestAPI.Replay
                 Debug.LogWarning(
                     "[CollisionIncident] Collision is still preparing.",
                     this);
+                PrepareTestCollision();
+                return;
+            }
+
+            if (!TryRefreshCollisionPlacementForActivation())
+            {
+                Debug.LogWarning(
+                    "[CollisionForensics] Cached room placement changed; " +
+                    "preparing the incident again before opening.",
+                    this);
+                collisionPreloadReady = false;
+                collisionPreparationFailure = null;
                 PrepareTestCollision();
                 return;
             }
@@ -2118,13 +2931,13 @@ namespace F1XR.RestAPI.Replay
             player.SetEventPresentationSuppressed(true);
             SuspendTableTrackRendering();
             currentEvent = collisionPreparedDefinition;
-            timeline.SetTime(currentEvent.anchorTime);
+            timeline.SetTime(CollisionPresentationContactTime);
             timeline.Pause();
             ResetIndices();
             isLoading = false;
             isActive = true;
             ActivateCollisionPresentationStage();
-            ShowCollisionCars(currentEvent.anchorTime);
+            ShowCollisionCars(CollisionPresentationContactTime);
             collisionIncidentPresentation.BeginReveal();
             eventAudio?.SetPlaying(false);
 
@@ -2159,7 +2972,11 @@ namespace F1XR.RestAPI.Replay
             timeline.SetTime(replayTime);
             ShowCollisionCars(replayTime);
             collisionIncidentPresentation.ApplyVehicleMotion();
-            eventAudio?.SetPlaying(false);
+            eventAudio?.Update(
+                player != null ? player.engineSound : null,
+                true,
+                collisionIncidentPresentation.ShouldPlayEngineAudio,
+                null);
         }
 
         private void ShowCollisionCars(float replayTime)
@@ -2259,11 +3076,11 @@ namespace F1XR.RestAPI.Replay
             if (!IsCollisionPreparationCurrent(key))
                 return;
 
+            DestroyStage(false);
             collisionPreloadReady = false;
             collisionPreparedDefinition = null;
             collisionPreloadRoutine = null;
             collisionPreparationFailure = reason;
-            DestroyStage(false);
             Debug.LogWarning(
                 $"[CollisionIncident] Preparation failed: {reason}.",
                 this);
@@ -2279,6 +3096,12 @@ namespace F1XR.RestAPI.Replay
             collisionIncidentPresentation?.Clear();
             collisionIncidentPresentation = null;
             collisionIslandRoot = null;
+            collisionTrajectoryAnalysis = null;
+            collisionPresentationContactTime = 0f;
+            collisionRoomPlacement = default;
+            collisionVictimMappedForensicPath = null;
+            collisionOtherMappedForensicPath = null;
+            collisionRoomPlacementResolver.Invalidate();
             collisionPreloadReady = false;
             collisionPreparedDefinition = null;
             collisionPreparationFailure = null;
@@ -2300,14 +3123,13 @@ namespace F1XR.RestAPI.Replay
             Vector3 forward = ResolveRawCollisionForwardLocal(
                 center,
                 sourceToLocalRotation);
-            Vector3 right = Vector3.Cross(
-                Vector3.up,
-                forward).normalized;
-            float halfLength = safeLength * 3.05f;
-            float halfWidth = safeLength * 1.58f;
+            Quaternion islandRotation =
+                Quaternion.LookRotation(forward, Vector3.up);
+            float halfLength = safeLength * 0.34f;
+            float halfWidth = safeLength * 0.36f;
             float bevel = Mathf.Min(
                 halfWidth * 0.32f,
-                safeLength * 0.42f);
+                safeLength * 0.2f);
 
             collisionIslandRoot = new GameObject(
                 "CollisionIncidentIsland").transform;
@@ -2315,8 +3137,7 @@ namespace F1XR.RestAPI.Replay
                 stageRoot.transform,
                 false);
             collisionIslandRoot.localPosition = contact;
-            collisionIslandRoot.localRotation =
-                Quaternion.LookRotation(forward, Vector3.up);
+            collisionIslandRoot.localRotation = islandRotation;
 
             Vector3[] perimeter =
             {
@@ -2356,15 +3177,17 @@ namespace F1XR.RestAPI.Replay
             roadMesh.RecalculateNormals();
             roadMesh.RecalculateBounds();
             GameObject surface = new(
-                "CharcoalIncidentSurface",
+                "CharcoalContactCore",
                 typeof(MeshFilter),
                 typeof(MeshRenderer));
             surface.transform.SetParent(
                 collisionIslandRoot,
                 false);
+            surface.transform.localPosition =
+                Vector3.up * safeLength * 0.008f;
             surface.GetComponent<MeshFilter>().sharedMesh = roadMesh;
             roadMaterial = CreateMaterial(
-                new Color(0.025f, 0.03f, 0.038f, 1f));
+                new Color(0.018f, 0.016f, 0.015f, 1f));
             MeshRenderer surfaceRenderer =
                 surface.GetComponent<MeshRenderer>();
             surfaceRenderer.sharedMaterial = roadMaterial;
@@ -2372,9 +3195,9 @@ namespace F1XR.RestAPI.Replay
             surfaceRenderer.receiveShadows = false;
 
             edgeMaterial = CreateMaterial(
-                new Color(1.15f, 0.7f, 0.015f, 1f));
+                new Color(1.35f, 0.48f, 0.015f, 1f));
             GameObject borderObject = new(
-                "YellowIncidentBoundary",
+                "OrangeContactBoundary",
                 typeof(LineRenderer));
             borderObject.transform.SetParent(
                 collisionIslandRoot,
@@ -2400,15 +3223,92 @@ namespace F1XR.RestAPI.Replay
             leftRoadEdge = border;
             rightRoadEdge = null;
 
-            stageBounds = roadMesh.bounds;
-            stageBounds.center =
+            Vector3 firstStagePoint =
                 collisionIslandRoot.localPosition +
-                collisionIslandRoot.localRotation *
-                stageBounds.center;
-            stageBounds.size = new Vector3(
-                halfWidth * 2f,
-                Mathf.Max(safeLength * 0.12f, 0.001f),
-                halfLength * 2f);
+                collisionIslandRoot.localRotation * perimeter[0];
+            stageBounds = new Bounds(
+                firstStagePoint,
+                Vector3.zero);
+            for (int i = 1; i < perimeter.Length; i++)
+            {
+                stageBounds.Encapsulate(
+                    collisionIslandRoot.localPosition +
+                    collisionIslandRoot.localRotation * perimeter[i]);
+            }
+            Vector3 stageSize = stageBounds.size;
+            stageSize.y = Mathf.Max(
+                safeLength * 0.12f,
+                0.001f);
+            stageBounds.size = stageSize;
+        }
+
+        private Bounds ResolveCollisionIslandActionBounds(
+            Vector3 center,
+            Quaternion sourceToLocalRotation,
+            Vector3 contact,
+            Quaternion islandRotation,
+            float vehicleLength)
+        {
+            Quaternion toIsland = Quaternion.Inverse(islandRotation);
+            Bounds bounds = new(Vector3.zero, Vector3.zero);
+            bool hasPoint = false;
+            int[] drivers = currentEvent?.driverNumbers;
+            if (drivers != null)
+            {
+                float[] times =
+                {
+                    CollisionPresentationContactTime - 0.9f,
+                    CollisionPresentationContactTime - 0.45f,
+                    CollisionPresentationContactTime
+                };
+                for (int driverIndex = 0;
+                     driverIndex < drivers.Length;
+                     driverIndex++)
+                {
+                    for (int timeIndex = 0;
+                         timeIndex < times.Length;
+                         timeIndex++)
+                    {
+                        if (!TryGetRawEventLocalVehiclePosition(
+                                drivers[driverIndex],
+                                times[timeIndex],
+                                center,
+                                sourceToLocalRotation,
+                                out Vector3 position))
+                        {
+                            continue;
+                        }
+
+                        Vector3 local = toIsland *
+                            (position - contact);
+                        if (!hasPoint)
+                        {
+                            bounds = new Bounds(local, Vector3.zero);
+                            hasPoint = true;
+                        }
+                        else
+                        {
+                            bounds.Encapsulate(local);
+                        }
+                    }
+                }
+            }
+
+            if (!hasPoint)
+                bounds = new Bounds(Vector3.zero, Vector3.zero);
+            bounds.Encapsulate(new Vector3(
+                -vehicleLength * 0.9f,
+                0f,
+                vehicleLength * 1.25f));
+            bounds.Encapsulate(new Vector3(
+                vehicleLength * 0.9f,
+                0f,
+                vehicleLength * 1.25f));
+            bounds.Encapsulate(new Vector3(
+                0f,
+                0f,
+                -vehicleLength * 1.75f));
+            return bounds;
         }
 
         private Vector3 ResolveRawCollisionContactLocal(
@@ -2416,16 +3316,17 @@ namespace F1XR.RestAPI.Replay
             Quaternion sourceToLocalRotation)
         {
             int[] drivers = currentEvent?.driverNumbers;
+            float contactTime = CollisionPresentationContactTime;
             if (drivers != null && drivers.Length >= 2 &&
                 TryGetRawEventLocalVehiclePosition(
                     drivers[0],
-                    currentEvent.anchorTime,
+                    contactTime,
                     center,
                     sourceToLocalRotation,
                     out Vector3 first) &&
                 TryGetRawEventLocalVehiclePosition(
                     drivers[1],
-                    currentEvent.anchorTime,
+                    contactTime,
                     center,
                     sourceToLocalRotation,
                     out Vector3 second))
@@ -2441,14 +3342,15 @@ namespace F1XR.RestAPI.Replay
             Quaternion sourceToLocalRotation)
         {
             List<LocationSample> samples = FindReferenceSamples();
+            float contactTime = CollisionPresentationContactTime;
             if (samples != null &&
                 TryGetMappedPosition(
                     samples,
-                    currentEvent.anchorTime - 0.35f,
+                    contactTime - 0.35f,
                     out Vector3 before) &&
                 TryGetMappedPosition(
                     samples,
-                    currentEvent.anchorTime + 0.35f,
+                    contactTime + 0.35f,
                     out Vector3 after))
             {
                 Vector3 forward = sourceToLocalRotation *

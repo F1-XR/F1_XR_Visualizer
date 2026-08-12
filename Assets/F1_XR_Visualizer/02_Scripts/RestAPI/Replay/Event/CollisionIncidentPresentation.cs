@@ -3,22 +3,29 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.XR;
 
 namespace F1XR.RestAPI.Replay
 {
-    internal sealed class CollisionIncidentPresentation
+    internal sealed partial class CollisionIncidentPresentation
     {
         private const float RevealDuration = 2.9f;
         private const float IslandRevealEnd = 0.22f;
         private const float LiveApproachStart = 0.2f;
         private const float LiveApproachLeadSeconds = 1.15f;
         private const float ImpactRevealTime = 1.02f;
-        private const float ImpactHoldEnd = 1.18f;
         private const float PostImpactRevealEnd = 2.2f;
         private const float ImpactReplayDuration = 2.35f;
         private const float ImpactReplayContactTime = 0.82f;
-        private const float ImpactReplayHoldEnd = 0.98f;
-        private const float TemporalEchoFadeSeconds = 0.58f;
+        private const float TemporalEchoFadeSeconds = 0.22f;
+        private const float ImpactTransientDuration = 1.2f;
+        private const float VictimForwardInCarLengths = 1f;
+        private const float VictimOutwardInCarWidths = 0.7f;
+        private const float VictimYawDegrees = 28f;
+        private const float OtherOutwardInCarWidths = 0.18f;
+        private const float OtherYawDegrees = 5f;
+
+        private static readonly List<InputDevice> HapticDevices = new(4);
 
         private enum ContactPattern
         {
@@ -31,7 +38,6 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Mesh> meshes = new();
         private readonly List<Renderer> earlyGhostRenderers = new();
         private readonly List<Renderer> lateGhostRenderers = new();
-        private readonly List<Renderer> postGhostRenderers = new();
         private readonly List<Renderer> postEvidenceRenderers = new();
         private readonly List<Renderer> warningRenderers = new();
         private readonly List<Renderer> pulseRenderers = new();
@@ -50,8 +56,11 @@ namespace F1XR.RestAPI.Replay
         private Transform lateGhostRoot;
         private Transform postRoot;
         private Transform impactRoot;
+        private Transform impactTransientRoot;
         private Transform impactFlashRoot;
         private Transform impactPulseRoot;
+        private Transform warningWaveRoot;
+        private Transform boundaryPulseRoot;
         private Transform warningRoot;
         private Transform scanRingRoot;
         private Transform annotationRoot;
@@ -72,17 +81,20 @@ namespace F1XR.RestAPI.Replay
         private Texture2D smokeTexture;
         private Material earlyGhostMaterial;
         private Material lateGhostMaterial;
-        private Material trajectoryMaterial;
+        private Material victimTrajectoryMaterial;
+        private Material otherTrajectoryMaterial;
         private Material postMaterial;
-        private Material postGhostMaterial;
         private Material warningMaterial;
         private Material impactMaterial;
         private Material pulseMaterial;
+        private Material warningWaveMaterial;
+        private Material boundaryPulseMaterial;
         private Vector3[] victimIncomingPoints;
         private Vector3[] otherIncomingPoints;
         private Vector3[] postImpactPoints;
         private Vector3[][] postSkidPoints;
         private Vector3 contactLocal;
+        private Vector3 victimAnchorLocal;
         private Vector3 forwardLocal;
         private Vector3 outwardLocal;
         private Vector3 impactDirectionLocal;
@@ -91,6 +103,15 @@ namespace F1XR.RestAPI.Replay
         private float carLength;
         private float carWidth;
         private float forensicHoldSeconds = 2f;
+        private float impactHoldSeconds = 0.09f;
+        private float primaryHapticAmplitude = 0.55f;
+        private float primaryHapticDuration = 0.08f;
+        private float secondaryHapticAmplitude = 0.2f;
+        private float secondaryHapticDuration = 0.05f;
+        private float secondaryHapticDelaySeconds = 0.09f;
+        private float warningWaveIntensity = 1f;
+        private float warningWaveDurationSeconds = 0.62f;
+        private float secondaryHapticCountdown = -1f;
         private float revealTime;
         private float impactReplayTime;
         private float victimYawSign = 1f;
@@ -99,16 +120,27 @@ namespace F1XR.RestAPI.Replay
         private bool revealComplete;
         private bool impactReplaying;
         private bool impactTriggered;
+        private bool secondaryHapticTriggered;
+        private bool impactHapticsEnabled = true;
         private bool finalTableauApplied;
 
         public bool RevealComplete => revealComplete;
         public bool ImpactReplaying => impactReplaying;
+        public bool ShouldPlayEngineAudio =>
+            UsesTrajectoryForensics
+                ? ShouldPlayTrajectoryForensicsEngineAudio
+                : impactReplaying
+                ? impactReplayTime < ImpactReplayContactTime
+                : revealRunning &&
+                  revealTime >= LiveApproachStart &&
+                  revealTime < ImpactRevealTime;
         public CollisionPresentationPhase Phase { get; private set; } =
             CollisionPresentationPhase.Preparing;
 
         public void Build(
             Transform stageRoot,
             Transform islandRoot,
+            LineRenderer islandBoundary,
             ReplayCarView victimCar,
             ReplayCarView otherCar,
             float collisionAnchorTime,
@@ -141,11 +173,57 @@ namespace F1XR.RestAPI.Replay
                 Vector3.right);
             carLength = Mathf.Max(0.001f, vehicleLength);
             carWidth = Mathf.Max(0.001f, vehicleWidth);
+            victimAnchorLocal = victim != null && stage != null
+                ? stage.InverseTransformPoint(
+                    victim.VisualMotionRoot.position)
+                : contactLocal;
             forensicHoldSeconds = Mathf.Max(
                 0f,
                 settings != null
                     ? settings.forensicHoldSeconds
                     : 2f);
+            impactHoldSeconds = Mathf.Clamp(
+                settings != null
+                    ? settings.impactHoldSeconds
+                    : 0.09f,
+                0f,
+                0.2f);
+            impactHapticsEnabled = settings == null ||
+                settings.playImpactHaptics;
+            primaryHapticAmplitude = Mathf.Clamp01(
+                settings != null
+                    ? settings.primaryHapticAmplitude
+                    : 0.55f);
+            primaryHapticDuration = Mathf.Max(
+                0.01f,
+                settings != null
+                    ? settings.primaryHapticDuration
+                    : 0.08f);
+            secondaryHapticAmplitude = Mathf.Clamp01(
+                settings != null
+                    ? settings.secondaryHapticAmplitude
+                    : 0.2f);
+            secondaryHapticDuration = Mathf.Max(
+                0.01f,
+                settings != null
+                    ? settings.secondaryHapticDuration
+                    : 0.05f);
+            secondaryHapticDelaySeconds = Mathf.Max(
+                0f,
+                settings != null
+                    ? settings.secondaryHapticDelaySeconds
+                    : 0.09f);
+            warningWaveIntensity = Mathf.Clamp(
+                settings != null
+                    ? settings.warningWaveIntensity
+                    : 1f,
+                0f,
+                2f);
+            warningWaveDurationSeconds = Mathf.Max(
+                0.1f,
+                settings != null
+                    ? settings.warningWaveDurationSeconds
+                    : 0.62f);
             victimYawSign = ResolveYawSign();
             victimIncomingPoints = CopyPoints(victimIncoming);
             otherIncomingPoints = CopyPoints(otherIncoming);
@@ -169,6 +247,9 @@ namespace F1XR.RestAPI.Replay
             impactRoot = CreateRoot(
                 "ImpactEvidence",
                 presentationRoot);
+            impactTransientRoot = CreateRoot(
+                "ImpactTransient",
+                impactRoot);
             warningRoot = CreateRoot(
                 "IncidentWarning",
                 presentationRoot);
@@ -182,15 +263,15 @@ namespace F1XR.RestAPI.Replay
             lateGhostMaterial = CreateTransparentMaterial(
                 "Runtime_CollisionGhostLate",
                 new Color(0.92f, 0.97f, 1f, 0.32f));
-            trajectoryMaterial = CreateTransparentMaterial(
-                "Runtime_CollisionIncomingTrajectory",
-                new Color(0.86f, 0.95f, 1f, 0.62f));
+            victimTrajectoryMaterial = CreateTransparentMaterial(
+                "Runtime_CollisionObservedVictim",
+                new Color(0.9f, 0.97f, 1f, 0.62f));
+            otherTrajectoryMaterial = CreateTransparentMaterial(
+                "Runtime_CollisionObservedOther",
+                new Color(0.3f, 0.72f, 1f, 0.62f));
             postMaterial = CreateTransparentMaterial(
                 "Runtime_CollisionPostImpact",
                 new Color(1f, 0.08f, 0.055f, 0.72f));
-            postGhostMaterial = CreateTransparentMaterial(
-                "Runtime_CollisionPostImpactGhost",
-                new Color(1f, 0.08f, 0.055f, 0.26f));
             warningMaterial = CreateTransparentMaterial(
                 "Runtime_CollisionWarning",
                 new Color(1.25f, 0.78f, 0.02f, 0.92f),
@@ -203,21 +284,30 @@ namespace F1XR.RestAPI.Replay
                 "Runtime_CollisionImpactPulse",
                 new Color(1.6f, 0.34f, 0.015f, 0.94f),
                 true);
+            warningWaveMaterial = CreateTransparentMaterial(
+                "Runtime_CollisionWarningWave",
+                new Color(1.45f, 0.82f, 0.02f, 0.9f),
+                true);
+            boundaryPulseMaterial = CreateTransparentMaterial(
+                "Runtime_CollisionBoundaryPulse",
+                new Color(1.6f, 0.9f, 0.02f, 0.9f),
+                true);
 
             victimIncomingLine = CreateTrajectory(
                 "VictimIncomingTrajectory",
                 victimIncomingPoints,
                 carWidth * 0.035f,
-                trajectoryMaterial,
+                victimTrajectoryMaterial,
                 presentationRoot);
             otherIncomingLine = CreateTrajectory(
                 "OtherIncomingTrajectory",
                 otherIncomingPoints,
                 carWidth * 0.025f,
-                trajectoryMaterial,
+                otherTrajectoryMaterial,
                 presentationRoot);
             CreatePostImpactEvidence();
             CreateImpactEvidence(settings);
+            CreateImpactWarningWave(islandBoundary);
             CreateWarningBoundary(
                 incidentLabel,
                 incidentMetadata);
@@ -241,6 +331,9 @@ namespace F1XR.RestAPI.Replay
             ReplayCarView otherCar,
             bool early)
         {
+            if (UsesTrajectoryForensics)
+                return;
+
             Transform target = early
                 ? earlyGhostRoot
                 : lateGhostRoot;
@@ -265,35 +358,21 @@ namespace F1XR.RestAPI.Replay
                 renderers);
         }
 
-        public void CapturePostImpactSnapshot(
-            ReplayCarView victimCar)
-        {
-            GameObject clone = CaptureGhost(
-                victimCar,
-                "Victim_PostImpact_Red",
-                postRoot,
-                postGhostMaterial,
-                postGhostRenderers);
-            if (clone == null)
-                return;
-
-            clone.transform.localPosition +=
-                forwardLocal * carLength * 0.9f +
-                outwardLocal * carWidth * 0.65f;
-            clone.transform.localRotation =
-                Quaternion.AngleAxis(
-                    victimYawSign * 22f,
-                    Vector3.up) *
-                clone.transform.localRotation;
-        }
-
         public void HidePrepared()
         {
+            if (UsesTrajectoryForensics)
+            {
+                ResetTrajectoryForensicsPrepared();
+                return;
+            }
+
             Phase = CollisionPresentationPhase.Preparing;
             revealRunning = false;
             revealComplete = false;
             impactReplaying = false;
             impactTriggered = false;
+            secondaryHapticTriggered = false;
+            secondaryHapticCountdown = -1f;
             finalTableauApplied = false;
             revealTime = 0f;
             impactReplayTime = 0f;
@@ -304,9 +383,12 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(lateGhostRoot, false);
             SetRootVisible(postRoot, false);
             SetRootVisible(impactRoot, false);
+            SetRootVisible(impactTransientRoot, false);
             SetRootVisible(warningRoot, false);
             SetRootVisible(impactPulseRoot, false);
+            SetImpactWarningWave(-1f);
             SetImpactBurst(-1f);
+            ClearImpactSmoke();
             SetIncomingTrajectoryProgress(0f, 0f);
             SetPostImpactProgress(0f);
             if (island != null)
@@ -318,11 +400,19 @@ namespace F1XR.RestAPI.Replay
 
         public void BeginReveal()
         {
+            if (UsesTrajectoryForensics)
+            {
+                BeginTrajectoryForensicsReveal();
+                return;
+            }
+
             Phase = CollisionPresentationPhase.IslandReveal;
             revealRunning = true;
             revealComplete = false;
             impactReplaying = false;
             impactTriggered = false;
+            secondaryHapticTriggered = false;
+            secondaryHapticCountdown = -1f;
             finalTableauApplied = false;
             revealTime = 0f;
             impactReplayTime = 0f;
@@ -333,9 +423,12 @@ namespace F1XR.RestAPI.Replay
             SetRootVisible(lateGhostRoot, false);
             SetRootVisible(postRoot, false);
             SetRootVisible(impactRoot, false);
+            SetRootVisible(impactTransientRoot, false);
             SetRootVisible(warningRoot, false);
             SetRootVisible(impactPulseRoot, false);
+            SetImpactWarningWave(-1f);
             SetImpactBurst(-1f);
+            ClearImpactSmoke();
             SetIncomingTrajectoryProgress(0f, 0f);
             SetPostImpactProgress(0f);
             if (island != null)
@@ -354,6 +447,12 @@ namespace F1XR.RestAPI.Replay
 
         public void ReplayImpact()
         {
+            if (UsesTrajectoryForensics)
+            {
+                ReplayTrajectoryForensicsImpact();
+                return;
+            }
+
             if (!revealComplete || impactReplaying)
                 return;
 
@@ -362,23 +461,36 @@ namespace F1XR.RestAPI.Replay
             revealRunning = false;
             impactReplayTime = 0f;
             impactTriggered = false;
+            secondaryHapticTriggered = false;
+            secondaryHapticCountdown = -1f;
             impactAudio?.Stop();
+            ResetVehicleMotion();
+            ClearImpactSmoke();
             SetCarsVisible(true);
             SetRootVisible(earlyGhostRoot, false);
             SetRootVisible(lateGhostRoot, false);
             SetRootVisible(postRoot, false);
             SetRootVisible(warningRoot, false);
             SetRootVisible(impactRoot, false);
+            SetRootVisible(impactTransientRoot, false);
             SetRootVisible(impactPulseRoot, false);
+            SetImpactWarningWave(-1f);
             SetImpactBurst(-1f);
             SetIncomingTrajectoryProgress(0f, 0f);
-            SetMaterialAlpha(trajectoryMaterial, 0f);
+            SetObservedTrajectoryAlpha(0f);
             SetPostImpactProgress(0f);
         }
 
         public float Tick(float unscaledDeltaTime)
         {
+            if (UsesTrajectoryForensics)
+            {
+                return TickTrajectoryForensics(
+                    Mathf.Max(0f, unscaledDeltaTime));
+            }
+
             float delta = Mathf.Max(0f, unscaledDeltaTime);
+            TickSecondaryImpactHaptic(delta);
             if (impactReplaying)
                 return TickImpactReplay(delta);
 
@@ -409,17 +521,18 @@ namespace F1XR.RestAPI.Replay
 
         public void ApplyVehicleMotion()
         {
+            if (UsesTrajectoryForensics)
+            {
+                ApplyTrajectoryForensicsVehicleMotion();
+                return;
+            }
+
             if (revealRunning &&
-                revealTime >= ImpactHoldEnd &&
+                revealTime >= RevealImpactHoldEnd &&
                 revealTime < RevealDuration)
             {
-                float revealMotion = Mathf.SmoothStep(
-                    0f,
-                    1f,
-                    Mathf.InverseLerp(
-                        ImpactHoldEnd,
-                        PostImpactRevealEnd,
-                        revealTime));
+                float revealMotion = ResolveRevealPostProgress(
+                    revealTime);
                 ApplyPostImpactVehicleMotion(revealMotion);
                 UpdateDriverAnnotations();
                 return;
@@ -427,7 +540,15 @@ namespace F1XR.RestAPI.Replay
 
             if (!impactReplaying)
             {
-                ResetVehicleMotion();
+                if (finalTableauApplied ||
+                    Phase == CollisionPresentationPhase.ForensicHold)
+                {
+                    ApplyPostImpactVehicleMotion(1f);
+                }
+                else
+                {
+                    ResetVehicleMotion();
+                }
                 UpdateDriverAnnotations();
                 return;
             }
@@ -439,34 +560,72 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            float progress = Mathf.SmoothStep(
-                0f,
-                1f,
-                Mathf.InverseLerp(
-                    ImpactReplayHoldEnd,
-                    ImpactReplayDuration - 0.08f,
-                    impactReplayTime));
+            float progress = ResolveImpactReplayPostProgress(
+                impactReplayTime);
             ApplyPostImpactVehicleMotion(progress);
             UpdateDriverAnnotations();
         }
 
         private void ApplyPostImpactVehicleMotion(float progress)
         {
-            Vector3 victimLocalOffset =
-                forwardLocal * carLength * 0.9f * progress +
-                outwardLocal * carWidth * 0.65f * progress;
-            Vector3 otherLocalOffset =
-                -outwardLocal * carWidth * 0.15f * progress;
+            Vector3 victimLocalOffset = ResolveVictimOffset(progress);
+            Vector3 otherLocalOffset = ResolveOtherOffset(progress);
             victim?.ApplyVisualMotion(
                 stage.TransformVector(victimLocalOffset),
-                victimYawSign * 22f * progress);
+                victimYawSign * VictimYawDegrees * progress);
             other?.ApplyVisualMotion(
                 stage.TransformVector(otherLocalOffset),
-                -victimYawSign * 3f * progress);
+                -victimYawSign * OtherYawDegrees * progress);
+        }
+
+        private Vector3 ResolveVictimOffset(float progress)
+        {
+            float clamped = Mathf.Clamp01(progress);
+            return
+                forwardLocal * carLength *
+                VictimForwardInCarLengths * clamped +
+                outwardLocal * carWidth *
+                VictimOutwardInCarWidths * clamped;
+        }
+
+        private Vector3 ResolveOtherOffset(float progress)
+        {
+            return -outwardLocal * carWidth *
+                OtherOutwardInCarWidths * Mathf.Clamp01(progress);
+        }
+
+        private float RevealImpactHoldEnd =>
+            ImpactRevealTime + impactHoldSeconds;
+
+        private float ImpactReplayHoldEnd =>
+            ImpactReplayContactTime + impactHoldSeconds;
+
+        private float ResolveRevealPostProgress(float time)
+        {
+            return EaseOutCubic(Mathf.InverseLerp(
+                RevealImpactHoldEnd,
+                PostImpactRevealEnd,
+                time));
+        }
+
+        private float ResolveImpactReplayPostProgress(float time)
+        {
+            return EaseOutCubic(Mathf.InverseLerp(
+                ImpactReplayHoldEnd,
+                ImpactReplayHoldEnd +
+                (PostImpactRevealEnd - RevealImpactHoldEnd),
+                time));
+        }
+
+        private static float EaseOutCubic(float value)
+        {
+            float inverse = 1f - Mathf.Clamp01(value);
+            return 1f - inverse * inverse * inverse;
         }
 
         public void Clear()
         {
+            ClearTrajectoryForensics();
             if (impactAudio != null)
                 impactAudio.Stop();
             ResetVehicleMotion();
@@ -493,7 +652,6 @@ namespace F1XR.RestAPI.Replay
             meshes.Clear();
             earlyGhostRenderers.Clear();
             lateGhostRenderers.Clear();
-            postGhostRenderers.Clear();
             postEvidenceRenderers.Clear();
             warningRenderers.Clear();
             pulseRenderers.Clear();
@@ -518,6 +676,9 @@ namespace F1XR.RestAPI.Replay
             otherIncomingLine = null;
             postTrajectoryLine = null;
             postSkidLines = null;
+            impactTransientRoot = null;
+            warningWaveRoot = null;
+            boundaryPulseRoot = null;
             victimIncomingPoints = null;
             otherIncomingPoints = null;
             postImpactPoints = null;
@@ -538,24 +699,21 @@ namespace F1XR.RestAPI.Replay
                 impactReplayTime >= ImpactReplayContactTime)
             {
                 impactTriggered = true;
-                PlayImpactAudio();
                 SetRootVisible(impactRoot, true);
+                TriggerImpactFeedback();
             }
 
             float flashAge = impactReplayTime -
                 ImpactReplayContactTime;
+            SetImpactTransient(flashAge);
             SetImpactFlash(flashAge >= 0f && flashAge <= 0.16f,
                 flashAge);
             SetImpactPulse(flashAge);
+            SetImpactWarningWave(flashAge);
             SetImpactBurst(flashAge);
 
-            float postProgress = Mathf.SmoothStep(
-                0f,
-                1f,
-                Mathf.InverseLerp(
-                    ImpactReplayHoldEnd,
-                    ImpactReplayDuration - 0.1f,
-                    impactReplayTime));
+            float postProgress = ResolveImpactReplayPostProgress(
+                impactReplayTime);
             ApplyPostImpactEvidence(postProgress);
 
             if (impactReplayTime >= ImpactReplayDuration)
@@ -563,7 +721,6 @@ namespace F1XR.RestAPI.Replay
                 impactReplaying = false;
                 impactReplayTime = 0f;
                 Phase = CollisionPresentationPhase.ForensicHold;
-                ResetVehicleMotion();
                 ApplyFinalTableau();
                 return anchorTime;
             }
@@ -606,7 +763,7 @@ namespace F1XR.RestAPI.Replay
                 ? CollisionPresentationPhase.IslandReveal
                 : time < ImpactRevealTime
                     ? CollisionPresentationPhase.PreImpact
-                    : time < ImpactHoldEnd
+                    : time < RevealImpactHoldEnd
                         ? CollisionPresentationPhase.Impact
                         : time < RevealDuration
                             ? CollisionPresentationPhase.PostImpact
@@ -649,7 +806,7 @@ namespace F1XR.RestAPI.Replay
                 if (!impactTriggered)
                 {
                     impactTriggered = true;
-                    PlayImpactAudio();
+                    TriggerImpactFeedback();
                 }
             }
             else
@@ -660,16 +817,13 @@ namespace F1XR.RestAPI.Replay
                 time >= ImpactRevealTime &&
                 time <= ImpactRevealTime + 0.16f,
                 time - ImpactRevealTime);
-            SetImpactPulse(time - ImpactRevealTime);
-            SetImpactBurst(time - ImpactRevealTime);
+            float impactAge = time - ImpactRevealTime;
+            SetImpactTransient(impactAge);
+            SetImpactPulse(impactAge);
+            SetImpactWarningWave(impactAge);
+            SetImpactBurst(impactAge);
 
-            float postProgress = Mathf.SmoothStep(
-                0f,
-                1f,
-                Mathf.InverseLerp(
-                    ImpactHoldEnd,
-                        PostImpactRevealEnd,
-                        time));
+            float postProgress = ResolveRevealPostProgress(time);
             ApplyPostImpactEvidence(postProgress);
 
             bool showWarning = time >= PostImpactRevealEnd;
@@ -697,10 +851,6 @@ namespace F1XR.RestAPI.Replay
             float contactTime,
             float forensicProgress)
         {
-            float approachProgress = Mathf.InverseLerp(
-                approachStart,
-                contactTime,
-                time);
             float earlyPassTime = Mathf.Lerp(
                 approachStart,
                 contactTime,
@@ -711,19 +861,19 @@ namespace F1XR.RestAPI.Replay
                 contactTime,
                 (LiveApproachLeadSeconds - 0.45f) /
                 LiveApproachLeadSeconds);
+            float approachProgress = Mathf.InverseLerp(
+                earlyPassTime,
+                contactTime,
+                time);
 
-            float earlyAlpha = Mathf.Max(
-                ResolveTemporalEchoAlpha(
-                    time,
-                    earlyPassTime,
-                    0.16f),
-                forensicProgress * 0.06f);
-            float lateAlpha = Mathf.Max(
-                ResolveTemporalEchoAlpha(
-                    time,
-                    latePassTime,
-                    0.28f),
-                forensicProgress * 0.1f);
+            float earlyAlpha = ResolveTemporalEchoAlpha(
+                time,
+                earlyPassTime,
+                0.16f);
+            float lateAlpha = ResolveTemporalEchoAlpha(
+                time,
+                latePassTime,
+                0.28f);
             SetRootVisible(earlyGhostRoot, earlyAlpha > 0.001f);
             SetRootVisible(lateGhostRoot, lateAlpha > 0.001f);
             SetRendererAlpha(earlyGhostRenderers, earlyAlpha);
@@ -748,7 +898,7 @@ namespace F1XR.RestAPI.Replay
             pathAlpha = Mathf.Max(
                 pathAlpha,
                 forensicProgress * 0.34f);
-            SetMaterialAlpha(trajectoryMaterial, pathAlpha);
+            SetObservedTrajectoryAlpha(pathAlpha);
         }
 
         private static float ResolveTemporalEchoAlpha(
@@ -760,12 +910,12 @@ namespace F1XR.RestAPI.Replay
                 return 0f;
 
             float age = time - passTime;
-            if (age <= 0.07f)
+            if (age <= 0.035f)
             {
                 return Mathf.SmoothStep(
                     0f,
                     peakAlpha,
-                    age / 0.07f);
+                    age / 0.035f);
             }
 
             return peakAlpha *
@@ -773,7 +923,7 @@ namespace F1XR.RestAPI.Replay
                     0f,
                     1f,
                     Mathf.InverseLerp(
-                        0.07f,
+                        0.035f,
                         TemporalEchoFadeSeconds,
                         age)));
         }
@@ -783,42 +933,36 @@ namespace F1XR.RestAPI.Replay
             float clamped = Mathf.Clamp01(progress);
             SetRootVisible(postRoot, clamped > 0.001f);
             SetRendererAlpha(
-                postGhostRenderers,
-                clamped * 0.22f);
-            SetRendererAlpha(
                 postEvidenceRenderers,
                 clamped * 0.78f);
-            SetMaterialAlpha(postGhostMaterial, clamped * 0.22f);
             SetMaterialAlpha(postMaterial, clamped * 0.78f);
             SetPostImpactProgress(clamped);
         }
 
         private void ApplyFinalTableau()
         {
-            ResetVehicleMotion();
+            ApplyPostImpactVehicleMotion(1f);
             if (island != null)
             {
                 island.gameObject.SetActive(true);
                 island.localScale = islandBaseScale;
             }
             SetCarsVisible(true);
-            SetRootVisible(earlyGhostRoot, true);
-            SetRootVisible(lateGhostRoot, true);
+            SetRootVisible(earlyGhostRoot, false);
+            SetRootVisible(lateGhostRoot, false);
             SetRootVisible(postRoot, true);
             SetRootVisible(impactRoot, true);
+            SetImpactTransient(float.MaxValue);
             SetRootVisible(impactFlashRoot, false);
             SetRootVisible(warningRoot, true);
-            SetRendererAlpha(earlyGhostRenderers, 0.06f);
-            SetRendererAlpha(lateGhostRenderers, 0.1f);
-            SetRendererAlpha(postGhostRenderers, 0.22f);
             SetRendererAlpha(postEvidenceRenderers, 0.78f);
             SetRendererAlpha(warningRenderers, 0.92f);
-            SetMaterialAlpha(trajectoryMaterial, 0.34f);
-            SetMaterialAlpha(postGhostMaterial, 0.22f);
+            SetObservedTrajectoryAlpha(0.34f);
             SetMaterialAlpha(postMaterial, 0.78f);
             SetIncomingTrajectoryProgress(1f, 1f);
             SetPostImpactProgress(1f);
-            SetImpactBurst(float.MaxValue);
+            SetImpactWarningWave(float.MaxValue);
+            SetImpactBurst(-1f);
             SetRootVisible(impactPulseRoot, false);
             if (scanRingRoot != null)
                 scanRingRoot.localScale = Vector3.one;
@@ -827,19 +971,17 @@ namespace F1XR.RestAPI.Replay
 
         private void CreatePostImpactEvidence()
         {
-            Vector3 end = contactLocal +
-                forwardLocal * carLength * 0.9f +
-                outwardLocal * carWidth * 0.65f;
+            Vector3 end = victimAnchorLocal +
+                ResolveVictimOffset(1f);
             const int pointCount = 14;
             Vector3[] path = new Vector3[pointCount];
             for (int i = 0; i < pointCount; i++)
             {
                 float progress = i / (pointCount - 1f);
-                float eased = Mathf.SmoothStep(0f, 1f, progress);
                 path[i] = Vector3.Lerp(
                     contactLocal,
                     end,
-                    eased) +
+                    progress) +
                     outwardLocal *
                     Mathf.Sin(progress * Mathf.PI) *
                     carWidth * 0.08f +
@@ -892,7 +1034,7 @@ namespace F1XR.RestAPI.Replay
         {
             Transform sparksRoot = CreateRoot(
                 "FrozenOrangeSparks_12",
-                impactRoot);
+                impactTransientRoot);
             sparksRoot.localPosition = contactLocal +
                 Vector3.up * carWidth * 0.14f;
             for (int i = 0; i < 12; i++)
@@ -938,7 +1080,7 @@ namespace F1XR.RestAPI.Replay
                     $"FrozenDebris_{i:00}",
                     typeof(MeshFilter),
                     typeof(MeshRenderer));
-                shard.transform.SetParent(impactRoot, false);
+                shard.transform.SetParent(impactTransientRoot, false);
                 float angle = (i * 137.508f + 31f) *
                     Mathf.Deg2Rad;
                 float radius = carWidth *
@@ -983,7 +1125,9 @@ namespace F1XR.RestAPI.Replay
             GameObject smokeObject = new(
                 "FrozenRadialSmoke",
                 typeof(ParticleSystem));
-            smokeObject.transform.SetParent(postRoot, false);
+            smokeObject.transform.SetParent(
+                impactTransientRoot,
+                false);
             smokeObject.transform.localPosition = contactLocal +
                 forwardLocal * carLength * 0.55f +
                 outwardLocal * carWidth * 0.4f +
@@ -1039,32 +1183,14 @@ namespace F1XR.RestAPI.Replay
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            for (int i = 0; i < 8; i++)
-            {
-                float angle = i * Mathf.PI * 0.75f;
-                ParticleSystem.EmitParams emit = new()
-                {
-                    position = new Vector3(
-                        Mathf.Cos(angle) * carWidth * 0.12f,
-                        (i % 4) * carWidth * 0.11f,
-                        Mathf.Sin(angle) * carWidth * 0.1f),
-                    startSize = carWidth * Mathf.Lerp(
-                        0.18f,
-                        0.28f,
-                        (i % 5) / 4f),
-                    startLifetime = 2f,
-                    startColor = new Color32(148, 154, 166, 118)
-                };
-                smoke.Emit(emit, 1);
-            }
-            smoke.Pause(true);
+            ClearImpactSmoke();
         }
 
         private void CreateImpactFlash()
         {
             impactFlashRoot = CreateRoot(
                 "ImpactFlash",
-                impactRoot);
+                impactTransientRoot);
             impactFlashRoot.localPosition = contactLocal +
                 Vector3.up * carWidth * 0.18f;
             for (int axis = 0; axis < 3; axis++)
@@ -1091,7 +1217,7 @@ namespace F1XR.RestAPI.Replay
         {
             impactPulseRoot = CreateRoot(
                 "ImpactScanPulse",
-                impactRoot);
+                impactTransientRoot);
             impactPulseRoot.localPosition = contactLocal +
                 Vector3.up * carWidth * 0.035f;
             for (int ringIndex = 0; ringIndex < 3; ringIndex++)
@@ -1120,6 +1246,90 @@ namespace F1XR.RestAPI.Replay
                 pulseRenderers.Add(ring);
             }
             SetRootVisible(impactPulseRoot, false);
+        }
+
+        private void CreateImpactWarningWave(
+            LineRenderer islandBoundary)
+        {
+            Vector3[] boundaryPoints = null;
+            if (islandBoundary != null &&
+                islandBoundary.positionCount >= 3 &&
+                stage != null)
+            {
+                boundaryPoints = new Vector3[
+                    islandBoundary.positionCount];
+                for (int i = 0; i < boundaryPoints.Length; i++)
+                {
+                    Vector3 sourcePoint =
+                        islandBoundary.GetPosition(i);
+                    Vector3 worldPoint = islandBoundary.useWorldSpace
+                        ? sourcePoint
+                        : islandBoundary.transform.TransformPoint(
+                            sourcePoint);
+                    Vector3 localPoint =
+                        stage.InverseTransformPoint(worldPoint);
+                    boundaryPoints[i] = localPoint +
+                        Vector3.up * carWidth * 0.012f;
+                }
+            }
+
+            warningWaveRoot = CreateRoot(
+                "IslandWarningWave",
+                impactTransientRoot);
+            warningWaveRoot.localPosition = contactLocal +
+                Vector3.up * carWidth * 0.025f;
+            LineRenderer wave = CreateLine(
+                "IslandWarningWaveRing",
+                warningWaveRoot,
+                warningWaveMaterial,
+                carWidth * 0.035f,
+                false);
+            int wavePoints = boundaryPoints != null
+                ? boundaryPoints.Length
+                : 64;
+            wave.loop = true;
+            wave.positionCount = wavePoints;
+            for (int i = 0; i < wavePoints; i++)
+            {
+                if (boundaryPoints != null)
+                {
+                    Vector3 delta = boundaryPoints[i] -
+                        contactLocal;
+                    delta.y = 0f;
+                    wave.SetPosition(i, delta * 0.94f);
+                }
+                else
+                {
+                    float angle = i / (float)wavePoints *
+                        Mathf.PI * 2f;
+                    wave.SetPosition(
+                        i,
+                        outwardLocal * Mathf.Cos(angle) *
+                        carLength * 1.45f +
+                        forwardLocal * Mathf.Sin(angle) *
+                        carLength * 2.8f);
+                }
+            }
+
+            boundaryPulseRoot = CreateRoot(
+                "IslandBoundaryDoublePulse",
+                impactTransientRoot);
+            if (boundaryPoints != null)
+            {
+                LineRenderer boundaryPulse = CreateLine(
+                    "IslandBoundaryPulseLine",
+                    boundaryPulseRoot,
+                    boundaryPulseMaterial,
+                    Mathf.Max(
+                        carWidth * 0.035f,
+                        islandBoundary.widthMultiplier * 1.7f),
+                    false);
+                boundaryPulse.loop = islandBoundary.loop;
+                boundaryPulse.positionCount =
+                    boundaryPoints.Length;
+                boundaryPulse.SetPositions(boundaryPoints);
+            }
+            SetImpactWarningWave(-1f);
         }
 
         private void CreateContactVector()
@@ -1161,6 +1371,29 @@ namespace F1XR.RestAPI.Replay
                     end - direction * carWidth * 0.22f +
                     right * side * carWidth * 0.14f);
             }
+
+            GameObject labelObject = new(
+                "ContactLabel",
+                typeof(TextMeshPro));
+            labelObject.transform.SetParent(impactRoot, false);
+            labelObject.transform.localPosition = contactLocal -
+                forwardLocal * carLength * 0.18f +
+                Vector3.up * carWidth * 0.18f;
+            labelObject.transform.localRotation =
+                Quaternion.LookRotation(Vector3.up, forwardLocal);
+            labelObject.transform.localScale =
+                Vector3.one * carLength * 0.052f;
+            TextMeshPro label =
+                labelObject.GetComponent<TextMeshPro>();
+            label.text = "CONTACT";
+            label.alignment = TextAlignmentOptions.Center;
+            label.fontSize = 4.4f;
+            label.fontStyle = FontStyles.Bold;
+            label.enableAutoSizing = false;
+            label.color = new Color(1f, 0.48f, 0.08f, 0.98f);
+            label.rectTransform.sizeDelta = new Vector2(8f, 2f);
+            label.renderer.shadowCastingMode = ShadowCastingMode.Off;
+            label.renderer.receiveShadows = false;
         }
 
         private void CreateWarningBoundary(
@@ -1206,8 +1439,8 @@ namespace F1XR.RestAPI.Replay
                 float side = i % 2 == 0 ? -1f : 1f;
                 float along = i < 2 ? -1f : 1f;
                 Vector3 basePosition = contactLocal +
-                    rightLocal * side * carLength * 1.35f +
-                    forwardLocal * along * carLength * 2.45f;
+                    rightLocal * side * carLength * 1.12f +
+                    forwardLocal * along * carLength * 1.88f;
                 LineRenderer beacon = CreateLine(
                     $"YellowBeacon_{i:00}",
                     warningRoot,
@@ -1227,12 +1460,12 @@ namespace F1XR.RestAPI.Replay
                 typeof(TextMeshPro));
             panel.transform.SetParent(warningRoot, false);
             panel.transform.localPosition = contactLocal -
-                forwardLocal * carLength * 2.35f +
-                Vector3.up * carWidth * 0.035f;
+                forwardLocal * carLength * 1.68f +
+                Vector3.up * carWidth * 0.68f;
             panel.transform.localRotation =
                 Quaternion.LookRotation(Vector3.up, forwardLocal);
             panel.transform.localScale =
-                Vector3.one * carLength * 0.055f;
+                Vector3.one * carLength * 0.085f;
             TextMeshPro text = panel.GetComponent<TextMeshPro>();
             string participants = string.IsNullOrWhiteSpace(label)
                 ? string.Empty
@@ -1243,10 +1476,12 @@ namespace F1XR.RestAPI.Replay
             text.text =
                 $"INCIDENT{participants}{timing}\n" +
                 "<color=#DCEFFF>OBSERVED</color>  " +
+                "<color=#FF8A24>CONTACT</color>  " +
                 "<color=#FF3028>RECONSTRUCTED</color>";
             text.alignment = TextAlignmentOptions.Center;
             text.richText = true;
             text.fontSize = 5.2f;
+            text.fontStyle = FontStyles.Bold;
             text.enableAutoSizing = false;
             text.color = new Color(1f, 0.78f, 0.04f, 0.95f);
             text.rectTransform.sizeDelta = new Vector2(16f, 4f);
@@ -1299,13 +1534,14 @@ namespace F1XR.RestAPI.Replay
             labelObject.transform.localRotation =
                 Quaternion.LookRotation(Vector3.up, forwardLocal);
             labelObject.transform.localScale =
-                Vector3.one * carLength * 0.04f;
+                Vector3.one * carLength * 0.06f;
             TextMeshPro text = labelObject.GetComponent<TextMeshPro>();
             text.text = string.IsNullOrWhiteSpace(driverLabel)
                 ? "CAR"
                 : driverLabel;
             text.alignment = TextAlignmentOptions.Center;
             text.fontSize = 4.4f;
+            text.fontStyle = FontStyles.Bold;
             text.enableAutoSizing = false;
             text.color = color.a > 0f
                 ? new Color(color.r, color.g, color.b, 0.98f)
@@ -1347,13 +1583,33 @@ namespace F1XR.RestAPI.Replay
 
             Vector3 anchor = stage.InverseTransformPoint(
                 car.VisualMotionRoot.position) +
-                Vector3.up * carWidth * 0.12f;
+                Vector3.up * carWidth * 0.28f;
             Vector3 labelPosition = anchor +
                 side * carWidth * 0.95f +
                 forwardLocal * carLength * 0.08f;
             label.transform.localPosition = labelPosition;
+            FaceReadableTextToViewer(label);
             tether.SetPosition(0, anchor);
             tether.SetPosition(1, labelPosition);
+        }
+
+        private void FaceReadableTextToViewer(TextMeshPro text)
+        {
+            Camera viewer = Camera.main;
+            if (text == null || viewer == null)
+                return;
+
+            Vector3 toViewer = viewer.transform.position -
+                text.transform.position;
+            if (toViewer.sqrMagnitude <= 0.000001f)
+                return;
+
+            Vector3 up = stage != null
+                ? stage.up
+                : Vector3.up;
+            text.transform.rotation = Quaternion.LookRotation(
+                -toViewer.normalized,
+                up);
         }
 
         private void CreateImpactAudio(
@@ -1362,8 +1618,11 @@ namespace F1XR.RestAPI.Replay
             if (settings != null && !settings.playImpactAudio)
                 return;
 
-            impactAudio = presentationRoot.gameObject
-                .AddComponent<AudioSource>();
+            GameObject emitter = new("ImpactAudioEmitter");
+            emitter.transform.SetParent(impactRoot, false);
+            emitter.transform.localPosition = contactLocal +
+                Vector3.up * carWidth * 0.15f;
+            impactAudio = emitter.AddComponent<AudioSource>();
             impactAudio.playOnAwake = false;
             impactAudio.loop = false;
             impactAudio.spatialBlend = Mathf.Clamp01(
@@ -1375,6 +1634,8 @@ namespace F1XR.RestAPI.Replay
                     ? settings.impactVolume
                     : 0.85f);
             impactAudio.dopplerLevel = 0f;
+            impactAudio.priority = 32;
+            impactAudio.reverbZoneMix = 0f;
             impactAudio.rolloffMode = AudioRolloffMode.Linear;
             impactAudio.minDistance = Mathf.Max(
                 0.05f,
@@ -1393,6 +1654,82 @@ namespace F1XR.RestAPI.Replay
             if (ownsImpactClip)
                 impactClip = CreateImpactClip();
             impactAudio.clip = impactClip;
+        }
+
+        private void TriggerImpactFeedback()
+        {
+            SetRootVisible(impactTransientRoot, true);
+            PrepareImpactSmoke();
+            PlayImpactAudio();
+            PlayImpactHaptic(
+                primaryHapticAmplitude,
+                primaryHapticDuration);
+            secondaryHapticCountdown =
+                secondaryHapticDelaySeconds;
+            if (smoke != null)
+                smoke.Play(true);
+        }
+
+        private void TickSecondaryImpactHaptic(float delta)
+        {
+            if (secondaryHapticTriggered ||
+                !impactTriggered ||
+                secondaryHapticCountdown < 0f)
+            {
+                return;
+            }
+
+            secondaryHapticCountdown -= Mathf.Max(0f, delta);
+            if (secondaryHapticCountdown > 0f)
+                return;
+
+            secondaryHapticTriggered = true;
+            secondaryHapticCountdown = -1f;
+            PlayImpactHaptic(
+                secondaryHapticAmplitude,
+                secondaryHapticDuration);
+        }
+
+        private void PlayImpactHaptic(float amplitude, float duration)
+        {
+            if (!impactHapticsEnabled ||
+                amplitude <= 0f ||
+                duration <= 0f)
+            {
+                return;
+            }
+
+            SendHapticImpulse(
+                XRNode.LeftHand,
+                amplitude,
+                duration);
+            SendHapticImpulse(
+                XRNode.RightHand,
+                amplitude,
+                duration);
+        }
+
+        private static void SendHapticImpulse(
+            XRNode node,
+            float amplitude,
+            float duration)
+        {
+            HapticDevices.Clear();
+            InputDevices.GetDevicesAtXRNode(node, HapticDevices);
+            for (int i = 0; i < HapticDevices.Count; i++)
+            {
+                InputDevice device = HapticDevices[i];
+                if (device.isValid &&
+                    device.TryGetHapticCapabilities(
+                        out HapticCapabilities capabilities) &&
+                    capabilities.supportsImpulse)
+                {
+                    device.SendHapticImpulse(
+                        0u,
+                        Mathf.Clamp01(amplitude),
+                        duration);
+                }
+            }
         }
 
         private void PlayImpactAudio()
@@ -1428,6 +1765,99 @@ namespace F1XR.RestAPI.Replay
             SetRendererAlpha(
                 pulseRenderers,
                 (1f - progress) * 0.94f);
+        }
+
+        private void SetImpactTransient(float age)
+        {
+            bool visible = age >= 0f &&
+                age <= ImpactTransientDuration;
+            SetRootVisible(impactTransientRoot, visible);
+            if (age > ImpactTransientDuration &&
+                smoke != null &&
+                (smoke.isPlaying || smoke.particleCount > 0))
+            {
+                smoke.Stop(
+                    true,
+                    ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+        }
+
+        private void SetImpactWarningWave(float age)
+        {
+            bool waveVisible = age >= 0f &&
+                age <= warningWaveDurationSeconds &&
+                warningWaveIntensity > 0f;
+            SetRootVisible(warningWaveRoot, waveVisible);
+            if (waveVisible && warningWaveRoot != null)
+            {
+                float progress = Mathf.Clamp01(
+                    age / warningWaveDurationSeconds);
+                float scale = Mathf.Lerp(
+                    0.15f,
+                    1f,
+                    Mathf.SmoothStep(0f, 1f, progress));
+                warningWaveRoot.localScale = Vector3.one * scale;
+                SetMaterialAlpha(
+                    warningWaveMaterial,
+                    (1f - progress) * 0.9f *
+                    warningWaveIntensity);
+            }
+
+            float boundaryPulse = Mathf.Max(
+                ResolvePulseWindow(age, 0.02f, 0.18f),
+                ResolvePulseWindow(age, 0.24f, 0.42f));
+            bool boundaryVisible = boundaryPulse > 0.001f &&
+                warningWaveIntensity > 0f;
+            SetRootVisible(boundaryPulseRoot, boundaryVisible);
+            SetMaterialAlpha(
+                boundaryPulseMaterial,
+                boundaryPulse * 0.92f * warningWaveIntensity);
+        }
+
+        private static float ResolvePulseWindow(
+            float age,
+            float start,
+            float end)
+        {
+            if (age < start || age > end)
+                return 0f;
+            return Mathf.Sin(
+                Mathf.InverseLerp(start, end, age) * Mathf.PI);
+        }
+
+        private void ClearImpactSmoke()
+        {
+            if (smoke == null)
+                return;
+            smoke.Stop(
+                true,
+                ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+
+        private void PrepareImpactSmoke()
+        {
+            if (smoke == null)
+                return;
+
+            ClearImpactSmoke();
+            for (int i = 0; i < 8; i++)
+            {
+                float angle = i * Mathf.PI * 0.75f;
+                ParticleSystem.EmitParams emit = new()
+                {
+                    position = new Vector3(
+                        Mathf.Cos(angle) * carWidth * 0.12f,
+                        (i % 4) * carWidth * 0.11f,
+                        Mathf.Sin(angle) * carWidth * 0.1f),
+                    startSize = carWidth * Mathf.Lerp(
+                        0.18f,
+                        0.28f,
+                        (i % 5) / 4f),
+                    startLifetime = 2f,
+                    startColor = new Color32(148, 154, 166, 118)
+                };
+                smoke.Emit(emit, 1);
+            }
         }
 
         private void SetImpactBurst(float age)
@@ -1478,8 +1908,10 @@ namespace F1XR.RestAPI.Replay
                     debrisOrigin,
                     impactDebrisPositions[i],
                     debrisProgress);
-                debris.localScale = impactDebrisScales[i] *
-                    Mathf.Lerp(0.12f, 1f, debrisProgress);
+                debris.localScale = age < 0f
+                    ? Vector3.zero
+                    : impactDebrisScales[i] *
+                      Mathf.Lerp(0.12f, 1f, debrisProgress);
                 debris.localRotation = Quaternion.Slerp(
                     Quaternion.identity,
                     impactDebrisRotations[i],
@@ -1587,6 +2019,17 @@ namespace F1XR.RestAPI.Replay
                 lift);
         }
 
+        private void SetObservedTrajectoryAlpha(float alpha)
+        {
+            float clamped = Mathf.Clamp01(alpha);
+            SetMaterialAlpha(
+                victimTrajectoryMaterial,
+                clamped);
+            SetMaterialAlpha(
+                otherTrajectoryMaterial,
+                clamped * 0.9f);
+        }
+
         private void SetPostImpactProgress(float progress)
         {
             SetLineProgress(
@@ -1625,14 +2068,28 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            int visible = Mathf.Clamp(
-                Mathf.CeilToInt(
-                    Mathf.Clamp01(progress) * (available - 1)) + 1,
-                2,
-                available);
+            float segmentProgress = Mathf.Clamp01(progress) *
+                (available - 1);
+            int segmentIndex = Mathf.FloorToInt(segmentProgress);
+            if (segmentIndex >= available - 1)
+            {
+                line.positionCount = available;
+                for (int i = 0; i < available; i++)
+                    line.SetPosition(i, points[i] + offset);
+                return;
+            }
+
+            int visible = segmentIndex + 2;
             line.positionCount = visible;
-            for (int i = 0; i < visible; i++)
+            for (int i = 0; i <= segmentIndex; i++)
                 line.SetPosition(i, points[i] + offset);
+            float interpolation = segmentProgress - segmentIndex;
+            line.SetPosition(
+                visible - 1,
+                Vector3.Lerp(
+                    points[segmentIndex],
+                    points[segmentIndex + 1],
+                    interpolation) + offset);
         }
 
         private LineRenderer CreateTrajectory(
@@ -1687,15 +2144,10 @@ namespace F1XR.RestAPI.Replay
             Color color,
             bool additive = false)
         {
-            Material material =
-                ReplayCarVisualUtil.CreateUnlitMaterial(color);
+            Material material = additive
+                ? ReplayCarVisualUtil.CreateSelectionMaterial(color)
+                : ReplayCarVisualUtil.CreateUnlitMaterial(color);
             material.name = name;
-            if (additive && material.HasProperty("_DstBlend"))
-            {
-                material.SetFloat(
-                    "_DstBlend",
-                    (float)BlendMode.One);
-            }
             materials.Add(material);
             return material;
         }

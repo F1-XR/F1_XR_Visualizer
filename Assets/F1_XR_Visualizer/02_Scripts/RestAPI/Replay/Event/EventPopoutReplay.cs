@@ -1475,6 +1475,8 @@ namespace F1XR.RestAPI.Replay
                     player.overtakeMotion);
             eventCars.SetOvertakeSettings(
                 eventOvertakeSettings);
+            if (collisionShowcase)
+                eventCars.PrepareMappedPositions(eventSamples);
 
             List<LocationSample> referenceSamples = FindReferenceSamples();
             if (!BuildMappedPath(
@@ -1508,7 +1510,9 @@ namespace F1XR.RestAPI.Replay
             {
                 pitStopSequence = null;
                 battleSequence = null;
-                transitionTime = definition.anchorTime;
+                transitionTime = CollisionPresentationContactTime > 0f
+                    ? CollisionPresentationContactTime
+                    : definition.anchorTime;
             }
             else
             {
@@ -1574,12 +1578,12 @@ namespace F1XR.RestAPI.Replay
             float presentationStart = collisionShowcase
                 ? Mathf.Max(
                     showcasePlaybackWindow.StartTime,
-                    definition.anchorTime - 1.1f)
+                    transitionTime - 1.4f)
                 : showcasePlaybackWindow.StartTime;
             float presentationEnd = collisionShowcase
                 ? Mathf.Min(
                     showcasePlaybackWindow.EndTime,
-                    definition.anchorTime + 1.2f)
+                    transitionTime + 0.85f)
                 : showcasePlaybackWindow.EndTime;
             if (!BuildPresentationPath(
                     presentationStart,
@@ -3374,14 +3378,30 @@ namespace F1XR.RestAPI.Replay
                         end - maximumDuration);
                 }
             }
+            else if (IsCollisionEvent(source))
+            {
+                start = Mathf.Clamp(
+                    source.startTime,
+                    player.TimelineStartTime,
+                    anchor);
+                end = Mathf.Clamp(
+                    source.endTime,
+                    anchor,
+                    player.ReadyUntilTime);
+                if (end <= start)
+                {
+                    start = Mathf.Max(
+                        player.TimelineStartTime,
+                        anchor - Mathf.Max(0f, CollisionLeadSeconds));
+                    end = Mathf.Min(
+                        player.ReadyUntilTime,
+                        anchor + Mathf.Max(0f, CollisionTailSeconds));
+                }
+            }
             else
             {
-                float leadSeconds = IsCollisionEvent(source)
-                    ? CollisionLeadSeconds
-                    : eventLeadSeconds;
-                float tailSeconds = IsCollisionEvent(source)
-                    ? CollisionTailSeconds
-                    : eventTailSeconds;
+                float leadSeconds = eventLeadSeconds;
+                float tailSeconds = eventTailSeconds;
                 start = Mathf.Max(
                     player.TimelineStartTime,
                     anchor - Mathf.Max(0f, leadSeconds));
