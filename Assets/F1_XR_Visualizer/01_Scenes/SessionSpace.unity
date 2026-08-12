@@ -2036,7 +2036,7 @@ MonoBehaviour:
     m_Reference: {fileID: 0}
   useControllerTriggerFallback: 1
   inputArmDelay: 0.5
-  placementMode: 0
+  placementMode: 1
   previewMaterial: {fileID: 0}
   previewColor: {r: 0.2, g: 1, b: 0.35, a: 0.35}
   surfaceOffset: 0.005
