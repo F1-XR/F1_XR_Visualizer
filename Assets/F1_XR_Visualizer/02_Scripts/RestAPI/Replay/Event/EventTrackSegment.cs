@@ -37,7 +37,7 @@ namespace F1XR.RestAPI.Replay
         private const int MaxPathSamples = 48;
         private const float MinimumSurfaceNormalY = 0.35f;
         private const float MinimumReliableEdgeCoverage = 0.7f;
-        private const float MinimumTrackContextSurfaceCoverage = 0.7f;
+        private const int MinimumTrackContextPrimaryTriangles = 24;
 
         private readonly List<Mesh> meshes = new();
         private readonly List<RoadTriangle> roadTriangles = new();
@@ -134,17 +134,16 @@ namespace F1XR.RestAPI.Replay
 
             int primaryCoverageCount = CountSurfaceCoverage(
                 nearestPrimarySurfaceY);
-            float primaryCoverage = nearestPrimarySurfaceY != null &&
-                                    nearestPrimarySurfaceY.Length > 0
-                ? primaryCoverageCount /
-                  (float)nearestPrimarySurfaceY.Length
-                : 1f;
+            int surfaceCoverageCount = CountSurfaceCoverage(
+                nearestSurfaceY);
+            float surfaceCoverage = nearestSurfaceY.Length > 0
+                ? surfaceCoverageCount / (float)nearestSurfaceY.Length
+                : 0f;
             bool hasRequiredSurface = triangleCount > 0 &&
                 (surfaceMode !=
                      EventTrackSegmentSurfaceMode.TrackContextOnly ||
-                 trackContextPrimaryTriangles > 0 &&
-                 primaryCoverage >=
-                     MinimumTrackContextSurfaceCoverage);
+                 trackContextPrimaryTriangles >=
+                     MinimumTrackContextPrimaryTriangles);
             if (hasRequiredSurface)
             {
                 float surfaceOffset = FindMedianSurfaceOffset(
@@ -158,6 +157,8 @@ namespace F1XR.RestAPI.Replay
 
                 Debug.Log(
                     $"[EventTrackSegment] triangles={triangleCount}, " +
+                    $"surfaceCoverage={surfaceCoverageCount}/" +
+                    $"{nearestSurfaceY.Length}, " +
                     $"primaryCoverage={primaryCoverageCount}/" +
                     $"{nearestPrimarySurfaceY?.Length ?? 0}, " +
                     $"pathCenter={stageBounds.center:F4}, pathSize={stageBounds.size:F4}, " +
@@ -174,6 +175,8 @@ namespace F1XR.RestAPI.Replay
                     "[EventTrackSegment] Track context rejected: " +
                     $"triangles={triangleCount}, " +
                     $"primaryTriangles={trackContextPrimaryTriangles}, " +
+                    $"surfaceCoverage={surfaceCoverageCount}/" +
+                    $"{nearestSurfaceY.Length}, " +
                     $"primaryCoverage={primaryCoverageCount}/" +
                     $"{nearestPrimarySurfaceY?.Length ?? 0}.");
             }

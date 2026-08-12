@@ -357,7 +357,10 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             if (metaSceneSource != null)
             {
                 if (metaSceneSource.Status == MetaSceneRoomStatus.Ready)
-                    return TryGetAutomaticMetaTableHit(out pose);
+                {
+                    if (TryGetAutomaticMetaTableHit(out pose))
+                        return true;
+                }
 
                 if (metaSceneSource.Status == MetaSceneRoomStatus.Loading ||
                     metaSceneSource.Status == MetaSceneRoomStatus.WaitingForPermission ||
