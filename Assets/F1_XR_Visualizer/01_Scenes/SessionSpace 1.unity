@@ -1152,6 +1152,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42ec8acfd8ffff14c944fe4e0b07a885, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcasePortalPresentation
+  decorativePortalPrefab: {fileID: 0}
 --- !u!114 &493722810
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1183,12 +1184,45 @@ MonoBehaviour:
   showcaseVehicleScale: 0.7
   showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
+  normalizeRoomPresentation: 1
+  minimumRoomVehicleLength: 0.5
+  maximumRoomVehicleLength: 0.7
+  minimumVehiclePresentationScale: 0.5
+  maximumVehiclePresentationScale: 1.1
+  minimumBoostedBattleTravelInVehicleLengthsPerSecond: 10
+  maximumBoostedPlaybackSpeed: 2.4
+  cinematicRoomScaleEnabled: 1
+  minimumCinematicBattleTravelMetersPerSecond: 7.5
+  minimumCinematicBattleTravelInVehicleLengthsPerSecond: 14
+  minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond: 10
+  cinematicSlowSectionPercentile: 0.25
+  maximumCinematicScaleMultiplier: 4
+  maximumCinematicEventScale: 320
+  measuredLocalBattleTravelPerSecond: 0
+  resolvedCinematicScaleMultiplier: 1
+  projectedCinematicBattleTravelMetersPerSecond: 0
+  measuredSlowSectionBattleTravelInVehicleLengthsPerSecond: 0
   compositionMode: 0
   criticalSegmentCenterBias: 0.65
   balancedMaximumShift: 2
   multiExchangeMaximumShift: 3.5
+  referencePassProfileEnabled: 1
+  referencePassCrossingYaw: 28
   trackExitPortalEnabled: 1
   connectedWallPortalsEnabled: 1
+  evaluateWallPortalCandidates: 1
+  minimumEvaluatedPortalWallWidth: 2
+  minimumEvaluatedPortalWallHeight: 1.7
+  wallPairRecommendationScore: 60
+  wallExitFocusScoreDistance: 6
+  evaluatedWallCount: 0
+  evaluatedWallPairCount: 0
+  qualifiedWallPairCount: 0
+  bestWallPairScore: 0
+  evaluatedWallExitCount: 0
+  qualifiedWallExitCount: 0
+  bestWallExitScore: 0
+  wallPortalRecommendation: 0
   lifeSizeDriveBy:
     roadWidth: 3.6
     roadThickness: 0.08
@@ -1246,7 +1280,60 @@ MonoBehaviour:
     largeForwardSeekThresholdSeconds: 0.75
     largeForwardSeekPolicy: 0
     seekResetThresholdSeconds: 0.5
+  analyzeShotVisibility: 1
+  visibilitySampleSeconds: 0.2
+  visibilityMaximumDistance: 8
+  visibilityViewportMargin: 0.05
+  visibilityProbeHeightInVehicleLengths: 0.25
+  visibilityProbeCenterInVehicleHeight: 0.5
+  visibilityProbeSpanInVehicleHeight: 0.35
+  visibilityTerrainClearanceInVehicleLengths: 0.35
+  runtimeOcclusionAssistanceEnabled: 1
+  occlusionAssistSampleInterval: 0.1
+  occlusionAssistActivationDelay: 0.08
+  occlusionAssistReleaseDelay: 0.2
+  firstOcclusionAssistActive: 0
+  secondOcclusionAssistActive: 0
+  battleReframeDuration: 0.7
+  battleReframeStartColor: {r: 0.05, g: 0.78, b: 1, a: 0.82}
+  battleReframeEndColor: {r: 1, g: 0.12, b: 0.62, a: 0.82}
+  actionBeatCount: 0
+  visibleActionBeatCount: 0
+  continuousVisibleIntervalCount: 0
+  terrainOcclusionAvailable: 0
+  allActionBeatsVisible: 0
+  requiresAdditionalShot: 0
+  actionBeatsOutsideDistance: 0
+  actionBeatsOutsideView: 0
+  actionBeatsTerrainOccluded: 0
+  actionBeatsWithMissingPosition: 0
+  multiBeatTransitionSafetyMargin: 0.15
+  maximumBattleToWallFocusShift: 3
+  wallExitStrategy: 0
+  wallExitHandoffPrepared: 0
+  wallExitHandoffActive: 0
+  wallExitHandoffComplete: 0
+  wallExitHandoffTime: 0
+  wallExitTransitionBeatIndex: -1
+  perceptionEyeRelativeTrackFocus: {x: 0, y: 0, z: 0}
+  perceptionClosestVehicleDistance: 0
+  perceptionVehicleAngularSize: 0
+  perceptionScreenTravelPerSecond: 0
+  perceptionBattleVisibleFraction: 0
+  runtimePerceptionSampleCount: 0
+  runtimePerceptionVisibleFraction: 0
+  runtimePerceptionScreenSpeedP90: 0
+  runtimePerceptionScreenSpeedPeak: 0
+  runtimePerceptionLateralSpeedP90: 0
+  runtimePerceptionLateralSpeedPeak: 0
+  runtimePerceptionLoomingRateP90: 0
+  runtimePerceptionLoomingRatePeak: 0
+  runtimePerceptionAngularSizePeak: 0
+  runtimePerceptionClosestDistance: 0
+  runtimePerceptionClosestEyePosition: {x: 0, y: 0, z: 0}
   mappingEnabled: 1
+  exitPortalLifecycleState: 0
+  battleOnlyRearWallExitDistance: 0
 --- !u!4 &493722811
 Transform:
   m_ObjectHideFlags: 0
@@ -1354,128 +1441,6 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_IsOn: 1
---- !u!21 &541637600
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: Universal Render Pipeline/Lit
-  m_Shader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
-  m_InvalidKeywords: []
-  m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap:
-    RenderType: Opaque
-  disabledShaderPasses:
-  - MOTIONVECTORS
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs:
-    - _BaseMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _BumpMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _DetailAlbedoMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _DetailMask:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _DetailNormalMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _EmissionMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _MainTex:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _MetallicGlossMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _OcclusionMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _ParallaxMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SpecGlossMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_Lightmaps:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_LightmapsInd:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_ShadowMasks:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    m_Ints: []
-    m_Floats:
-    - _AddPrecomputedVelocity: 0
-    - _AlphaClip: 0
-    - _AlphaToMask: 0
-    - _Blend: 0
-    - _BlendModePreserveSpecular: 1
-    - _BumpScale: 1
-    - _ClearCoatMask: 0
-    - _ClearCoatSmoothness: 0
-    - _Cull: 2
-    - _Cutoff: 0.5
-    - _DetailAlbedoMapScale: 1
-    - _DetailNormalMapScale: 1
-    - _DstBlend: 0
-    - _DstBlendAlpha: 0
-    - _EnvironmentReflections: 1
-    - _GlossMapScale: 0
-    - _Glossiness: 0
-    - _GlossyReflections: 0
-    - _Metallic: 0
-    - _OcclusionStrength: 1
-    - _Parallax: 0.005
-    - _QueueOffset: 0
-    - _ReceiveShadows: 1
-    - _Smoothness: 0.5
-    - _SmoothnessTextureChannel: 0
-    - _SpecularHighlights: 1
-    - _SrcBlend: 1
-    - _SrcBlendAlpha: 1
-    - _Surface: 0
-    - _WorkflowMode: 1
-    - _XRMotionVectorsPass: 1
-    - _ZWrite: 1
-    m_Colors:
-    - _BaseColor: {r: 0.16, g: 0.18, b: 0.24, a: 1}
-    - _Color: {r: 0.059999965, g: 0.06999998, b: 0.09999997, a: 1}
-    - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
-    - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
-  m_BuildTextureStacks: []
-  m_AllowLocking: 1
 --- !u!1 &679593414
 GameObject:
   m_ObjectHideFlags: 0
@@ -1516,8 +1481,10 @@ MonoBehaviour:
     liftDistance: 0.015
     liftDuration: 0.22
     liftCurve:
+      serializedVersion: 2
       m_Curve:
-      - time: 0
+      - serializedVersion: 3
+        time: 0
         value: 0
         inSlope: 0
         outSlope: 0
@@ -1525,7 +1492,8 @@ MonoBehaviour:
         weightedMode: 0
         inWeight: 0
         outWeight: 0
-      - time: 1
+      - serializedVersion: 3
+        time: 1
         value: 1
         inSlope: 0
         outSlope: 0
@@ -1541,8 +1509,10 @@ MonoBehaviour:
     settleDistance: 0.01
     breakDuration: 0.9
     breakCurve:
+      serializedVersion: 2
       m_Curve:
-      - time: 0
+      - serializedVersion: 3
+        time: 0
         value: 0
         inSlope: 0
         outSlope: 0
@@ -1550,7 +1520,8 @@ MonoBehaviour:
         weightedMode: 0
         inWeight: 0
         outWeight: 0
-      - time: 1
+      - serializedVersion: 3
+        time: 1
         value: 1
         inSlope: 2
         outSlope: 2
@@ -1561,8 +1532,6 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-    fallsUnderGravity: 1
-    fadeStartFraction: 0.55
     propagationStep: 0.09
     holdDuration: 0.12
     delayJitter: 0.08
@@ -1574,23 +1543,9 @@ MonoBehaviour:
   floorFallDistance: 0.35
   dust: {fileID: 0}
   spawnDustIfMissing: 1
-  surfaceColor:
-    r: 0.82
-    g: 0.8
-    b: 0.75
-    a: 0.55
+  surfaceColor: {r: 0.82, g: 0.8, b: 0.75, a: 0.55}
   showBackdrop: 1
-  backdropColor:
-    r: 0.1
-    g: 0.35
-    b: 0.55
-    a: 1
-  testSurface: {fileID: 0}
-  backdrop: {fileID: 0}
-  surfaceMesh: {fileID: 0}
-  backdropMesh: {fileID: 0}
-  sharedSurfaceMaterial: {fileID: 0}
-  backdropMaterial: {fileID: 0}
+  backdropColor: {r: 0.1, g: 0.35, b: 0.55, a: 1}
 --- !u!4 &679593416
 Transform:
   m_ObjectHideFlags: 0
@@ -1729,6 +1684,128 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 1.2}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!21 &758590959
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Universal Render Pipeline/Lit (Instance)
+  m_Shader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses:
+  - MOTIONVECTORS
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BumpMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailAlbedoMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailMask:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailNormalMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MetallicGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _OcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ParallaxMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SpecGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_Lightmaps:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_LightmapsInd:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_ShadowMasks:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _AddPrecomputedVelocity: 0
+    - _AlphaClip: 0
+    - _AlphaToMask: 0
+    - _Blend: 0
+    - _BlendModePreserveSpecular: 1
+    - _BumpScale: 1
+    - _ClearCoatMask: 0
+    - _ClearCoatSmoothness: 0
+    - _Cull: 2
+    - _Cutoff: 0.5
+    - _DetailAlbedoMapScale: 1
+    - _DetailNormalMapScale: 1
+    - _DstBlend: 0
+    - _DstBlendAlpha: 0
+    - _EnvironmentReflections: 1
+    - _GlossMapScale: 0
+    - _Glossiness: 0
+    - _GlossyReflections: 0
+    - _Metallic: 0
+    - _OcclusionStrength: 1
+    - _Parallax: 0.005
+    - _QueueOffset: 0
+    - _ReceiveShadows: 1
+    - _Smoothness: 0.5
+    - _SmoothnessTextureChannel: 0
+    - _SpecularHighlights: 1
+    - _SrcBlend: 1
+    - _SrcBlendAlpha: 1
+    - _Surface: 0
+    - _WorkflowMode: 1
+    - _XRMotionVectorsPass: 1
+    - _ZWrite: 1
+    m_Colors:
+    - _BaseColor: {r: 0.16, g: 0.18, b: 0.24, a: 1}
+    - _Color: {r: 0.15999997, g: 0.17999998, b: 0.23999995, a: 1}
+    - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!1001 &778030370
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2083,7 +2160,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 541637600}
+  - {fileID: 758590959}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2114,7 +2191,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 923082086}
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
+  m_Mesh: {fileID: 1569179828}
 --- !u!1 &923083706
 GameObject:
   m_ObjectHideFlags: 0
@@ -3838,6 +3915,7 @@ GameObject:
   - component: {fileID: 1510071734}
   - component: {fileID: 1510071733}
   - component: {fileID: 1510071737}
+  - component: {fileID: 1510071738}
   m_Layer: 0
   m_Name: Room Shell
   m_TagString: Untagged
@@ -3859,26 +3937,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.Room.RoomShellProxyDebug
   generator: {fileID: 1510071734}
   debugVisible: 1
-  wallColor:
-    r: 0.2
-    g: 0.55
-    b: 1
-    a: 0
-  floorColor:
-    r: 0.2
-    g: 1
-    b: 0.45
-    a: 0
-  ceilingColor:
-    r: 1
-    g: 0.55
-    b: 0.15
-    a: 0
+  wallColor: {r: 0.2, g: 0.55, b: 1, a: 0}
+  floorColor: {r: 0.2, g: 1, b: 0.45, a: 0}
+  ceilingColor: {r: 1, g: 0.55, b: 0.15, a: 0}
   debugAlpha: 0
   normalGizmoLength: 0.5
-  wallMaterial: {fileID: 0}
-  floorMaterial: {fileID: 0}
-  ceilingMaterial: {fileID: 0}
 --- !u!114 &1510071734
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3894,8 +3957,6 @@ MonoBehaviour:
   provider: {fileID: 1510071735}
   autoRebuild: 1
   surfaceOffset: 0.005
-  proxyRoot: {fileID: 0}
-  rebuildPending: 0
 --- !u!114 &1510071735
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3913,12 +3974,6 @@ MonoBehaviour:
   logDiscoveredPlanes: 1
   disableWallPlaneColliders: 1
   requireVerticalWalls: 1
-  subscribed: 0
-  hasSavedDetectionMode: 0
-  savedDetectionMode: 0
-  <Floor>k__BackingField: {fileID: 0}
-  <Ceiling>k__BackingField: {fileID: 0}
-  <RoomCenter>k__BackingField: {x: 0, y: 0, z: 0}
 --- !u!4 &1510071736
 Transform:
   m_ObjectHideFlags: 0
@@ -3949,6 +4004,7 @@ MonoBehaviour:
   experienceManager: {fileID: 2042791792}
   proxyGenerator: {fileID: 1510071734}
   driveModeTransition: 1
+  driveReturnToMR: 1
   fractureSettings:
     fragmentCount: 30
     randomSeed: 1234
@@ -3957,8 +4013,10 @@ MonoBehaviour:
     liftDistance: 0.02
     liftDuration: 0.18
     liftCurve:
+      serializedVersion: 2
       m_Curve:
-      - time: 0
+      - serializedVersion: 3
+        time: 0
         value: 0
         inSlope: 0
         outSlope: 0
@@ -3966,7 +4024,8 @@ MonoBehaviour:
         weightedMode: 0
         inWeight: 0
         outWeight: 0
-      - time: 1
+      - serializedVersion: 3
+        time: 1
         value: 1
         inSlope: 0
         outSlope: 0
@@ -3982,8 +4041,10 @@ MonoBehaviour:
     settleDistance: 0.01
     breakDuration: 0.9
     breakCurve:
+      serializedVersion: 2
       m_Curve:
-      - time: 0
+      - serializedVersion: 3
+        time: 0
         value: 0
         inSlope: 0
         outSlope: 0
@@ -3991,7 +4052,8 @@ MonoBehaviour:
         weightedMode: 0
         inWeight: 0
         outWeight: 0
-      - time: 1
+      - serializedVersion: 3
+        time: 1
         value: 1
         inSlope: 0
         outSlope: 0
@@ -4002,8 +4064,6 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-    fallsUnderGravity: 1
-    fadeStartFraction: 0.55
     propagationStep: 0.09
     holdDuration: 0.12
     delayJitter: 0.06
@@ -4017,20 +4077,280 @@ MonoBehaviour:
   dust: {fileID: 0}
   spawnDustIfMissing: 1
   passthrough: {fileID: 2042791793}
-  revealDuringBreak: 1
-  revealFinishFraction: 0.85
   tailSeconds: 0.15
   forceDebugGray: 0
-  vrCamera: {fileID: 0}
-  shellColor:
-    r: 0.78
-    g: 0.76
-    b: 0.72
-    a: 0.55
-  sharedShellMaterial: {fileID: 0}
-  maskMaterial: {fileID: 0}
-  snapshotMaterial: {fileID: 0}
-  snapshotTexture: {fileID: 0}
+  shellColor: {r: 0.78, g: 0.76, b: 0.72, a: 0.55}
+--- !u!114 &1510071738
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1510071732}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6eb3c75744cc1344ba15cf86c6dad287, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.Fracture.VirtualGarageFractureController
+  experienceManager: {fileID: 0}
+  passthrough: {fileID: 0}
+  garage: {fileID: 0}
+  driveReturnToMR: 1
+  fractureSettings:
+    fragmentCount: 30
+    randomSeed: 1234
+    originBias: 0.8
+    crackWidthMillimetres: 0.4
+    liftDistance: 0.015
+    liftDuration: 0.22
+    liftCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    fallDistance: 0.6
+    lateralDistance: 0.04
+    settleDistance: 0.008
+    breakDuration: 0.7
+    breakCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 2
+        outSlope: 2
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    propagationStep: 0.09
+    holdDuration: 0.12
+    delayJitter: 0.05
+    rotationStrength: 1
+    rotationRange: {x: 10, y: 10, z: 8}
+    endScale: 0.95
+  originDistance: 4
+  originHeight: 1.5
+  crackSpeed: 5
+  wallFallDistance: 1.6
+  floorFallDistance: 0.4
+  ceilingFallDistance: 0.12
+  floorFragments: 30
+  wallFragments: 24
+  ceilingFragments: 24
+  dust: {fileID: 0}
+  spawnDustIfMissing: 1
+  tailSeconds: 0.15
+--- !u!43 &1569179828
+Mesh:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Plane Instance
+  serializedVersion: 12
+  m_SubMeshes:
+  - serializedVersion: 2
+    firstByte: 0
+    indexCount: 600
+    topology: 0
+    baseVertex: 0
+    firstVertex: 0
+    vertexCount: 121
+    localAABB:
+      m_Center: {x: 0, y: 0, z: 0}
+      m_Extent: {x: 5, y: 1.110223e-16, z: 5}
+  m_Shapes:
+    vertices: []
+    shapes: []
+    channels: []
+    fullWeights: []
+  m_BindPose: []
+  m_BoneNameHashes: 
+  m_RootBoneNameHash: 0
+  m_BonesAABB: []
+  m_VariableBoneCountWeights:
+    m_Data: 
+  m_MeshCompression: 0
+  m_IsReadable: 1
+  m_KeepVertices: 1
+  m_KeepIndices: 1
+  m_IndexFormat: 0
+  m_IndexBuffer: 090015000a0009001400150008001400090014002000150008001300140007001300080014001f00200013001f0014001f002b00200007001200130006001200070013001e001f0012001e0013001f002a002b001e002a001f002a0036002b0006001100120005001100060012001d001e0011001d0012001e0029002a001d0029001e002a0035003600290035002a0035004100360005001000110004001000050011001c001d0010001c0011001d00280029001c0028001d0029003400350028003400290035004000410034004000350040004c00410004000f00100003000f00040010001b001c000f001b0010001c00270028001b0027001c0028003300340027003300280034003f00400033003f00340040004b004c003f004b0040004b0057004c0003000e000f0002000e0003000f001a001b000e001a000f001b00260027001a0026001b0027003200330026003200270033003e003f0032003e0033003f004a004b003e004a003f004b00560057004a0056004b0056006200570056006100620061006d0062004a00550056005500610056003e0049004a00490055004a0032003d003e003d0049003e0026003100320031003d00320061006c006d006c0078006d006c007700780055006000610060006c0061006b0077006c0060006b006c006b00760077004900540055005400600055003d00480049004800540049005f006b00600054005f0060006a0076006b005f006a006b006a007500760053005f0054004800530054003c0048003d0031003c003d005e006a005f0053005e005f00690075006a005e0069006a006900740075004700530048003c004700480052005e0053004700520053005d0069005e0052005d005e006800740069005d00680069006800730074006700730068006700720073005c0068005d005c006700680051005d00520051005c005d004600520047004600510052003b0047003c003b00460047006600720067006600710072005b0067005c005b006600670050005c00510050005b005c004500510046004500500051006500710066006500700071005a0066005b005a00650066004f005b0050004f005a005b0064007000650064006f007000590065005a0059006400650063006f00640063006e006f005800630064005800640059004d00580059004e0059005a004d0059004e004e005a004f0042004d004e0042004e00430043004e004f0037004200430043004f00440044004f0050004400500045003700430038003800430044002c00370038003900440045003800440039002c0038002d002d003800390021002c002d00390045003a003a00450046003a0046003b0021002d0022001600210022002d0039002e002e0039003a0022002d002e002f003a003b002e003a002f001600220017000b001600170022002e00230023002e002f001700220023002f003b00300030003b003c0030003c0031000b0017000c0000000b000c0000000c0001001700230018000c001700180023002f00240024002f0030001800230024002500300031002400300025002500310026001a002500260001000c000d000c0018000d0001000d00020002000d000e00180024001900190024002500190025001a000d00180019000d0019000e000e0019001a00
+  m_VertexData:
+    serializedVersion: 3
+    m_VertexCount: 121
+    m_Channels:
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 3
+    - stream: 0
+      offset: 12
+      format: 0
+      dimension: 3
+    - stream: 0
+      offset: 24
+      format: 0
+      dimension: 4
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 40
+      format: 0
+      dimension: 2
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    - stream: 0
+      offset: 0
+      format: 0
+      dimension: 0
+    m_DataSize: 5808
+    _typelessdata: 0000a040000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf000000000000000000008040000000a50000a040000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d0000000000004040000000a50000a040000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e00000000ffffff3f000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf9a99993e00000000ffff7f3f000000a50000a040000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e0000000000000000000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf0000003f00000000020080bf000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf9a99193f00000000ffffffbf000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf3333333f00000000000040c0000000a50000a040000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f00000000010080c0000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf6766663f000000000000a0c0000000a50000a040000000000000803f00000000000080bf0000000000000000000080bf0000803f000000000000a040cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf00000000cdcccc3d00008040cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bfcdcccc3dcdcccc3d00004040cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3ecdcccc3dffffff3fcdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf9a99993ecdcccc3dffff7f3fcdcccca400008040000000000000803f00000000000080bf0000000000000000000080bfcdcccc3ecdcccc3d00000000cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf0000003fcdcccc3d020080bfcdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf9a99193fcdcccc3dffffffbfcdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf3333333fcdcccc3d000040c0cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3fcdcccc3d010080c0cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf6766663fcdcccc3d0000a0c0cdcccca400008040000000000000803f00000000000080bf0000000000000000000080bf0000803fcdcccc3d0000a0409a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf00000000cdcc4c3e000080409a9999a400004040000000000000803f00000000000080bf0000000000000000000080bfcdcccc3dcdcc4c3e000040409a9999a400004040000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3ecdcc4c3effffff3f9a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf9a99993ecdcc4c3effff7f3f9a9999a400004040000000000000803f00000000000080bf0000000000000000000080bfcdcccc3ecdcc4c3e000000009a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf0000003fcdcc4c3e020080bf9a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf9a99193fcdcc4c3effffffbf9a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf3333333fcdcc4c3e000040c09a9999a400004040000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3fcdcc4c3e010080c09a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf6766663fcdcc4c3e0000a0c09a9999a400004040000000000000803f00000000000080bf0000000000000000000080bf0000803fcdcc4c3e0000a040cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf000000009a99993e00008040cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d9a99993e00004040cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e9a99993effffff3fcccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf9a99993e9a99993effff7f3fcccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e9a99993e00000000cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf0000003f9a99993e020080bfcccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf9a99193f9a99993effffffbfcccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf3333333f9a99993e000040c0cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f9a99993e010080c0cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf6766663f9a99993e0000a0c0cccc4ca4ffffff3f000000000000803f00000000000080bf0000000000000000000080bf0000803f9a99993e0000a040cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf00000000cdcccc3e00008040cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bfcdcccc3dcdcccc3e00004040cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3ecdcccc3effffff3fcccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf9a99993ecdcccc3effff7f3fcccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bfcdcccc3ecdcccc3e00000000cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf0000003fcdcccc3e020080bfcccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf9a99193fcdcccc3effffffbfcccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf3333333fcdcccc3e000040c0cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3fcdcccc3e010080c0cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf6766663fcdcccc3e0000a0c0cccccca3ffff7f3f000000000000803f00000000000080bf0000000000000000000080bf0000803fcdcccc3e0000a0400000000000000000000000000000803f00000000000080bf0000000000000000000080bf000000000000003f000080400000000000000000000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d0000003f000040400000000000000000000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e0000003fffffff3f0000000000000000000000000000803f00000000000080bf0000000000000000000080bf9a99993e0000003fffff7f3f0000000000000000000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e0000003f000000000000000000000000000000000000803f00000000000080bf0000000000000000000080bf0000003f0000003f020080bf0000000000000000000000000000803f00000000000080bf0000000000000000000080bf9a99193f0000003fffffffbf0000000000000000000000000000803f00000000000080bf0000000000000000000080bf3333333f0000003f000040c00000000000000000000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f0000003f010080c00000000000000000000000000000803f00000000000080bf0000000000000000000080bf6766663f0000003f0000a0c00000000000000000000000000000803f00000000000080bf0000000000000000000080bf0000803f0000003f0000a040d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf000000009a99193f00008040d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d9a99193f00004040d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e9a99193fffffff3fd0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf9a99993e9a99193fffff7f3fd0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e9a99193f00000000d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf0000003f9a99193f020080bfd0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf9a99193f9a99193fffffffbfd0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf3333333f9a99193f000040c0d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f9a99193f010080c0d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf6766663f9a99193f0000a0c0d0cccc23020080bf000000000000803f00000000000080bf0000000000000000000080bf0000803f9a99193f0000a040cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf000000003333333f00008040cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d3333333f00004040cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e3333333fffffff3fcccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf9a99993e3333333fffff7f3fcccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e3333333f00000000cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf0000003f3333333f020080bfcccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf9a99193f3333333fffffffbfcccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf3333333f3333333f000040c0cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f3333333f010080c0cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf6766663f3333333f0000a0c0cccc4c24ffffffbf000000000000803f00000000000080bf0000000000000000000080bf0000803f3333333f0000a0409a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf00000000cdcc4c3f000080409a999924000040c0000000000000803f00000000000080bf0000000000000000000080bfcdcccc3dcdcc4c3f000040409a999924000040c0000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3ecdcc4c3fffffff3f9a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf9a99993ecdcc4c3fffff7f3f9a999924000040c0000000000000803f00000000000080bf0000000000000000000080bfcdcccc3ecdcc4c3f000000009a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf0000003fcdcc4c3f020080bf9a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf9a99193fcdcc4c3fffffffbf9a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf3333333fcdcc4c3f000040c09a999924000040c0000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3fcdcc4c3f010080c09a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf6766663fcdcc4c3f0000a0c09a999924000040c0000000000000803f00000000000080bf0000000000000000000080bf0000803fcdcc4c3f0000a040cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf000000006766663f00008040cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d6766663f00004040cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e6766663fffffff3fcecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf9a99993e6766663fffff7f3fcecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e6766663f00000000cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf0000003f6766663f020080bfcecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf9a99193f6766663fffffffbfcecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf3333333f6766663f000040c0cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f6766663f010080c0cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf6766663f6766663f0000a0c0cecccc24010080c0000000000000803f00000000000080bf0000000000000000000080bf0000803f6766663f0000a040000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf000000000000803f00008040000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bfcdcccc3d0000803f00004040000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3e0000803fffffff3f000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf9a99993e0000803fffff7f3f000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bfcdcccc3e0000803f00000000000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf0000003f0000803f020080bf000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf9a99193f0000803fffffffbf000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf3333333f0000803f000040c0000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bfcdcc4c3f0000803f010080c0000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf6766663f0000803f0000a0c0000000250000a0c0000000000000803f00000000000080bf0000000000000000000080bf0000803f0000803f
+  m_CompressedMesh:
+    m_Vertices:
+      m_NumItems: 0
+      m_Range: 0
+      m_Start: 0
+      m_Data: 
+      m_BitSize: 0
+    m_UV:
+      m_NumItems: 0
+      m_Range: 0
+      m_Start: 0
+      m_Data: 
+      m_BitSize: 0
+    m_Normals:
+      m_NumItems: 0
+      m_Range: 0
+      m_Start: 0
+      m_Data: 
+      m_BitSize: 0
+    m_Tangents:
+      m_NumItems: 0
+      m_Range: 0
+      m_Start: 0
+      m_Data: 
+      m_BitSize: 0
+    m_Weights:
+      m_NumItems: 0
+      m_Data: 
+      m_BitSize: 0
+    m_NormalSigns:
+      m_NumItems: 0
+      m_Data: 
+      m_BitSize: 0
+    m_TangentSigns:
+      m_NumItems: 0
+      m_Data: 
+      m_BitSize: 0
+    m_FloatColors:
+      m_NumItems: 0
+      m_Range: 0
+      m_Start: 0
+      m_Data: 
+      m_BitSize: 0
+    m_BoneIndices:
+      m_NumItems: 0
+      m_Data: 
+      m_BitSize: 0
+    m_Triangles:
+      m_NumItems: 0
+      m_Data: 
+      m_BitSize: 0
+    m_UVInfo: 0
+  m_LocalAABB:
+    m_Center: {x: 0, y: 0, z: 0}
+    m_Extent: {x: 5, y: 1.110223e-16, z: 5}
+  m_MeshUsageFlags: 0
+  m_CookingOptions: 30
+  m_BakedConvexCollisionMesh: 
+  m_BakedTriangleCollisionMesh: 
+  'm_MeshMetrics[0]': 100.00002
+  'm_MeshMetrics[1]': 1
+  m_MeshOptimizationFlags: 1
+  m_StreamData:
+    serializedVersion: 2
+    offset: 0
+    size: 0
+    path: 
+  m_MeshLodInfo:
+    serializedVersion: 2
+    m_LodSelectionCurve:
+      serializedVersion: 1
+      m_LodSlope: 0
+      m_LodBias: 0
+    m_NumLevels: 1
+    m_SubMeshes:
+    - serializedVersion: 2
+      m_Levels:
+      - serializedVersion: 1
+        m_IndexStart: 0
+        m_IndexCount: 0
 --- !u!1 &1617710085
 GameObject:
   m_ObjectHideFlags: 0
@@ -4205,6 +4525,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1673902159}
+  - component: {fileID: 1673902160}
   m_Layer: 0
   m_Name: VR Game Environment
   m_TagString: Untagged
@@ -4237,6 +4558,29 @@ Transform:
   - {fileID: 1180560686}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1673902160
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1673902158}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26d56a2fd2cd3ee4db9992e578c81783, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.Environment.VirtualGarage
+  interiorSize: 16
+  interiorHeight: 4
+  floorColor: {r: 0.1, g: 0.11, b: 0.125, a: 1}
+  floorSmoothness: 0.6
+  wallColor: {r: 0.078, g: 0.086, b: 0.102, a: 1}
+  accentColor: {r: 0.882, g: 0.024, b: 0, a: 1}
+  accentHeight: 1.2
+  ceilingColor: {r: 0.035, g: 0.035, b: 0.042, a: 1}
+  ceilingLightColor: {r: 1, g: 0.97, b: 0.92, a: 1}
+  ceilingStripSpacing: 4
+  buildOnAwake: 1
 --- !u!1001 &1674081564
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -4684,6 +5028,10 @@ MonoBehaviour:
   playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
+  compressRedFlagDowntime: 1
+  redFlagVisibleTailSeconds: 15
+  restartVisibleLeadSeconds: 15
+  minimumRedFlagSkipSeconds: 60
   showCarLabels: 1
   enableCarLod: 1
   hideLeaderHighlightAfterRaceStart: 1
@@ -4931,6 +5279,11 @@ MonoBehaviour:
     hysteresisInCarLengths: 0.05
     allowOrderingLeadFallback: 1
     orderingLeadInCarLengths: 0.08
+    accentFlashEnabled: 1
+    accentFlashDurationReplaySeconds: 0.22
+    accentFlashSizeInCarWidths: 0.82
+    accentFlashIntensity: 2.1
+    accentFlashColor: {r: 1, g: 1, b: 1, a: 0.96}
     pulseDurationReplaySeconds: 0.5
     pulseIntensity: 1.05
     pulseColor: {r: 0.32, g: 0.88, b: 1.25, a: 0.86}
@@ -5488,7 +5841,6 @@ MonoBehaviour:
   player: {fileID: 1705380154}
   testDriverNumber: 16
   vrDriverLabel: {fileID: 1180560684}
-  <LastSelectResult>k__BackingField: 
 --- !u!114 &2042791792
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5512,13 +5864,6 @@ MonoBehaviour:
   - {fileID: 803093115}
   transitionDuration: 2
   verboseLogging: 1
-  mode: 0
-  settledMode: 0
-  targetMode: 0
-  trackPlacer: {fileID: 0}
-  selectedDriverNumber: 0
-  wasPlaying: 0
-  holdsReplayPause: 0
 --- !u!114 &2042791793
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5534,13 +5879,7 @@ MonoBehaviour:
   xrCamera: {fileID: 1674081565}
   passthroughLayer: {fileID: 818663378}
   defaultDuration: 2
-  vrBackgroundColor:
-    r: 0.015
-    g: 0.02
-    b: 0.04
-    a: 1
-  state: 0
-  hideAmount: 0
+  vrBackgroundColor: {r: 0.015, g: 0.02, b: 0.04, a: 1}
 --- !u!4 &2042791794
 Transform:
   m_ObjectHideFlags: 0
@@ -5573,11 +5912,6 @@ MonoBehaviour:
   roomProvider: {fileID: 1510071735}
   localNudge: {x: 0.75, y: -0.05, z: -0.15}
   buildOnStart: 1
-  manager: {fileID: 0}
-  player: {fileID: 0}
-  generator: {fileID: 0}
-  statusLabel: {fileID: 0}
-  panelRoot: {fileID: 0}
 --- !u!1 &2064226564
 GameObject:
   m_ObjectHideFlags: 0

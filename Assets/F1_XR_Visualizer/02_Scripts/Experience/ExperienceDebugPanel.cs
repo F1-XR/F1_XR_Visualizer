@@ -45,6 +45,7 @@ namespace F1XR.Experience
         RoomShellProxyGenerator generator;
         TextMeshProUGUI statusLabel;
         GameObject panelRoot;
+        Fracture.VRWorldDepthDebug depthDebug;
 
         void Awake()
         {
@@ -119,11 +120,15 @@ namespace F1XR.Experience
             gridRect.offsetMin = new Vector2(12f, 12f);
             gridRect.offsetMax = new Vector2(-12f, -186f);
 
+            // Three columns, not two. At two the button list outgrew the six rows that fit
+            // inside the panel and everything past Room Shell simply rendered off the bottom
+            // of the background, which looks exactly like the missing buttons were never
+            // added. Eighteen buttons need six rows of three.
             GridLayoutGroup layout = grid.AddComponent<GridLayoutGroup>();
-            layout.cellSize = new Vector2(298f, 74f);
+            layout.cellSize = new Vector2(200f, 74f);
             layout.spacing = new Vector2(8f, 8f);
             layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            layout.constraintCount = 2;
+            layout.constraintCount = 3;
             layout.childAlignment = TextAnchor.UpperCenter;
 
             Color step1 = new(0.16f, 0.34f, 0.62f, 1f);
@@ -151,6 +156,7 @@ namespace F1XR.Experience
             AddButton(grid.transform, "Toggle Proxy Debug", step2, () => Run("Toggle Proxy Debug", () => roomDebug?.ToggleProxyDebug()));
             AddButton(grid.transform, "Rebuild Proxies", step2, () => Run("Rebuild Proxies", () => roomDebug?.RebuildRoomProxies()));
             AddButton(grid.transform, "Room Shell OFF/ON", probe, () => Run("Room Shell toggle", ToggleRoomShell));
+            AddButton(grid.transform, "Depth Debug ON/OFF", probe, () => Run("Depth Debug toggle", ToggleDepthDebug));
 
             AddButton(grid.transform, "Offset 0", step2, () => Run("Offset 0", () => roomDebug?.ApplyOffsetZero()));
             AddButton(grid.transform, "Offset 0.005", step2, () => Run("Offset 0.005", () => roomDebug?.ApplyOffsetSmall()));
@@ -276,6 +282,26 @@ namespace F1XR.Experience
         /// Switches the whole Step 2 room shell off and on, for an A/B test of whether
         /// Step 2 has any effect on the Step 1 flow.
         /// </summary>
+        /// <summary>
+        /// Created on demand rather than wired into the scene, so the depth reconstruction
+        /// test can be flown to the headset without touching the scene file.
+        /// </summary>
+        void ToggleDepthDebug()
+        {
+            if (depthDebug == null)
+            {
+                depthDebug = FindAnyObjectByType<Fracture.VRWorldDepthDebug>();
+                if (depthDebug == null)
+                {
+                    var host = new GameObject("VRWorldDepthDebug");
+                    depthDebug = host.AddComponent<Fracture.VRWorldDepthDebug>();
+                }
+            }
+
+            depthDebug.Toggle();
+            Debug.Log($"[ExperienceDebug] Depth Debug active = {depthDebug.IsActive}.", this);
+        }
+
         void ToggleRoomShell()
         {
             GameObject roomShell = roomProvider != null
@@ -401,7 +427,10 @@ namespace F1XR.Experience
 
             TextMeshProUGUI text = AddLabel(go.transform, "Label");
             text.text = label;
-            text.fontSize = 24f;
+            // Narrower cells since the grid went to three columns, so the longest labels
+            // ("Depth Debug ON/OFF") still fit on two lines instead of being clipped.
+            text.fontSize = 20f;
+            text.textWrappingMode = TextWrappingModes.Normal;
             text.alignment = TextAlignmentOptions.Center;
             RectTransform textRect = text.rectTransform;
             textRect.anchorMin = Vector2.zero;

@@ -154,6 +154,7 @@ namespace F1XR.Experience
                 return;
             }
 
+            Debug.Log("[VR2MR][1] Return requested", this);
             targetMode = ExperienceMode.MRReplay;
             EnsureTransitionRunning();
         }
@@ -235,21 +236,11 @@ namespace F1XR.Experience
             if (passthrough == null)
                 Debug.LogError("[Step1][7] passthrough reference is NULL.", this);
 
-            Trace("7 Passthrough", $"EnterVR({transitionDuration}) state={passthrough?.State}");
-            passthrough?.EnterVR(transitionDuration);
-
-            Trace("8 Fade", $"waiting, isTransitioning={passthrough?.IsTransitioning}");
-            while (passthrough != null &&
-                passthrough.IsTransitioning &&
-                targetMode == ExperienceMode.VRGame)
-            {
-                yield return null;
-            }
-
-            Trace("9 Fade", $"done state={passthrough?.State} target={targetMode}");
-
-            if (targetMode != ExperienceMode.VRGame)
-                yield break;
+            // The break itself already uncovered VR piece by piece, so this only settles the
+            // end state. Fading here instead would replay the whole reveal a second time and
+            // make VR look like it had been waiting behind the real room.
+            Trace("7 Passthrough", $"ApplyVRImmediate state={passthrough?.State}");
+            passthrough?.ApplyVRImmediate();
 
             SetMRVisualsActive(false);
             Trace("9 MRVisuals", "hidden");
@@ -257,8 +248,18 @@ namespace F1XR.Experience
 
         IEnumerator TransitionToMRRoutine()
         {
-            SetMRVisualsActive(true);
-            Trace("R6 MRVisuals", "restored");
+            Debug.Log("[VR2MR][2] Outgoing VR retained", this);
+            Debug.Log("[VR2MR] Outgoing=VR Incoming=MR", this);
+            Debug.Log(
+                $"[VR2MR] VR Environment active=" +
+                $"{(vrEnvironmentRoot != null && vrEnvironmentRoot.activeInHierarchy)}",
+                this);
+
+            // Keep MR-only panels hidden during the fracture. Screen-space UI cannot sit
+            // behind the transition shell, so enabling it here would reveal MR globally
+            // before any fragment opens. Passthrough itself is prepared by the fracture
+            // controller and becomes visible only through its holes.
+            Debug.Log("[VR2MR][3] Incoming MR deferred until first detach", this);
 
             if (RebuildSequence != null)
                 yield return StartCoroutine(RebuildSequence());
@@ -269,24 +270,17 @@ namespace F1XR.Experience
                 yield break;
             }
 
-            Trace("R7 Passthrough", $"EnterMR({transitionDuration}) state={passthrough?.State}");
-            passthrough?.EnterMR(transitionDuration);
-
-            Trace("R8 Fade", $"waiting, isTransitioning={passthrough?.IsTransitioning}");
-            while (passthrough != null &&
-                passthrough.IsTransitioning &&
-                targetMode == ExperienceMode.MRReplay)
-            {
-                yield return null;
-            }
-
-            Trace("R9 Fade", $"done state={passthrough?.State} target={targetMode}");
-
-            if (targetMode != ExperienceMode.MRReplay)
-                yield break;
-
+            // The fracture sequence reveals Passthrough through fixed alpha holes. Only
+            // snap to the settled MR state after the outgoing VR fracture has finished.
+            Debug.Log("[VR2MR][9] Finalize MR", this);
+            Debug.Log("[VR2MR] FinalizeMR", this);
+            passthrough?.ApplyMRImmediate();
+            SetMRVisualsActive(true);
+            Trace("R9 MRVisuals", "restored");
             SetVREnvironmentActive(false);
             Trace("R9 VREnvironment", "hidden");
+            Debug.Log("[VR2MR][10] VR Environment disabled", this);
+            Debug.Log("[VR2MR] VR Environment disabled", this);
         }
 
         /// <summary>
