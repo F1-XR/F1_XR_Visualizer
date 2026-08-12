@@ -129,7 +129,11 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             if (currentSetupState == RoomShowcaseSetupState.WaitingForRoom)
+            {
+                if (wallProvider.CandidateCount == 0)
+                    SetUserMessage(ResolveRoomLoadingMessage());
                 TryLeaveWaitingState();
+            }
             else if (currentSetupState == RoomShowcaseSetupState.Ready &&
                 !IsSetupReady)
             {
@@ -328,6 +332,7 @@ namespace F1XR.RestAPI.Replay.Room
             wallProvider?.ClearEntrySelection();
             wallProvider?.ClearExitSelection();
             showcaseLayout?.ClearHeroCapture();
+            wallDiscovery?.RetryMetaRoomSetup();
 
             if (wallProvider == null ||
                 wallProvider.CandidateCount == 0)
@@ -337,7 +342,7 @@ namespace F1XR.RestAPI.Replay.Room
                     Time.unscaledTime + containingRoomWaitDuration;
                 SetState(
                     RoomShowcaseSetupState.WaitingForRoom,
-                    "Loading room wall candidates.");
+                    ResolveRoomLoadingMessage());
                 return;
             }
 
@@ -403,7 +408,7 @@ namespace F1XR.RestAPI.Replay.Room
             ClearPreview();
             SetState(
                 RoomShowcaseSetupState.WaitingForRoom,
-                "Loading room wall candidates.");
+                ResolveRoomLoadingMessage());
         }
 
         private void ResolveReferences()
@@ -428,6 +433,33 @@ namespace F1XR.RestAPI.Replay.Room
                 showcasePath != null &&
                 setupView != null &&
                 setupView.IsConfigured;
+        }
+
+        private string ResolveRoomLoadingMessage()
+        {
+            if (wallDiscovery == null || !wallDiscovery.UsesMetaSceneApi)
+                return "Loading room wall candidates.";
+
+            return wallDiscovery.MetaSceneStatus switch
+            {
+                MetaSceneRoomStatus.WaitingForPermission =>
+                    "Allow Spatial Data access to load the room.",
+                MetaSceneRoomStatus.Loading =>
+                    "Loading the Meta room structure.",
+                MetaSceneRoomStatus.OpeningSpaceSetup =>
+                    "Complete Meta Space Setup, then return to the app.",
+                MetaSceneRoomStatus.PermissionDenied =>
+                    "Spatial Data permission was denied. Use Reset Setup to retry.",
+                MetaSceneRoomStatus.NoSceneModel =>
+                    wallDiscovery.MetaSceneStatusMessage ??
+                    "No saved room scan was found. Use Reset Setup to retry.",
+                MetaSceneRoomStatus.Failed =>
+                    wallDiscovery.MetaSceneStatusMessage ??
+                    "Meta room loading failed. Use Reset Setup to retry.",
+                MetaSceneRoomStatus.Ready =>
+                    "The Meta room loaded, but no valid wall anchors were found.",
+                _ => "Loading the Meta room structure."
+            };
         }
 
         private void ObserveCandidates()
@@ -472,7 +504,7 @@ namespace F1XR.RestAPI.Replay.Room
                 {
                     SetState(
                         RoomShowcaseSetupState.WaitingForRoom,
-                        "Loading room wall candidates.");
+                        ResolveRoomLoadingMessage());
                 }
 
                 return;
@@ -1012,7 +1044,7 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 SetState(
                     RoomShowcaseSetupState.WaitingForRoom,
-                    "Loading room wall candidates.");
+                    ResolveRoomLoadingMessage());
                 return;
             }
 
@@ -1097,9 +1129,15 @@ namespace F1XR.RestAPI.Replay.Room
                 }
 
                 planeManagerWasEnabled =
-                    planeManager != null && planeManager.enabled;
+                    wallDiscovery != null &&
+                    !wallDiscovery.UsesMetaSceneApi &&
+                    planeManager != null &&
+                    planeManager.enabled;
                 raycastManagerWasEnabled =
-                    raycastManager != null && raycastManager.enabled;
+                    wallDiscovery != null &&
+                    !wallDiscovery.UsesMetaSceneApi &&
+                    raycastManager != null &&
+                    raycastManager.enabled;
                 if (planeManagerWasEnabled)
                     planeManager.enabled = false;
                 if (raycastManagerWasEnabled)

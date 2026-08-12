@@ -7,6 +7,7 @@ using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using UnityEngine.XR.Hands;
 using F1XR.RestAPI.Replay.Track;
+using F1XR.RestAPI.Replay.Room;
 
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
@@ -24,6 +25,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField] private ARRaycastManager raycastManager;
         [SerializeField] private ARPlaneManager planeManager;
         [SerializeField] private ARAnchorManager anchorManager;
+        [SerializeField] private MetaSceneRoomSource metaSceneSource;
 
         [Header("Placement")]
         [SerializeField] private Transform rayOrigin;
@@ -100,6 +102,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
             if (rayOrigin == null && Camera.main != null)
                 rayOrigin = Camera.main.transform;
+
+            ResolveMetaSceneSource();
 
             CreateControllerPointerActions();
         }
@@ -349,6 +353,20 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             pose = default;
             plane = null;
 
+            ResolveMetaSceneSource();
+            if (metaSceneSource != null)
+            {
+                if (metaSceneSource.Status == MetaSceneRoomStatus.Ready)
+                    return TryGetAutomaticMetaTableHit(out pose);
+
+                if (metaSceneSource.Status == MetaSceneRoomStatus.Loading ||
+                    metaSceneSource.Status == MetaSceneRoomStatus.WaitingForPermission ||
+                    metaSceneSource.Status == MetaSceneRoomStatus.OpeningSpaceSetup)
+                {
+                    return false;
+                }
+            }
+
             if (planeManager == null)
                 return false;
 
@@ -381,6 +399,62 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             pose = bestPose;
             plane = bestPlane;
             return true;
+        }
+
+        private bool TryGetAutomaticMetaTableHit(out Pose pose)
+        {
+            pose = default;
+            IReadOnlyList<MetaSceneSurfaceSnapshot> tables = metaSceneSource.Tables;
+            MetaSceneSurfaceSnapshot bestTable = null;
+            float bestScore = float.NegativeInfinity;
+            Camera camera = Camera.main;
+            for (int i = 0; i < tables.Count; i++)
+            {
+                MetaSceneSurfaceSnapshot table = tables[i];
+                if (table == null ||
+                    Vector3.Dot(table.Normal, Vector3.up) < 0.75f ||
+                    table.Center.y < minimumPlacementHeight)
+                {
+                    continue;
+                }
+
+                float score = Mathf.Min(table.Width * table.Height, 4f) * 4f;
+                if (camera != null)
+                {
+                    Vector3 offset = table.Center - camera.transform.position;
+                    score -= offset.magnitude * 4f;
+                    Vector3 forward = Vector3.ProjectOnPlane(
+                        camera.transform.forward,
+                        Vector3.up);
+                    Vector3 direction = Vector3.ProjectOnPlane(offset, Vector3.up);
+                    if (forward.sqrMagnitude > 0.0001f &&
+                        direction.sqrMagnitude > 0.0001f)
+                    {
+                        score -= Vector3.Angle(forward, direction) * 0.04f;
+                    }
+                }
+
+                if (score <= bestScore)
+                    continue;
+
+                bestScore = score;
+                bestTable = table;
+            }
+
+            if (bestTable == null)
+                return false;
+
+            pose = new Pose(bestTable.Center, Quaternion.identity);
+            return true;
+        }
+
+        private void ResolveMetaSceneSource()
+        {
+            if (metaSceneSource == null)
+            {
+                metaSceneSource = FindAnyObjectByType<MetaSceneRoomSource>(
+                    FindObjectsInactive.Include);
+            }
         }
 
         private static float ScoreAutomaticPlane(ARPlane candidate)
