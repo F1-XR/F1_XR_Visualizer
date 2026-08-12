@@ -1,0 +1,24 @@
+{
+  "sessionKey": 9496,
+  "events": [
+    {
+      "eventId": "fixture_9496_collision_236_ric_alb",
+      "eventType": "Collision",
+      "anchorTime": 236.75,
+      "startTime": 231.75,
+      "endTime": 246.75,
+      "driverNumbers": [3, 23],
+      "progressStart": -1.0,
+      "progressEnd": -1.0,
+      "confidence": 0.95,
+      "passingSide": "",
+      "sideSource": "OpenF1ClosestApproach",
+      "sideConfidence": -1.0,
+      "motionProfile": "CollisionContact",
+      "overtakerShare": -1.0,
+      "defenderShare": -1.0,
+      "displayTitle": "RIC × ALB — TURN 2 COLLISION",
+      "displayDescription": "Presentation reconstruction anchored to the closest OpenF1 location samples; Race Control confirmed cars 3 and 23 caused a collision at Turn 2."
+    }
+  ]
+}

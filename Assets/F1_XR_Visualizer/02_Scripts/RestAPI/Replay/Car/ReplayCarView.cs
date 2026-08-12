@@ -11,10 +11,17 @@ namespace F1XR.RestAPI.Replay
         private Transform logicalRoot;
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation = Quaternion.identity;
+        private Vector3 visualMotionLocalOffset;
+        private Vector3 drivingPresentationLocalOffset;
         private Vector3 roomPresentationLocalScale;
         private bool roomPresentationApplied;
         private bool visualMotionApplied;
         private Camera labelCamera;
+        private readonly List<Renderer>
+            showcaseTransitionRenderers = new();
+        private readonly List<bool>
+            showcaseTransitionRendererStates = new();
+        private bool showcaseTransitionHidden;
 
         public Transform LogicalRoot => logicalRoot != null
             ? logicalRoot
@@ -26,6 +33,8 @@ namespace F1XR.RestAPI.Replay
             logicalRoot = root;
             visualBasePosition = transform.localPosition;
             visualBaseRotation = transform.localRotation;
+            visualMotionLocalOffset = Vector3.zero;
+            drivingPresentationLocalOffset = Vector3.zero;
             visualMotionApplied = false;
         }
 
@@ -58,8 +67,9 @@ namespace F1XR.RestAPI.Replay
 
             ClearRoomPresentation();
             visualMotionApplied = true;
-            transform.localPosition =
-                visualBasePosition + LogicalRoot.InverseTransformVector(worldOffset);
+            visualMotionLocalOffset =
+                LogicalRoot.InverseTransformVector(worldOffset);
+            ApplyVisualLocalPosition();
             transform.localRotation =
                 Quaternion.AngleAxis(localYaw, Vector3.up) * visualBaseRotation;
         }
@@ -69,13 +79,29 @@ namespace F1XR.RestAPI.Replay
             if (LogicalRoot == transform)
                 return;
 
-            if (!visualMotionApplied)
+            if (!visualMotionApplied &&
+                visualMotionLocalOffset.sqrMagnitude <= 0.000001f)
                 return;
 
             ClearRoomPresentation();
-            transform.localPosition = visualBasePosition;
+            visualMotionLocalOffset = Vector3.zero;
+            ApplyVisualLocalPosition();
             transform.localRotation = visualBaseRotation;
             visualMotionApplied = false;
+        }
+
+        internal void SetDrivingPresentationLocalOffset(Vector3 offset)
+        {
+            drivingPresentationLocalOffset = offset;
+            ApplyVisualLocalPosition();
+        }
+
+        private void ApplyVisualLocalPosition()
+        {
+            transform.localPosition =
+                visualBasePosition +
+                visualMotionLocalOffset +
+                drivingPresentationLocalOffset;
         }
 
         public void ApplyRoomPresentation(
@@ -122,8 +148,63 @@ namespace F1XR.RestAPI.Replay
             AddRenderer(renderers, leaderRing);
         }
 
+        internal void SetShowcaseTransitionHidden(bool hidden)
+        {
+            if (hidden)
+            {
+                if (!showcaseTransitionHidden)
+                {
+                    showcaseTransitionRenderers.Clear();
+                    showcaseTransitionRendererStates.Clear();
+                    Renderer[] renderers =
+                        GetComponentsInChildren<Renderer>(true);
+                    for (int i = 0; i < renderers.Length; i++)
+                    {
+                        Renderer renderer = renderers[i];
+                        if (renderer == null)
+                            continue;
+
+                        showcaseTransitionRenderers.Add(renderer);
+                        showcaseTransitionRendererStates.Add(
+                            renderer.enabled);
+                    }
+                    showcaseTransitionHidden = true;
+                }
+
+                for (int i = 0;
+                    i < showcaseTransitionRenderers.Count;
+                    i++)
+                {
+                    Renderer renderer =
+                        showcaseTransitionRenderers[i];
+                    if (renderer != null)
+                        renderer.enabled = false;
+                }
+                return;
+            }
+
+            if (!showcaseTransitionHidden)
+                return;
+
+            for (int i = 0;
+                i < showcaseTransitionRenderers.Count;
+                i++)
+            {
+                Renderer renderer = showcaseTransitionRenderers[i];
+                if (renderer != null)
+                {
+                    renderer.enabled =
+                        showcaseTransitionRendererStates[i];
+                }
+            }
+            showcaseTransitionRenderers.Clear();
+            showcaseTransitionRendererStates.Clear();
+            showcaseTransitionHidden = false;
+        }
+
         private void OnDestroy()
         {
+            SetShowcaseTransitionHidden(false);
             DisposeRenderLod();
             DisposeOvertakeRibbon();
             DisposeOvertakeSideBySideVfx();

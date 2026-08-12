@@ -259,8 +259,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   visualRoot: {fileID: 0}
   riseHeight: 1.5
-  riseDuration: 0.2
-  riseEase: 6
+  riseDuration: 0.35
+  riseEase: 21
   lowerDuration: 0.2
   lowerEase: 6
 --- !u!1001 &2491300806733806784

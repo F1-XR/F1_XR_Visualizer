@@ -10,6 +10,14 @@ namespace F1XR.RestAPI.Replay
         AboveRight
     }
 
+    public enum OvertakeCompletionVfxProfile
+    {
+        Standard,
+        Counter,
+        Repass,
+        Victory
+    }
+
     [Serializable]
     public sealed class OvertakeCompletionVfxSettings
     {
@@ -25,6 +33,18 @@ namespace F1XR.RestAPI.Replay
         public bool allowOrderingLeadFallback = true;
         [Min(0f)]
         public float orderingLeadInCarLengths = 0.08f;
+
+        [Header("Completion Accent Flash")]
+        public bool accentFlashEnabled = true;
+        [Range(0.12f, 0.45f)]
+        public float accentFlashDurationReplaySeconds = 0.22f;
+        [Range(0.35f, 1.4f)]
+        public float accentFlashSizeInCarWidths = 0.82f;
+        [Min(0f)]
+        public float accentFlashIntensity = 2.1f;
+        [ColorUsage(true, true)]
+        public Color accentFlashColor =
+            new(1f, 1f, 1f, 0.96f);
 
         [Header("Completion Pulse")]
         [Range(0.25f, 0.6f)]

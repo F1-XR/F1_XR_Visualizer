@@ -79,6 +79,10 @@ namespace F1XR.RestAPI.Replay.Room
         public TrackableId? ConfirmedExitId =>
             wallProvider?.ExitSelectedTrackableId;
         public int CandidateCount => wallProvider?.CandidateCount ?? 0;
+        public bool HasPitWallCandidate =>
+            CandidateCount > 0 ||
+            showcaseLayout != null &&
+            showcaseLayout.EntryPoseValid;
         public string LastUserMessage => lastUserMessage;
         public bool IsWaitingForReacquisition =>
             currentSetupState ==
@@ -1066,6 +1070,8 @@ namespace F1XR.RestAPI.Replay.Room
                 showcaseLayout.WallFramesFrozen);
             ApplyDebugVisibility();
             RefreshView();
+            setupView?.SetVisible(
+                state != RoomShowcaseSetupState.Ready);
         }
 
         private void SetSceneTrackingSuspended(bool suspended)

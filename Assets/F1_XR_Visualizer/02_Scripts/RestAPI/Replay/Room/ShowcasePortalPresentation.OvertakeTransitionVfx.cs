@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -7,6 +8,10 @@ namespace F1XR.RestAPI.Replay.Room
     {
         private const int PortalRippleSegments = 36;
         private const float PortalEffectSurfaceOffset = -0.008f;
+        private const float DecorativePortalReferenceSize = 3f;
+        private const float DecorativePortalDepthScale = 0.02f;
+        private const float DecorativePortalSurfaceOffset = -0.018f;
+        private const float DecorativePortalVisibleSeconds = 0.55f;
         private static readonly int BaseColorId =
             Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId =
@@ -44,6 +49,110 @@ namespace F1XR.RestAPI.Replay.Room
         private bool portalEdgeActive;
         private float portalSurfaceSweepCrossingX;
         private float portalSurfaceSweepCrossingY;
+        private bool portalTransitionPending;
+        private Vector3 pendingPortalCrossingPoint;
+        private Vector3 pendingPortalTravelDirection;
+        private GameObject decorativePortalInstance;
+        private ParticleSystem decorativePortalRootParticles;
+        private float decorativePortalHideTime = float.NaN;
+
+        private void CreateDecorativePortalVfx()
+        {
+            decorativePortalInstance = null;
+            decorativePortalRootParticles = null;
+            decorativePortalHideTime = float.NaN;
+            if (decorativePortalPrefab == null || exitSurface == null)
+                return;
+
+            decorativePortalInstance = Instantiate(
+                decorativePortalPrefab,
+                exitSurface,
+                false);
+            decorativePortalInstance.name = "ExitPortalDecoration";
+            Transform decoration =
+                decorativePortalInstance.transform;
+            decoration.localPosition = new Vector3(
+                0f,
+                0f,
+                DecorativePortalSurfaceOffset);
+            decoration.localRotation =
+                Quaternion.Euler(-90f, 0f, 0f);
+            decoration.localScale = new Vector3(
+                Mathf.Max(
+                    0.01f,
+                    exitPortalSize.x /
+                    DecorativePortalReferenceSize),
+                DecorativePortalDepthScale,
+                Mathf.Max(
+                    0.01f,
+                    exitPortalSize.y /
+                    DecorativePortalReferenceSize));
+
+            ParticleSystem[] particles =
+                decorativePortalInstance
+                    .GetComponentsInChildren<ParticleSystem>(true);
+            decorativePortalRootParticles =
+                decorativePortalInstance.GetComponent<ParticleSystem>();
+            for (int i = 0; i < particles.Length; i++)
+            {
+                ParticleSystem.CollisionModule collision =
+                    particles[i].collision;
+                collision.enabled = false;
+                ParticleSystem.LightsModule lights =
+                    particles[i].lights;
+                lights.enabled = false;
+
+                ParticleSystemRenderer renderer =
+                    particles[i].GetComponent<ParticleSystemRenderer>();
+                if (renderer == null)
+                    continue;
+
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+                renderer.motionVectorGenerationMode =
+                    MotionVectorGenerationMode.ForceNoMotion;
+            }
+
+            for (int i = 0; i < particles.Length; i++)
+            {
+                particles[i].Stop(
+                    true,
+                    ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+            decorativePortalInstance.SetActive(false);
+        }
+
+        private void RestartDecorativePortalVfx()
+        {
+            if (decorativePortalRootParticles == null ||
+                decorativePortalInstance == null ||
+                !exitPortalVisible)
+            {
+                return;
+            }
+
+            decorativePortalInstance.SetActive(true);
+            decorativePortalRootParticles.Stop(
+                true,
+                ParticleSystemStopBehavior.StopEmittingAndClear);
+            decorativePortalRootParticles.Play(true);
+            decorativePortalHideTime =
+                Time.unscaledTime +
+                DecorativePortalVisibleSeconds;
+        }
+
+        private void UpdateDecorativePortalVfx()
+        {
+            if (decorativePortalInstance == null ||
+                float.IsNaN(decorativePortalHideTime) ||
+                Time.unscaledTime < decorativePortalHideTime)
+            {
+                return;
+            }
+
+            decorativePortalInstance.SetActive(false);
+            decorativePortalHideTime = float.NaN;
+        }
 
         public void ConfigureOvertakePortalTransition(
             OvertakePortalTransitionVfxSettings settings,
@@ -52,6 +161,7 @@ namespace F1XR.RestAPI.Replay.Room
             float replayTime)
         {
             ResetOvertakePortalTransitionVfx();
+            ClearPendingPortalTransition();
             portalTransitionSettings =
                 settings ??
                 new OvertakePortalTransitionVfxSettings();
@@ -88,12 +198,14 @@ namespace F1XR.RestAPI.Replay.Room
                 exitSurface == null)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 return;
             }
 
             if (!portalTransitionSettings.enabled)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 portalTransitionLastReplayTime =
                     float.NaN;
                 overtakerCrossingState = default;
@@ -105,6 +217,17 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
 
             EnsurePortalTransitionVisuals();
+            if (portalTransitionPending &&
+                overtakeCompletionConfirmed &&
+                exitPortalVisible)
+            {
+                TriggerPortalTransition(
+                    replayTime,
+                    pendingPortalCrossingPoint,
+                    pendingPortalTravelDirection);
+                ClearPendingPortalTransition();
+            }
+
             if (float.IsNaN(
                     portalTransitionLastReplayTime))
             {
@@ -125,6 +248,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (replayDelta < -0.0001f)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 InitializeCrossingState(
                     ref overtakerCrossingState,
                     portalTransitionOvertaker);
@@ -141,6 +265,7 @@ namespace F1XR.RestAPI.Replay.Room
                     .largeForwardSeekThresholdSeconds)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 bool crossed =
                     TryUpdateCrossingState(
                         ref overtakerCrossingState,
@@ -180,6 +305,7 @@ namespace F1XR.RestAPI.Replay.Room
                     .seekResetThresholdSeconds)
             {
                 ResetOvertakePortalTransitionVfx();
+                ClearPendingPortalTransition();
                 InitializeCrossingState(
                     ref overtakerCrossingState,
                     portalTransitionOvertaker);
@@ -197,10 +323,17 @@ namespace F1XR.RestAPI.Replay.Room
                     out Vector3 crossingPoint,
                     out Vector3 travelDirection))
             {
-                if (overtakeCompletionConfirmed)
+                if (overtakeCompletionConfirmed &&
+                    exitPortalVisible)
                 {
                     TriggerPortalTransition(
                         replayTime,
+                        crossingPoint,
+                        travelDirection);
+                }
+                else
+                {
+                    RememberPendingPortalTransition(
                         crossingPoint,
                         travelDirection);
                 }
@@ -214,10 +347,17 @@ namespace F1XR.RestAPI.Replay.Room
                     out crossingPoint,
                     out travelDirection))
             {
-                if (overtakeCompletionConfirmed)
+                if (overtakeCompletionConfirmed &&
+                    exitPortalVisible)
                 {
                     TriggerPortalTransition(
                         replayTime,
+                        crossingPoint,
+                        travelDirection);
+                }
+                else
+                {
+                    RememberPendingPortalTransition(
                         crossingPoint,
                         travelDirection);
                 }
@@ -232,10 +372,14 @@ namespace F1XR.RestAPI.Replay.Room
         private void ClearOvertakePortalTransition()
         {
             ResetOvertakePortalTransitionVfx();
+            ClearPendingPortalTransition();
             if (portalTransitionRoot != null)
                 portalTransitionRoot.gameObject.SetActive(false);
 
             portalTransitionSettings = null;
+            decorativePortalInstance = null;
+            decorativePortalRootParticles = null;
+            decorativePortalHideTime = float.NaN;
             portalTransitionOvertaker = null;
             portalTransitionDefender = null;
             portalTransitionRoot = null;
@@ -262,6 +406,22 @@ namespace F1XR.RestAPI.Replay.Room
             portalTransitionEffectStartTime =
                 float.NaN;
             portalTransitionConfigured = false;
+        }
+
+        private void RememberPendingPortalTransition(
+            Vector3 crossingPoint,
+            Vector3 travelDirection)
+        {
+            portalTransitionPending = true;
+            pendingPortalCrossingPoint = crossingPoint;
+            pendingPortalTravelDirection = travelDirection;
+        }
+
+        private void ClearPendingPortalTransition()
+        {
+            portalTransitionPending = false;
+            pendingPortalCrossingPoint = Vector3.zero;
+            pendingPortalTravelDirection = Vector3.zero;
         }
 
         private void InitializeCrossingState(
@@ -492,6 +652,7 @@ namespace F1XR.RestAPI.Replay.Room
             portalWakeCoreRenderer.enabled = true;
             portalSurfaceSweepRenderer.enabled = true;
             portalEdgeRenderer.enabled = true;
+            RestartDecorativePortalVfx();
             UpdatePortalTransitionEffects(
                 replayTime);
         }
@@ -1161,55 +1322,101 @@ namespace F1XR.RestAPI.Replay.Room
 
         private Mesh CreatePortalFrameMesh(
             Vector2 size,
-            float width)
+            float width,
+            string meshName = "Runtime_ExitPortalEdgePulse")
         {
             float halfWidth = size.x * 0.5f;
             float halfHeight = size.y * 0.5f;
+            float archHeight = Mathf.Min(
+                halfWidth,
+                size.y * 0.42f);
+            float springY = halfHeight - archHeight;
             float innerHalfWidth =
                 Mathf.Max(
-                    0f,
+                    0.01f,
                     halfWidth - width);
-            float innerHalfHeight =
+            float innerArchHeight =
                 Mathf.Max(
-                    0f,
-                    halfHeight - width);
-            Vector3[] vertices =
-                {
-                    new(-halfWidth, -halfHeight, 0f),
-                    new(halfWidth, -halfHeight, 0f),
-                    new(-innerHalfWidth, -innerHalfHeight, 0f),
-                    new(innerHalfWidth, -innerHalfHeight, 0f),
-                    new(-halfWidth, halfHeight, 0f),
-                    new(halfWidth, halfHeight, 0f),
-                    new(-innerHalfWidth, innerHalfHeight, 0f),
-                    new(innerHalfWidth, innerHalfHeight, 0f),
-                    new(-halfWidth, -innerHalfHeight, 0f),
-                    new(-innerHalfWidth, -innerHalfHeight, 0f),
-                    new(-halfWidth, innerHalfHeight, 0f),
-                    new(-innerHalfWidth, innerHalfHeight, 0f),
-                    new(innerHalfWidth, -innerHalfHeight, 0f),
-                    new(halfWidth, -innerHalfHeight, 0f),
-                    new(innerHalfWidth, innerHalfHeight, 0f),
-                    new(halfWidth, innerHalfHeight, 0f)
-                };
-            int[] triangles =
-                {
-                    0, 2, 1, 1, 2, 3,
-                    6, 4, 7, 7, 4, 5,
-                    8, 10, 9, 9, 10, 11,
-                    12, 14, 13, 13, 14, 15
-                };
+                    0.01f,
+                    archHeight - width);
+
+            List<Vector3> vertices = new List<Vector3>(
+                (PortalArchSegments + 3) * 2);
+            AddPortalFramePair(
+                vertices,
+                new Vector3(-halfWidth, -halfHeight, 0f),
+                new Vector3(-innerHalfWidth, -halfHeight, 0f));
+            AddPortalFramePair(
+                vertices,
+                new Vector3(-halfWidth, springY, 0f),
+                new Vector3(-innerHalfWidth, springY, 0f));
+
+            for (int i = 1; i <= PortalArchSegments; i++)
+            {
+                float angle =
+                    Mathf.PI -
+                    Mathf.PI * i / PortalArchSegments;
+                AddPortalFramePair(
+                    vertices,
+                    new Vector3(
+                        Mathf.Cos(angle) * halfWidth,
+                        springY +
+                        Mathf.Sin(angle) * archHeight,
+                        0f),
+                    new Vector3(
+                        Mathf.Cos(angle) * innerHalfWidth,
+                        springY +
+                        Mathf.Sin(angle) * innerArchHeight,
+                        0f));
+            }
+
+            AddPortalFramePair(
+                vertices,
+                new Vector3(halfWidth, -halfHeight, 0f),
+                new Vector3(innerHalfWidth, -halfHeight, 0f));
+
+            int pairCount = vertices.Count / 2;
+            List<int> triangles = new List<int>(
+                (pairCount - 1) * 12);
+            for (int i = 0; i < pairCount - 1; i++)
+            {
+                int outer = i * 2;
+                int inner = outer + 1;
+                int nextOuter = outer + 2;
+                int nextInner = outer + 3;
+                triangles.Add(outer);
+                triangles.Add(nextOuter);
+                triangles.Add(inner);
+                triangles.Add(inner);
+                triangles.Add(nextOuter);
+                triangles.Add(nextInner);
+                triangles.Add(outer);
+                triangles.Add(inner);
+                triangles.Add(nextOuter);
+                triangles.Add(inner);
+                triangles.Add(nextInner);
+                triangles.Add(nextOuter);
+            }
+
             Mesh mesh =
                 new()
                 {
-                    name =
-                        "Runtime_ExitPortalEdgePulse",
-                    vertices = vertices,
-                    triangles = triangles
+                    name = meshName,
+                    vertices = vertices.ToArray(),
+                    triangles = triangles.ToArray()
                 };
             mesh.RecalculateBounds();
             runtimeMeshes.Add(mesh);
             return mesh;
+        }
+
+        private static void AddPortalFramePair(
+            List<Vector3> vertices,
+            Vector3 outer,
+            Vector3 inner)
+        {
+            vertices.Add(outer);
+            vertices.Add(inner);
         }
 
         private static void ApplyPortalTransitionColor(

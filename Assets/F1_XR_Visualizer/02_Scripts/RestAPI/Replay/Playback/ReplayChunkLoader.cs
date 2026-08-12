@@ -26,6 +26,19 @@ namespace F1XR.RestAPI.Replay
         public Dictionary<int, int> LocationIndices =>
             locationSamples.Indices;
 
+        internal bool CopyLocationSourceRange(
+            int driverNumber,
+            float startTime,
+            float endTime,
+            List<LocationSample> destination)
+        {
+            return locationSamples.CopySourceRange(
+                driverNumber,
+                startTime,
+                endTime,
+                destination);
+        }
+
         public ReplayChunkLoader(MonoBehaviour coroutineHost)
         {
             this.coroutineHost = coroutineHost;

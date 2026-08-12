@@ -7,6 +7,11 @@ using UnityEngine;
 
 namespace F1XR.RestAPI.Replay
 {
+    internal delegate bool ReplayCarWorldPoseOverride(
+        int driverNumber,
+        float replayTime,
+        out Pose pose);
+
     public readonly struct ReplayCarPose
     {
         public readonly Transform parent;
@@ -40,6 +45,7 @@ namespace F1XR.RestAPI.Replay
     {
         private static readonly bool SnapCarsToTrackSurface = false;
         private const float RouteContinuityMaximumGap = 2f;
+        private const float ShowcaseHeadingSmoothingWeight = 0.65f;
 
         private readonly CarGroundSnap groundSnap = new();
         private readonly Dictionary<LocationSample, Vector3> mappedPositions = new();
@@ -55,6 +61,8 @@ namespace F1XR.RestAPI.Replay
         private Transform customParent;
         private Vector3 customOrigin;
         private Quaternion customRotation = Quaternion.identity;
+        private ReplayCarWorldPoseOverride worldPoseOverride;
+        private bool showcaseHeadingSmoothing;
 
         public ReplayCarMotion(CarInstances _)
         {
@@ -104,6 +112,24 @@ namespace F1XR.RestAPI.Replay
             customOrigin = sourceOrigin;
             customRotation = sourceToLocalRotation;
             groundSnap.ClearSurfaceCache();
+        }
+
+        internal void SetWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            worldPoseOverride = resolver;
+        }
+
+        internal void ClearWorldPoseOverride(
+            ReplayCarWorldPoseOverride resolver)
+        {
+            if (worldPoseOverride == resolver)
+                worldPoseOverride = null;
+        }
+
+        internal void SetShowcaseHeadingSmoothing(bool enabled)
+        {
+            showcaseHeadingSmoothing = enabled;
         }
 
         internal void PrepareMappedPositions(
@@ -203,6 +229,65 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        internal bool TryGetMappedPositionsContinuously(
+            IReadOnlyList<LocationSample> samples,
+            Vector3[] destination)
+        {
+            if (samples == null ||
+                destination == null ||
+                destination.Length != samples.Count)
+            {
+                return false;
+            }
+
+            bool useRouteContinuity =
+                calibration != null &&
+                calibration.active &&
+                calibration.mappingMode ==
+                    TrackCalibration.MappingMode.Route;
+            int previousSegmentIndex = -1;
+            LocationSample previousSample = null;
+            for (int index = 0; index < samples.Count; index++)
+            {
+                LocationSample sample = samples[index];
+                if (sample == null)
+                    return false;
+
+                if (!useRouteContinuity)
+                {
+                    if (!TryGetMappedPosition(
+                            sample,
+                            out destination[index]))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (previousSample == null ||
+                    sample.t <= previousSample.t ||
+                    sample.t - previousSample.t >
+                        RouteContinuityMaximumGap)
+                {
+                    previousSegmentIndex = -1;
+                }
+
+                if (!calibration.TryMapContinuous(
+                        sample,
+                        previousSegmentIndex,
+                        out destination[index],
+                        out int mappedSegmentIndex))
+                {
+                    return false;
+                }
+
+                previousSegmentIndex = mappedSegmentIndex;
+                previousSample = sample;
+            }
+
+            return true;
+        }
+
         public void Move(
             ReplayCarView car,
             LocationSample a,
@@ -255,6 +340,33 @@ namespace F1XR.RestAPI.Replay
             out float interpolation,
             out float duration)
         {
+            ResolvePose(
+                car,
+                previous,
+                previous,
+                a,
+                b,
+                next,
+                next,
+                time,
+                out pose,
+                out interpolation,
+                out duration);
+        }
+
+        internal void ResolvePose(
+            ReplayCarView car,
+            LocationSample previousFar,
+            LocationSample previous,
+            LocationSample a,
+            LocationSample b,
+            LocationSample next,
+            LocationSample nextFar,
+            float time,
+            out ReplayCarPose pose,
+            out float interpolation,
+            out float duration)
+        {
             duration = Mathf.Max(0.001f, b.t - a.t);
             interpolation = Mathf.Clamp01((time - a.t) / duration);
 
@@ -262,6 +374,10 @@ namespace F1XR.RestAPI.Replay
             TryGetMappedPosition(b, out Vector3 positionB);
             TryGetMappedPosition(previous, out Vector3 previousPosition);
             TryGetMappedPosition(next, out Vector3 nextPosition);
+            TryGetMappedPosition(
+                previousFar,
+                out Vector3 previousFarPosition);
+            TryGetMappedPosition(nextFar, out Vector3 nextFarPosition);
 
             if (customParent != null)
             {
@@ -269,6 +385,10 @@ namespace F1XR.RestAPI.Replay
                 positionB = customRotation * (positionB - customOrigin);
                 previousPosition = customRotation * (previousPosition - customOrigin);
                 nextPosition = customRotation * (nextPosition - customOrigin);
+                previousFarPosition = customRotation *
+                    (previousFarPosition - customOrigin);
+                nextFarPosition = customRotation *
+                    (nextFarPosition - customOrigin);
             }
 
             Vector3 rawPosition = Vector3.Lerp(
@@ -286,6 +406,15 @@ namespace F1XR.RestAPI.Replay
                 exitDirection,
                 segmentDirection,
                 interpolation);
+            if (showcaseHeadingSmoothing)
+            {
+                direction = SmoothShowcaseDirection(
+                    direction,
+                    FlatDirection(previousFarPosition, nextPosition),
+                    FlatDirection(previousPosition, nextFarPosition),
+                    segmentDirection,
+                    interpolation);
+            }
             bool hasDirection = direction.sqrMagnitude > 0.000001f;
             Quaternion trackRotation = hasDirection
                 ? Quaternion.LookRotation(direction.normalized, Vector3.up)
@@ -314,7 +443,7 @@ namespace F1XR.RestAPI.Replay
                 groundSnap.ClearPose(car.driverNumber);
             }
 
-            pose = new ReplayCarPose(
+            ReplayCarPose resolvedPose = new(
                 carParent,
                 rawPosition,
                 hasDirection ? direction.normalized : Vector3.forward,
@@ -322,6 +451,52 @@ namespace F1XR.RestAPI.Replay
                 worldRotation,
                 segmentDirection.magnitude / duration,
                 hasDirection);
+            pose = TryResolveWorldOverride(
+                car,
+                time,
+                resolvedPose,
+                out ReplayCarPose worldOverride)
+                    ? worldOverride
+                    : resolvedPose;
+        }
+
+        private bool TryResolveWorldOverride(
+            ReplayCarView car,
+            float replayTime,
+            ReplayCarPose sourcePose,
+            out ReplayCarPose pose)
+        {
+            pose = default;
+            if (worldPoseOverride == null ||
+                !worldPoseOverride(
+                    car.driverNumber,
+                    replayTime,
+                    out Pose worldPose) ||
+                !IsFinite(worldPose.position) ||
+                !IsFinite(worldPose.rotation))
+            {
+                return false;
+            }
+
+            Vector3 worldForward =
+                worldPose.rotation * Vector3.forward;
+            Vector3 localPosition = worldPose.position;
+            Vector3 localForward = worldForward;
+            localForward.y = 0f;
+            bool hasDirection =
+                localForward.sqrMagnitude > 0.000001f;
+
+            pose = new ReplayCarPose(
+                null,
+                localPosition,
+                hasDirection
+                    ? localForward.normalized
+                    : sourcePose.localForward,
+                worldPose.position,
+                worldPose.rotation,
+                sourcePose.localSpeed,
+                hasDirection);
+            return true;
         }
 
         private static Vector3 FlatDirection(Vector3 from, Vector3 to)
@@ -348,6 +523,29 @@ namespace F1XR.RestAPI.Replay
                 entry.normalized,
                 exit.normalized,
                 interpolation).normalized;
+        }
+
+        private static Vector3 SmoothShowcaseDirection(
+            Vector3 nearDirection,
+            Vector3 broadEntry,
+            Vector3 broadExit,
+            Vector3 fallback,
+            float interpolation)
+        {
+            Vector3 broadDirection = SmoothDirection(
+                broadEntry,
+                broadExit,
+                fallback,
+                interpolation);
+            if (nearDirection.sqrMagnitude <= 0.000001f)
+                return broadDirection;
+            if (broadDirection.sqrMagnitude <= 0.000001f)
+                return nearDirection;
+
+            return Vector3.Slerp(
+                nearDirection.normalized,
+                broadDirection.normalized,
+                ShowcaseHeadingSmoothingWeight).normalized;
         }
 
         public void ApplyLogicalPose(
@@ -393,11 +591,27 @@ namespace F1XR.RestAPI.Replay
 
         public void Clear()
         {
+            worldPoseOverride = null;
             groundSnap.Clear();
             mappedPositions.Clear();
             ClearPreparedSamples();
             hasOrigin = false;
             origin = Vector3.zero;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
         }
 
         private bool IsPrepared(

@@ -1,9 +1,90 @@
 using System.Collections.Generic;
 using F1XR.RestAPI.Api;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace F1XR.RestAPI.Replay.Room
 {
+    internal readonly struct ShowcaseVisibleInterval
+    {
+        public ShowcaseVisibleInterval(float startTime, float endTime)
+        {
+            StartTime = startTime;
+            EndTime = endTime;
+        }
+
+        public float StartTime { get; }
+        public float EndTime { get; }
+        public bool IsValid => EndTime >= StartTime;
+    }
+
+    internal readonly struct ShowcaseAdditionalShotRequest
+    {
+        public ShowcaseAdditionalShotRequest(
+            int actionBeatIndex,
+            ShowcaseActionBeat actionBeat,
+            float transitionStartTime,
+            float transitionEndTime,
+            ShowcaseShotPlacementCandidate placement)
+        {
+            ActionBeatIndex = actionBeatIndex;
+            ActionBeat = actionBeat;
+            TransitionStartTime = transitionStartTime;
+            TransitionEndTime = transitionEndTime;
+            Placement = placement;
+        }
+
+        public int ActionBeatIndex { get; }
+        public ShowcaseActionBeat ActionBeat { get; }
+        public float TransitionStartTime { get; }
+        public float TransitionEndTime { get; }
+        public ShowcaseShotPlacementCandidate Placement { get; }
+        public bool HasTransitionWindow =>
+            TransitionEndTime > TransitionStartTime;
+        public bool HasPlacement => Placement.IsValid;
+    }
+
+    internal readonly struct ShowcaseShotPlacementCandidate
+    {
+        public ShowcaseShotPlacementCandidate(
+            Vector3 position,
+            Quaternion rotation,
+            float uniformScale,
+            Vector3 eventLocalFocus)
+        {
+            Position = position;
+            Rotation = rotation;
+            UniformScale = uniformScale;
+            EventLocalFocus = eventLocalFocus;
+        }
+
+        public Vector3 Position { get; }
+        public Quaternion Rotation { get; }
+        public float UniformScale { get; }
+        public Vector3 EventLocalFocus { get; }
+        public bool IsValid =>
+            IsFinite(Position) &&
+            IsFinite(Rotation) &&
+            IsFinite(EventLocalFocus) &&
+            float.IsFinite(UniformScale) &&
+            UniformScale > 0f;
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
+        }
+    }
+
     internal sealed class ShowcaseRoute
     {
         private const int CurveSamplesPerSegment = 24;
@@ -665,6 +746,132 @@ namespace F1XR.RestAPI.Replay.Room
             float.IsFinite(FloorHeight);
     }
 
+    internal enum ShowcaseStagePlacementMode
+    {
+        None,
+        PortalAlignedRigid,
+        RoomDioramaRigid,
+        LifeSizeDriveBy
+    }
+
+    internal enum ShowcasePresentationMode
+    {
+        RoomDiorama,
+        LifeSizeDriveByExperimental
+    }
+
+    internal enum RoomDioramaCompositionMode
+    {
+        Balanced,
+        TracksideImmersiveExperimental
+    }
+
+    internal enum WallPortalRecommendationMode
+    {
+        FreeTrackExit,
+        ExitWall,
+        WallPair
+    }
+
+    internal enum WallExitPresentationStrategy
+    {
+        None,
+        FixedWallRun,
+        MultiBeatWallRun
+    }
+
+    internal enum ExitPortalLifecycleState
+    {
+        None,
+        Planned,
+        WaitingForFinalShot,
+        Visible
+    }
+
+    internal readonly struct ShowcaseStagePlacement
+    {
+        public ShowcaseStagePlacement(
+            ShowcaseStagePlacementMode mode,
+            Vector3 position,
+            Quaternion rotation,
+            float uniformScale,
+            Vector3 interactionFocus,
+            float entryContinuation,
+            float exitContinuation,
+            float entryContinuationTarget,
+            float exitContinuationTarget,
+            float heroMissDistance,
+            float heroMissLimit,
+            float entryWallAngle,
+            float exitWallAngle,
+            float portalCrossingMiss,
+            bool wallPairCompatible)
+        {
+            Mode = mode;
+            Position = position;
+            Rotation = rotation;
+            UniformScale = uniformScale;
+            InteractionFocus = interactionFocus;
+            EntryContinuation = entryContinuation;
+            ExitContinuation = exitContinuation;
+            EntryContinuationTarget = entryContinuationTarget;
+            ExitContinuationTarget = exitContinuationTarget;
+            HeroMissDistance = heroMissDistance;
+            HeroMissLimit = heroMissLimit;
+            EntryWallAngle = entryWallAngle;
+            ExitWallAngle = exitWallAngle;
+            PortalCrossingMiss = portalCrossingMiss;
+            WallPairCompatible = wallPairCompatible;
+        }
+
+        public ShowcaseStagePlacementMode Mode { get; }
+        public Vector3 Position { get; }
+        public Quaternion Rotation { get; }
+        public float UniformScale { get; }
+        public Vector3 InteractionFocus { get; }
+        public float EntryContinuation { get; }
+        public float ExitContinuation { get; }
+        public float EntryContinuationTarget { get; }
+        public float ExitContinuationTarget { get; }
+        public float HeroMissDistance { get; }
+        public float HeroMissLimit { get; }
+        public float EntryWallAngle { get; }
+        public float ExitWallAngle { get; }
+        public float PortalCrossingMiss { get; }
+        public bool WallPairCompatible { get; }
+        public bool IsValid =>
+            Mode != ShowcaseStagePlacementMode.None &&
+            IsFinite(Position) &&
+            IsFinite(Rotation) &&
+            IsFinite(InteractionFocus) &&
+            float.IsFinite(UniformScale) &&
+            UniformScale > 0f &&
+            float.IsFinite(EntryContinuation) &&
+            float.IsFinite(ExitContinuation) &&
+            float.IsFinite(EntryContinuationTarget) &&
+            float.IsFinite(ExitContinuationTarget) &&
+            float.IsFinite(HeroMissDistance) &&
+            float.IsFinite(HeroMissLimit) &&
+            float.IsFinite(EntryWallAngle) &&
+            float.IsFinite(ExitWallAngle) &&
+            float.IsFinite(PortalCrossingMiss);
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z);
+        }
+
+        private static bool IsFinite(Quaternion value)
+        {
+            return float.IsFinite(value.x) &&
+                float.IsFinite(value.y) &&
+                float.IsFinite(value.z) &&
+                float.IsFinite(value.w);
+        }
+    }
+
     [DefaultExecutionOrder(1000)]
     [DisallowMultipleComponent]
     public sealed class ShowcaseVehiclePathMapper : MonoBehaviour
@@ -693,6 +900,9 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private float modelHeadingCorrection;
 
         [Header("Presentation")]
+        [SerializeField]
+        private ShowcasePresentationMode presentationMode =
+            ShowcasePresentationMode.RoomDiorama;
         [SerializeField, Min(0f)] private float wallContinuationTarget = 10f;
         [SerializeField, Range(1f, 2f)] private float entryContinuationMultiplier = 1.5f;
         [SerializeField, Min(0f)] private float heroForwardOffset = 0.25f;
@@ -702,17 +912,215 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(1f)] private float showcasePlaybackSpeedMultiplier = 1.5f;
         [SerializeField] private bool immersiveScaleEnabled;
 
+        [Header("Adaptive Room Diorama Presentation")]
+        [SerializeField]
+        private bool normalizeRoomPresentation = true;
+        [SerializeField, Min(0.05f)]
+        private float minimumRoomVehicleLength = 0.5f;
+        [SerializeField, Min(0.05f)]
+        private float maximumRoomVehicleLength = 0.7f;
+        [SerializeField, Range(0.25f, 2f)]
+        private float minimumVehiclePresentationScale = 0.5f;
+        [SerializeField, Range(0.25f, 2f)]
+        private float maximumVehiclePresentationScale = 1.1f;
+        [SerializeField, Min(0.1f)]
+        private float minimumBoostedBattleTravelInVehicleLengthsPerSecond = 10f;
+        [SerializeField, Min(1f)]
+        private float maximumBoostedPlaybackSpeed = 2.4f;
+
+        [Header("Cinematic Room Experience")]
+        [SerializeField]
+        private bool cinematicRoomScaleEnabled = true;
+        [SerializeField, Min(0.1f)]
+        private float minimumCinematicBattleTravelMetersPerSecond = 7.5f;
+        [SerializeField, Min(0.1f)]
+        private float minimumCinematicBattleTravelInVehicleLengthsPerSecond = 14f;
+        [SerializeField, Min(0.1f)]
+        private float minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond = 10f;
+        [SerializeField, Range(0.05f, 0.5f)]
+        private float cinematicSlowSectionPercentile = 0.25f;
+        [SerializeField, Min(1f)]
+        private float maximumCinematicScaleMultiplier = 4f;
+        [SerializeField, Min(1f)]
+        private float maximumCinematicEventScale = 320f;
+        [SerializeField]
+        private float measuredLocalBattleTravelPerSecond;
+        [SerializeField]
+        private float resolvedCinematicScaleMultiplier = 1f;
+        [SerializeField]
+        private float projectedCinematicBattleTravelMetersPerSecond;
+        [SerializeField]
+        private float measuredSlowSectionBattleTravelInVehicleLengthsPerSecond;
+
+        [Header("Room Diorama Composition")]
+        [SerializeField]
+        private RoomDioramaCompositionMode compositionMode =
+            RoomDioramaCompositionMode.Balanced;
+        [SerializeField, Range(0f, 1f)]
+        private float criticalSegmentCenterBias = 0.65f;
+        [SerializeField, Min(0f)]
+        private float balancedMaximumShift = 2f;
+        [SerializeField, Min(0f)]
+        private float multiExchangeMaximumShift = 3.5f;
+
+        [Header("Reference Pass Profile")]
+        [SerializeField]
+        private bool referencePassProfileEnabled = true;
+        [SerializeField, Range(-60f, 60f)]
+        private float referencePassCrossingYaw = 28f;
+
+        [Header("Portals")]
+        [SerializeField]
+        private bool trackExitPortalEnabled = true;
+        [SerializeField]
+        private bool connectedWallPortalsEnabled = true;
+
+        [Header("Wall Portal Candidate Evaluation")]
+        [SerializeField]
+        private bool evaluateWallPortalCandidates = true;
+        [SerializeField, Min(0.1f)]
+        private float minimumEvaluatedPortalWallWidth = 2f;
+        [SerializeField, Min(0.1f)]
+        private float minimumEvaluatedPortalWallHeight = 1.7f;
+        [SerializeField, Range(0f, 100f)]
+        private float wallPairRecommendationScore = 60f;
+        [SerializeField, Min(0.1f)]
+        private float wallExitFocusScoreDistance = 6f;
+
+        [Header("Wall Portal Evaluation Runtime")]
+        [SerializeField] private int evaluatedWallCount;
+        [SerializeField] private int evaluatedWallPairCount;
+        [SerializeField] private int qualifiedWallPairCount;
+        [SerializeField] private float bestWallPairScore;
+        [SerializeField] private int evaluatedWallExitCount;
+        [SerializeField] private int qualifiedWallExitCount;
+        [SerializeField] private float bestWallExitScore;
+        [SerializeField]
+        private WallPortalRecommendationMode wallPortalRecommendation;
+
+        [Header("Life Size Drive-By Contract")]
+        [SerializeField]
+        private LifeSizeDriveBySettings lifeSizeDriveBy = new();
+
         [Header("Overtake Exit Portal VFX")]
         [SerializeField]
         private OvertakePortalTransitionVfxSettings
             overtakePortalTransitionVfx = new();
 
+        [Header("Multi-Shot Visibility Analysis")]
+        [SerializeField] private bool analyzeShotVisibility = true;
+        [SerializeField, Min(0.05f)]
+        private float visibilitySampleSeconds = 0.2f;
+        [SerializeField, Min(0.1f)]
+        private float visibilityMaximumDistance = 8f;
+        [SerializeField, Range(0f, 0.45f)]
+        private float visibilityViewportMargin = 0.05f;
+        [SerializeField, Range(0f, 1f)]
+        private float visibilityProbeHeightInVehicleLengths = 0.25f;
+        [SerializeField, Range(0f, 1f)]
+        private float visibilityProbeCenterInVehicleHeight = 0.5f;
+        [SerializeField, Range(0f, 0.5f)]
+        private float visibilityProbeSpanInVehicleHeight = 0.35f;
+        [SerializeField, Min(0f)]
+        private float visibilityTerrainClearanceInVehicleLengths = 0.35f;
+
+        [Header("Runtime Occlusion Assistance")]
+        [SerializeField]
+        private bool runtimeOcclusionAssistanceEnabled = true;
+        [SerializeField, Min(0.02f)]
+        private float occlusionAssistSampleInterval = 0.1f;
+        [SerializeField, Min(0f)]
+        private float occlusionAssistActivationDelay = 0.08f;
+        [SerializeField, Min(0f)]
+        private float occlusionAssistReleaseDelay = 0.2f;
+        [SerializeField] private bool firstOcclusionAssistActive;
+        [SerializeField] private bool secondOcclusionAssistActive;
+
+        [Header("Multi-Shot Battle Reframe")]
+        [SerializeField, Range(0.2f, 1.5f)]
+        private float battleReframeDuration = 0.7f;
+        [SerializeField]
+        private Color battleReframeStartColor =
+            new(0.05f, 0.78f, 1f, 0.82f);
+        [SerializeField]
+        private Color battleReframeEndColor =
+            new(1f, 0.12f, 0.62f, 0.82f);
+
+        [Header("Multi-Shot Runtime Analysis")]
+        [SerializeField] private int actionBeatCount;
+        [SerializeField] private int visibleActionBeatCount;
+        [SerializeField] private int continuousVisibleIntervalCount;
+        [SerializeField] private bool terrainOcclusionAvailable;
+        [SerializeField] private bool allActionBeatsVisible;
+        [SerializeField] private bool requiresAdditionalShot;
+        [SerializeField] private int actionBeatsOutsideDistance;
+        [SerializeField] private int actionBeatsOutsideView;
+        [SerializeField] private int actionBeatsTerrainOccluded;
+        [SerializeField] private int actionBeatsWithMissingPosition;
+
+        [Header("Wall Exit Handoff Runtime")]
+        [SerializeField, Min(0f)]
+        private float multiBeatTransitionSafetyMargin = 0.15f;
+        [SerializeField, Min(0f)]
+        private float maximumBattleToWallFocusShift = 3f;
+        [SerializeField]
+        private WallExitPresentationStrategy wallExitStrategy;
+        [SerializeField] private bool wallExitHandoffPrepared;
+        [SerializeField] private bool wallExitHandoffActive;
+        [SerializeField] private bool wallExitHandoffComplete;
+        [SerializeField] private float wallExitHandoffTime;
+        [SerializeField] private int wallExitTransitionBeatIndex = -1;
+
+        [Header("Reference Pass Runtime Metrics")]
+        [SerializeField] private Vector3 perceptionEyeRelativeTrackFocus;
+        [SerializeField] private float perceptionClosestVehicleDistance;
+        [SerializeField] private float perceptionVehicleAngularSize;
+        [SerializeField] private float perceptionScreenTravelPerSecond;
+        [SerializeField, Range(0f, 1f)]
+        private float perceptionBattleVisibleFraction;
+
+        [Header("Reference Pass Live Runtime Metrics")]
+        [SerializeField] private int runtimePerceptionSampleCount;
+        [SerializeField, Range(0f, 1f)]
+        private float runtimePerceptionVisibleFraction;
+        [SerializeField] private float runtimePerceptionScreenSpeedP90;
+        [SerializeField] private float runtimePerceptionScreenSpeedPeak;
+        [SerializeField] private float runtimePerceptionLateralSpeedP90;
+        [SerializeField] private float runtimePerceptionLateralSpeedPeak;
+        [SerializeField] private float runtimePerceptionLoomingRateP90;
+        [SerializeField] private float runtimePerceptionLoomingRatePeak;
+        [SerializeField] private float runtimePerceptionAngularSizePeak;
+        [SerializeField] private float runtimePerceptionClosestDistance;
+        [SerializeField] private Vector3 runtimePerceptionClosestEyePosition;
+
         [Header("Control")]
         [SerializeField] private bool mappingEnabled = true;
 
         private readonly List<Vector3> eventLocalPath = new();
+        private readonly List<ShowcaseWallFrame>
+            wallPortalEvaluationFrames = new();
+        private readonly List<ShowcaseActionBeat> actionBeats = new();
+        private readonly List<ShowcaseActionBeat>
+            presentationCalibrationBeats = new();
+        private readonly List<float>
+            presentationCalibrationTravelRates = new(512);
+        private readonly List<ShowcaseActionBeat>
+            wallExitPlanningBeats = new();
+        private readonly List<bool> actionBeatVisibility = new();
+        private readonly List<ShowcaseVisibleInterval>
+            visibleIntervals = new();
+        private readonly List<ShowcaseAdditionalShotRequest>
+            additionalShotRequests = new();
+        private readonly List<float> runtimeScreenSpeeds = new(2048);
+        private readonly List<float> runtimeLateralSpeeds = new(2048);
+        private readonly List<float> runtimeLoomingRates = new(2048);
+        private readonly HashSet<Material>
+            plannedForegroundOccluders = new();
         private EventPopoutReplay eventReplay;
         private ShowcasePortalPresentation portalPresentation;
+        private PitWallShowcasePresenter pitWallPresentation;
+        private LifeSizeDriveByRoadPresentation lifeSizeRoad;
+        private LifeSizeDriveByVehiclePresentation lifeSizeVehicles;
         private Transform boundStage;
         private VehicleBinding firstBinding;
         private VehicleBinding secondBinding;
@@ -743,12 +1151,24 @@ namespace F1XR.RestAPI.Replay.Room
         private float eventCoordinateScale;
         private float vehicleLengthBefore;
         private float vehicleLengthAfter;
+        private float resolvedShowcaseVehicleScale;
+        private float resolvedShowcasePlaybackSpeedMultiplier;
+        private float measuredBattleTravelInVehicleLengthsPerSecond;
         private float entryContinuation;
         private float exitContinuation;
         private float heroMissDistance;
         private float entryWallAngle;
         private float exitWallAngle;
         private float portalCrossingMiss;
+        private float compositionShiftDistance;
+        private float appliedReferencePassYaw;
+        private Vector3 referencePassTravelDirection;
+        private bool connectedPortalCandidate;
+        private bool hasRecommendedWallExitPlacement;
+        private bool appliedRecommendedWallExitPlacement;
+        private ShowcaseStagePlacement recommendedWallExitPlacement;
+        private ShowcaseWallFrame recommendedWallExitFrame;
+        private string activePortalMode = "None";
         private int boundSourceRevision = -1;
         private bool wallPairCompatible;
         private bool stageRevealPending;
@@ -756,7 +1176,66 @@ namespace F1XR.RestAPI.Replay.Room
         private float stageRevealFirstLongitudinal;
         private float stageRevealSecondLongitudinal;
         private ShowcaseRun activeRun;
+        private LifeSizeDriveByPlan preparedLifeSizePlan;
+        private string lifeSizePlanFailure = "";
+        private ShowcaseStagePlacementMode activePlacementMode;
         private int boundLayoutRevision = -1;
+        private float firstVisibilityVehicleHeight;
+        private float secondVisibilityVehicleHeight;
+        private float visibilityAnalysisSampleStep;
+        private ShowcaseShotPlacementCandidate initialShotPlacement;
+        private int nextAdditionalShotRequestIndex;
+        private int activeAdditionalShotRequestIndex = -1;
+        private int observedShowcaseTimelineRevision = -1;
+        private float previousShotReplayTime;
+        private bool shotPlacementRuntimeInitialized;
+        private bool battleReframeActive;
+        private float battleReframeElapsed;
+        private int battleReframeRequestIndex = -1;
+        private ShowcaseShotPlacementCandidate battleReframeFrom;
+        private ShowcaseShotPlacementCandidate battleReframeTo;
+        private Transform battleReframeCueRoot;
+        private LineRenderer battleReframeCue;
+        private Material battleReframeCueMaterial;
+        private float wallExitHandoffElapsed;
+        private ShowcaseShotPlacementCandidate
+            wallExitBattlePlacement;
+        private ShowcaseShotPlacementCandidate
+            wallExitFinalPlacement;
+        private int finalAdditionalShotRequestIndex = -1;
+        private int lastProcessedAdditionalShotRequestIndex = -1;
+        [SerializeField]
+        private ExitPortalLifecycleState exitPortalLifecycleState;
+        [SerializeField]
+        private float battleOnlyRearWallExitDistance;
+        private bool usesNaturalVisibilityEnd;
+        private float naturalVisibilityEndTime;
+        private int runtimePerceptionTimelineRevision = -1;
+        private int runtimePerceptionAttemptedSamples;
+        private int runtimePerceptionVisibleSamples;
+        private bool runtimePerceptionPublished;
+        private bool runtimeFirstPreviousValid;
+        private bool runtimeSecondPreviousValid;
+        private ShowcaseOcclusionHit firstOcclusionAssistHit;
+        private ShowcaseOcclusionHit secondOcclusionAssistHit;
+        private float firstOcclusionBlockedDuration;
+        private float secondOcclusionBlockedDuration;
+        private float firstOcclusionClearDuration;
+        private float secondOcclusionClearDuration;
+        private float occlusionAssistSampleElapsed;
+        private Vector2 runtimeFirstPreviousViewport;
+        private Vector2 runtimeSecondPreviousViewport;
+        private float runtimeFirstPreviousAngularSize;
+        private float runtimeSecondPreviousAngularSize;
+
+        private enum VisibilityFailure
+        {
+            None = 0,
+            MissingPosition = 1,
+            Distance = 2,
+            View = 4,
+            Terrain = 8
+        }
 
         public bool TargetVehicleResolved =>
             firstBinding != null &&
@@ -804,6 +1283,10 @@ namespace F1XR.RestAPI.Replay.Room
         public float EventCoordinateScale => eventCoordinateScale;
         public float VehicleLengthBefore => vehicleLengthBefore;
         public float VehicleLengthAfter => vehicleLengthAfter;
+        public float ResolvedShowcasePlaybackSpeedMultiplier =>
+            resolvedShowcasePlaybackSpeedMultiplier;
+        public float MeasuredBattleTravelInVehicleLengthsPerSecond =>
+            measuredBattleTravelInVehicleLengthsPerSecond;
         public float EntryContinuation => entryContinuation;
         public float ExitContinuation => exitContinuation;
         public float HeroMissDistance => heroMissDistance;
@@ -824,11 +1307,25 @@ namespace F1XR.RestAPI.Replay.Room
             route = activeRun.Route;
             return route != null && route.IsValid;
         }
+        internal bool TryGetPreparedLifeSizePlan(
+            out LifeSizeDriveByPlan plan,
+            out string failure)
+        {
+            plan = preparedLifeSizePlan;
+            failure = lifeSizePlanFailure;
+            return plan != null && plan.IsValid;
+        }
         public int AuthoritativePortalVehicleCount =>
             portalPresentation != null
                 ? portalPresentation.AuthoritativeVehicleCount
                 : 0;
         public bool IsApplyingRoomPoses => isApplyingRoomPoses;
+        internal IReadOnlyList<ShowcaseVisibleInterval>
+            VisibleIntervals => visibleIntervals;
+        internal IReadOnlyList<bool> ActionBeatVisibility =>
+            actionBeatVisibility;
+        internal IReadOnlyList<ShowcaseAdditionalShotRequest>
+            AdditionalShotRequests => additionalShotRequests;
         public Vector3 FirstVisualLocalPosition =>
             firstBinding != null && firstBinding.VisualMotionRoot != null
                 ? firstBinding.VisualMotionRoot.localPosition
@@ -872,9 +1369,118 @@ namespace F1XR.RestAPI.Replay.Room
                 Mathf.Max(
                     1f,
                     showcasePlaybackSpeedMultiplier);
+            minimumRoomVehicleLength = Mathf.Max(
+                0.05f,
+                minimumRoomVehicleLength);
+            maximumRoomVehicleLength = Mathf.Max(
+                minimumRoomVehicleLength,
+                maximumRoomVehicleLength);
+            minimumVehiclePresentationScale = Mathf.Clamp(
+                minimumVehiclePresentationScale,
+                0.25f,
+                2f);
+            maximumVehiclePresentationScale = Mathf.Clamp(
+                maximumVehiclePresentationScale,
+                minimumVehiclePresentationScale,
+                2f);
+            minimumBoostedBattleTravelInVehicleLengthsPerSecond =
+                Mathf.Max(
+                    0.1f,
+                    minimumBoostedBattleTravelInVehicleLengthsPerSecond);
+            maximumBoostedPlaybackSpeed = Mathf.Max(
+                showcasePlaybackSpeedMultiplier,
+                maximumBoostedPlaybackSpeed);
+            minimumCinematicBattleTravelMetersPerSecond = Mathf.Max(
+                0.1f,
+                minimumCinematicBattleTravelMetersPerSecond);
+            minimumCinematicBattleTravelInVehicleLengthsPerSecond =
+                Mathf.Max(
+                    0.1f,
+                    minimumCinematicBattleTravelInVehicleLengthsPerSecond);
+            minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond =
+                Mathf.Max(
+                    0.1f,
+                    minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond);
+            cinematicSlowSectionPercentile = Mathf.Clamp(
+                cinematicSlowSectionPercentile,
+                0.05f,
+                0.5f);
+            maximumCinematicScaleMultiplier = Mathf.Max(
+                1f,
+                maximumCinematicScaleMultiplier);
+            maximumCinematicEventScale = Mathf.Max(
+                1f,
+                maximumCinematicEventScale);
+            criticalSegmentCenterBias = Mathf.Clamp01(
+                criticalSegmentCenterBias);
+            balancedMaximumShift = Mathf.Max(
+                0f,
+                balancedMaximumShift);
+            multiExchangeMaximumShift = Mathf.Max(
+                0f,
+                multiExchangeMaximumShift);
+            referencePassCrossingYaw = Mathf.Clamp(
+                referencePassCrossingYaw,
+                -60f,
+                60f);
+            minimumEvaluatedPortalWallWidth = Mathf.Max(
+                0.1f,
+                minimumEvaluatedPortalWallWidth);
+            minimumEvaluatedPortalWallHeight = Mathf.Max(
+                0.1f,
+                minimumEvaluatedPortalWallHeight);
+            wallPairRecommendationScore = Mathf.Clamp(
+                wallPairRecommendationScore,
+                0f,
+                100f);
+            wallExitFocusScoreDistance = Mathf.Max(
+                0.1f,
+                wallExitFocusScoreDistance);
+            visibilitySampleSeconds = Mathf.Max(
+                0.05f,
+                visibilitySampleSeconds);
+            visibilityMaximumDistance = Mathf.Max(
+                0.1f,
+                visibilityMaximumDistance);
+            visibilityViewportMargin = Mathf.Clamp(
+                visibilityViewportMargin,
+                0f,
+                0.45f);
+            visibilityProbeHeightInVehicleLengths = Mathf.Clamp01(
+                visibilityProbeHeightInVehicleLengths);
+            visibilityProbeCenterInVehicleHeight = Mathf.Clamp01(
+                visibilityProbeCenterInVehicleHeight);
+            visibilityProbeSpanInVehicleHeight = Mathf.Clamp(
+                visibilityProbeSpanInVehicleHeight,
+                0f,
+                0.5f);
+            visibilityTerrainClearanceInVehicleLengths = Mathf.Max(
+                0f,
+                visibilityTerrainClearanceInVehicleLengths);
+            occlusionAssistActivationDelay = Mathf.Max(
+                0f,
+                occlusionAssistActivationDelay);
+            occlusionAssistSampleInterval = Mathf.Max(
+                0.02f,
+                occlusionAssistSampleInterval);
+            occlusionAssistReleaseDelay = Mathf.Max(
+                0f,
+                occlusionAssistReleaseDelay);
+            battleReframeDuration = Mathf.Clamp(
+                battleReframeDuration,
+                0.2f,
+                1.5f);
+            multiBeatTransitionSafetyMargin = Mathf.Max(
+                0f,
+                multiBeatTransitionSafetyMargin);
+            maximumBattleToWallFocusShift = Mathf.Max(
+                0f,
+                maximumBattleToWallFocusShift);
             overtakePortalTransitionVfx ??=
                 new OvertakePortalTransitionVfxSettings();
             overtakePortalTransitionVfx.ClampValues();
+            lifeSizeDriveBy ??= new LifeSizeDriveBySettings();
+            lifeSizeDriveBy.ClampValues();
 
             if (sourceProgressEnd <= sourceProgressStart)
             {
@@ -901,8 +1507,15 @@ namespace F1XR.RestAPI.Replay.Room
         {
             isApplyingRoomPoses = false;
             ResolveEventReplay();
-            eventReplay?.SetOvertakeVehicleSizeScale(
-                showcaseVehicleScale);
+            if (eventReplay == null ||
+                !eventReplay.IsCurrentCollision)
+            {
+                eventReplay?.SetOvertakeVehicleSizeScale(
+                    lifeSizeVehicles != null &&
+                    lifeSizeVehicles.IsCommitted
+                        ? 1f
+                        : ResolveActiveShowcaseVehicleScale());
+            }
 
             if (!mappingEnabled)
             {
@@ -932,6 +1545,36 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 ReleaseBinding();
                 SetInactive("WaitingForEvent", "");
+                return;
+            }
+
+            if (eventReplay.IsPitStopActive)
+            {
+                if (boundStage != null)
+                    ReleaseBinding(false, false);
+                SetInactive(
+                    "PitStopSingleWall",
+                    "");
+                return;
+            }
+
+            if (eventReplay.IsCurrentCollision)
+            {
+                if (boundStage != null)
+                    ReleaseBinding(false, false);
+
+                Transform collisionStage =
+                    eventReplay.PresentationRoot;
+                if (collisionStage == null)
+                {
+                    SetInactive(
+                        "WaitingForCollisionStage",
+                        "Collision presentation stage is unavailable.");
+                    return;
+                }
+
+                collisionStage.gameObject.SetActive(true);
+                SetInactive("CollisionTableStage", "");
                 return;
             }
 
@@ -1008,18 +1651,21 @@ namespace F1XR.RestAPI.Replay.Room
             firstMappedProgress = firstSourceLongitudinal;
             secondMappedProgress = secondSourceLongitudinal;
 
-            ApplyRoomVehiclePresentation(
+            UpdateAdditionalShotPlacement();
+            ApplyActiveVehiclePresentation(
                 firstBinding,
                 secondBinding);
+            UpdateRuntimeOcclusionAssistance();
             RevealStageAfterReplayMotion();
             UpdateOrderDiagnostics();
+            UpdateRuntimePerceptionMetrics();
             portalPresentation
                 .UpdateOvertakePortalTransition(
                     eventReplay.CurrentTime,
                     eventReplay.IsPlaying,
                     eventReplay
                         .OvertakeCompletionConfirmed);
-            bindingState = "GlobalEventPlacement";
+            bindingState = activePlacementMode.ToString();
             lastFailureReason = "";
         }
 
@@ -1033,6 +1679,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDestroy()
         {
             ReleaseBinding();
+            DisposeBattleReframeCue();
         }
 
         private void ResolveLocalReferences()
@@ -1047,6 +1694,27 @@ namespace F1XR.RestAPI.Replay.Room
                 portalPresentation =
                     GetComponent<ShowcasePortalPresentation>() ??
                     gameObject.AddComponent<ShowcasePortalPresentation>();
+
+            if (pitWallPresentation == null)
+            {
+                pitWallPresentation =
+                    GetComponent<PitWallShowcasePresenter>() ??
+                    gameObject.AddComponent<PitWallShowcasePresenter>();
+            }
+            pitWallPresentation.Configure(
+                replayPlayer,
+                showcaseLayout,
+                portalPresentation);
+
+            if (lifeSizeRoad == null)
+                lifeSizeRoad =
+                    GetComponent<LifeSizeDriveByRoadPresentation>() ??
+                    gameObject.AddComponent<LifeSizeDriveByRoadPresentation>();
+
+            if (lifeSizeVehicles == null)
+                lifeSizeVehicles =
+                    GetComponent<LifeSizeDriveByVehiclePresentation>() ??
+                    gameObject.AddComponent<LifeSizeDriveByVehiclePresentation>();
         }
 
         private void ResolveEventReplay()
@@ -1065,6 +1733,13 @@ namespace F1XR.RestAPI.Replay.Room
 
         private bool TryBind(Transform stage)
         {
+            appliedReferencePassYaw = 0f;
+            referencePassTravelDirection = Vector3.zero;
+            measuredLocalBattleTravelPerSecond = 0f;
+            resolvedCinematicScaleMultiplier = 1f;
+            projectedCinematicBattleTravelMetersPerSecond = 0f;
+            measuredSlowSectionBattleTravelInVehicleLengthsPerSecond = 0f;
+
             if (!TryResolveTargetDrivers(
                     out int firstDriver,
                     out int secondDriver))
@@ -1133,13 +1808,13 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            if (!TryPlaceEventStage(
-                    stage,
+            if (!TryCreateEventStagePlacement(
                     eventLocalPath,
                     entryPosition,
                     focusPosition,
                     exitPosition,
                     run,
+                    out ShowcaseStagePlacement placement,
                     out string placementFailure))
             {
                 SetInactive(
@@ -1148,49 +1823,141 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            CaptureVehicleScale(first, second);
-            eventReplay.SetShowcaseDrivingPresentation(
-                first.DriverNumber,
-                second.DriverNumber,
-                true);
-            eventReplay.SetShowcasePlaybackSpeedMultiplier(
-                showcasePlaybackSpeedMultiplier);
-            portalPresentation.ImmersiveScaleEnabled =
-                immersiveScaleEnabled;
-            if (!portalPresentation.Configure(
-                    stage,
-                    showcaseLayout,
-                    first.VehicleRoot,
-                    second.VehicleRoot,
-                    out string portalFailure))
+            PrepareLifeSizeDriveByPlan(
+                run,
+                stage,
+                first,
+                second);
+
+            ShowcaseStagePlacement portalAlignedPlacement =
+                placement;
+            connectedPortalCandidate = false;
+            appliedRecommendedWallExitPlacement = false;
+            hasRecommendedWallExitPlacement = false;
+            recommendedWallExitPlacement = default;
+            recommendedWallExitFrame = default;
+            wallExitStrategy = WallExitPresentationStrategy.None;
+            wallExitTransitionBeatIndex = -1;
+            if (!TryCreateRoomDioramaPlacement(
+                    eventLocalPath,
+                    entryPosition,
+                    focusPosition,
+                    exitPosition,
+                    run,
+                    portalAlignedPlacement,
+                    out placement,
+                    out placementFailure))
             {
-                eventReplay.SetShowcaseDrivingPresentation(
-                    first.DriverNumber,
-                    second.DriverNumber,
-                    false);
-                eventReplay.SetShowcasePlaybackSpeedMultiplier(1f);
                 SetInactive(
-                    "PortalInvalid",
-                    portalFailure);
+                    "PlacementInvalid",
+                    placementFailure);
                 return false;
             }
 
-            ResolvePortalTransitionVehicles(
+            ResolveCinematicRoomPlacement(
+                run,
                 first,
                 second,
-                out Transform overtakingVehicle,
-                out Transform defendingVehicle);
-            overtakePortalTransitionVfx ??=
-                new OvertakePortalTransitionVfxSettings();
-            overtakePortalTransitionVfx.ClampValues();
-            portalPresentation
-                .ConfigureOvertakePortalTransition(
+                focusPosition,
+                ref placement);
+
+            CapturePlacementDiagnostics(placement);
+            if (!TryValidateEventStagePlacement(
+                    placement,
+                    out placementFailure))
+            {
+                SetInactive(
+                    "PlacementInvalid",
+                    placementFailure);
+                return false;
+            }
+
+            if (!TryCommitEventStagePlacement(
+                    placement,
+                    out placementFailure))
+            {
+                SetInactive(
+                    "PlacementInvalid",
+                    placementFailure);
+                return false;
+            }
+
+            CaptureVehicleScale(first, second);
+            bool usesLifeSize = TryCommitLifeSizeDriveBy(
+                out string lifeSizeCommitFailure);
+            if (!usesLifeSize &&
+                !string.IsNullOrEmpty(lifeSizeCommitFailure))
+            {
+                lifeSizePlanFailure = lifeSizeCommitFailure;
+            }
+
+            ResolveAdaptiveRoomPresentation(
+                stage,
+                first,
+                second,
+                usesLifeSize);
+            eventReplay.SetOvertakeVehicleSizeScale(
+                usesLifeSize
+                    ? 1f
+                    : ResolveActiveShowcaseVehicleScale());
+
+            eventReplay.SetShowcasePlaybackSpeedMultiplier(
+                ResolveActiveShowcasePlaybackSpeed());
+            bool usesTrackExitPortal =
+                !usesLifeSize &&
+                trackExitPortalEnabled &&
+                placement.Mode ==
+                    ShowcaseStagePlacementMode.RoomDioramaRigid;
+            bool usesPortals = usesTrackExitPortal;
+            activePortalMode = usesTrackExitPortal
+                ? "TrackExit"
+                : "None";
+            if (usesTrackExitPortal)
+            {
+                bool hasExitPose =
+                    TryCreateTrackExitPortalPose(
+                        stage,
+                        eventLocalPath,
+                        exitPosition,
+                        out Pose trackExitPose);
+                if (!hasExitPose ||
+                    !portalPresentation.ConfigureTrackExit(
+                        stage,
+                        trackExitPose,
+                        first.VehicleRoot,
+                        second.VehicleRoot,
+                        out _))
+                {
+                    portalPresentation.Clear();
+                    usesPortals = false;
+                    activePortalMode = "None";
+                }
+            }
+            else
+                portalPresentation.Clear();
+
+            if (usesPortals)
+            {
+                ResolvePortalTransitionVehicles(
+                    first,
+                    second,
+                    out Transform overtakingVehicle,
+                    out Transform defendingVehicle);
+                overtakePortalTransitionVfx ??=
+                    new OvertakePortalTransitionVfxSettings();
+                overtakePortalTransitionVfx.ClampValues();
+                portalPresentation.ConfigureOvertakePortalTransition(
                     overtakePortalTransitionVfx,
                     overtakingVehicle,
                     defendingVehicle,
                     eventReplay.CurrentTime);
+            }
 
-            ApplyRoomVehiclePresentation(first, second);
+            ApplyActiveVehiclePresentation(first, second);
+            eventReplay.SetShowcaseDrivingPresentation(
+                first.DriverNumber,
+                second.DriverNumber,
+                true);
 
             eventReplay.SuspendTableTrackRendering();
             boundStage = stage;
@@ -1201,6 +1968,16 @@ namespace F1XR.RestAPI.Replay.Room
             boundSourceRevision = run.SourceRevision;
             boundLayoutRevision = run.LayoutRevision;
             activeRun = run;
+            activePlacementMode = usesLifeSize
+                ? ShowcaseStagePlacementMode.LifeSizeDriveBy
+                : placement.Mode;
+            ShowcaseShotPlacementCandidate initialPresentationShot =
+                ToShotPlacement(placement);
+            AnalyzeCurrentShotVisibility();
+            InitializeShotPlacementRuntime(
+                initialPresentationShot);
+            ResetWallExitHandoffRuntime();
+            InitializeFinalShotExitPortalVisibility();
             stageRevealPending = true;
             stageRevealStartTime = eventReplay.CurrentTime;
             eventReplay.TryGetSourceLongitudinal(
@@ -1210,11 +1987,15 @@ namespace F1XR.RestAPI.Replay.Room
                 second.DriverNumber,
                 out stageRevealSecondLongitudinal);
             ResetOrderDiagnostics();
-            bindingState = "GlobalEventPlacement";
+            bindingState = activePlacementMode.ToString();
             lastFailureReason = "";
             Debug.Log(
                 $"[RoomEventPlacement] sourcePoints={eventLocalPath.Count}, " +
                 $"routePoints={run.Route.Centerline.Count}, " +
+                $"mode={activePlacementMode}, " +
+                $"composition={compositionMode}, " +
+                $"portalCandidate={connectedPortalCandidate}, " +
+                $"portalMode={activePortalMode}, " +
                 $"eventScale={eventCoordinateScale:0.###}, " +
                 $"entryContinuation={entryContinuation:0.##}m, " +
                 $"exitContinuation={exitContinuation:0.##}m, " +
@@ -1222,11 +2003,2487 @@ namespace F1XR.RestAPI.Replay.Room
                 $"wallAngles={entryWallAngle:0.#}/{exitWallAngle:0.#}deg, " +
                 $"portalMiss={portalCrossingMiss:0.###}m, " +
                 $"heroMiss={heroMissDistance:0.###}m, " +
+                $"compositionShift={compositionShiftDistance:0.###}m, " +
+                $"referencePassYaw={appliedReferencePassYaw:0.#}deg, " +
                 $"vehicleLength={vehicleLengthBefore:0.###}m->{vehicleLengthAfter:0.###}m, " +
                 $"vehicleScale={appliedPresentationScale:0.#####}, " +
+                $"showcaseSpeed={ResolveActiveShowcasePlaybackSpeed():0.###}x, " +
+                $"cinematicScale={resolvedCinematicScaleMultiplier:0.###}x, " +
+                $"physicalTravel={projectedCinematicBattleTravelMetersPerSecond:0.##}m/s, " +
+                $"speedFloor={minimumCinematicBattleTravelInVehicleLengthsPerSecond:0.##} car/s, " +
+                $"curveFloor={minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond:0.##} car/s, " +
+                $"speedCeiling={maximumBoostedPlaybackSpeed:0.###}x, " +
+                $"battleTravel={measuredBattleTravelInVehicleLengthsPerSecond:0.##} car/s, " +
+                $"slowTravel={measuredSlowSectionBattleTravelInVehicleLengthsPerSecond:0.##} car/s, " +
+                $"exitFraming=TrackEnd, " +
+                $"exitPortalState={exitPortalLifecycleState}, " +
                 $"portals={portalPresentation.IsConfigured}",
                 this);
             return true;
+        }
+
+        private void AnalyzeCurrentShotVisibility()
+        {
+            eventReplay?.ClearShowcasePresentationEndTime();
+            ResetVisibilityAnalysisResults();
+            if (!analyzeShotVisibility ||
+                eventReplay == null ||
+                boundStage == null ||
+                firstBinding == null ||
+                secondBinding == null ||
+                activePlacementMode ==
+                    ShowcaseStagePlacementMode.LifeSizeDriveBy ||
+                Camera.main == null ||
+                !eventReplay.TryGetShowcasePlaybackWindow(
+                    out ShowcasePlaybackWindow window) ||
+                !eventReplay.TryCopyShowcaseActionBeats(actionBeats))
+            {
+                return;
+            }
+
+            actionBeatCount = actionBeats.Count;
+            Camera viewer = Camera.main;
+            firstVisibilityVehicleHeight =
+                MeasureWorldVisualHeight(firstBinding, boundStage.up);
+            secondVisibilityVehicleHeight =
+                MeasureWorldVisualHeight(secondBinding, boundStage.up);
+            PreparePlannedForegroundOccluders(viewer);
+            float sampleStep = Mathf.Max(
+                0.05f,
+                visibilitySampleSeconds);
+            int sampleCount = Mathf.Max(
+                1,
+                Mathf.CeilToInt(
+                    (window.EndTime - window.StartTime) /
+                    sampleStep));
+            visibilityAnalysisSampleStep =
+                (window.EndTime - window.StartTime) /
+                sampleCount;
+            bool intervalOpen = false;
+            float intervalStart = 0f;
+            float lastVisibleTime = 0f;
+            for (int i = 0; i <= sampleCount; i++)
+            {
+                float replayTime = Mathf.Lerp(
+                    window.StartTime,
+                    window.EndTime,
+                    i / (float)sampleCount);
+                bool visible = TryEvaluateBattleVisibility(
+                    viewer,
+                    replayTime,
+                    out _);
+                if (visible && !intervalOpen)
+                {
+                    intervalOpen = true;
+                    intervalStart = replayTime;
+                }
+                if (visible)
+                {
+                    lastVisibleTime = replayTime;
+                }
+                else if (intervalOpen)
+                {
+                    intervalOpen = false;
+                    visibleIntervals.Add(
+                        new ShowcaseVisibleInterval(
+                            intervalStart,
+                            lastVisibleTime));
+                }
+            }
+            if (intervalOpen)
+            {
+                visibleIntervals.Add(
+                    new ShowcaseVisibleInterval(
+                        intervalStart,
+                        lastVisibleTime));
+            }
+            continuousVisibleIntervalCount = visibleIntervals.Count;
+
+            for (int i = 0; i < actionBeats.Count; i++)
+            {
+                bool visible = TryEvaluateActionBeatVisibility(
+                    viewer,
+                    actionBeats[i],
+                    out VisibilityFailure failure);
+                actionBeatVisibility.Add(visible);
+                if (visible)
+                {
+                    visibleActionBeatCount++;
+                }
+                else
+                {
+                    AccumulateActionBeatFailure(failure);
+                }
+            }
+
+            allActionBeatsVisible =
+                actionBeatCount > 0 &&
+                visibleActionBeatCount == actionBeatCount;
+            requiresAdditionalShot =
+                actionBeatCount > 0 &&
+                !allActionBeatsVisible &&
+                (!appliedRecommendedWallExitPlacement ||
+                 wallExitStrategy ==
+                    WallExitPresentationStrategy.MultiBeatWallRun);
+            BuildAdditionalShotRequests();
+            TryConfigureNaturalVisibilityEnd(window);
+            MeasureShowcasePerception(viewer);
+            int transitionCount = 0;
+            int placementCount = 0;
+            for (int i = 0; i < additionalShotRequests.Count; i++)
+            {
+                if (additionalShotRequests[i].HasTransitionWindow)
+                    transitionCount++;
+                if (additionalShotRequests[i].HasPlacement)
+                    placementCount++;
+            }
+            Debug.Log(
+                $"[ShowcaseVisibility] beats=" +
+                $"{visibleActionBeatCount}/{actionBeatCount}, " +
+                $"intervals={continuousVisibleIntervalCount}, " +
+                $"terrainAvailable={terrainOcclusionAvailable}, " +
+                $"requiresAdditionalShot={requiresAdditionalShot}, " +
+                $"additionalShotRequests=" +
+                $"{additionalShotRequests.Count}, " +
+                $"transitionWindows={transitionCount}, " +
+                $"placementCandidates={placementCount}, " +
+                $"naturalEnd=" +
+                $"{(usesNaturalVisibilityEnd ? naturalVisibilityEndTime.ToString("0.00") : "none")}, " +
+                $"failures(distance/view/terrain/missing)=" +
+                $"{actionBeatsOutsideDistance}/" +
+                $"{actionBeatsOutsideView}/" +
+                $"{actionBeatsTerrainOccluded}/" +
+                $"{actionBeatsWithMissingPosition}.",
+                this);
+        }
+
+        private void PreparePlannedForegroundOccluders(
+            Camera viewer)
+        {
+            plannedForegroundOccluders.Clear();
+            eventReplay?.SetShowcaseIgnoredOcclusionMaterials(null);
+            portalPresentation?.SetPlannedRoomOccluders(null);
+            if (viewer == null ||
+                eventReplay == null ||
+                boundStage == null ||
+                firstBinding == null ||
+                secondBinding == null ||
+                actionBeats.Count == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < actionBeats.Count; i++)
+            {
+                ShowcaseActionBeat beat = actionBeats[i];
+                CollectPlannedForegroundOccluders(
+                    viewer,
+                    beat.StartTime);
+                CollectPlannedForegroundOccluders(
+                    viewer,
+                    beat.Time);
+                CollectPlannedForegroundOccluders(
+                    viewer,
+                    beat.ConfirmedTime);
+                CollectPlannedForegroundOccluders(
+                    viewer,
+                    beat.EndTime);
+            }
+
+            eventReplay.SetShowcaseIgnoredOcclusionMaterials(
+                plannedForegroundOccluders);
+            portalPresentation?.SetPlannedRoomOccluders(
+                plannedForegroundOccluders);
+            Debug.Log(
+                $"[ShowcaseOcclusionPlan] excludedMaterials=" +
+                $"{plannedForegroundOccluders.Count}.",
+                this);
+        }
+
+        private void CollectPlannedForegroundOccluders(
+            Camera viewer,
+            float replayTime)
+        {
+            if (!eventReplay.TryGetEventLocalVehiclePosition(
+                    firstBinding.DriverNumber,
+                    replayTime,
+                    out Vector3 firstLocal) ||
+                !eventReplay.TryGetEventLocalVehiclePosition(
+                    secondBinding.DriverNumber,
+                    replayTime,
+                    out Vector3 secondLocal))
+            {
+                return;
+            }
+
+            CollectPlannedVehicleOccluders(
+                viewer,
+                boundStage.TransformPoint(firstLocal),
+                firstVisibilityVehicleHeight);
+            CollectPlannedVehicleOccluders(
+                viewer,
+                boundStage.TransformPoint(secondLocal),
+                secondVisibilityVehicleHeight);
+        }
+
+        private void CollectPlannedVehicleOccluders(
+            Camera viewer,
+            Vector3 trackPoint,
+            float vehicleHeight)
+        {
+            float fallbackProbeHeight =
+                appliedRoomVehicleLength *
+                visibilityProbeHeightInVehicleLengths;
+            float centerHeight = vehicleHeight > 0.0001f
+                ? vehicleHeight *
+                  visibilityProbeCenterInVehicleHeight
+                : fallbackProbeHeight;
+            float probeSpan = vehicleHeight > 0.0001f
+                ? vehicleHeight *
+                  visibilityProbeSpanInVehicleHeight
+                : 0f;
+            float minimumHeight = Mathf.Max(
+                0f,
+                centerHeight - probeSpan);
+            float maximumHeight = vehicleHeight > 0.0001f
+                ? Mathf.Min(
+                    vehicleHeight,
+                    centerHeight + probeSpan)
+                : centerHeight;
+            float targetClearance =
+                appliedRoomVehicleLength *
+                visibilityTerrainClearanceInVehicleLengths;
+            for (int i = 0; i < 3; i++)
+            {
+                float probeHeight = i == 0
+                    ? centerHeight
+                    : i == 1
+                        ? minimumHeight
+                        : maximumHeight;
+                eventReplay.TryCollectShowcaseRemovableOccluders(
+                    viewer.transform.position,
+                    trackPoint + boundStage.up * probeHeight,
+                    targetClearance,
+                    plannedForegroundOccluders,
+                    out _,
+                    out _);
+            }
+        }
+
+        private void TryImproveInitialMultiBeatVisibility(
+            ref ShowcaseShotPlacementCandidate initialPlacement)
+        {
+            if (actionBeats.Count < 2 ||
+                actionBeatVisibility.Count == 0 ||
+                actionBeatVisibility[0] ||
+                !initialPlacement.IsValid)
+            {
+                return;
+            }
+
+            ShowcaseActionBeat firstBeat = actionBeats[0];
+            if (!TryCreateAdditionalShotPlacement(
+                    firstBeat,
+                    out ShowcaseShotPlacementCandidate rescue) ||
+                !ShotPlacementsDiffer(initialPlacement, rescue) ||
+                !TryApplyShotPlacement(rescue))
+            {
+                return;
+            }
+
+            AnalyzeCurrentShotVisibility();
+            if (actionBeatVisibility.Count > 0 &&
+                actionBeatVisibility[0])
+            {
+                initialPlacement = rescue;
+                return;
+            }
+
+            TryApplyShotPlacement(initialPlacement);
+            AnalyzeCurrentShotVisibility();
+        }
+
+        private void MeasureShowcasePerception(Camera viewer)
+        {
+            perceptionEyeRelativeTrackFocus = Vector3.zero;
+            perceptionClosestVehicleDistance = 0f;
+            perceptionVehicleAngularSize = 0f;
+            perceptionScreenTravelPerSecond = 0f;
+            perceptionBattleVisibleFraction = 0f;
+            if (viewer == null ||
+                eventReplay == null ||
+                boundStage == null ||
+                firstBinding == null ||
+                secondBinding == null ||
+                actionBeats.Count == 0)
+            {
+                return;
+            }
+
+            Vector3 eye = viewer.transform.position;
+            float closestDistance = float.PositiveInfinity;
+            float screenDistance = 0f;
+            float screenDuration = 0f;
+            int validSamples = 0;
+            int visibleSamples = 0;
+            float sampleStep = Mathf.Max(
+                0.05f,
+                visibilitySampleSeconds);
+            for (int beatIndex = 0;
+                beatIndex < actionBeats.Count;
+                beatIndex++)
+            {
+                ShowcaseActionBeat beat = actionBeats[beatIndex];
+                float duration = Mathf.Max(
+                    0f,
+                    beat.EndTime - beat.StartTime);
+                int sampleCount = Mathf.Max(
+                    1,
+                    Mathf.CeilToInt(duration / sampleStep));
+                bool hasPreviousScreenPosition = false;
+                float previousTime = 0f;
+                Vector2 previousScreenPosition = Vector2.zero;
+                for (int sampleIndex = 0;
+                    sampleIndex <= sampleCount;
+                    sampleIndex++)
+                {
+                    float replayTime = Mathf.Lerp(
+                        beat.StartTime,
+                        beat.EndTime,
+                        sampleIndex / (float)sampleCount);
+                    if (!eventReplay.TryGetEventLocalVehiclePosition(
+                            firstBinding.DriverNumber,
+                            replayTime,
+                            out Vector3 firstLocal) ||
+                        !eventReplay.TryGetEventLocalVehiclePosition(
+                            secondBinding.DriverNumber,
+                            replayTime,
+                            out Vector3 secondLocal))
+                    {
+                        hasPreviousScreenPosition = false;
+                        continue;
+                    }
+
+                    Vector3 firstTrackPoint =
+                        boundStage.TransformPoint(firstLocal);
+                    Vector3 secondTrackPoint =
+                        boundStage.TransformPoint(secondLocal);
+                    Vector3 up = boundStage.up;
+                    Vector3 firstCenter =
+                        firstTrackPoint +
+                        up * firstVisibilityVehicleHeight * 0.5f;
+                    Vector3 secondCenter =
+                        secondTrackPoint +
+                        up * secondVisibilityVehicleHeight * 0.5f;
+                    float firstDistance = Vector3.Distance(
+                        eye,
+                        firstCenter);
+                    float secondDistance = Vector3.Distance(
+                        eye,
+                        secondCenter);
+                    float sampleClosestDistance = Mathf.Min(
+                        firstDistance,
+                        secondDistance);
+                    if (sampleClosestDistance < closestDistance)
+                    {
+                        closestDistance = sampleClosestDistance;
+                        Vector3 trackFocus =
+                            (firstTrackPoint + secondTrackPoint) * 0.5f;
+                        perceptionEyeRelativeTrackFocus =
+                            viewer.transform.InverseTransformPoint(
+                                trackFocus);
+                    }
+
+                    Vector3 firstViewport =
+                        viewer.WorldToViewportPoint(firstCenter);
+                    Vector3 secondViewport =
+                        viewer.WorldToViewportPoint(secondCenter);
+                    if (firstViewport.z > viewer.nearClipPlane &&
+                        secondViewport.z > viewer.nearClipPlane)
+                    {
+                        Vector2 screenPosition =
+                            (new Vector2(
+                                 firstViewport.x,
+                                 firstViewport.y) +
+                             new Vector2(
+                                 secondViewport.x,
+                                 secondViewport.y)) * 0.5f;
+                        if (hasPreviousScreenPosition)
+                        {
+                            float segmentDuration =
+                                replayTime - previousTime;
+                            if (segmentDuration > 0f)
+                            {
+                                screenDistance += Vector2.Distance(
+                                    previousScreenPosition,
+                                    screenPosition);
+                                screenDuration += segmentDuration;
+                            }
+                        }
+
+                        hasPreviousScreenPosition = true;
+                        previousTime = replayTime;
+                        previousScreenPosition = screenPosition;
+                    }
+                    else
+                    {
+                        hasPreviousScreenPosition = false;
+                    }
+
+                    validSamples++;
+                    if (TryEvaluateBattleVisibility(
+                            viewer,
+                            replayTime,
+                            out _))
+                    {
+                        visibleSamples++;
+                    }
+                }
+            }
+
+            if (float.IsFinite(closestDistance))
+            {
+                perceptionClosestVehicleDistance = closestDistance;
+                float safeDistance = Mathf.Max(
+                    0.001f,
+                    closestDistance);
+                perceptionVehicleAngularSize =
+                    2f * Mathf.Atan(
+                        appliedRoomVehicleLength /
+                        (2f * safeDistance)) *
+                    Mathf.Rad2Deg;
+            }
+            if (screenDuration > 0.0001f)
+            {
+                perceptionScreenTravelPerSecond =
+                    screenDistance /
+                    screenDuration *
+                    ResolveActiveShowcasePlaybackSpeed();
+            }
+            if (validSamples > 0)
+            {
+                perceptionBattleVisibleFraction =
+                    visibleSamples /
+                    (float)validSamples;
+            }
+
+            Debug.Log(
+                $"[ShowcasePerception] drivers=" +
+                $"{firstBinding.DriverNumber}/" +
+                $"{secondBinding.DriverNumber}, " +
+                $"eyeTrack={perceptionEyeRelativeTrackFocus:F3}m, " +
+                $"closestPass={perceptionClosestVehicleDistance:0.###}m, " +
+                $"angularVehicle={perceptionVehicleAngularSize:0.##}deg, " +
+                $"screenTravel={perceptionScreenTravelPerSecond:0.###} viewport/s, " +
+                $"battleVisible={perceptionBattleVisibleFraction:P0}.",
+                this);
+        }
+
+        private void UpdateRuntimePerceptionMetrics()
+        {
+            if (eventReplay == null ||
+                firstBinding == null ||
+                secondBinding == null ||
+                actionBeats.Count == 0)
+            {
+                ClearRuntimePerceptionPreviousSamples();
+                return;
+            }
+
+            int timelineRevision =
+                eventReplay.ShowcaseTimelineRevision;
+            if (runtimePerceptionTimelineRevision != timelineRevision)
+            {
+                ResetRuntimePerceptionMetrics();
+                runtimePerceptionTimelineRevision = timelineRevision;
+            }
+
+            float replayTime = eventReplay.CurrentTime;
+            float finalActionTime = GetFinalRuntimeActionTime();
+            if (runtimePerceptionPublished)
+                return;
+
+            if (!eventReplay.IsPlaying || battleReframeActive)
+            {
+                ClearRuntimePerceptionPreviousSamples();
+                if (runtimePerceptionSampleCount > 0 &&
+                    replayTime >= finalActionTime - 0.001f)
+                {
+                    PublishRuntimePerceptionMetrics(true);
+                }
+                return;
+            }
+
+            if (!IsRuntimeActionTime(replayTime))
+            {
+                ClearRuntimePerceptionPreviousSamples();
+                if (runtimePerceptionSampleCount > 0 &&
+                    replayTime > finalActionTime)
+                {
+                    PublishRuntimePerceptionMetrics(true);
+                }
+                return;
+            }
+
+            Camera viewer = Camera.main;
+            float deltaTime = Time.unscaledDeltaTime;
+            if (viewer == null || deltaTime <= 0.0001f)
+            {
+                ClearRuntimePerceptionPreviousSamples();
+                return;
+            }
+
+            float firstHeight = MeasureWorldVisualHeight(
+                firstBinding,
+                boundStage.up);
+            float secondHeight = MeasureWorldVisualHeight(
+                secondBinding,
+                boundStage.up);
+            SampleRuntimeVehiclePerception(
+                viewer,
+                firstBinding,
+                firstHeight,
+                deltaTime,
+                ref runtimeFirstPreviousValid,
+                ref runtimeFirstPreviousViewport,
+                ref runtimeFirstPreviousAngularSize);
+            SampleRuntimeVehiclePerception(
+                viewer,
+                secondBinding,
+                secondHeight,
+                deltaTime,
+                ref runtimeSecondPreviousValid,
+                ref runtimeSecondPreviousViewport,
+                ref runtimeSecondPreviousAngularSize);
+
+            runtimePerceptionSampleCount =
+                runtimePerceptionAttemptedSamples;
+            runtimePerceptionVisibleFraction =
+                runtimePerceptionAttemptedSamples > 0
+                    ? runtimePerceptionVisibleSamples /
+                      (float)runtimePerceptionAttemptedSamples
+                    : 0f;
+            if (replayTime >= finalActionTime - 0.001f)
+                PublishRuntimePerceptionMetrics(true);
+        }
+
+        private void SampleRuntimeVehiclePerception(
+            Camera viewer,
+            VehicleBinding binding,
+            float vehicleHeight,
+            float deltaTime,
+            ref bool previousValid,
+            ref Vector2 previousViewport,
+            ref float previousAngularSize)
+        {
+            runtimePerceptionAttemptedSamples++;
+            if (binding == null ||
+                binding.VisualMotionRoot == null ||
+                !binding.VisualMotionRoot.gameObject.activeInHierarchy)
+            {
+                previousValid = false;
+                return;
+            }
+
+            float vehicleLength = Mathf.Max(
+                0.001f,
+                appliedRoomVehicleLength);
+            float safeHeight = Mathf.Max(0f, vehicleHeight);
+            Vector3 center =
+                binding.VisualMotionRoot.position +
+                boundStage.up * safeHeight * 0.5f;
+            if (!VehicleBoundsIntersectViewer(
+                    viewer,
+                    center,
+                    vehicleLength * 0.5f,
+                    safeHeight * 0.5f))
+            {
+                previousValid = false;
+                return;
+            }
+
+            float terrainClearance = vehicleLength *
+                visibilityTerrainClearanceInVehicleLengths;
+            if (eventReplay.TryGetShowcaseTerrainOcclusion(
+                    viewer.transform.position,
+                    center,
+                    terrainClearance,
+                    out bool terrainOccluded) &&
+                terrainOccluded)
+            {
+                previousValid = false;
+                return;
+            }
+
+            Vector3 viewport3 = viewer.WorldToViewportPoint(center);
+            Vector2 viewport = new(viewport3.x, viewport3.y);
+            float distance = Vector3.Distance(
+                viewer.transform.position,
+                center);
+            float angularSize = 2f * Mathf.Atan(
+                vehicleLength /
+                (2f * Mathf.Max(0.001f, distance))) *
+                Mathf.Rad2Deg;
+
+            runtimePerceptionVisibleSamples++;
+            runtimePerceptionAngularSizePeak = Mathf.Max(
+                runtimePerceptionAngularSizePeak,
+                angularSize);
+            if (runtimePerceptionClosestDistance <= 0f ||
+                distance < runtimePerceptionClosestDistance)
+            {
+                runtimePerceptionClosestDistance = distance;
+                runtimePerceptionClosestEyePosition =
+                    viewer.transform.InverseTransformPoint(center);
+            }
+
+            if (previousValid)
+            {
+                float screenSpeed = Vector2.Distance(
+                    previousViewport,
+                    viewport) / deltaTime;
+                float lateralSpeed = Mathf.Abs(
+                    viewport.x - previousViewport.x) / deltaTime;
+                float loomingRate = Mathf.Max(
+                    0f,
+                    (angularSize - previousAngularSize) / deltaTime);
+                if (float.IsFinite(screenSpeed) &&
+                    float.IsFinite(lateralSpeed) &&
+                    float.IsFinite(loomingRate))
+                {
+                    runtimeScreenSpeeds.Add(screenSpeed);
+                    runtimeLateralSpeeds.Add(lateralSpeed);
+                    runtimeLoomingRates.Add(loomingRate);
+                    runtimePerceptionScreenSpeedPeak = Mathf.Max(
+                        runtimePerceptionScreenSpeedPeak,
+                        screenSpeed);
+                    runtimePerceptionLateralSpeedPeak = Mathf.Max(
+                        runtimePerceptionLateralSpeedPeak,
+                        lateralSpeed);
+                    runtimePerceptionLoomingRatePeak = Mathf.Max(
+                        runtimePerceptionLoomingRatePeak,
+                        loomingRate);
+                }
+            }
+
+            previousValid = true;
+            previousViewport = viewport;
+            previousAngularSize = angularSize;
+        }
+
+        private bool IsRuntimeActionTime(float replayTime)
+        {
+            for (int i = 0; i < actionBeats.Count; i++)
+            {
+                ShowcaseActionBeat beat = actionBeats[i];
+                if (replayTime >= beat.StartTime &&
+                    replayTime <= Mathf.Max(
+                        beat.EndTime,
+                        beat.ConfirmedTime))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private float GetFinalRuntimeActionTime()
+        {
+            float finalTime = 0f;
+            for (int i = 0; i < actionBeats.Count; i++)
+            {
+                finalTime = Mathf.Max(
+                    finalTime,
+                    actionBeats[i].EndTime,
+                    actionBeats[i].ConfirmedTime);
+            }
+            return finalTime;
+        }
+
+        private void PublishRuntimePerceptionMetrics(bool complete)
+        {
+            if (runtimePerceptionPublished ||
+                runtimePerceptionSampleCount <= 0 ||
+                firstBinding == null ||
+                secondBinding == null)
+            {
+                return;
+            }
+
+            runtimePerceptionScreenSpeedP90 =
+                ResolvePercentile(runtimeScreenSpeeds, 0.9f);
+            runtimePerceptionLateralSpeedP90 =
+                ResolvePercentile(runtimeLateralSpeeds, 0.9f);
+            runtimePerceptionLoomingRateP90 =
+                ResolvePercentile(runtimeLoomingRates, 0.9f);
+            runtimePerceptionVisibleFraction =
+                runtimePerceptionAttemptedSamples > 0
+                    ? runtimePerceptionVisibleSamples /
+                      (float)runtimePerceptionAttemptedSamples
+                    : 0f;
+            runtimePerceptionPublished = true;
+
+            Debug.Log(
+                $"[ShowcasePerceptionRuntime] drivers=" +
+                $"{firstBinding.DriverNumber}/" +
+                $"{secondBinding.DriverNumber}, " +
+                $"complete={complete}, " +
+                $"samples={runtimePerceptionSampleCount}, " +
+                $"visibleSamples={runtimePerceptionVisibleSamples}, " +
+                $"visible={runtimePerceptionVisibleFraction:P0}, " +
+                $"screenP90={runtimePerceptionScreenSpeedP90:0.###} viewport/s, " +
+                $"screenPeak={runtimePerceptionScreenSpeedPeak:0.###} viewport/s, " +
+                $"lateralP90={runtimePerceptionLateralSpeedP90:0.###} viewport/s, " +
+                $"lateralPeak={runtimePerceptionLateralSpeedPeak:0.###} viewport/s, " +
+                $"loomP90={runtimePerceptionLoomingRateP90:0.##} deg/s, " +
+                $"loomPeak={runtimePerceptionLoomingRatePeak:0.##} deg/s, " +
+                $"angularPeak={runtimePerceptionAngularSizePeak:0.##}deg, " +
+                $"closest={runtimePerceptionClosestDistance:0.###}m, " +
+                $"closestEye={runtimePerceptionClosestEyePosition:F3}m.",
+                this);
+        }
+
+        private static float ResolvePercentile(
+            List<float> values,
+            float percentile)
+        {
+            if (values == null || values.Count == 0)
+                return 0f;
+
+            values.Sort();
+            int index = Mathf.Clamp(
+                Mathf.CeilToInt(
+                    Mathf.Clamp01(percentile) * values.Count) - 1,
+                0,
+                values.Count - 1);
+            return values[index];
+        }
+
+        private void ClearRuntimePerceptionPreviousSamples()
+        {
+            runtimeFirstPreviousValid = false;
+            runtimeSecondPreviousValid = false;
+        }
+
+        private void ResetRuntimePerceptionMetrics()
+        {
+            runtimeScreenSpeeds.Clear();
+            runtimeLateralSpeeds.Clear();
+            runtimeLoomingRates.Clear();
+            runtimePerceptionTimelineRevision = -1;
+            runtimePerceptionAttemptedSamples = 0;
+            runtimePerceptionVisibleSamples = 0;
+            runtimePerceptionPublished = false;
+            runtimePerceptionSampleCount = 0;
+            runtimePerceptionVisibleFraction = 0f;
+            runtimePerceptionScreenSpeedP90 = 0f;
+            runtimePerceptionScreenSpeedPeak = 0f;
+            runtimePerceptionLateralSpeedP90 = 0f;
+            runtimePerceptionLateralSpeedPeak = 0f;
+            runtimePerceptionLoomingRateP90 = 0f;
+            runtimePerceptionLoomingRatePeak = 0f;
+            runtimePerceptionAngularSizePeak = 0f;
+            runtimePerceptionClosestDistance = 0f;
+            runtimePerceptionClosestEyePosition = Vector3.zero;
+            runtimeFirstPreviousViewport = Vector2.zero;
+            runtimeSecondPreviousViewport = Vector2.zero;
+            runtimeFirstPreviousAngularSize = 0f;
+            runtimeSecondPreviousAngularSize = 0f;
+            ClearRuntimePerceptionPreviousSamples();
+        }
+
+        private void TryConfigureNaturalVisibilityEnd(
+            ShowcasePlaybackWindow window)
+        {
+            usesNaturalVisibilityEnd = false;
+            naturalVisibilityEndTime = 0f;
+            if (eventReplay == null ||
+                appliedRecommendedWallExitPlacement ||
+                requiresAdditionalShot ||
+                actionBeats.Count == 0 ||
+                visibleIntervals.Count == 0)
+            {
+                return;
+            }
+
+            ShowcaseActionBeat finalBeat =
+                actionBeats[actionBeats.Count - 1];
+            ShowcaseVisibleInterval finalInterval =
+                visibleIntervals[visibleIntervals.Count - 1];
+            float mandatoryBeatTime = Mathf.Max(
+                finalBeat.Time,
+                finalBeat.ConfirmedTime);
+            if (eventReplay.TryGetShowcaseResultPresentationEndTime(
+                    out float resultPresentationEndTime))
+            {
+                mandatoryBeatTime = Mathf.Max(
+                    mandatoryBeatTime,
+                    resultPresentationEndTime);
+            }
+            float sampleTolerance = Mathf.Max(
+                0.05f,
+                visibilityAnalysisSampleStep);
+            if (!finalInterval.IsValid ||
+                mandatoryBeatTime <
+                    finalInterval.StartTime - sampleTolerance ||
+                mandatoryBeatTime >
+                    finalInterval.EndTime + sampleTolerance ||
+                finalInterval.EndTime >=
+                    window.EndTime - sampleTolerance)
+            {
+                return;
+            }
+
+            if (!eventReplay.TrySetShowcasePresentationEndTime(
+                    finalInterval.EndTime))
+            {
+                return;
+            }
+
+            usesNaturalVisibilityEnd = true;
+            naturalVisibilityEndTime = finalInterval.EndTime;
+        }
+
+        private void BuildAdditionalShotRequests()
+        {
+            additionalShotRequests.Clear();
+            if (!requiresAdditionalShot)
+                return;
+
+            for (int beatIndex = 0;
+                beatIndex < actionBeats.Count;
+                beatIndex++)
+            {
+                if (actionBeatVisibility[beatIndex])
+                    continue;
+
+                ShowcaseActionBeat beat = actionBeats[beatIndex];
+                float transitionStart = beat.StartTime;
+                float transitionEnd = beat.StartTime;
+                if (TryFindPrecedingVisibleInterval(
+                        beat.StartTime,
+                        out ShowcaseVisibleInterval interval))
+                {
+                    float firstHiddenSample =
+                        interval.EndTime +
+                        visibilityAnalysisSampleStep;
+                    if (beatIndex > 0)
+                    {
+                        firstHiddenSample = Mathf.Max(
+                            firstHiddenSample,
+                            actionBeats[beatIndex - 1].EndTime);
+                    }
+                    if (firstHiddenSample < beat.StartTime)
+                    {
+                        transitionStart = firstHiddenSample;
+                        transitionEnd = beat.StartTime;
+                    }
+                }
+
+                additionalShotRequests.Add(
+                    new ShowcaseAdditionalShotRequest(
+                        beatIndex,
+                        beat,
+                        transitionStart,
+                        transitionEnd,
+                        TryCreateAdditionalShotPlacement(
+                            beat,
+                            out ShowcaseShotPlacementCandidate placement)
+                                ? placement
+                                : default));
+            }
+        }
+
+        private bool TryCreateAdditionalShotPlacement(
+            ShowcaseActionBeat beat,
+            out ShowcaseShotPlacementCandidate placement)
+        {
+            placement = default;
+            if (!activeRun.IsValid ||
+                eventLocalPath.Count < 2 ||
+                eventCoordinateScale <= 0f)
+            {
+                return false;
+            }
+
+            int focusIndex = FindClosestPointIndex(
+                eventLocalPath,
+                beat.EventLocalPosition);
+            if (focusIndex < 0)
+                return false;
+
+            Vector3 sourceDirection = Flat(
+                FindDirectionAt(eventLocalPath, focusIndex));
+            Vector3 heroForward = Flat(
+                activeRun.FocusPose.forward);
+            if (heroForward.sqrMagnitude <= 0.000001f)
+            {
+                heroForward = Flat(
+                    activeRun.ExitPose.position -
+                    activeRun.EntryPose.position);
+            }
+            if (sourceDirection.sqrMagnitude <= 0.000001f ||
+                heroForward.sqrMagnitude <= 0.000001f)
+            {
+                return false;
+            }
+
+            sourceDirection.Normalize();
+            heroForward.Normalize();
+            Quaternion rotation = Quaternion.Euler(
+                0f,
+                Vector3.SignedAngle(
+                    sourceDirection,
+                    heroForward,
+                    Vector3.up),
+                0f);
+            Vector3 heroTarget =
+                activeRun.FocusPose.position +
+                heroForward * heroForwardOffset;
+            Vector3 position =
+                heroTarget -
+                rotation *
+                beat.EventLocalPosition *
+                eventCoordinateScale;
+            position.y =
+                activeRun.FloorHeight +
+                roadFloorOffset -
+                (rotation *
+                 beat.EventLocalPosition *
+                 eventCoordinateScale).y;
+
+            placement = new ShowcaseShotPlacementCandidate(
+                position,
+                rotation,
+                eventCoordinateScale,
+                beat.EventLocalPosition);
+            return placement.IsValid;
+        }
+
+        private bool TryPlanMultiBeatWallExit(
+            out float transitionTime,
+            out int transitionBeatIndex,
+            out Vector3 wallExitAttentionPosition)
+        {
+            transitionTime = 0f;
+            transitionBeatIndex = -1;
+            wallExitAttentionPosition = Vector3.zero;
+            wallExitPlanningBeats.Clear();
+            if (eventReplay == null ||
+                !eventReplay.TryCopyShowcaseActionBeats(
+                    wallExitPlanningBeats) ||
+                wallExitPlanningBeats.Count < 2)
+            {
+                return false;
+            }
+
+            ShowcaseActionBeat finalBeat =
+                wallExitPlanningBeats[
+                    wallExitPlanningBeats.Count - 1];
+            float finalBeatTransitionTime = Mathf.Max(
+                finalBeat.Time,
+                finalBeat.ConfirmedTime);
+            float finalBeatRequiredGap =
+                Mathf.Max(0.2f, battleReframeDuration) *
+                Mathf.Max(1f, showcasePlaybackSpeedMultiplier) +
+                multiBeatTransitionSafetyMargin;
+            if (eventReplay.TryGetShowcasePlaybackWindow(
+                    out ShowcasePlaybackWindow window) &&
+                window.ExitTime - finalBeatTransitionTime >=
+                    finalBeatRequiredGap)
+            {
+                transitionTime = finalBeatTransitionTime;
+                transitionBeatIndex =
+                    wallExitPlanningBeats.Count;
+                wallExitAttentionPosition =
+                    finalBeat.EventLocalPosition;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void InitializeShotPlacementRuntime(
+            ShowcaseShotPlacementCandidate placement)
+        {
+            initialShotPlacement = placement;
+            nextAdditionalShotRequestIndex = 0;
+            activeAdditionalShotRequestIndex = -1;
+            observedShowcaseTimelineRevision =
+                eventReplay != null
+                    ? eventReplay.ShowcaseTimelineRevision
+                    : -1;
+            previousShotReplayTime = eventReplay != null
+                ? eventReplay.CurrentTime
+                : 0f;
+            shotPlacementRuntimeInitialized =
+                initialShotPlacement.IsValid;
+        }
+
+        private bool IsWallExitHandoffVisuallyCompact(
+            ShowcaseShotPlacementCandidate battlePlacement,
+            ShowcaseShotPlacementCandidate wallPlacement,
+            Vector3 eventLocalAttention,
+            out float focusShift)
+        {
+            focusShift = float.PositiveInfinity;
+            if (!battlePlacement.IsValid ||
+                !wallPlacement.IsValid)
+            {
+                return false;
+            }
+
+            Vector3 battleAttention =
+                battlePlacement.Position +
+                battlePlacement.Rotation *
+                eventLocalAttention *
+                battlePlacement.UniformScale;
+            Vector3 wallAttention =
+                wallPlacement.Position +
+                wallPlacement.Rotation *
+                eventLocalAttention *
+                wallPlacement.UniformScale;
+            focusShift = Flat(
+                wallAttention - battleAttention).magnitude;
+            return focusShift <=
+                maximumBattleToWallFocusShift;
+        }
+
+        private void InitializeWallExitHandoffRuntime(
+            ShowcaseShotPlacementCandidate battlePlacement,
+            ShowcaseShotPlacementCandidate exitPlacement,
+            float transitionTime)
+        {
+            ResetWallExitHandoffRuntime();
+            wallExitBattlePlacement = battlePlacement;
+            wallExitFinalPlacement = exitPlacement;
+            wallExitHandoffPrepared =
+                appliedRecommendedWallExitPlacement &&
+                wallExitBattlePlacement.IsValid &&
+                wallExitFinalPlacement.IsValid &&
+                ShotPlacementsDiffer(
+                    wallExitBattlePlacement,
+                    wallExitFinalPlacement);
+            wallExitHandoffComplete =
+                !wallExitHandoffPrepared;
+            if (!wallExitHandoffPrepared)
+                return;
+
+            wallExitHandoffTime = transitionTime;
+        }
+
+        private void UpdateWallExitHandoffPlacement()
+        {
+            if (!wallExitHandoffPrepared || eventReplay == null)
+                return;
+
+            float replayTime = eventReplay.CurrentTime;
+            bool timelineChanged =
+                observedShowcaseTimelineRevision !=
+                eventReplay.ShowcaseTimelineRevision;
+            bool rewound =
+                replayTime + 0.0001f < previousShotReplayTime;
+            if (timelineChanged || rewound)
+            {
+                CancelWallExitHandoff(false);
+                wallExitHandoffComplete =
+                    replayTime >= wallExitHandoffTime;
+                TryApplyShotPlacement(
+                    wallExitHandoffComplete
+                        ? wallExitFinalPlacement
+                        : wallExitBattlePlacement);
+                observedShowcaseTimelineRevision =
+                    eventReplay.ShowcaseTimelineRevision;
+                previousShotReplayTime = replayTime;
+                UpdateFinalShotExitPortalVisibility();
+                return;
+            }
+
+            previousShotReplayTime = replayTime;
+            if (wallExitHandoffActive)
+            {
+                UpdateWallExitHandoff();
+                return;
+            }
+            if (wallExitHandoffComplete ||
+                !eventReplay.IsPlaying ||
+                replayTime < wallExitHandoffTime)
+            {
+                return;
+            }
+
+            BeginWallExitHandoff();
+        }
+
+        private void BeginWallExitHandoff()
+        {
+            ShowcaseShotPlacementCandidate currentBattlePlacement =
+                ResolveCurrentBattlePlacement();
+            if (currentBattlePlacement.IsValid)
+                wallExitBattlePlacement = currentBattlePlacement;
+            if (battleReframeActive)
+                CancelBattleReframe();
+            wallExitHandoffElapsed = 0f;
+            wallExitHandoffActive = true;
+            wallExitHandoffComplete = false;
+            SetBattleReframeVehiclesHidden(true);
+            Camera viewer = Camera.main;
+            if (viewer != null)
+                ShowBattleReframeCue(viewer);
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void UpdateWallExitHandoff()
+        {
+            SetBattleReframeVehiclesHidden(true);
+            if (!eventReplay.IsPlaying)
+                return;
+
+            wallExitHandoffElapsed += Time.unscaledDeltaTime;
+            float availableReplayTime = activeRun.IsValid
+                ? activeRun.Timing.ExitTime - wallExitHandoffTime
+                : battleReframeDuration;
+            float duration = Mathf.Clamp(
+                availableReplayTime,
+                0.2f,
+                Mathf.Max(0.2f, battleReframeDuration));
+            float progress = Mathf.Clamp01(
+                wallExitHandoffElapsed / duration);
+            float eased = progress * progress *
+                (3f - 2f * progress);
+            ShowcaseShotPlacementCandidate placement = new(
+                Vector3.Lerp(
+                    wallExitBattlePlacement.Position,
+                    wallExitFinalPlacement.Position,
+                    eased),
+                Quaternion.Slerp(
+                    wallExitBattlePlacement.Rotation,
+                    wallExitFinalPlacement.Rotation,
+                    eased),
+                Mathf.Lerp(
+                    wallExitBattlePlacement.UniformScale,
+                    wallExitFinalPlacement.UniformScale,
+                    eased),
+                Vector3.Lerp(
+                    wallExitBattlePlacement.EventLocalFocus,
+                    wallExitFinalPlacement.EventLocalFocus,
+                    eased));
+            if (!TryApplyShotPlacement(placement))
+            {
+                CancelWallExitHandoff(true);
+                return;
+            }
+
+            UpdateBattleReframeCue(progress);
+            if (progress < 1f)
+                return;
+
+            wallExitHandoffActive = false;
+            wallExitHandoffComplete = true;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void CancelWallExitHandoff(bool restoreBattlePlacement)
+        {
+            wallExitHandoffActive = false;
+            wallExitHandoffElapsed = 0f;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            if (restoreBattlePlacement)
+            {
+                wallExitHandoffComplete = false;
+                TryApplyShotPlacement(wallExitBattlePlacement);
+                UpdateFinalShotExitPortalVisibility();
+            }
+        }
+
+        private void UpdateAdditionalShotPlacement()
+        {
+            if (!shotPlacementRuntimeInitialized ||
+                eventReplay == null ||
+                activePlacementMode !=
+                    ShowcaseStagePlacementMode.RoomDioramaRigid)
+            {
+                return;
+            }
+
+            float replayTime = eventReplay.CurrentTime;
+            if (observedShowcaseTimelineRevision !=
+                eventReplay.ShowcaseTimelineRevision)
+            {
+                CancelBattleReframe();
+                RestoreShotPlacementForTime(replayTime);
+                observedShowcaseTimelineRevision =
+                    eventReplay.ShowcaseTimelineRevision;
+                previousShotReplayTime = replayTime;
+                return;
+            }
+            if (replayTime + 0.0001f < previousShotReplayTime)
+            {
+                CancelBattleReframe();
+                RestoreShotPlacementForTime(replayTime);
+                previousShotReplayTime = replayTime;
+                return;
+            }
+
+            previousShotReplayTime = replayTime;
+            if (battleReframeActive)
+            {
+                UpdateBattleReframe();
+                return;
+            }
+            if (!eventReplay.IsPlaying)
+                return;
+
+            while (nextAdditionalShotRequestIndex <
+                additionalShotRequests.Count)
+            {
+                ShowcaseAdditionalShotRequest request =
+                    additionalShotRequests[
+                        nextAdditionalShotRequestIndex];
+                if (!request.HasTransitionWindow ||
+                    !request.HasPlacement)
+                {
+                    lastProcessedAdditionalShotRequestIndex =
+                        nextAdditionalShotRequestIndex;
+                    nextAdditionalShotRequestIndex++;
+                    UpdateFinalShotExitPortalVisibility();
+                    continue;
+                }
+
+                if (replayTime < request.TransitionStartTime)
+                    return;
+                if (replayTime > request.TransitionEndTime)
+                {
+                    lastProcessedAdditionalShotRequestIndex =
+                        nextAdditionalShotRequestIndex;
+                    nextAdditionalShotRequestIndex++;
+                    UpdateFinalShotExitPortalVisibility();
+                    continue;
+                }
+
+                Camera viewer = Camera.main;
+                if (viewer == null)
+                    return;
+
+                if (TryEvaluateBattleVisibility(
+                        viewer,
+                        replayTime,
+                        out _))
+                {
+                    return;
+                }
+
+                ShowcaseShotPlacementCandidate previousPlacement =
+                    activeAdditionalShotRequestIndex >= 0
+                        ? additionalShotRequests[
+                            activeAdditionalShotRequestIndex].Placement
+                        : initialShotPlacement;
+                BeginBattleReframe(
+                    previousPlacement,
+                    request.Placement,
+                    nextAdditionalShotRequestIndex,
+                    viewer);
+                return;
+            }
+        }
+
+        private ShowcaseShotPlacementCandidate
+            ResolveCurrentBattlePlacement()
+        {
+            if (battleReframeActive &&
+                battleReframeTo.IsValid)
+            {
+                TryApplyShotPlacement(battleReframeTo);
+                return battleReframeTo;
+            }
+
+            if (activeAdditionalShotRequestIndex >= 0 &&
+                activeAdditionalShotRequestIndex <
+                    additionalShotRequests.Count)
+            {
+                ShowcaseShotPlacementCandidate placement =
+                    additionalShotRequests[
+                        activeAdditionalShotRequestIndex].Placement;
+                if (placement.IsValid)
+                    return placement;
+            }
+
+            return initialShotPlacement;
+        }
+
+        private void BeginBattleReframe(
+            ShowcaseShotPlacementCandidate from,
+            ShowcaseShotPlacementCandidate to,
+            int requestIndex,
+            Camera viewer)
+        {
+            if (!from.IsValid ||
+                !to.IsValid ||
+                requestIndex < 0 ||
+                requestIndex >= additionalShotRequests.Count ||
+                viewer == null)
+            {
+                return;
+            }
+
+            battleReframeFrom = from;
+            battleReframeTo = to;
+            battleReframeRequestIndex = requestIndex;
+            battleReframeElapsed = 0f;
+            battleReframeActive = true;
+            eventReplay.SetShowcaseTransitionHold(true);
+            SetBattleReframeVehiclesHidden(true);
+            ShowBattleReframeCue(viewer);
+        }
+
+        private void UpdateBattleReframe()
+        {
+            SetBattleReframeVehiclesHidden(true);
+
+            battleReframeElapsed += Time.unscaledDeltaTime;
+            float duration = Mathf.Max(
+                0.2f,
+                battleReframeDuration);
+            float progress = Mathf.Clamp01(
+                battleReframeElapsed / duration);
+            float eased = progress * progress *
+                (3f - 2f * progress);
+            ShowcaseShotPlacementCandidate placement =
+                new(
+                    Vector3.Lerp(
+                        battleReframeFrom.Position,
+                        battleReframeTo.Position,
+                        eased),
+                    Quaternion.Slerp(
+                        battleReframeFrom.Rotation,
+                        battleReframeTo.Rotation,
+                        eased),
+                    Mathf.Lerp(
+                        battleReframeFrom.UniformScale,
+                        battleReframeTo.UniformScale,
+                        eased),
+                    Vector3.Lerp(
+                        battleReframeFrom.EventLocalFocus,
+                        battleReframeTo.EventLocalFocus,
+                        eased));
+            if (!TryApplyShotPlacement(placement))
+            {
+                ShowcaseShotPlacementCandidate fallback =
+                    battleReframeFrom;
+                CancelBattleReframe();
+                TryApplyShotPlacement(fallback);
+                return;
+            }
+
+            UpdateBattleReframeCue(progress);
+            if (progress < 1f)
+                return;
+
+            activeAdditionalShotRequestIndex =
+                battleReframeRequestIndex;
+            lastProcessedAdditionalShotRequestIndex =
+                battleReframeRequestIndex;
+            nextAdditionalShotRequestIndex =
+                battleReframeRequestIndex + 1;
+            battleReframeActive = false;
+            battleReframeRequestIndex = -1;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            RefreshTrackExitPortalForCurrentPlacement();
+            UpdateFinalShotExitPortalVisibility();
+            eventReplay.SetShowcaseTransitionHold(false);
+        }
+
+        private void CancelBattleReframe()
+        {
+            battleReframeActive = false;
+            battleReframeElapsed = 0f;
+            battleReframeRequestIndex = -1;
+            battleReframeFrom = default;
+            battleReframeTo = default;
+            SetBattleReframeVehiclesHidden(false);
+            HideBattleReframeCue();
+            eventReplay?.SetShowcaseTransitionHold(false);
+        }
+
+        private void SetBattleReframeVehiclesHidden(bool hidden)
+        {
+            ResolveCar(firstBinding)?
+                .SetShowcaseTransitionHidden(hidden);
+            ResolveCar(secondBinding)?
+                .SetShowcaseTransitionHidden(hidden);
+        }
+
+        private void ShowBattleReframeCue(Camera viewer)
+        {
+            EnsureBattleReframeCue(viewer);
+            if (battleReframeCueRoot != null)
+                battleReframeCueRoot.gameObject.SetActive(true);
+            UpdateBattleReframeCue(0f);
+        }
+
+        private void EnsureBattleReframeCue(Camera viewer)
+        {
+            if (battleReframeCueRoot != null &&
+                battleReframeCue != null)
+            {
+                battleReframeCueRoot.SetParent(
+                    viewer.transform,
+                    false);
+                return;
+            }
+
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                return;
+
+            GameObject cueObject = new("BattleReframeCue")
+            {
+                hideFlags = HideFlags.DontSave
+            };
+            battleReframeCueRoot = cueObject.transform;
+            battleReframeCueRoot.SetParent(
+                viewer.transform,
+                false);
+            battleReframeCueRoot.localPosition =
+                new Vector3(0f, 0f, 0.75f);
+            battleReframeCueRoot.localRotation =
+                Quaternion.identity;
+            battleReframeCueMaterial = new Material(shader)
+            {
+                name = "Battle Reframe Cue Material",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            battleReframeCue =
+                cueObject.AddComponent<LineRenderer>();
+            battleReframeCue.useWorldSpace = false;
+            battleReframeCue.loop = true;
+            battleReframeCue.positionCount = 48;
+            battleReframeCue.sharedMaterial =
+                battleReframeCueMaterial;
+            battleReframeCue.alignment = LineAlignment.View;
+            battleReframeCue.numCornerVertices = 3;
+            battleReframeCue.numCapVertices = 3;
+            battleReframeCue.shadowCastingMode =
+                ShadowCastingMode.Off;
+            battleReframeCue.receiveShadows = false;
+        }
+
+        private void UpdateBattleReframeCue(float progress)
+        {
+            if (battleReframeCue == null)
+                return;
+
+            float envelope = Mathf.Sin(
+                Mathf.Clamp01(progress) * Mathf.PI);
+            float radius = Mathf.Lerp(
+                0.12f,
+                0.42f,
+                Mathf.SmoothStep(0f, 1f, progress));
+            float alpha = envelope * 0.82f;
+            Color start = battleReframeStartColor;
+            Color end = battleReframeEndColor;
+            start.a *= alpha;
+            end.a *= alpha;
+            battleReframeCue.startColor = start;
+            battleReframeCue.endColor = end;
+            battleReframeCue.widthMultiplier =
+                Mathf.Lerp(0.012f, 0.003f, progress);
+            for (int i = 0;
+                i < battleReframeCue.positionCount;
+                i++)
+            {
+                float angle =
+                    i /
+                    (float)battleReframeCue.positionCount *
+                    Mathf.PI * 2f;
+                battleReframeCue.SetPosition(
+                    i,
+                    new Vector3(
+                        Mathf.Cos(angle) * radius,
+                        Mathf.Sin(angle) * radius,
+                        0f));
+            }
+        }
+
+        private void HideBattleReframeCue()
+        {
+            if (battleReframeCueRoot != null)
+                battleReframeCueRoot.gameObject.SetActive(false);
+        }
+
+        private void DisposeBattleReframeCue()
+        {
+            if (battleReframeCueRoot != null)
+                Destroy(battleReframeCueRoot.gameObject);
+            if (battleReframeCueMaterial != null)
+                Destroy(battleReframeCueMaterial);
+
+            battleReframeCueRoot = null;
+            battleReframeCue = null;
+            battleReframeCueMaterial = null;
+        }
+
+        private void RestoreShotPlacementForTime(float replayTime)
+        {
+            ShowcaseShotPlacementCandidate placement =
+                initialShotPlacement;
+            int resolvedRequestIndex = -1;
+            int resolvedNextIndex = 0;
+            for (int i = 0;
+                i < additionalShotRequests.Count;
+                i++)
+            {
+                ShowcaseAdditionalShotRequest request =
+                    additionalShotRequests[i];
+                if (!request.HasTransitionWindow ||
+                    !request.HasPlacement)
+                {
+                    resolvedNextIndex = i + 1;
+                    continue;
+                }
+                if (replayTime < request.TransitionStartTime)
+                    break;
+
+                placement = request.Placement;
+                resolvedRequestIndex = i;
+                resolvedNextIndex = i + 1;
+            }
+
+            bool placementChanged =
+                resolvedRequestIndex !=
+                    activeAdditionalShotRequestIndex &&
+                TryApplyShotPlacement(placement);
+            if (placementChanged)
+            {
+                activeAdditionalShotRequestIndex =
+                    resolvedRequestIndex;
+            }
+            nextAdditionalShotRequestIndex = resolvedNextIndex;
+            lastProcessedAdditionalShotRequestIndex =
+                resolvedNextIndex - 1;
+            if (placementChanged)
+                RefreshTrackExitPortalForCurrentPlacement();
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private bool RefreshTrackExitPortalForCurrentPlacement()
+        {
+            if (activePortalMode != "TrackExit")
+            {
+                return true;
+            }
+
+            string failure = "Current placement is unavailable.";
+            if (portalPresentation == null ||
+                boundStage == null ||
+                firstBinding == null ||
+                secondBinding == null ||
+                eventReplay == null ||
+                !activeRun.IsValid ||
+                !eventReplay.TryGetEventLocalPathPosition(
+                    activeRun.Timing.ExitTime,
+                    out Vector3 exitPosition) ||
+                !TryCreateTrackExitPortalPose(
+                    boundStage,
+                    eventLocalPath,
+                    exitPosition,
+                    out Pose trackExitPose) ||
+                !portalPresentation.ConfigureTrackExit(
+                    boundStage,
+                    trackExitPose,
+                    firstBinding.VehicleRoot,
+                    secondBinding.VehicleRoot,
+                    out failure))
+            {
+                portalPresentation?.Clear();
+                activePortalMode = "None";
+                exitPortalLifecycleState =
+                    ExitPortalLifecycleState.None;
+                Debug.LogWarning(
+                    "[TrackExitPortalSync] configured=False, " +
+                    $"detail={failure}",
+                    this);
+                return false;
+            }
+
+            ResolvePortalTransitionVehicles(
+                firstBinding,
+                secondBinding,
+                out Transform overtakingVehicle,
+                out Transform defendingVehicle);
+            overtakePortalTransitionVfx ??=
+                new OvertakePortalTransitionVfxSettings();
+            overtakePortalTransitionVfx.ClampValues();
+            portalPresentation.ConfigureOvertakePortalTransition(
+                overtakePortalTransitionVfx,
+                overtakingVehicle,
+                defendingVehicle,
+                eventReplay.CurrentTime);
+            portalPresentation.SetPlannedRoomOccluders(
+                plannedForegroundOccluders);
+            return true;
+        }
+
+        private void InitializeFinalShotExitPortalVisibility()
+        {
+            finalAdditionalShotRequestIndex = -1;
+            for (int i = 0;
+                i < additionalShotRequests.Count;
+                i++)
+            {
+                ShowcaseAdditionalShotRequest request =
+                    additionalShotRequests[i];
+                if (request.HasTransitionWindow &&
+                    request.HasPlacement)
+                {
+                    finalAdditionalShotRequestIndex = i;
+                }
+            }
+            lastProcessedAdditionalShotRequestIndex = -1;
+            UpdateFinalShotExitPortalVisibility();
+        }
+
+        private void UpdateFinalShotExitPortalVisibility()
+        {
+            if (portalPresentation == null ||
+                !portalPresentation.IsConfigured)
+            {
+                exitPortalLifecycleState =
+                    ExitPortalLifecycleState.None;
+                return;
+            }
+
+            bool waitsForFinalShot =
+                activePlacementMode ==
+                    ShowcaseStagePlacementMode.RoomDioramaRigid &&
+                finalAdditionalShotRequestIndex >= 0;
+            bool finalShot =
+                !waitsForFinalShot ||
+                !battleReframeActive &&
+                lastProcessedAdditionalShotRequestIndex >=
+                    finalAdditionalShotRequestIndex;
+            bool visible =
+                finalShot && !usesNaturalVisibilityEnd;
+            portalPresentation.SetExitPortalVisible(visible);
+            exitPortalLifecycleState = visible
+                ? ExitPortalLifecycleState.Visible
+                : waitsForFinalShot
+                    ? ExitPortalLifecycleState.WaitingForFinalShot
+                    : ExitPortalLifecycleState.Planned;
+        }
+
+        private ShowcaseShotPlacementCandidate
+            ResolveFinalPlannedShotPlacement(
+                ShowcaseShotPlacementCandidate fallback)
+        {
+            for (int i = additionalShotRequests.Count - 1;
+                 i >= 0;
+                 i--)
+            {
+                ShowcaseAdditionalShotRequest request =
+                    additionalShotRequests[i];
+                if (request.HasTransitionWindow &&
+                    request.HasPlacement)
+                {
+                    return request.Placement;
+                }
+            }
+
+            return fallback;
+        }
+
+        private bool TryPrepareBattleOnlyRearWallExitPortal(
+            ShowcaseShotPlacementCandidate initialPlacement,
+            ShowcaseShotPlacementCandidate finalPlacement)
+        {
+            if (portalPresentation == null ||
+                boundStage == null ||
+                firstBinding == null ||
+                secondBinding == null ||
+                !initialPlacement.IsValid ||
+                !finalPlacement.IsValid)
+            {
+                return false;
+            }
+
+            bool finalPlacementApplied =
+                TryApplyShotPlacement(finalPlacement);
+            if (!finalPlacementApplied)
+            {
+                Debug.LogWarning(
+                    "[RearWallExitPlan] configured=False, " +
+                    "reason=FinalShotPlacementFailed.",
+                    this);
+                return false;
+            }
+
+            if (!TryCreateBattleOnlyRearWallExitPose(
+                    out Pose exitPose,
+                    out float exitDistance))
+            {
+                TryApplyShotPlacement(initialPlacement);
+                activePortalMode = "None";
+                Debug.Log(
+                    "[RearWallExitPlan] configured=False, " +
+                    "reason=NoPathWallIntersection.",
+                    this);
+                return false;
+            }
+
+            if (!portalPresentation.ConfigureTrackExit(
+                    boundStage,
+                    exitPose,
+                    firstBinding.VehicleRoot,
+                    secondBinding.VehicleRoot,
+                    out string portalFailure))
+            {
+                TryApplyShotPlacement(initialPlacement);
+                activePortalMode = "None";
+                Debug.LogWarning(
+                    "[RearWallExitPlan] configured=False, " +
+                    $"reason=PortalBuildFailed, detail={portalFailure}",
+                    this);
+                return false;
+            }
+
+            ResolvePortalTransitionVehicles(
+                firstBinding,
+                secondBinding,
+                out Transform overtakingVehicle,
+                out Transform defendingVehicle);
+            overtakePortalTransitionVfx ??=
+                new OvertakePortalTransitionVfxSettings();
+            overtakePortalTransitionVfx.ClampValues();
+            portalPresentation.ConfigureOvertakePortalTransition(
+                overtakePortalTransitionVfx,
+                overtakingVehicle,
+                defendingVehicle,
+                eventReplay.CurrentTime);
+            portalPresentation.SetPlannedRoomOccluders(
+                plannedForegroundOccluders);
+            if (!TryApplyShotPlacement(initialPlacement))
+            {
+                portalPresentation.Clear();
+                activePortalMode = "None";
+                Debug.LogWarning(
+                    "[RearWallExitPlan] configured=False, " +
+                    "reason=InitialShotRestoreFailed.",
+                    this);
+                return false;
+            }
+
+            battleOnlyRearWallExitDistance = exitDistance;
+            activePortalMode = "RearWall";
+            exitPortalLifecycleState =
+                ExitPortalLifecycleState.Planned;
+            usesNaturalVisibilityEnd = false;
+            naturalVisibilityEndTime = 0f;
+            eventReplay.ClearShowcasePresentationEndTime();
+            Debug.Log(
+                $"[RearWallExitPlan] configured=True, " +
+                $"distance={exitDistance:0.###}m, " +
+                $"finalShotPlanned=" +
+                $"{ShotPlacementsDiffer(initialPlacement, finalPlacement)}.",
+                this);
+            return true;
+        }
+
+        private bool TryCreateBattleOnlyRearWallExitPose(
+            out Pose pose,
+            out float distance)
+        {
+            pose = default;
+            distance = 0f;
+            if (boundStage == null ||
+                eventReplay == null ||
+                wallExitPlanningBeats.Count == 0 ||
+                wallPortalEvaluationFrames.Count == 0 ||
+                eventLocalPath.Count < 2)
+            {
+                return false;
+            }
+
+            Vector3 eventLocalStart =
+                wallExitPlanningBeats[
+                    wallExitPlanningBeats.Count - 1]
+                    .EventLocalPosition;
+            int startIndex = FindClosestPointIndex(
+                eventLocalPath,
+                eventLocalStart);
+            if (startIndex < 0 ||
+                startIndex >= eventLocalPath.Count - 1)
+            {
+                return false;
+            }
+
+            float bestScore = float.NegativeInfinity;
+            Vector3 bestHit = Vector3.zero;
+            Vector3 bestDirection = Vector3.zero;
+            bool found = false;
+            float travelledDistance = 0f;
+            Vector3 segmentStart =
+                boundStage.TransformPoint(eventLocalStart);
+            for (int pathIndex = startIndex + 1;
+                pathIndex < eventLocalPath.Count;
+                pathIndex++)
+            {
+                Vector3 segmentEnd = boundStage.TransformPoint(
+                    eventLocalPath[pathIndex]);
+                Vector3 flatSegment = Flat(
+                    segmentEnd - segmentStart);
+                float segmentLength = flatSegment.magnitude;
+                if (segmentLength <= 0.001f)
+                {
+                    segmentStart = segmentEnd;
+                    continue;
+                }
+
+                Vector3 travelDirection =
+                    flatSegment / segmentLength;
+                for (int wallIndex = 0;
+                    wallIndex < wallPortalEvaluationFrames.Count;
+                    wallIndex++)
+                {
+                    ShowcaseWallFrame wall =
+                        wallPortalEvaluationFrames[wallIndex];
+                    if (!WallFitsEvaluatedPortal(wall))
+                        continue;
+
+                    Vector3 inward = Flat(wall.InwardNormal);
+                    Vector3 horizontal = Flat(wall.HorizontalAxis);
+                    if (inward.sqrMagnitude <= 0.000001f ||
+                        horizontal.sqrMagnitude <= 0.000001f)
+                    {
+                        continue;
+                    }
+
+                    inward.Normalize();
+                    horizontal.Normalize();
+                    float exitAlignment = Vector3.Dot(
+                        travelDirection,
+                        -inward);
+                    if (exitAlignment < 0.5f)
+                        continue;
+
+                    float denominator = Vector3.Dot(
+                        travelDirection,
+                        inward);
+                    if (Mathf.Abs(denominator) <= 0.0001f)
+                        continue;
+
+                    float segmentHitDistance = Vector3.Dot(
+                        wall.Center - segmentStart,
+                        inward) / denominator;
+                    if (segmentHitDistance < 0f ||
+                        segmentHitDistance > segmentLength)
+                    {
+                        continue;
+                    }
+
+                    float routeDistance =
+                        travelledDistance + segmentHitDistance;
+                    if (routeDistance < 0.35f)
+                        continue;
+
+                    Vector3 hit = Vector3.Lerp(
+                        segmentStart,
+                        segmentEnd,
+                        Mathf.Clamp01(
+                            segmentHitDistance / segmentLength));
+                    float horizontalOffset = Vector3.Dot(
+                        hit - wall.Center,
+                        horizontal);
+                    const float apertureHalfWidth = 0.85f;
+                    if (horizontalOffset <
+                            wall.MinHorizontal - apertureHalfWidth ||
+                        horizontalOffset >
+                            wall.MaxHorizontal + apertureHalfWidth)
+                    {
+                        continue;
+                    }
+
+                    float score =
+                        exitAlignment * 3f -
+                        routeDistance * 0.08f -
+                        Mathf.Abs(horizontalOffset) /
+                        Mathf.Max(0.1f, wall.Width) * 0.25f;
+                    if (score <= bestScore)
+                        continue;
+
+                    bestScore = score;
+                    bestHit = hit;
+                    bestDirection = travelDirection;
+                    distance = routeDistance;
+                    found = true;
+                }
+
+                travelledDistance += segmentLength;
+                segmentStart = segmentEnd;
+            }
+
+            if (!found)
+                return false;
+
+            pose = new Pose(
+                bestHit,
+                Quaternion.LookRotation(
+                    bestDirection,
+                    Vector3.up));
+            return true;
+        }
+
+        private bool TryApplyShotPlacement(
+            ShowcaseShotPlacementCandidate placement)
+        {
+            return eventReplay != null &&
+                placement.IsValid &&
+                eventReplay.TryApplyRoomStagePlacement(
+                    placement.Position,
+                    placement.Rotation,
+                    placement.UniformScale,
+                    placement.EventLocalFocus);
+        }
+
+        private static ShowcaseShotPlacementCandidate ToShotPlacement(
+            ShowcaseStagePlacement placement)
+        {
+            return placement.IsValid
+                ? new ShowcaseShotPlacementCandidate(
+                    placement.Position,
+                    placement.Rotation,
+                    placement.UniformScale,
+                    placement.InteractionFocus)
+                : default;
+        }
+
+        private static bool ShotPlacementsDiffer(
+            ShowcaseShotPlacementCandidate first,
+            ShowcaseShotPlacementCandidate second)
+        {
+            return Vector3.Distance(
+                       first.Position,
+                       second.Position) > 0.01f ||
+                Quaternion.Angle(
+                    first.Rotation,
+                    second.Rotation) > 0.5f ||
+                Mathf.Abs(
+                    first.UniformScale -
+                    second.UniformScale) > 0.0001f;
+        }
+
+        private bool TryFindPrecedingVisibleInterval(
+            float replayTime,
+            out ShowcaseVisibleInterval result)
+        {
+            result = default;
+            bool found = false;
+            for (int i = 0; i < visibleIntervals.Count; i++)
+            {
+                ShowcaseVisibleInterval interval =
+                    visibleIntervals[i];
+                if (!interval.IsValid ||
+                    interval.EndTime >= replayTime)
+                {
+                    continue;
+                }
+
+                if (!found ||
+                    interval.EndTime > result.EndTime)
+                {
+                    result = interval;
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+
+        private bool TryEvaluateActionBeatVisibility(
+            Camera viewer,
+            ShowcaseActionBeat beat,
+            out VisibilityFailure failure)
+        {
+            failure = VisibilityFailure.None;
+            float duration = Mathf.Max(
+                0f,
+                beat.EndTime - beat.StartTime);
+            int sampleCount = Mathf.Max(
+                1,
+                Mathf.CeilToInt(
+                    duration /
+                    Mathf.Max(0.05f, visibilitySampleSeconds)));
+            for (int i = 0; i <= sampleCount; i++)
+            {
+                float replayTime = Mathf.Lerp(
+                    beat.StartTime,
+                    beat.EndTime,
+                    i / (float)sampleCount);
+                if (TryEvaluateBattleVisibility(
+                        viewer,
+                        replayTime,
+                        out VisibilityFailure sampleFailure))
+                {
+                    failure = VisibilityFailure.None;
+                    return true;
+                }
+
+                failure |= sampleFailure;
+            }
+
+            return false;
+        }
+
+        private bool TryEvaluateBattleVisibility(
+            Camera viewer,
+            float replayTime,
+            out VisibilityFailure failure)
+        {
+            failure = VisibilityFailure.None;
+            if (!eventReplay.TryGetEventLocalVehiclePosition(
+                    firstBinding.DriverNumber,
+                    replayTime,
+                    out Vector3 firstLocal) ||
+                !eventReplay.TryGetEventLocalVehiclePosition(
+                    secondBinding.DriverNumber,
+                    replayTime,
+                    out Vector3 secondLocal))
+            {
+                failure = VisibilityFailure.MissingPosition;
+                return false;
+            }
+
+            float targetClearance =
+                appliedRoomVehicleLength *
+                visibilityTerrainClearanceInVehicleLengths;
+            Vector3 up = boundStage.up;
+            Vector3 firstWorld =
+                boundStage.TransformPoint(firstLocal);
+            Vector3 secondWorld =
+                boundStage.TransformPoint(secondLocal);
+            VisibilityFailure firstFailure =
+                EvaluateVehicleVisibility(
+                    viewer,
+                    firstWorld,
+                    up,
+                    firstVisibilityVehicleHeight,
+                    targetClearance);
+            VisibilityFailure secondFailure =
+                EvaluateVehicleVisibility(
+                    viewer,
+                    secondWorld,
+                    up,
+                    secondVisibilityVehicleHeight,
+                    targetClearance);
+            failure = firstFailure | secondFailure;
+            return failure == VisibilityFailure.None;
+        }
+
+        private VisibilityFailure EvaluateVehicleVisibility(
+            Camera viewer,
+            Vector3 basePosition,
+            Vector3 up,
+            float vehicleHeight,
+            float targetClearance)
+        {
+            Vector3 eye = viewer.transform.position;
+            float fallbackProbeHeight =
+                appliedRoomVehicleLength *
+                visibilityProbeHeightInVehicleLengths;
+            float centerHeight = vehicleHeight > 0.0001f
+                ? vehicleHeight *
+                  visibilityProbeCenterInVehicleHeight
+                : fallbackProbeHeight;
+            float probeSpan = vehicleHeight > 0.0001f
+                ? vehicleHeight *
+                  visibilityProbeSpanInVehicleHeight
+                : 0f;
+            Vector3 vehicleCenter =
+                basePosition + up * centerHeight;
+            float horizontalRadius =
+                appliedRoomVehicleLength * 0.5f;
+            float verticalRadius = vehicleHeight > 0.0001f
+                ? vehicleHeight * 0.5f
+                : probeSpan;
+            float boundsRadius = Mathf.Sqrt(
+                horizontalRadius * horizontalRadius +
+                verticalRadius * verticalRadius);
+            if (Vector3.Distance(eye, vehicleCenter) - boundsRadius >
+                visibilityMaximumDistance)
+            {
+                return VisibilityFailure.Distance;
+            }
+
+            if (!VehicleBoundsIntersectViewer(
+                    viewer,
+                    vehicleCenter,
+                    horizontalRadius,
+                    verticalRadius))
+            {
+                return VisibilityFailure.View;
+            }
+
+            float minimumHeight = Mathf.Max(
+                0f,
+                centerHeight - probeSpan);
+            float maximumHeight = vehicleHeight > 0.0001f
+                ? Mathf.Min(
+                    vehicleHeight,
+                    centerHeight + probeSpan)
+                : centerHeight;
+            for (int i = 0; i < 3; i++)
+            {
+                float probeHeight = i == 0
+                    ? minimumHeight
+                    : i == 1
+                        ? centerHeight
+                        : maximumHeight;
+                Vector3 target =
+                    basePosition + up * probeHeight;
+                bool hasTerrain =
+                    eventReplay.TryGetShowcaseTerrainOcclusion(
+                        eye,
+                        target,
+                        targetClearance,
+                        out bool occluded);
+                terrainOcclusionAvailable |= hasTerrain;
+                if (!hasTerrain || !occluded)
+                    return VisibilityFailure.None;
+            }
+
+            return VisibilityFailure.Terrain;
+        }
+
+        private bool VehicleBoundsIntersectViewer(
+            Camera viewer,
+            Vector3 center,
+            float horizontalRadius,
+            float verticalRadius)
+        {
+            Vector3 viewport = viewer.WorldToViewportPoint(center);
+            if (viewport.z <= viewer.nearClipPlane)
+                return false;
+
+            Vector3 horizontalEdge = viewer.WorldToViewportPoint(
+                center +
+                viewer.transform.right * horizontalRadius);
+            Vector3 verticalEdge = viewer.WorldToViewportPoint(
+                center +
+                viewer.transform.up * verticalRadius);
+            float viewportRadiusX = Mathf.Abs(
+                horizontalEdge.x - viewport.x);
+            float viewportRadiusY = Mathf.Abs(
+                verticalEdge.y - viewport.y);
+            float margin = visibilityViewportMargin;
+            return viewport.x + viewportRadiusX >= margin &&
+                viewport.x - viewportRadiusX <= 1f - margin &&
+                viewport.y + viewportRadiusY >= margin &&
+                viewport.y - viewportRadiusY <= 1f - margin;
+        }
+
+        private void AccumulateActionBeatFailure(
+            VisibilityFailure failure)
+        {
+            if ((failure & VisibilityFailure.MissingPosition) != 0)
+                actionBeatsWithMissingPosition++;
+            if ((failure & VisibilityFailure.Distance) != 0)
+                actionBeatsOutsideDistance++;
+            if ((failure & VisibilityFailure.View) != 0)
+                actionBeatsOutsideView++;
+            if ((failure & VisibilityFailure.Terrain) != 0)
+                actionBeatsTerrainOccluded++;
+        }
+
+        private void ResetVisibilityAnalysisResults()
+        {
+            plannedForegroundOccluders.Clear();
+            eventReplay?.SetShowcaseIgnoredOcclusionMaterials(null);
+            portalPresentation?.SetPlannedRoomOccluders(null);
+            actionBeats.Clear();
+            actionBeatVisibility.Clear();
+            visibleIntervals.Clear();
+            additionalShotRequests.Clear();
+            actionBeatCount = 0;
+            visibleActionBeatCount = 0;
+            continuousVisibleIntervalCount = 0;
+            terrainOcclusionAvailable = false;
+            allActionBeatsVisible = false;
+            requiresAdditionalShot = false;
+            actionBeatsOutsideDistance = 0;
+            actionBeatsOutsideView = 0;
+            actionBeatsTerrainOccluded = 0;
+            actionBeatsWithMissingPosition = 0;
+            perceptionEyeRelativeTrackFocus = Vector3.zero;
+            perceptionClosestVehicleDistance = 0f;
+            perceptionVehicleAngularSize = 0f;
+            perceptionScreenTravelPerSecond = 0f;
+            perceptionBattleVisibleFraction = 0f;
+            ResetRuntimePerceptionMetrics();
+            firstVisibilityVehicleHeight = 0f;
+            secondVisibilityVehicleHeight = 0f;
+            visibilityAnalysisSampleStep = 0f;
+            usesNaturalVisibilityEnd = false;
+            naturalVisibilityEndTime = 0f;
+        }
+
+        private void ResetShotPlaybackRuntime()
+        {
+            ResetRuntimeOcclusionAssistance();
+            initialShotPlacement = default;
+            nextAdditionalShotRequestIndex = 0;
+            activeAdditionalShotRequestIndex = -1;
+            observedShowcaseTimelineRevision = -1;
+            previousShotReplayTime = 0f;
+            shotPlacementRuntimeInitialized = false;
+            battleReframeActive = false;
+            battleReframeElapsed = 0f;
+            battleReframeRequestIndex = -1;
+            battleReframeFrom = default;
+            battleReframeTo = default;
+            HideBattleReframeCue();
+            finalAdditionalShotRequestIndex = -1;
+            lastProcessedAdditionalShotRequestIndex = -1;
+            exitPortalLifecycleState =
+                ExitPortalLifecycleState.None;
+            battleOnlyRearWallExitDistance = 0f;
+            ResetWallExitHandoffRuntime();
+        }
+
+        private void ResetWallExitHandoffRuntime()
+        {
+            if (wallExitHandoffActive)
+            {
+                SetBattleReframeVehiclesHidden(false);
+                HideBattleReframeCue();
+            }
+            wallExitHandoffPrepared = false;
+            wallExitHandoffActive = false;
+            wallExitHandoffComplete = false;
+            wallExitHandoffTime = 0f;
+            wallExitHandoffElapsed = 0f;
+            wallExitBattlePlacement = default;
+            wallExitFinalPlacement = default;
+        }
+
+        private void UpdateRuntimeOcclusionAssistance()
+        {
+            if (!runtimeOcclusionAssistanceEnabled ||
+                portalPresentation == null ||
+                !portalPresentation.IsConfigured ||
+                eventReplay == null ||
+                boundStage == null ||
+                battleReframeActive ||
+                wallExitHandoffActive ||
+                Camera.main == null)
+            {
+                ResetRuntimeOcclusionAssistance();
+                return;
+            }
+
+            Camera viewer = Camera.main;
+            occlusionAssistSampleElapsed += Mathf.Max(
+                0f,
+                Time.unscaledDeltaTime);
+            if (occlusionAssistSampleElapsed <
+                occlusionAssistSampleInterval)
+            {
+                return;
+            }
+
+            float sampleDeltaTime =
+                occlusionAssistSampleElapsed;
+            occlusionAssistSampleElapsed = 0f;
+            bool firstOccluded = TryGetRuntimeOcclusionHit(
+                viewer,
+                firstBinding,
+                firstVisibilityVehicleHeight,
+                out ShowcaseOcclusionHit firstHit);
+            bool secondOccluded = TryGetRuntimeOcclusionHit(
+                viewer,
+                secondBinding,
+                secondVisibilityVehicleHeight,
+                out ShowcaseOcclusionHit secondHit);
+            UpdateOcclusionAssistState(
+                firstOccluded,
+                firstHit,
+                sampleDeltaTime,
+                ref firstOcclusionAssistActive,
+                ref firstOcclusionAssistHit,
+                ref firstOcclusionBlockedDuration,
+                ref firstOcclusionClearDuration);
+            UpdateOcclusionAssistState(
+                secondOccluded,
+                secondHit,
+                sampleDeltaTime,
+                ref secondOcclusionAssistActive,
+                ref secondOcclusionAssistHit,
+                ref secondOcclusionBlockedDuration,
+                ref secondOcclusionClearDuration);
+            portalPresentation.SetRoomOcclusionAssistance(
+                firstOcclusionAssistActive
+                    ? firstOcclusionAssistHit
+                    : default,
+                secondOcclusionAssistActive
+                    ? secondOcclusionAssistHit
+                    : default);
+        }
+
+        private bool TryGetRuntimeOcclusionHit(
+            Camera viewer,
+            VehicleBinding binding,
+            float vehicleHeight,
+            out ShowcaseOcclusionHit hit)
+        {
+            hit = default;
+            if (viewer == null ||
+                binding == null ||
+                binding.VisualMotionRoot == null ||
+                !binding.VisualMotionRoot.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            float fallbackProbeHeight =
+                appliedRoomVehicleLength *
+                visibilityProbeHeightInVehicleLengths;
+            float centerHeight = vehicleHeight > 0.0001f
+                ? vehicleHeight *
+                  visibilityProbeCenterInVehicleHeight
+                : fallbackProbeHeight;
+            float probeSpan = vehicleHeight > 0.0001f
+                ? vehicleHeight *
+                  visibilityProbeSpanInVehicleHeight
+                : 0f;
+            float minimumHeight = Mathf.Max(
+                0f,
+                centerHeight - probeSpan);
+            float maximumHeight = vehicleHeight > 0.0001f
+                ? Mathf.Min(
+                    vehicleHeight,
+                    centerHeight + probeSpan)
+                : centerHeight;
+            float targetClearance =
+                appliedRoomVehicleLength *
+                visibilityTerrainClearanceInVehicleLengths;
+            ShowcaseOcclusionHit centerHit = default;
+            Material commonDecorativeMaterial = null;
+            bool allProbesShareDecorativeMaterial = true;
+            for (int i = 0; i < 3; i++)
+            {
+                float probeHeight = i == 0
+                    ? centerHeight
+                    : i == 1
+                        ? minimumHeight
+                        : maximumHeight;
+                Vector3 target =
+                    binding.VisualMotionRoot.position +
+                    boundStage.up * probeHeight;
+                if (!eventReplay.TryGetShowcaseOcclusion(
+                        viewer.transform.position,
+                        target,
+                        targetClearance,
+                        out ShowcaseOcclusionHit probeHit) ||
+                    !probeHit.IsOccluded)
+                {
+                    return false;
+                }
+
+                if (i == 0)
+                    centerHit = probeHit;
+                if (probeHit.Kind !=
+                        ShowcaseOccluderKind.Decorative ||
+                    probeHit.Material == null)
+                {
+                    allProbesShareDecorativeMaterial = false;
+                }
+                else if (commonDecorativeMaterial == null)
+                {
+                    commonDecorativeMaterial = probeHit.Material;
+                }
+                else if (commonDecorativeMaterial !=
+                         probeHit.Material)
+                {
+                    allProbesShareDecorativeMaterial = false;
+                }
+                hit = probeHit;
+            }
+
+            if (allProbesShareDecorativeMaterial &&
+                commonDecorativeMaterial != null)
+            {
+                hit = new ShowcaseOcclusionHit(
+                    commonDecorativeMaterial,
+                    ShowcaseOccluderKind.Decorative);
+            }
+            else if (centerHit.IsOccluded)
+            {
+                hit = new ShowcaseOcclusionHit(
+                    null,
+                    ShowcaseOccluderKind.Unknown);
+            }
+            else
+                hit = centerHit;
+            return hit.IsOccluded;
+        }
+
+        private void UpdateOcclusionAssistState(
+            bool occluded,
+            ShowcaseOcclusionHit hit,
+            float deltaTime,
+            ref bool active,
+            ref ShowcaseOcclusionHit activeHit,
+            ref float blockedDuration,
+            ref float clearDuration)
+        {
+            if (occluded)
+            {
+                activeHit = hit;
+                clearDuration = 0f;
+                if (!active)
+                {
+                    blockedDuration += deltaTime;
+                    active = blockedDuration >=
+                        occlusionAssistActivationDelay;
+                }
+                return;
+            }
+
+            blockedDuration = 0f;
+            if (!active)
+            {
+                activeHit = default;
+                clearDuration = 0f;
+                return;
+            }
+
+            clearDuration += deltaTime;
+            if (clearDuration < occlusionAssistReleaseDelay)
+                return;
+
+            active = false;
+            activeHit = default;
+            clearDuration = 0f;
+        }
+
+        private void ResetRuntimeOcclusionAssistance()
+        {
+            firstOcclusionAssistActive = false;
+            secondOcclusionAssistActive = false;
+            firstOcclusionAssistHit = default;
+            secondOcclusionAssistHit = default;
+            firstOcclusionBlockedDuration = 0f;
+            secondOcclusionBlockedDuration = 0f;
+            firstOcclusionClearDuration = 0f;
+            secondOcclusionClearDuration = 0f;
+            occlusionAssistSampleElapsed = 0f;
+            portalPresentation?.ResetRoomOcclusionAssistance();
         }
 
         private bool TryCreateShowcaseRun(
@@ -1352,21 +4609,21 @@ namespace F1XR.RestAPI.Replay.Room
             stageRevealPending = false;
         }
 
-        private bool TryPlaceEventStage(
-            Transform stage,
+        private bool TryCreateEventStagePlacement(
             IReadOnlyList<Vector3> sourcePath,
             Vector3 sourceEntryPosition,
             Vector3 sourceFocusPosition,
             Vector3 sourceExitPosition,
             ShowcaseRun run,
+            out ShowcaseStagePlacement placement,
             out string failure)
         {
+            placement = default;
             failure = "";
-            if (stage == null ||
-                sourcePath == null ||
+            if (sourcePath == null ||
                 sourcePath.Count < 2)
             {
-                failure = "The event stage or source geometry is unavailable.";
+                failure = "The event source geometry is unavailable.";
                 return false;
             }
 
@@ -1509,50 +4766,1404 @@ namespace F1XR.RestAPI.Replay.Room
             Vector3 sourceExitDirection =
                 FindDirectionAt(sourcePath, exitIndex);
 
-            eventCoordinateScale = resolvedScale;
-            entryContinuation =
+            float resolvedEntryContinuation =
                 cumulativeDistances[entryIndex] *
-                eventCoordinateScale;
-            exitContinuation =
+                resolvedScale;
+            float resolvedExitContinuation =
                 (totalDistance -
                  cumulativeDistances[exitIndex]) *
-                eventCoordinateScale;
-            heroMissDistance = Flat(
+                resolvedScale;
+            float resolvedHeroMissDistance = Flat(
                 mappedFocus - overtakeTarget).magnitude;
-            entryWallAngle = Vector3.Angle(
+            float resolvedEntryWallAngle = Vector3.Angle(
                 Flat(rotation * sourceEntryDirection),
                 Flat(run.EntryTravelDirection));
-            exitWallAngle = Vector3.Angle(
+            float resolvedExitWallAngle = Vector3.Angle(
                 Flat(rotation * sourceExitDirection),
                 Flat(run.ExitTravelDirection));
-            portalCrossingMiss =
+            float resolvedPortalCrossingMiss =
                 Mathf.Max(entryMiss, exitMiss);
-            wallPairCompatible =
-                entryContinuation + 0.01f >=
+            float heroMissLimit =
+                Mathf.Max(0.75f, roomSpan * 0.35f);
+            bool compatible =
+                resolvedEntryContinuation + 0.01f >=
                 entryContinuationTarget &&
-                exitContinuation + 0.01f >=
+                resolvedExitContinuation + 0.01f >=
                 exitContinuationTarget &&
-                entryWallAngle <= MaximumCompatibleWallAngle &&
-                exitWallAngle <= MaximumCompatibleWallAngle &&
-                portalCrossingMiss <= 0.75f &&
-                heroMissDistance <= Mathf.Max(0.75f, roomSpan * 0.35f);
+                resolvedEntryWallAngle <= MaximumCompatibleWallAngle &&
+                resolvedExitWallAngle <= MaximumCompatibleWallAngle &&
+                resolvedPortalCrossingMiss <= 0.75f &&
+                resolvedHeroMissDistance <= heroMissLimit;
 
-            if (!eventReplay.TrySetPresentationPose(
-                    position,
-                    rotation,
-                    eventCoordinateScale))
+            placement = new ShowcaseStagePlacement(
+                ShowcaseStagePlacementMode.PortalAlignedRigid,
+                position,
+                rotation,
+                resolvedScale,
+                sourceFocusPosition,
+                resolvedEntryContinuation,
+                resolvedExitContinuation,
+                entryContinuationTarget,
+                exitContinuationTarget,
+                resolvedHeroMissDistance,
+                heroMissLimit,
+                resolvedEntryWallAngle,
+                resolvedExitWallAngle,
+                resolvedPortalCrossingMiss,
+                compatible);
+            if (placement.IsValid)
+                return true;
+
+            placement = default;
+            failure =
+                "The event stage placement candidate contains invalid values.";
+            return false;
+        }
+
+        private void EvaluateWallPortalCandidates(
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceEntryPosition,
+            Vector3 sourceFocusPosition,
+            Vector3 sourceExitPosition,
+            ShowcaseRun run,
+            ShowcaseStagePlacement baselinePlacement,
+            bool useFocusAnchoredSinglePassExit)
+        {
+            ResetWallPortalEvaluation();
+            if (!evaluateWallPortalCandidates ||
+                showcaseLayout == null ||
+                sourcePath == null ||
+                sourcePath.Count < 2 ||
+                !run.IsValid ||
+                !baselinePlacement.IsValid)
             {
-                failure = "The EventReplayStage rejected the global placement.";
+                return;
+            }
+
+            evaluatedWallCount =
+                showcaseLayout.CopyAvailableWallFrames(
+                    wallPortalEvaluationFrames);
+            if (evaluatedWallCount == 0)
+            {
+                Debug.Log(
+                    "[WallPortalEvaluation] walls=0, " +
+                    "recommendation=FreeTrackExit, reason=NoAvailableWalls",
+                    this);
+                return;
+            }
+
+            Camera viewer = Camera.main;
+            float baselineScale = baselinePlacement.UniformScale;
+            int sizeRejectedWalls = 0;
+            int pairPlacementRejected = 0;
+            int pairCompatibilityRejected = 0;
+            int exitPlacementRejected = 0;
+            int exitCompatibilityRejected = 0;
+            float bestQualifiedPairScore = -1f;
+            float bestQualifiedExitScore = -1f;
+            string bestPairLabel = "None";
+            string bestExitLabel = "None";
+
+            float[] cumulativeDistances =
+                BuildCumulativeDistances(sourcePath);
+            int exitIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceExitPosition);
+            float sourceExitContinuation =
+                exitIndex >= 0 &&
+                exitIndex < cumulativeDistances.Length
+                    ? cumulativeDistances[
+                          cumulativeDistances.Length - 1] -
+                      cumulativeDistances[exitIndex]
+                    : 0f;
+
+            for (int exitWallIndex = 0;
+                 exitWallIndex < wallPortalEvaluationFrames.Count;
+                 exitWallIndex++)
+            {
+                ShowcaseWallFrame exitWall =
+                    wallPortalEvaluationFrames[exitWallIndex];
+                if (!WallFitsEvaluatedPortal(exitWall))
+                {
+                    sizeRejectedWalls++;
+                    continue;
+                }
+
+                bool hasExitCandidate =
+                    useFocusAnchoredSinglePassExit
+                        ? TryScoreFocusAnchoredWallExitCandidate(
+                            sourcePath,
+                            sourceFocusPosition,
+                            sourceExitPosition,
+                            run,
+                            exitWall,
+                            baselinePlacement,
+                            out float exitScore,
+                            out bool exitQualified,
+                            out ShowcaseStagePlacement exitPlacement)
+                        : TryScoreWallExitCandidate(
+                            sourcePath,
+                            sourceFocusPosition,
+                            sourceExitPosition,
+                            sourceExitContinuation,
+                            run,
+                            exitWall,
+                            baselinePlacement,
+                            viewer,
+                            out exitScore,
+                            out exitQualified,
+                            out exitPlacement);
+                if (hasExitCandidate)
+                {
+                    evaluatedWallExitCount++;
+                    bestWallExitScore = Mathf.Max(
+                        bestWallExitScore,
+                        exitScore);
+                    if (exitQualified)
+                    {
+                        qualifiedWallExitCount++;
+                        if (exitScore > bestQualifiedExitScore)
+                        {
+                            bestQualifiedExitScore = exitScore;
+                            bestExitLabel =
+                                $"W{exitWallIndex + 1}";
+                            recommendedWallExitPlacement =
+                                exitPlacement;
+                            recommendedWallExitFrame = exitWall;
+                            hasRecommendedWallExitPlacement = true;
+                        }
+                    }
+                    else
+                    {
+                        exitCompatibilityRejected++;
+                    }
+                }
+                else
+                {
+                    exitPlacementRejected++;
+                }
+
+                if (useFocusAnchoredSinglePassExit)
+                    continue;
+
+                for (int entryWallIndex = 0;
+                     entryWallIndex < wallPortalEvaluationFrames.Count;
+                     entryWallIndex++)
+                {
+                    if (entryWallIndex == exitWallIndex)
+                        continue;
+
+                    ShowcaseWallFrame entryWall =
+                        wallPortalEvaluationFrames[entryWallIndex];
+                    if (!WallFitsEvaluatedPortal(entryWall))
+                        continue;
+
+                    if (!TryCreateWallPairRun(
+                            run,
+                            entryWall,
+                            exitWall,
+                            out ShowcaseRun candidateRun) ||
+                        !TryCreateEventStagePlacement(
+                            sourcePath,
+                            sourceEntryPosition,
+                            sourceFocusPosition,
+                            sourceExitPosition,
+                            candidateRun,
+                            out ShowcaseStagePlacement candidatePlacement,
+                            out _))
+                    {
+                        pairPlacementRejected++;
+                        continue;
+                    }
+
+                    evaluatedWallPairCount++;
+                    float pairScore = ScoreWallPairCandidate(
+                        candidatePlacement,
+                        sourceFocusPosition,
+                        baselineScale,
+                        viewer);
+                    bestWallPairScore = Mathf.Max(
+                        bestWallPairScore,
+                        pairScore);
+                    bool pairQualified =
+                        candidatePlacement.WallPairCompatible &&
+                        IsPlacementFocusUsable(
+                            candidatePlacement,
+                            sourceFocusPosition,
+                            viewer);
+                    if (!pairQualified)
+                    {
+                        pairCompatibilityRejected++;
+                        continue;
+                    }
+
+                    qualifiedWallPairCount++;
+                    if (pairScore > bestQualifiedPairScore)
+                    {
+                        bestQualifiedPairScore = pairScore;
+                        bestPairLabel =
+                            $"W{entryWallIndex + 1}->" +
+                            $"W{exitWallIndex + 1}";
+                    }
+                }
+            }
+
+            if (bestQualifiedPairScore >=
+                wallPairRecommendationScore)
+            {
+                wallPortalRecommendation =
+                    WallPortalRecommendationMode.WallPair;
+            }
+            else if (hasRecommendedWallExitPlacement)
+            {
+                wallPortalRecommendation =
+                    WallPortalRecommendationMode.ExitWall;
+            }
+
+            Debug.Log(
+                $"[WallPortalEvaluation] walls={evaluatedWallCount}, " +
+                $"wallSizeRejected={sizeRejectedWalls}, " +
+                $"pairs={qualifiedWallPairCount}/" +
+                $"{evaluatedWallPairCount}, " +
+                $"bestPair={bestPairLabel}:" +
+                $"{Mathf.Max(0f, bestQualifiedPairScore):0.#}, " +
+                $"pairRejected={pairPlacementRejected}/" +
+                $"{pairCompatibilityRejected} placement/quality, " +
+                $"exits={qualifiedWallExitCount}/" +
+                $"{evaluatedWallExitCount}, " +
+                $"bestExit={bestExitLabel}:" +
+                $"{Mathf.Max(0f, bestQualifiedExitScore):0.#}, " +
+                $"exitRejected={exitPlacementRejected}/" +
+                $"{exitCompatibilityRejected} placement/quality, " +
+                $"exitFraming=" +
+                $"{(useFocusAnchoredSinglePassExit ? "FocusAnchored" : "Combined")}, " +
+                $"recommendation={wallPortalRecommendation}",
+                this);
+        }
+
+        private bool WallFitsEvaluatedPortal(
+            ShowcaseWallFrame wall)
+        {
+            return wall.IsValid &&
+                wall.Width + 0.0001f >=
+                minimumEvaluatedPortalWallWidth &&
+                wall.Height + 0.0001f >=
+                minimumEvaluatedPortalWallHeight;
+        }
+
+        private static bool TryCreateWallPairRun(
+            ShowcaseRun source,
+            ShowcaseWallFrame entryWall,
+            ShowcaseWallFrame exitWall,
+            out ShowcaseRun candidate)
+        {
+            candidate = default;
+            Vector3 entryTravel = Flat(entryWall.InwardNormal);
+            Vector3 exitTravel = Flat(-exitWall.InwardNormal);
+            Vector3 roomSpan = Flat(
+                exitWall.Center - entryWall.Center);
+            if (entryTravel.sqrMagnitude <= 0.000001f ||
+                exitTravel.sqrMagnitude <= 0.000001f ||
+                roomSpan.sqrMagnitude <= 0.25f)
+            {
                 return false;
             }
-            if (!eventReplay.TryConfigureRoomStageInteraction(
-                    sourceFocusPosition))
+
+            entryTravel.Normalize();
+            exitTravel.Normalize();
+            candidate = new ShowcaseRun(
+                source.Timing,
+                source.Route,
+                new Pose(
+                    entryWall.Center,
+                    Quaternion.LookRotation(
+                        entryTravel,
+                        Vector3.up)),
+                source.FocusPose,
+                new Pose(
+                    exitWall.Center,
+                    Quaternion.LookRotation(
+                        exitTravel,
+                        Vector3.up)),
+                entryTravel,
+                exitTravel,
+                source.FloorHeight,
+                source.LayoutRevision,
+                source.SourceRevision);
+            return candidate.IsValid;
+        }
+
+        private float ScoreWallPairCandidate(
+            ShowcaseStagePlacement placement,
+            Vector3 sourceFocusPosition,
+            float baselineScale,
+            Camera viewer)
+        {
+            float angleScore = 1f - Mathf.Clamp01(
+                (placement.EntryWallAngle +
+                 placement.ExitWallAngle) /
+                180f);
+            float heroScore = 1f - Mathf.Clamp01(
+                placement.HeroMissDistance /
+                Mathf.Max(0.1f, placement.HeroMissLimit));
+            float continuationScore =
+                (ScoreRequirement(
+                     placement.EntryContinuation,
+                     placement.EntryContinuationTarget) +
+                 ScoreRequirement(
+                     placement.ExitContinuation,
+                     placement.ExitContinuationTarget)) *
+                0.5f;
+            float scaleScore = ScoreScaleSimilarity(
+                placement.UniformScale,
+                baselineScale);
+            Vector3 mappedFocus =
+                placement.Position +
+                placement.Rotation *
+                sourceFocusPosition *
+                placement.UniformScale;
+            float viewScore = ScoreViewerPoint(viewer, mappedFocus);
+            return 100f *
+                (angleScore * 0.3f +
+                 heroScore * 0.25f +
+                 continuationScore * 0.15f +
+                 scaleScore * 0.15f +
+                 viewScore * 0.15f);
+        }
+
+        private bool TryScoreFocusAnchoredWallExitCandidate(
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceFocusPosition,
+            Vector3 sourceExitPosition,
+            ShowcaseRun run,
+            ShowcaseWallFrame exitWall,
+            ShowcaseStagePlacement baselinePlacement,
+            out float score,
+            out bool qualified,
+            out ShowcaseStagePlacement placement)
+        {
+            score = 0f;
+            qualified = false;
+            placement = default;
+            int exitIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceExitPosition);
+            if (exitIndex < 0)
+                return false;
+
+            Vector3 heroForward = Flat(run.FocusPose.forward);
+            Vector3 wallNormal = Flat(exitWall.InwardNormal);
+            Vector3 wallAxis = Flat(exitWall.HorizontalAxis);
+            Vector3 sourceFocusToExit = Flat(
+                sourceExitPosition - sourceFocusPosition);
+            float resolvedScale = baselinePlacement.UniformScale;
+            if (heroForward.sqrMagnitude <= 0.000001f ||
+                wallNormal.sqrMagnitude <= 0.000001f ||
+                wallAxis.sqrMagnitude <= 0.000001f ||
+                sourceFocusToExit.sqrMagnitude <= 0.000001f ||
+                !float.IsFinite(resolvedScale) ||
+                resolvedScale <= 0f)
             {
-                failure = "The EventReplayStage rejected the interaction focus.";
+                return false;
+            }
+
+            heroForward.Normalize();
+            wallNormal.Normalize();
+            wallAxis.Normalize();
+            if (Vector3.Dot(
+                    Vector3.Cross(wallAxis, wallNormal),
+                    Vector3.up) < 0f)
+            {
+                wallAxis = -wallAxis;
+            }
+
+            Vector3 focusTarget =
+                run.FocusPose.position +
+                heroForward * heroForwardOffset;
+            Vector3 wallLineOrigin = exitWall.Center;
+            wallLineOrigin.y = focusTarget.y;
+            float exitRadius =
+                sourceFocusToExit.magnitude * resolvedScale;
+            float wallPlaneDistance = Vector3.Dot(
+                wallLineOrigin - focusTarget,
+                wallNormal);
+            if (Mathf.Abs(wallPlaneDistance) >
+                exitRadius + 0.0001f)
+            {
+                return false;
+            }
+
+            Vector3 wallFoot =
+                focusTarget +
+                wallNormal * wallPlaneDistance;
+            float wallAxisDistance = Mathf.Sqrt(
+                Mathf.Max(
+                    0f,
+                    exitRadius * exitRadius -
+                    wallPlaneDistance * wallPlaneDistance));
+            Vector3 firstExitTarget =
+                wallFoot + wallAxis * wallAxisDistance;
+            Vector3 secondExitTarget =
+                wallFoot - wallAxis * wallAxisDistance;
+            bool firstTargetValid = IsWallExitTargetUsable(
+                firstExitTarget,
+                focusTarget,
+                heroForward,
+                exitWall);
+            bool secondTargetValid = IsWallExitTargetUsable(
+                secondExitTarget,
+                focusTarget,
+                heroForward,
+                exitWall);
+            if (!firstTargetValid && !secondTargetValid)
+                return false;
+
+            Vector3 exitTarget = firstTargetValid &&
+                (!secondTargetValid ||
+                 ScoreRearExitTarget(
+                     firstExitTarget,
+                     focusTarget,
+                     heroForward,
+                     exitWall) >=
+                 ScoreRearExitTarget(
+                     secondExitTarget,
+                     focusTarget,
+                     heroForward,
+                     exitWall))
+                    ? firstExitTarget
+                    : secondExitTarget;
+            Vector3 targetDirection = Flat(
+                exitTarget - focusTarget);
+            if (targetDirection.sqrMagnitude <= 0.000001f)
+                return false;
+
+            targetDirection.Normalize();
+            sourceFocusToExit.Normalize();
+            float yaw = Vector3.SignedAngle(
+                sourceFocusToExit,
+                targetDirection,
+                Vector3.up);
+            Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
+            Vector3 rotatedFocus =
+                rotation * sourceFocusPosition * resolvedScale;
+            Vector3 position = focusTarget - rotatedFocus;
+            position.y =
+                run.FloorHeight +
+                roadFloorOffset -
+                rotatedFocus.y;
+
+            Vector3 mappedExit =
+                position +
+                rotation * sourceExitPosition * resolvedScale;
+            Vector3 sourceExitDirection = Flat(
+                FindDirectionAt(sourcePath, exitIndex));
+            Vector3 desiredExitDirection = Flat(
+                -exitWall.InwardNormal);
+            float exitAngle = Vector3.Angle(
+                Flat(rotation * sourceExitDirection),
+                desiredExitDirection);
+            float rearScore = Mathf.Clamp01(
+                (-Vector3.Dot(targetDirection, heroForward) + 0.1f) /
+                1.1f);
+            float approachScore = 1f - Mathf.InverseLerp(
+                20f,
+                120f,
+                exitAngle);
+            Vector3 baselineDirection = Flat(
+                baselinePlacement.Rotation * sourceFocusToExit);
+            float rotationScore = baselineDirection.sqrMagnitude >
+                0.000001f
+                    ? 1f - Mathf.Clamp01(
+                        Vector3.Angle(
+                            baselineDirection,
+                            targetDirection) /
+                        120f)
+                    : 0f;
+            float centerScore = 1f - Mathf.Clamp01(
+                Mathf.Abs(
+                    Vector3.Dot(
+                        exitTarget - exitWall.Center,
+                        wallAxis)) /
+                Mathf.Max(0.1f, exitWall.Width * 0.5f));
+            score = 100f *
+                (rearScore * 0.4f +
+                 approachScore * 0.25f +
+                 rotationScore * 0.2f +
+                 centerScore * 0.15f);
+            qualified = exitAngle <= 120f;
+            placement = new ShowcaseStagePlacement(
+                ShowcaseStagePlacementMode.RoomDioramaRigid,
+                position,
+                rotation,
+                resolvedScale,
+                sourceFocusPosition,
+                baselinePlacement.EntryContinuation,
+                baselinePlacement.ExitContinuation,
+                baselinePlacement.EntryContinuationTarget,
+                baselinePlacement.ExitContinuationTarget,
+                0f,
+                baselinePlacement.HeroMissLimit,
+                baselinePlacement.EntryWallAngle,
+                exitAngle,
+                Flat(mappedExit - exitTarget).magnitude,
+                false);
+            if (!placement.IsValid)
+            {
+                placement = default;
+                qualified = false;
                 return false;
             }
 
             return true;
+        }
+
+        private static bool IsWallExitTargetUsable(
+            Vector3 target,
+            Vector3 focusTarget,
+            Vector3 heroForward,
+            ShowcaseWallFrame wall)
+        {
+            Vector3 direction = Flat(target - focusTarget);
+            if (direction.sqrMagnitude <= 0.000001f)
+                return false;
+
+            direction.Normalize();
+            if (Vector3.Dot(direction, heroForward) > 0.15f)
+                return false;
+
+            Vector3 horizontalAxis = Flat(wall.HorizontalAxis);
+            if (horizontalAxis.sqrMagnitude <= 0.000001f)
+                return false;
+
+            horizontalAxis.Normalize();
+            float horizontal = Vector3.Dot(
+                target - wall.Center,
+                horizontalAxis);
+            float edgeMargin = Mathf.Min(
+                0.2f,
+                wall.Width * 0.1f);
+            return horizontal >=
+                    wall.MinHorizontal + edgeMargin &&
+                horizontal <=
+                    wall.MaxHorizontal - edgeMargin;
+        }
+
+        private static float ScoreRearExitTarget(
+            Vector3 target,
+            Vector3 focusTarget,
+            Vector3 heroForward,
+            ShowcaseWallFrame wall)
+        {
+            Vector3 direction = Flat(target - focusTarget);
+            if (direction.sqrMagnitude <= 0.000001f)
+                return float.NegativeInfinity;
+
+            direction.Normalize();
+            Vector3 horizontalAxis = Flat(wall.HorizontalAxis);
+            horizontalAxis = horizontalAxis.sqrMagnitude > 0.000001f
+                ? horizontalAxis.normalized
+                : Vector3.right;
+            float rearScore = -Vector3.Dot(
+                direction,
+                heroForward);
+            float centerScore = 1f - Mathf.Clamp01(
+                Mathf.Abs(
+                    Vector3.Dot(
+                        target - wall.Center,
+                        horizontalAxis)) /
+                Mathf.Max(0.1f, wall.Width * 0.5f));
+            return rearScore * 0.75f + centerScore * 0.25f;
+        }
+
+        private bool TryScoreWallExitCandidate(
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceFocusPosition,
+            Vector3 sourceExitPosition,
+            float sourceExitContinuation,
+            ShowcaseRun run,
+            ShowcaseWallFrame exitWall,
+            ShowcaseStagePlacement baselinePlacement,
+            Camera viewer,
+            out float score,
+            out bool qualified,
+            out ShowcaseStagePlacement placement)
+        {
+            score = 0f;
+            qualified = false;
+            placement = default;
+            int exitIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceExitPosition);
+            if (exitIndex < 0)
+                return false;
+
+            Vector3 heroForward = Flat(run.FocusPose.forward);
+            if (heroForward.sqrMagnitude <= 0.000001f)
+                return false;
+
+            heroForward.Normalize();
+            Vector3 heroTarget =
+                run.FocusPose.position +
+                heroForward * heroForwardOffset;
+            Vector3 sourceExitDirection =
+                FindDirectionAt(sourcePath, exitIndex);
+            Vector3 desiredExitDirection = Flat(
+                -exitWall.InwardNormal);
+            sourceExitDirection = Flat(sourceExitDirection);
+            if (sourceExitDirection.sqrMagnitude <= 0.000001f ||
+                desiredExitDirection.sqrMagnitude <= 0.000001f)
+            {
+                return false;
+            }
+
+            sourceExitDirection.Normalize();
+            desiredExitDirection.Normalize();
+            float yaw = Vector3.SignedAngle(
+                sourceExitDirection,
+                desiredExitDirection,
+                Vector3.up);
+            Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
+            float resolvedScale = baselinePlacement.UniformScale;
+            if (!float.IsFinite(resolvedScale) ||
+                resolvedScale <= 0f)
+            {
+                return false;
+            }
+
+            Vector3 rotatedExit =
+                rotation * sourceExitPosition * resolvedScale;
+            Vector3 position = exitWall.Center - rotatedExit;
+            position.y =
+                run.FloorHeight +
+                roadFloorOffset -
+                rotatedExit.y;
+            Vector3 mappedExit =
+                position + rotatedExit;
+            Vector3 mappedFocus =
+                position +
+                rotation * sourceFocusPosition * resolvedScale;
+            float focusMiss = Flat(
+                mappedFocus - heroTarget).magnitude;
+            float focusScore = 1f - Mathf.Clamp01(
+                focusMiss /
+                Mathf.Max(0.1f, wallExitFocusScoreDistance));
+            float focusViewScore = ScoreViewerPoint(
+                viewer,
+                mappedFocus);
+            float wallViewScore = ScoreViewerPoint(
+                viewer,
+                mappedExit);
+            float continuationScore = ScoreRequirement(
+                sourceExitContinuation * resolvedScale,
+                wallContinuationTarget *
+                Mathf.Max(1f, showcaseTrackScaleMultiplier));
+            float distanceScore = 1f - Mathf.Clamp01(
+                Mathf.Abs(
+                    Flat(mappedExit - heroTarget).magnitude - 3f) /
+                5f);
+            score = 100f *
+                (focusScore * 0.2f +
+                 focusViewScore * 0.25f +
+                 wallViewScore * 0.3f +
+                 continuationScore * 0.2f +
+                 distanceScore * 0.05f);
+            qualified = true;
+            placement = new ShowcaseStagePlacement(
+                ShowcaseStagePlacementMode.RoomDioramaRigid,
+                position,
+                rotation,
+                resolvedScale,
+                sourceFocusPosition,
+                baselinePlacement.EntryContinuation,
+                baselinePlacement.ExitContinuation,
+                baselinePlacement.EntryContinuationTarget,
+                baselinePlacement.ExitContinuationTarget,
+                focusMiss,
+                wallExitFocusScoreDistance,
+                baselinePlacement.EntryWallAngle,
+                0f,
+                Flat(mappedExit - exitWall.Center).magnitude,
+                false);
+            if (!placement.IsValid)
+            {
+                placement = default;
+                qualified = false;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryCreateWallExitPortalPose(
+            Transform stage,
+            Vector3 sourceExitPosition,
+            ShowcaseWallFrame exitWall,
+            out Pose pose)
+        {
+            pose = default;
+            if (stage == null || !exitWall.IsValid)
+                return false;
+
+            Vector3 travelDirection = Flat(
+                -exitWall.InwardNormal);
+            if (travelDirection.sqrMagnitude <= 0.000001f)
+                return false;
+
+            travelDirection.Normalize();
+            Vector3 worldPosition =
+                stage.TransformPoint(sourceExitPosition);
+            if (!float.IsFinite(worldPosition.x) ||
+                !float.IsFinite(worldPosition.y) ||
+                !float.IsFinite(worldPosition.z))
+            {
+                return false;
+            }
+
+            pose = new Pose(
+                worldPosition,
+                Quaternion.LookRotation(
+                    travelDirection,
+                    Vector3.up));
+            return true;
+        }
+
+        private static bool IsPlacementFocusUsable(
+            ShowcaseStagePlacement placement,
+            Vector3 sourceFocusPosition,
+            Camera viewer)
+        {
+            Vector3 mappedFocus =
+                placement.Position +
+                placement.Rotation *
+                sourceFocusPosition *
+                placement.UniformScale;
+            return ScoreViewerPoint(viewer, mappedFocus) >= 0.2f;
+        }
+
+        private static float ScoreViewerPoint(
+            Camera viewer,
+            Vector3 worldPoint)
+        {
+            if (viewer == null)
+                return 0.5f;
+
+            Vector3 eyeRelative =
+                viewer.transform.InverseTransformPoint(worldPoint);
+            float horizontalAngle = Mathf.Abs(
+                Mathf.Atan2(
+                    eyeRelative.x,
+                    eyeRelative.z) *
+                Mathf.Rad2Deg);
+            float angleScore = 1f - Mathf.InverseLerp(
+                35f,
+                135f,
+                horizontalAngle);
+            float distance = Flat(
+                worldPoint -
+                viewer.transform.position).magnitude;
+            float distanceScore = 1f - Mathf.Clamp01(
+                Mathf.Abs(distance - 2.5f) / 6f);
+            return Mathf.Clamp01(
+                angleScore * 0.75f +
+                distanceScore * 0.25f);
+        }
+
+        private static float ScoreRequirement(
+            float actual,
+            float required)
+        {
+            return required <= 0.0001f
+                ? 1f
+                : Mathf.Clamp01(actual / required);
+        }
+
+        private static float ScoreScaleSimilarity(
+            float candidateScale,
+            float baselineScale)
+        {
+            if (candidateScale <= 0f || baselineScale <= 0f)
+                return 0f;
+
+            float ratio = candidateScale / baselineScale;
+            return Mathf.Exp(-Mathf.Abs(Mathf.Log(ratio)));
+        }
+
+        private void ResetWallPortalEvaluation()
+        {
+            wallPortalEvaluationFrames.Clear();
+            evaluatedWallCount = 0;
+            evaluatedWallPairCount = 0;
+            qualifiedWallPairCount = 0;
+            bestWallPairScore = 0f;
+            evaluatedWallExitCount = 0;
+            qualifiedWallExitCount = 0;
+            bestWallExitScore = 0f;
+            hasRecommendedWallExitPlacement = false;
+            recommendedWallExitPlacement = default;
+            recommendedWallExitFrame = default;
+            wallPortalRecommendation =
+                WallPortalRecommendationMode.FreeTrackExit;
+        }
+
+        private void PrepareLifeSizeDriveByPlan(
+            ShowcaseRun run,
+            Transform stage,
+            VehicleBinding first,
+            VehicleBinding second)
+        {
+            lifeSizeRoad?.Clear();
+            lifeSizeVehicles?.Clear();
+            preparedLifeSizePlan = null;
+            lifeSizePlanFailure = "";
+            if (presentationMode !=
+                ShowcasePresentationMode.LifeSizeDriveByExperimental)
+            {
+                return;
+            }
+
+            lifeSizeDriveBy ??= new LifeSizeDriveBySettings();
+            if (!LifeSizeDriveByPlanner.TryPrepare(
+                    run,
+                    showcaseLayout,
+                    lifeSizeDriveBy,
+                    out preparedLifeSizePlan,
+                    out lifeSizePlanFailure))
+            {
+                preparedLifeSizePlan = null;
+                return;
+            }
+
+            if (lifeSizeRoad == null ||
+                !lifeSizeRoad.TryPrepare(
+                    preparedLifeSizePlan,
+                    stage,
+                    out lifeSizePlanFailure) ||
+                lifeSizeVehicles == null ||
+                !lifeSizeVehicles.TryPrepare(
+                    eventReplay,
+                    preparedLifeSizePlan,
+                    first.DriverNumber,
+                    second.DriverNumber,
+                    ResolveCar(first),
+                    ResolveCar(second),
+                    out lifeSizePlanFailure))
+            {
+                lifeSizeRoad?.Clear();
+                lifeSizeVehicles?.Clear();
+                preparedLifeSizePlan = null;
+            }
+        }
+
+        private bool TryCommitLifeSizeDriveBy(out string failure)
+        {
+            failure = "";
+            if (presentationMode !=
+                    ShowcasePresentationMode.LifeSizeDriveByExperimental ||
+                preparedLifeSizePlan == null)
+            {
+                return false;
+            }
+
+            if (lifeSizeVehicles == null ||
+                lifeSizeRoad == null ||
+                !lifeSizeVehicles.TryCommit(
+                    preparedLifeSizePlan,
+                    out failure))
+            {
+                lifeSizeVehicles?.Clear();
+                lifeSizeRoad?.Clear();
+                preparedLifeSizePlan = null;
+                return false;
+            }
+
+            if (lifeSizeRoad.TryCommit(
+                    preparedLifeSizePlan,
+                    out failure))
+            {
+                appliedRoomVehicleLength =
+                    preparedLifeSizePlan.VehicleLength;
+                vehicleLengthAfter = appliedRoomVehicleLength;
+                appliedPresentationScale = vehicleLengthBefore > 0f
+                    ? vehicleLengthAfter / vehicleLengthBefore
+                    : 1f;
+                return true;
+            }
+
+            lifeSizeVehicles.Clear();
+            lifeSizeRoad.Clear();
+            preparedLifeSizePlan = null;
+            return false;
+        }
+
+        private bool TryCreateRoomDioramaPlacement(
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceEntryPosition,
+            Vector3 sourceFocusPosition,
+            Vector3 sourceExitPosition,
+            ShowcaseRun run,
+            ShowcaseStagePlacement portalAlignedPlacement,
+            out ShowcaseStagePlacement placement,
+            out string failure)
+        {
+            placement = default;
+            failure = "";
+            if (sourcePath == null ||
+                sourcePath.Count < 2 ||
+                !run.IsValid ||
+                !portalAlignedPlacement.IsValid)
+            {
+                failure =
+                    "The source track is unavailable for Hero-anchored placement.";
+                return false;
+            }
+
+            int focusIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceFocusPosition);
+            int entryIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceEntryPosition);
+            int exitIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceExitPosition);
+            if (focusIndex < 0 ||
+                entryIndex < 0 ||
+                exitIndex < 0)
+            {
+                failure =
+                    "The source track landmarks are unavailable for Hero-anchored placement.";
+                return false;
+            }
+
+            Vector3 sourceFocusDirection = Flat(
+                FindDirectionAt(sourcePath, focusIndex));
+            if (sourceFocusDirection.sqrMagnitude <= 0.000001f)
+            {
+                failure =
+                    "The source track has no stable focus direction.";
+                return false;
+            }
+
+            sourceFocusDirection.Normalize();
+            float scale = portalAlignedPlacement.UniformScale;
+            Vector3 compositionAnchor = sourceFocusPosition;
+            Vector3 compositionDirection =
+                sourceFocusDirection;
+            bool usesMultiExchangeFraming = false;
+            if (compositionMode ==
+                    RoomDioramaCompositionMode.Balanced &&
+                eventReplay != null &&
+                eventReplay.TryGetShowcaseExchangeSpan(
+                    out Vector3 firstExchangePosition,
+                    out Vector3 lastExchangePosition))
+            {
+                Vector3 exchangeCenter =
+                    (firstExchangePosition +
+                     lastExchangePosition) * 0.5f;
+                int exchangeCenterIndex = FindClosestPointIndex(
+                    sourcePath,
+                    exchangeCenter);
+                if (exchangeCenterIndex >= 0)
+                {
+                    Vector3 exchangeDirection = Flat(
+                        FindDirectionAt(
+                            sourcePath,
+                            exchangeCenterIndex));
+                    if (exchangeDirection.sqrMagnitude > 0.000001f)
+                    {
+                        compositionAnchor = exchangeCenter;
+                        compositionDirection =
+                            exchangeDirection.normalized;
+                        usesMultiExchangeFraming = true;
+                    }
+                }
+            }
+
+            if (compositionMode ==
+                    RoomDioramaCompositionMode
+                        .TracksideImmersiveExperimental &&
+                TryFindCriticalPathCenter(
+                    sourcePath,
+                    entryIndex,
+                    focusIndex,
+                    exitIndex,
+                    out Vector3 criticalCenter,
+                    out Vector3 criticalDirection))
+            {
+                criticalDirection = Flat(criticalDirection);
+                if (criticalDirection.sqrMagnitude > 0.000001f)
+                {
+                    criticalDirection.Normalize();
+                    float bias = Mathf.Clamp01(
+                        criticalSegmentCenterBias);
+                    compositionAnchor = Vector3.Lerp(
+                        sourceFocusPosition,
+                        criticalCenter,
+                        bias);
+                    compositionDirection = Vector3.Slerp(
+                        sourceFocusDirection,
+                        criticalDirection,
+                        bias);
+                }
+            }
+
+            if (compositionMode ==
+                RoomDioramaCompositionMode.Balanced)
+            {
+                float physicalShift = Flat(
+                    compositionAnchor -
+                    sourceFocusPosition).magnitude * scale;
+                float maximumShift = Mathf.Max(
+                    0f,
+                    usesMultiExchangeFraming
+                        ? multiExchangeMaximumShift
+                        : balancedMaximumShift);
+                if (physicalShift > maximumShift &&
+                    physicalShift > 0.000001f)
+                {
+                    float limitRatio = Mathf.Clamp01(
+                        maximumShift / physicalShift);
+                    compositionAnchor = Vector3.Lerp(
+                        sourceFocusPosition,
+                        compositionAnchor,
+                        limitRatio);
+                    compositionDirection = Vector3.Slerp(
+                        sourceFocusDirection,
+                        compositionDirection,
+                        limitRatio);
+                }
+            }
+
+            Vector3 heroForward = Flat(run.FocusPose.forward);
+            if (heroForward.sqrMagnitude <= 0.000001f)
+            {
+                heroForward = Flat(
+                    run.ExitPose.position -
+                    run.EntryPose.position);
+            }
+
+            compositionDirection = Flat(compositionDirection);
+            if (compositionDirection.sqrMagnitude <= 0.000001f ||
+                heroForward.sqrMagnitude <= 0.000001f)
+            {
+                failure =
+                    "The source track or Hero has no stable travel direction.";
+                return false;
+            }
+
+            compositionDirection.Normalize();
+            heroForward.Normalize();
+            heroForward = ResolveReferencePassTravelDirection(
+                heroForward,
+                usesMultiExchangeFraming);
+            float yaw = Vector3.SignedAngle(
+                compositionDirection,
+                heroForward,
+                Vector3.up);
+            Quaternion rotation =
+                Quaternion.Euler(0f, yaw, 0f);
+            Vector3 overtakeTarget =
+                run.FocusPose.position +
+                heroForward * heroForwardOffset;
+            Vector3 position =
+                overtakeTarget -
+                rotation * compositionAnchor * scale;
+            position.y =
+                run.FloorHeight +
+                roadFloorOffset -
+                (rotation * compositionAnchor * scale).y;
+
+            Vector3 mappedEntry =
+                position +
+                rotation * sourceEntryPosition * scale;
+            Vector3 mappedExit =
+                position +
+                rotation * sourceExitPosition * scale;
+            Vector3 mappedFocus =
+                position +
+                rotation * sourceFocusPosition * scale;
+            Vector3 mappedCompositionAnchor =
+                position +
+                rotation * compositionAnchor * scale;
+            Vector3 sourceEntryDirection =
+                FindDirectionAt(sourcePath, entryIndex);
+            Vector3 sourceExitDirection =
+                FindDirectionAt(sourcePath, exitIndex);
+            float resolvedEntryWallAngle = Vector3.Angle(
+                Flat(rotation * sourceEntryDirection),
+                Flat(run.EntryTravelDirection));
+            float resolvedExitWallAngle = Vector3.Angle(
+                Flat(rotation * sourceExitDirection),
+                Flat(run.ExitTravelDirection));
+            float entryMiss = Flat(
+                mappedEntry - run.EntryPose.position).magnitude;
+            float exitMiss = Flat(
+                mappedExit - run.ExitPose.position).magnitude;
+            float resolvedPortalCrossingMiss =
+                Mathf.Max(entryMiss, exitMiss);
+            float resolvedHeroMissDistance = Flat(
+                mappedCompositionAnchor -
+                overtakeTarget).magnitude;
+            compositionShiftDistance = Flat(
+                mappedFocus -
+                mappedCompositionAnchor).magnitude;
+
+            placement = new ShowcaseStagePlacement(
+                ShowcaseStagePlacementMode.RoomDioramaRigid,
+                position,
+                rotation,
+                scale,
+                compositionAnchor,
+                portalAlignedPlacement.EntryContinuation,
+                portalAlignedPlacement.ExitContinuation,
+                portalAlignedPlacement.EntryContinuationTarget,
+                portalAlignedPlacement.ExitContinuationTarget,
+                resolvedHeroMissDistance,
+                portalAlignedPlacement.HeroMissLimit,
+                resolvedEntryWallAngle,
+                resolvedExitWallAngle,
+                resolvedPortalCrossingMiss,
+                false);
+            if (placement.IsValid)
+                return true;
+
+            placement = default;
+            failure =
+                "The RoomDiorama source track placement contains invalid values.";
+            return false;
+        }
+
+        private static bool TryFindCriticalPathCenter(
+            IReadOnlyList<Vector3> sourcePath,
+            int entryIndex,
+            int focusIndex,
+            int exitIndex,
+            out Vector3 center,
+            out Vector3 direction)
+        {
+            center = Vector3.zero;
+            direction = Vector3.forward;
+            if (sourcePath == null ||
+                entryIndex < 0 ||
+                focusIndex < entryIndex ||
+                exitIndex < focusIndex ||
+                exitIndex >= sourcePath.Count)
+            {
+                return false;
+            }
+
+            float totalLength = 0f;
+            for (int i = entryIndex + 1;
+                 i <= exitIndex;
+                 i++)
+            {
+                totalLength += Vector3.Distance(
+                    sourcePath[i - 1],
+                    sourcePath[i]);
+            }
+
+            if (totalLength <= 0.000001f)
+                return false;
+
+            float targetLength = totalLength * 0.5f;
+            float accumulated = 0f;
+            for (int i = entryIndex + 1;
+                 i <= exitIndex;
+                 i++)
+            {
+                Vector3 start = sourcePath[i - 1];
+                Vector3 end = sourcePath[i];
+                float segmentLength = Vector3.Distance(
+                    start,
+                    end);
+                if (segmentLength <= 0.000001f)
+                    continue;
+
+                if (accumulated + segmentLength >=
+                    targetLength)
+                {
+                    float progress = Mathf.Clamp01(
+                        (targetLength - accumulated) /
+                        segmentLength);
+                    center = Vector3.Lerp(
+                        start,
+                        end,
+                        progress);
+                    direction = end - start;
+                    return direction.sqrMagnitude >
+                        0.000001f;
+                }
+
+                accumulated += segmentLength;
+            }
+
+            center = sourcePath[exitIndex];
+            direction = FindDirectionAt(
+                sourcePath,
+                exitIndex);
+            return direction.sqrMagnitude > 0.000001f;
+        }
+
+        private static bool TryCreateTrackExitPortalPose(
+            Transform stage,
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceExitPosition,
+            out Pose pose)
+        {
+            pose = default;
+            if (stage == null ||
+                sourcePath == null ||
+                sourcePath.Count < 2)
+            {
+                return false;
+            }
+
+            int exitIndex = FindClosestPointIndex(
+                sourcePath,
+                sourceExitPosition);
+            if (exitIndex < 0)
+                return false;
+
+            Vector3 sourceDirection =
+                FindDirectionAt(sourcePath, exitIndex);
+            Vector3 worldDirection = Flat(
+                stage.TransformDirection(sourceDirection));
+            if (worldDirection.sqrMagnitude <= 0.000001f)
+                return false;
+
+            worldDirection.Normalize();
+            Vector3 worldPosition =
+                stage.TransformPoint(sourceExitPosition);
+            if (!float.IsFinite(worldPosition.x) ||
+                !float.IsFinite(worldPosition.y) ||
+                !float.IsFinite(worldPosition.z))
+            {
+                return false;
+            }
+
+            pose = new Pose(
+                worldPosition,
+                Quaternion.LookRotation(
+                    worldDirection,
+                    Vector3.up));
+            return true;
+        }
+
+        private Vector3 ResolveReferencePassTravelDirection(
+            Vector3 fallbackDirection,
+            bool usesMultiExchangeFraming)
+        {
+            appliedReferencePassYaw = 0f;
+            referencePassTravelDirection = Vector3.zero;
+            if (!referencePassProfileEnabled ||
+                compositionMode != RoomDioramaCompositionMode.Balanced ||
+                usesMultiExchangeFraming)
+            {
+                return fallbackDirection;
+            }
+
+            Vector3 baseDirection = fallbackDirection.normalized;
+            Vector3 resolvedDirection =
+                Quaternion.AngleAxis(
+                    referencePassCrossingYaw,
+                    Vector3.up) *
+                baseDirection;
+            resolvedDirection = Flat(resolvedDirection);
+            if (resolvedDirection.sqrMagnitude <= 0.000001f)
+                return fallbackDirection;
+
+            referencePassTravelDirection = resolvedDirection.normalized;
+            appliedReferencePassYaw = Vector3.SignedAngle(
+                baseDirection,
+                referencePassTravelDirection,
+                Vector3.up);
+            return referencePassTravelDirection;
+        }
+
+        private static bool TryValidateEventStagePlacement(
+            ShowcaseStagePlacement placement,
+            out string failure)
+        {
+            failure = "";
+            if (!placement.IsValid)
+            {
+                failure =
+                    "The event stage placement candidate is invalid.";
+                return false;
+            }
+
+            if (placement.Mode ==
+                ShowcaseStagePlacementMode.RoomDioramaRigid)
+            {
+                return true;
+            }
+
+            if (placement.Mode !=
+                ShowcaseStagePlacementMode.PortalAlignedRigid)
+            {
+                failure =
+                    "The event stage placement mode is unsupported.";
+                return false;
+            }
+
+            if (placement.WallPairCompatible)
+                return true;
+
+            failure =
+                "The rigid source track is incompatible with the selected walls. " +
+                $"continuation={placement.EntryContinuation:0.##}/" +
+                $"{placement.EntryContinuationTarget:0.##}m entry, " +
+                $"{placement.ExitContinuation:0.##}/" +
+                $"{placement.ExitContinuationTarget:0.##}m exit; " +
+                $"wallAngles={placement.EntryWallAngle:0.#}/" +
+                $"{placement.ExitWallAngle:0.#}deg; " +
+                $"portalMiss={placement.PortalCrossingMiss:0.###}m; " +
+                $"heroMiss={placement.HeroMissDistance:0.###}/" +
+                $"{placement.HeroMissLimit:0.###}m.";
+            return false;
+        }
+
+        private bool TryCommitEventStagePlacement(
+            ShowcaseStagePlacement placement,
+            out string failure)
+        {
+            failure = "";
+            if (eventReplay == null ||
+                !placement.IsValid ||
+                (placement.Mode ==
+                     ShowcaseStagePlacementMode.PortalAlignedRigid &&
+                 !placement.WallPairCompatible))
+            {
+                failure =
+                    "The event stage placement was not ready to commit.";
+                return false;
+            }
+
+            if (eventReplay.TryApplyRoomStagePlacement(
+                    placement.Position,
+                    placement.Rotation,
+                    placement.UniformScale,
+                    placement.InteractionFocus))
+            {
+                return true;
+            }
+
+            failure =
+                "The EventReplayStage rejected the validated placement commit.";
+            return false;
+        }
+
+        private void CapturePlacementDiagnostics(
+            ShowcaseStagePlacement placement)
+        {
+            eventCoordinateScale = placement.UniformScale;
+            entryContinuation = placement.EntryContinuation;
+            exitContinuation = placement.ExitContinuation;
+            heroMissDistance = placement.HeroMissDistance;
+            entryWallAngle = placement.EntryWallAngle;
+            exitWallAngle = placement.ExitWallAngle;
+            portalCrossingMiss = placement.PortalCrossingMiss;
+            wallPairCompatible = placement.WallPairCompatible;
         }
 
         private static Quaternion ResolvePlacementRotation(
@@ -1821,6 +6432,409 @@ namespace F1XR.RestAPI.Replay.Room
             appliedPresentationScale = 1f;
         }
 
+        private void ResolveCinematicRoomPlacement(
+            ShowcaseRun run,
+            VehicleBinding first,
+            VehicleBinding second,
+            Vector3 sourceFocusPosition,
+            ref ShowcaseStagePlacement placement)
+        {
+            measuredLocalBattleTravelPerSecond = 0f;
+            resolvedCinematicScaleMultiplier = 1f;
+            projectedCinematicBattleTravelMetersPerSecond = 0f;
+            if (!cinematicRoomScaleEnabled ||
+                presentationMode != ShowcasePresentationMode.RoomDiorama ||
+                !run.IsValid ||
+                first == null ||
+                second == null ||
+                placement.Mode !=
+                    ShowcaseStagePlacementMode.RoomDioramaRigid ||
+                !TryMeasureBattleLocalTravelRate(
+                    first.DriverNumber,
+                    second.DriverNumber,
+                    out float localTravelRate))
+            {
+                return;
+            }
+
+            measuredLocalBattleTravelPerSecond = localTravelRate;
+            float basePlaybackSpeed = Mathf.Max(
+                1f,
+                showcasePlaybackSpeedMultiplier);
+            float currentScale = placement.UniformScale;
+            float targetScale =
+                minimumCinematicBattleTravelMetersPerSecond /
+                (localTravelRate * basePlaybackSpeed);
+            float scaleLimit = Mathf.Min(
+                Mathf.Max(
+                    currentScale,
+                    maximumCinematicEventScale),
+                currentScale *
+                Mathf.Max(1f, maximumCinematicScaleMultiplier));
+            float resolvedScale = Mathf.Clamp(
+                targetScale,
+                currentScale,
+                scaleLimit);
+            projectedCinematicBattleTravelMetersPerSecond =
+                localTravelRate * resolvedScale * basePlaybackSpeed;
+            if (resolvedScale <= currentScale + 0.0001f)
+                return;
+
+            float scaleRatio = resolvedScale / currentScale;
+            Vector3 originalAnchor = placement.InteractionFocus;
+            Vector3 resolvedAnchor = Vector3.Lerp(
+                sourceFocusPosition,
+                originalAnchor,
+                1f / scaleRatio);
+            Vector3 mappedAnchor =
+                placement.Position +
+                placement.Rotation *
+                originalAnchor * currentScale;
+            Vector3 resolvedPosition =
+                mappedAnchor -
+                placement.Rotation *
+                resolvedAnchor * resolvedScale;
+            placement = new ShowcaseStagePlacement(
+                placement.Mode,
+                resolvedPosition,
+                placement.Rotation,
+                resolvedScale,
+                resolvedAnchor,
+                placement.EntryContinuation * scaleRatio,
+                placement.ExitContinuation * scaleRatio,
+                placement.EntryContinuationTarget,
+                placement.ExitContinuationTarget,
+                placement.HeroMissDistance,
+                placement.HeroMissLimit,
+                placement.EntryWallAngle,
+                placement.ExitWallAngle,
+                placement.PortalCrossingMiss,
+                false);
+            resolvedCinematicScaleMultiplier = scaleRatio;
+        }
+
+        private bool TryMeasureBattleLocalTravelRate(
+            int firstDriver,
+            int secondDriver,
+            out float localUnitsPerSecond)
+        {
+            localUnitsPerSecond = 0f;
+            presentationCalibrationBeats.Clear();
+            if (eventReplay == null ||
+                !eventReplay.TryCopyShowcaseActionBeats(
+                    presentationCalibrationBeats))
+            {
+                return false;
+            }
+
+            float totalDistance = 0f;
+            float totalDuration = 0f;
+            float sampleStep = Mathf.Max(
+                0.05f,
+                visibilitySampleSeconds);
+            for (int beatIndex = 0;
+                beatIndex < presentationCalibrationBeats.Count;
+                beatIndex++)
+            {
+                ShowcaseActionBeat beat =
+                    presentationCalibrationBeats[beatIndex];
+                float duration = beat.EndTime - beat.StartTime;
+                if (duration <= 0.0001f)
+                    continue;
+
+                int sampleCount = Mathf.Max(
+                    1,
+                    Mathf.CeilToInt(duration / sampleStep));
+                bool hasPrevious = false;
+                float previousTime = beat.StartTime;
+                Vector3 previousFirst = Vector3.zero;
+                Vector3 previousSecond = Vector3.zero;
+                for (int sampleIndex = 0;
+                    sampleIndex <= sampleCount;
+                    sampleIndex++)
+                {
+                    float replayTime = Mathf.Lerp(
+                        beat.StartTime,
+                        beat.EndTime,
+                        sampleIndex / (float)sampleCount);
+                    if (!eventReplay.TryGetEventLocalVehiclePosition(
+                            firstDriver,
+                            replayTime,
+                            out Vector3 firstLocal) ||
+                        !eventReplay.TryGetEventLocalVehiclePosition(
+                            secondDriver,
+                            replayTime,
+                            out Vector3 secondLocal))
+                    {
+                        hasPrevious = false;
+                        continue;
+                    }
+
+                    if (hasPrevious)
+                    {
+                        float segmentDuration =
+                            replayTime - previousTime;
+                        if (segmentDuration > 0f)
+                        {
+                            totalDistance +=
+                                (Vector3.Distance(
+                                     previousFirst,
+                                     firstLocal) +
+                                 Vector3.Distance(
+                                     previousSecond,
+                                     secondLocal)) * 0.5f;
+                            totalDuration += segmentDuration;
+                        }
+                    }
+
+                    hasPrevious = true;
+                    previousTime = replayTime;
+                    previousFirst = firstLocal;
+                    previousSecond = secondLocal;
+                }
+            }
+
+            if (totalDistance <= 0.0001f ||
+                totalDuration <= 0.0001f)
+            {
+                return false;
+            }
+
+            localUnitsPerSecond = totalDistance / totalDuration;
+            return float.IsFinite(localUnitsPerSecond) &&
+                localUnitsPerSecond > 0.0001f;
+        }
+
+        private void ResolveAdaptiveRoomPresentation(
+            Transform stage,
+            VehicleBinding first,
+            VehicleBinding second,
+            bool usesLifeSize)
+        {
+            resolvedShowcaseVehicleScale = showcaseVehicleScale;
+            resolvedShowcasePlaybackSpeedMultiplier =
+                showcasePlaybackSpeedMultiplier;
+            measuredBattleTravelInVehicleLengthsPerSecond = 0f;
+            measuredSlowSectionBattleTravelInVehicleLengthsPerSecond = 0f;
+            if (!normalizeRoomPresentation ||
+                usesLifeSize ||
+                stage == null ||
+                first == null ||
+                second == null ||
+                vehicleLengthBefore <= 0.0001f)
+            {
+                return;
+            }
+
+            float minimumLength = Mathf.Max(
+                0.05f,
+                minimumRoomVehicleLength);
+            float maximumLength = Mathf.Max(
+                minimumLength,
+                maximumRoomVehicleLength);
+            float requestedLength = Mathf.Clamp(
+                vehicleLengthBefore * showcaseVehicleScale,
+                minimumLength,
+                maximumLength);
+            resolvedShowcaseVehicleScale = Mathf.Clamp(
+                requestedLength / vehicleLengthBefore,
+                minimumVehiclePresentationScale,
+                maximumVehiclePresentationScale);
+            float resolvedVehicleLength =
+                vehicleLengthBefore *
+                resolvedShowcaseVehicleScale;
+            if (!TryMeasureBattleTravelRate(
+                    stage,
+                    first.DriverNumber,
+                    second.DriverNumber,
+                    resolvedVehicleLength,
+                    out float travelRate,
+                    out float slowSectionTravelRate))
+            {
+                return;
+            }
+
+            float minimumAverageTravelRate = Mathf.Max(
+                0.1f,
+                Mathf.Max(
+                    minimumBoostedBattleTravelInVehicleLengthsPerSecond,
+                    minimumCinematicBattleTravelInVehicleLengthsPerSecond));
+            float minimumSlowSectionTravelRate = Mathf.Max(
+                0.1f,
+                minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond);
+            float averageTargetPlaybackSpeed =
+                minimumAverageTravelRate / travelRate;
+            float slowSectionTargetPlaybackSpeed =
+                minimumSlowSectionTravelRate /
+                slowSectionTravelRate;
+            float maximumPlaybackSpeed = Mathf.Max(
+                showcasePlaybackSpeedMultiplier,
+                maximumBoostedPlaybackSpeed);
+            resolvedShowcasePlaybackSpeedMultiplier = Mathf.Clamp(
+                Mathf.Max(
+                    showcasePlaybackSpeedMultiplier,
+                    Mathf.Max(
+                        averageTargetPlaybackSpeed,
+                        slowSectionTargetPlaybackSpeed)),
+                showcasePlaybackSpeedMultiplier,
+                maximumPlaybackSpeed);
+            measuredBattleTravelInVehicleLengthsPerSecond =
+                travelRate *
+                resolvedShowcasePlaybackSpeedMultiplier;
+            measuredSlowSectionBattleTravelInVehicleLengthsPerSecond =
+                slowSectionTravelRate *
+                resolvedShowcasePlaybackSpeedMultiplier;
+        }
+
+        private bool TryMeasureBattleTravelRate(
+            Transform stage,
+            int firstDriver,
+            int secondDriver,
+            float vehicleLength,
+            out float vehicleLengthsPerSecond,
+            out float slowSectionVehicleLengthsPerSecond)
+        {
+            vehicleLengthsPerSecond = 0f;
+            slowSectionVehicleLengthsPerSecond = 0f;
+            presentationCalibrationBeats.Clear();
+            presentationCalibrationTravelRates.Clear();
+            if (eventReplay == null ||
+                stage == null ||
+                vehicleLength <= 0.0001f ||
+                !eventReplay.TryCopyShowcaseActionBeats(
+                    presentationCalibrationBeats))
+            {
+                return false;
+            }
+
+            float totalDistance = 0f;
+            float totalDuration = 0f;
+            float sampleStep = Mathf.Max(
+                0.05f,
+                visibilitySampleSeconds);
+            for (int beatIndex = 0;
+                beatIndex < presentationCalibrationBeats.Count;
+                beatIndex++)
+            {
+                ShowcaseActionBeat beat =
+                    presentationCalibrationBeats[beatIndex];
+                float startTime = beat.StartTime;
+                float endTime = beat.EndTime;
+                float duration = endTime - startTime;
+                if (duration <= 0.0001f)
+                    continue;
+
+                int sampleCount = Mathf.Max(
+                    1,
+                    Mathf.CeilToInt(duration / sampleStep));
+                bool hasPrevious = false;
+                float previousTime = startTime;
+                Vector3 previousFirst = Vector3.zero;
+                Vector3 previousSecond = Vector3.zero;
+                for (int sampleIndex = 0;
+                    sampleIndex <= sampleCount;
+                    sampleIndex++)
+                {
+                    float replayTime = Mathf.Lerp(
+                        startTime,
+                        endTime,
+                        sampleIndex / (float)sampleCount);
+                    if (!eventReplay.TryGetEventLocalVehiclePosition(
+                            firstDriver,
+                            replayTime,
+                            out Vector3 firstLocal) ||
+                        !eventReplay.TryGetEventLocalVehiclePosition(
+                            secondDriver,
+                            replayTime,
+                            out Vector3 secondLocal))
+                    {
+                        hasPrevious = false;
+                        continue;
+                    }
+
+                    Vector3 firstWorld =
+                        stage.TransformPoint(firstLocal);
+                    Vector3 secondWorld =
+                        stage.TransformPoint(secondLocal);
+                    if (hasPrevious)
+                    {
+                        float segmentDuration =
+                            replayTime - previousTime;
+                        if (segmentDuration > 0f)
+                        {
+                            float segmentDistance =
+                                (Vector3.Distance(
+                                     previousFirst,
+                                     firstWorld) +
+                                 Vector3.Distance(
+                                     previousSecond,
+                                     secondWorld)) * 0.5f;
+                            totalDistance += segmentDistance;
+                            totalDuration += segmentDuration;
+                            float segmentTravelRate =
+                                segmentDistance /
+                                segmentDuration /
+                                vehicleLength;
+                            if (float.IsFinite(segmentTravelRate) &&
+                                segmentTravelRate > 0.0001f)
+                            {
+                                presentationCalibrationTravelRates.Add(
+                                    segmentTravelRate);
+                            }
+                        }
+                    }
+
+                    hasPrevious = true;
+                    previousTime = replayTime;
+                    previousFirst = firstWorld;
+                    previousSecond = secondWorld;
+                }
+            }
+
+            if (totalDistance <= 0.0001f ||
+                totalDuration <= 0.0001f)
+            {
+                return false;
+            }
+
+            vehicleLengthsPerSecond =
+                totalDistance /
+                totalDuration /
+                vehicleLength;
+            if (!float.IsFinite(vehicleLengthsPerSecond) ||
+                vehicleLengthsPerSecond <= 0.0001f ||
+                presentationCalibrationTravelRates.Count == 0)
+            {
+                return false;
+            }
+
+            presentationCalibrationTravelRates.Sort();
+            int slowSectionIndex = Mathf.Clamp(
+                Mathf.RoundToInt(
+                    (presentationCalibrationTravelRates.Count - 1) *
+                    cinematicSlowSectionPercentile),
+                0,
+                presentationCalibrationTravelRates.Count - 1);
+            slowSectionVehicleLengthsPerSecond =
+                presentationCalibrationTravelRates[slowSectionIndex];
+            return float.IsFinite(slowSectionVehicleLengthsPerSecond) &&
+                slowSectionVehicleLengthsPerSecond > 0.0001f;
+        }
+
+        private float ResolveActiveShowcaseVehicleScale()
+        {
+            return resolvedShowcaseVehicleScale > 0f
+                ? resolvedShowcaseVehicleScale
+                : showcaseVehicleScale;
+        }
+
+        private float ResolveActiveShowcasePlaybackSpeed()
+        {
+            return resolvedShowcasePlaybackSpeedMultiplier > 0f
+                ? resolvedShowcasePlaybackSpeedMultiplier
+                : showcasePlaybackSpeedMultiplier;
+        }
+
         private void ApplyRoomVehiclePresentation(
             VehicleBinding first,
             VehicleBinding second)
@@ -1840,12 +6854,12 @@ namespace F1XR.RestAPI.Replay.Room
             float scale =
                 immersiveScaleEnabled &&
                 portalPresentation != null
-                    ? showcaseVehicleScale *
+                    ? ResolveActiveShowcaseVehicleScale() *
                       Mathf.Max(
                           1f,
                           portalPresentation.EvaluateImmersiveScale(
                               presentationAnchor))
-                    : showcaseVehicleScale;
+                    : ResolveActiveShowcaseVehicleScale();
             firstCar.ApplyRoomPresentation(
                 presentationAnchor,
                 scale);
@@ -1858,6 +6872,20 @@ namespace F1XR.RestAPI.Replay.Room
                 appliedPresentationScale;
             appliedRoomVehicleLength =
                 vehicleLengthAfter;
+        }
+
+        private void ApplyActiveVehiclePresentation(
+            VehicleBinding first,
+            VehicleBinding second)
+        {
+            if (lifeSizeVehicles != null &&
+                lifeSizeVehicles.IsCommitted)
+            {
+                lifeSizeVehicles.ApplyPresentationScale();
+                return;
+            }
+
+            ApplyRoomVehiclePresentation(first, second);
         }
 
         private static ReplayCarView ResolveCar(
@@ -1895,6 +6923,17 @@ namespace F1XR.RestAPI.Replay.Room
             float parentScale = MaxAxis(
                 binding.VehicleRoot.lossyScale);
             return visualLength * parentScale;
+        }
+
+        private static float MeasureWorldVisualHeight(
+            VehicleBinding binding,
+            Vector3 up)
+        {
+            ReplayCarView car = ResolveCar(binding);
+            return car != null &&
+                car.TryGetVisualWorldHeight(up, out float height)
+                    ? height
+                    : 0f;
         }
 
         private static float MaxAxis(Vector3 value)
@@ -1972,8 +7011,16 @@ namespace F1XR.RestAPI.Replay.Room
             bool restoreStage = false,
             bool restoreTableTrack = true)
         {
+            PublishRuntimePerceptionMetrics(
+                eventReplay != null &&
+                eventReplay.CurrentTime >=
+                GetFinalRuntimeActionTime() - 0.001f);
             Transform stageToRestore = boundStage;
+            ResetRuntimeOcclusionAssistance();
+            CancelBattleReframe();
             portalPresentation?.Clear();
+            lifeSizeVehicles?.Clear();
+            lifeSizeRoad?.Clear();
             RestoreVehiclePresentation(firstBinding);
             RestoreVehiclePresentation(secondBinding);
             eventReplay?.SetShowcaseDrivingPresentation(
@@ -1985,6 +7032,7 @@ namespace F1XR.RestAPI.Replay.Room
                     : 0,
                 false);
             eventReplay?.SetShowcasePlaybackSpeedMultiplier(1f);
+            eventReplay?.ClearShowcasePresentationEndTime();
             eventReplay?.SetShowcaseAudioFocus(0);
             if (restoreTableTrack)
                 eventReplay?.RestoreTableTrackRendering();
@@ -1999,21 +7047,49 @@ namespace F1XR.RestAPI.Replay.Room
             eventCoordinateScale = 0f;
             vehicleLengthBefore = 0f;
             vehicleLengthAfter = 0f;
+            resolvedShowcaseVehicleScale = 0f;
+            resolvedShowcasePlaybackSpeedMultiplier = 0f;
+            measuredBattleTravelInVehicleLengthsPerSecond = 0f;
+            measuredSlowSectionBattleTravelInVehicleLengthsPerSecond = 0f;
+            measuredLocalBattleTravelPerSecond = 0f;
+            resolvedCinematicScaleMultiplier = 1f;
+            projectedCinematicBattleTravelMetersPerSecond = 0f;
             entryContinuation = 0f;
             exitContinuation = 0f;
             heroMissDistance = 0f;
             entryWallAngle = 0f;
             exitWallAngle = 0f;
             portalCrossingMiss = 0f;
+            compositionShiftDistance = 0f;
+            appliedReferencePassYaw = 0f;
+            referencePassTravelDirection = Vector3.zero;
+            connectedPortalCandidate = false;
+            hasRecommendedWallExitPlacement = false;
+            appliedRecommendedWallExitPlacement = false;
+            recommendedWallExitPlacement = default;
+            recommendedWallExitFrame = default;
+            activePortalMode = "None";
+            wallExitStrategy =
+                WallExitPresentationStrategy.None;
+            wallExitTransitionBeatIndex = -1;
             boundSourceRevision = -1;
             boundLayoutRevision = -1;
             activeRun = default;
+            preparedLifeSizePlan = null;
+            lifeSizePlanFailure = "";
+            activePlacementMode =
+                ShowcaseStagePlacementMode.None;
             wallPairCompatible = false;
             stageRevealPending = false;
             stageRevealStartTime = 0f;
             stageRevealFirstLongitudinal = 0f;
             stageRevealSecondLongitudinal = 0f;
             eventLocalPath.Clear();
+            presentationCalibrationBeats.Clear();
+            presentationCalibrationTravelRates.Clear();
+            wallExitPlanningBeats.Clear();
+            ResetVisibilityAnalysisResults();
+            ResetShotPlaybackRuntime();
             isApplyingRoomPoses = false;
             ResetOrderDiagnostics();
 

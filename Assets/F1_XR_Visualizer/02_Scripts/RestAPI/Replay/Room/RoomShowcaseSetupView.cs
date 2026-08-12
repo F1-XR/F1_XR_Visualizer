@@ -356,11 +356,13 @@ namespace F1XR.RestAPI.Replay.Room
                 panelGrabCollider,
                 cornerVisual);
 
-            if (setupPanel.GetComponent<PanelYawGrabLock>() == null)
-            {
-                setupPanel.gameObject
-                    .AddComponent<PanelYawGrabLock>();
-            }
+            var yawGrabLock =
+                setupPanel.GetComponent<PanelYawGrabLock>() ??
+                setupPanel.gameObject.AddComponent<PanelYawGrabLock>();
+            yawGrabLock.Configure(
+                grab,
+                setupPanel,
+                onlyWhileGrabbed: true);
         }
 
         private BoxCollider CreatePanelGrabCollider()

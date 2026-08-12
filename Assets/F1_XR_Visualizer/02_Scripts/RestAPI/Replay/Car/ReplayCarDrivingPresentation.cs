@@ -13,11 +13,16 @@ namespace F1XR.RestAPI.Replay
         private const float ShowcaseMaximumSteeringDegrees = 26f;
         private const float ShowcaseSteeringGain = 5f;
         private const float ShowcaseMinimumSteeringDegrees = 9f;
+        private const float ShowcaseWheelSpinScale = 0.32f;
+        private const float ShowcaseGroundClearanceRadiusRatio = 0.04f;
+        private const float ShowcaseMaximumGroundLiftRadiusRatio = 1.25f;
         private const float SteeringResponse = 12f;
         private const float MaximumContinuousStep = 0.5f;
         private const float BrakeCueThreshold = 0.1f;
         private const float ShowcaseBrakeCueScale = 2.4f;
         private const float SpeedStreakMinimumKph = 70f;
+        private const float ContactShadowOpacity = 0.48f;
+        private const int ContactShadowTextureSize = 32;
 
         private static readonly int BaseColorId =
             Shader.PropertyToID("_BaseColor");
@@ -29,6 +34,7 @@ namespace F1XR.RestAPI.Replay
             new(4f, 0.02f, 0.01f, 1f);
         private static Material brakeCueMaterial;
         private static Material speedStreakMaterial;
+        private static Material contactShadowMaterial;
 
         private readonly List<Wheel> wheels = new();
         private Transform frontLeft;
@@ -37,6 +43,7 @@ namespace F1XR.RestAPI.Replay
         private Transform rearRight;
         private GameObject brakeCue;
         private GameObject speedStreakRoot;
+        private GameObject contactShadow;
         private readonly LineRenderer[] speedStreaks =
             new LineRenderer[2];
         private readonly Vector3[] speedStreakStarts =
@@ -125,11 +132,15 @@ namespace F1XR.RestAPI.Replay
 
             float speedMps =
                 Mathf.Max(0f, speedKph) / 3.6f;
+            float spinScale = showcaseEmphasis
+                ? ShowcaseWheelSpinScale
+                : 1f;
             spinDegrees = Mathf.Repeat(
                 spinDegrees +
                     speedMps / WheelRadiusMeters *
                     Mathf.Rad2Deg *
-                    replayDelta,
+                    replayDelta *
+                    spinScale,
                 360f);
 
             float targetSteering = ResolveSteering(
@@ -181,6 +192,11 @@ namespace F1XR.RestAPI.Replay
 
             if (enabled && speedStreakRoot == null)
                 CreateSpeedStreaks();
+            if (enabled && contactShadow == null)
+                CreateContactShadow();
+
+            if (contactShadow != null)
+                contactShadow.SetActive(enabled);
 
             if (brakeCue != null)
             {
@@ -193,6 +209,60 @@ namespace F1XR.RestAPI.Replay
 
             ApplyBrakeCue(currentBrake);
             ApplySpeedStreaks(currentSpeedKph);
+        }
+
+        public float ResolveShowcaseGroundLiftWorld()
+        {
+            Configure();
+            if (wheels.Count == 0)
+                return 0f;
+
+            Vector3 up = transform.up;
+            float lowestHeight = float.PositiveInfinity;
+            float maximumRadius = 0f;
+
+            foreach (Wheel wheel in wheels)
+            {
+                if (wheel.Transform == null)
+                    continue;
+
+                Renderer[] renderers =
+                    wheel.Transform.GetComponentsInChildren<Renderer>(true);
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer == null)
+                        continue;
+
+                    Bounds bounds = renderer.bounds;
+                    float extent = ProjectedExtent(bounds.extents, up);
+                    float centerHeight = Vector3.Dot(
+                        bounds.center - transform.position,
+                        up);
+                    lowestHeight = Mathf.Min(
+                        lowestHeight,
+                        centerHeight - extent);
+                    maximumRadius = Mathf.Max(maximumRadius, extent);
+                }
+            }
+
+            if (!float.IsFinite(lowestHeight) || maximumRadius <= 0f)
+                return 0f;
+
+            float clearance =
+                maximumRadius * ShowcaseGroundClearanceRadiusRatio;
+            return Mathf.Clamp(
+                -lowestHeight + clearance,
+                0f,
+                maximumRadius * ShowcaseMaximumGroundLiftRadiusRatio);
+        }
+
+        private static float ProjectedExtent(
+            Vector3 extents,
+            Vector3 axis)
+        {
+            return Mathf.Abs(axis.x) * extents.x +
+                Mathf.Abs(axis.y) * extents.y +
+                Mathf.Abs(axis.z) * extents.z;
         }
 
         private void AddWheel(Transform wheel, bool steering)
@@ -214,17 +284,26 @@ namespace F1XR.RestAPI.Replay
                 if (wheel.Transform == null)
                     continue;
 
-                Quaternion steering = wheel.Steering
-                    ? Quaternion.AngleAxis(
+                Quaternion steering = Quaternion.identity;
+                if (wheel.Steering)
+                {
+                    Transform parent = wheel.Transform.parent;
+                    Vector3 steeringAxis = parent != null
+                        ? parent.InverseTransformDirection(transform.up)
+                        : Vector3.up;
+                    if (steeringAxis.sqrMagnitude <= 0.000001f)
+                        steeringAxis = Vector3.up;
+
+                    steering = Quaternion.AngleAxis(
                         steeringDegrees,
-                        Vector3.up)
-                    : Quaternion.identity;
+                        steeringAxis.normalized);
+                }
                 Quaternion spin = Quaternion.AngleAxis(
                     spinDegrees,
                     Vector3.right);
                 wheel.Transform.localRotation =
-                    wheel.BaseRotation *
                     steering *
+                    wheel.BaseRotation *
                     spin;
             }
         }
@@ -363,6 +442,132 @@ namespace F1XR.RestAPI.Replay
             speedStreakRoot.SetActive(false);
         }
 
+        private void CreateContactShadow()
+        {
+            if (frontLeft == null ||
+                frontRight == null ||
+                rearLeft == null ||
+                rearRight == null)
+            {
+                return;
+            }
+
+            if (!TryGetWheelVisualBounds(
+                    out Bounds wheelBounds))
+            {
+                return;
+            }
+
+            Vector3 minimum = wheelBounds.min;
+            Vector3 maximum = wheelBounds.max;
+
+            float wheelbase = Mathf.Max(
+                0.01f,
+                maximum.z - minimum.z);
+            float trackWidth = Mathf.Max(
+                0.01f,
+                maximum.x - minimum.x);
+            Vector3 center = (minimum + maximum) * 0.5f;
+
+            contactShadow = GameObject.CreatePrimitive(
+                PrimitiveType.Quad);
+            contactShadow.name = "ShowcaseContactShadow";
+            contactShadow.layer = gameObject.layer;
+            contactShadow.transform.SetParent(transform, false);
+            contactShadow.transform.localPosition = new Vector3(
+                center.x,
+                minimum.y + wheelbase * 0.012f,
+                center.z);
+            contactShadow.transform.localRotation =
+                Quaternion.Euler(90f, 0f, 0f);
+            contactShadow.transform.localScale = new Vector3(
+                trackWidth * 1.18f,
+                wheelbase * 1.12f,
+                1f);
+
+            Collider shadowCollider =
+                contactShadow.GetComponent<Collider>();
+            if (shadowCollider != null)
+                Destroy(shadowCollider);
+
+            MeshRenderer renderer =
+                contactShadow.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial =
+                    GetContactShadowMaterial();
+                renderer.shadowCastingMode =
+                    UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+
+            contactShadow.SetActive(false);
+        }
+
+        private bool TryGetWheelVisualBounds(
+            out Bounds wheelBounds)
+        {
+            wheelBounds = default;
+            Transform[] wheelRoots =
+            {
+                frontLeft,
+                frontRight,
+                rearLeft,
+                rearRight
+            };
+            bool hasBounds = false;
+            foreach (Transform wheelRoot in wheelRoots)
+            {
+                if (wheelRoot == null)
+                    continue;
+
+                Renderer[] renderers =
+                    wheelRoot.GetComponentsInChildren<Renderer>(
+                        true);
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer == null)
+                        continue;
+
+                    Bounds localBounds = renderer.localBounds;
+                    Vector3 minimum = localBounds.min;
+                    Vector3 maximum = localBounds.max;
+                    Matrix4x4 rendererToCar =
+                        transform.worldToLocalMatrix *
+                        renderer.transform.localToWorldMatrix;
+                    for (int corner = 0; corner < 8; corner++)
+                    {
+                        Vector3 localPoint = new(
+                            (corner & 1) == 0
+                                ? minimum.x
+                                : maximum.x,
+                            (corner & 2) == 0
+                                ? minimum.y
+                                : maximum.y,
+                            (corner & 4) == 0
+                                ? minimum.z
+                                : maximum.z);
+                        Vector3 carPoint =
+                            rendererToCar.MultiplyPoint3x4(
+                                localPoint);
+                        if (!hasBounds)
+                        {
+                            wheelBounds = new Bounds(
+                                carPoint,
+                                Vector3.zero);
+                            hasBounds = true;
+                        }
+                        else
+                        {
+                            wheelBounds.Encapsulate(carPoint);
+                        }
+                    }
+                }
+            }
+
+            return hasBounds;
+        }
+
         public bool OwnsRenderer(Renderer renderer)
         {
             if (renderer == null)
@@ -377,6 +582,13 @@ namespace F1XR.RestAPI.Replay
             if (speedStreakRoot != null &&
                 renderer.transform.IsChildOf(
                     speedStreakRoot.transform))
+            {
+                return true;
+            }
+
+            if (contactShadow != null &&
+                renderer.transform.IsChildOf(
+                    contactShadow.transform))
             {
                 return true;
             }
@@ -518,6 +730,57 @@ namespace F1XR.RestAPI.Replay
             return speedStreakMaterial;
         }
 
+        private static Material GetContactShadowMaterial()
+        {
+            if (contactShadowMaterial != null)
+                return contactShadowMaterial;
+
+            Shader shader =
+                Shader.Find("Sprites/Default") ??
+                Shader.Find("Universal Render Pipeline/Unlit") ??
+                Shader.Find("Unlit/Transparent");
+            contactShadowMaterial = new Material(shader)
+            {
+                name = "Showcase Contact Shadow"
+            };
+
+            Texture2D texture = new(
+                ContactShadowTextureSize,
+                ContactShadowTextureSize,
+                TextureFormat.RGBA32,
+                false)
+            {
+                name = "Showcase Contact Shadow Texture",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            Color[] pixels = new Color[
+                ContactShadowTextureSize *
+                ContactShadowTextureSize];
+            for (int y = 0; y < ContactShadowTextureSize; y++)
+            {
+                for (int x = 0; x < ContactShadowTextureSize; x++)
+                {
+                    float u =
+                        (x + 0.5f) /
+                        ContactShadowTextureSize * 2f - 1f;
+                    float v =
+                        (y + 0.5f) /
+                        ContactShadowTextureSize * 2f - 1f;
+                    float alpha = Mathf.Pow(
+                        Mathf.Clamp01(1f - u * u - v * v),
+                        1.25f) * ContactShadowOpacity;
+                    pixels[y * ContactShadowTextureSize + x] =
+                        new Color(0f, 0f, 0f, alpha);
+                }
+            }
+
+            texture.SetPixels(pixels);
+            texture.Apply(false, true);
+            contactShadowMaterial.mainTexture = texture;
+            return contactShadowMaterial;
+        }
+
         private static Transform Find(
             Transform[] children,
             string targetName)
@@ -600,6 +863,19 @@ namespace F1XR.RestAPI.Replay
 
             drivingPresentation.SetShowcaseEmphasis(
                 enabled);
+
+            Vector3 localLift = Vector3.zero;
+            if (enabled)
+            {
+                float worldLift =
+                    drivingPresentation.ResolveShowcaseGroundLiftWorld();
+                Vector3 worldOffset = transform.up * worldLift;
+                localLift = transform.parent != null
+                    ? transform.parent.InverseTransformVector(worldOffset)
+                    : worldOffset;
+            }
+
+            SetDrivingPresentationLocalOffset(localLift);
         }
     }
 }
