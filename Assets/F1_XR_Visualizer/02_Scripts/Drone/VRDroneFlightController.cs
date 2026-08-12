@@ -37,6 +37,7 @@ namespace F1XR.Drone
             verticalVelocity = 0f;
             yawVelocity = 0f;
             exitHoldTime = 0f;
+            coordinator?.SetDroneSpeed(0f);
         }
 
         void Update()
@@ -84,6 +85,11 @@ namespace F1XR.Drone
                 targetYawVelocity,
                 yawAcceleration,
                 yawDeceleration);
+
+            float speedMetersPerSecond = Mathf.Sqrt(
+                horizontalVelocity.sqrMagnitude +
+                verticalVelocity * verticalVelocity);
+            coordinator.SetDroneSpeed(speedMetersPerSecond * 3.6f);
 
             Vector3 movement = horizontalVelocity * Time.deltaTime;
             movement.y = verticalVelocity * Time.deltaTime;
