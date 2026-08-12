@@ -11,6 +11,8 @@ namespace F1XR.RestAPI.SessionSelect.UI
 {
     public class ReplayLoadUI : MonoBehaviour
     {
+        private const int Suzuka2024RaceSessionKey = 9496;
+
         public ApiClient api;
 
         public TMP_Dropdown yearDropdown;
@@ -102,7 +104,9 @@ namespace F1XR.RestAPI.SessionSelect.UI
 
         private IEnumerator LoadReplay()
         {
-            if (SelectedSession() == null)
+            SessionOption selectedSession =
+                SelectedSession();
+            if (selectedSession == null)
                 yield break;
 
             SetLoading("Loading replay...");
@@ -111,14 +115,16 @@ namespace F1XR.RestAPI.SessionSelect.UI
 
             CreateDatasetBody body = new CreateDatasetBody
             {
-                sessionKey = SelectedSession().sessionKey,
+                sessionKey = selectedSession.sessionKey,
                 chunkMinutes = chunkMinutes,
                 overlapSeconds = overlapSeconds,
                 initialChunks = 1,
                 prefetchChunks = 0,
                 requestedMinutes = Mathf.Max(1, replayMinutes),
                 preStartSeconds = 0,
-                skipWarmupLap = skipWarmupLap
+                skipWarmupLap = skipWarmupLap &&
+                    selectedSession.sessionKey !=
+                    Suzuka2024RaceSessionKey
             };
 
             yield return api.CreateDataset(body, result => manifest = result, Debug.LogError);

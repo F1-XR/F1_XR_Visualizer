@@ -49,6 +49,11 @@ namespace F1XR.RestAPI.Replay
         public float playbackSpeed = 6f;
         public int preloadChunksAhead = 3;
         public float manifestPollSeconds = 1f;
+        [Header("Red Flag Timeline")]
+        public bool compressRedFlagDowntime = true;
+        [Min(0f)] public float redFlagVisibleTailSeconds = 15f;
+        [Min(0f)] public float restartVisibleLeadSeconds = 15f;
+        [Min(0f)] public float minimumRedFlagSkipSeconds = 60f;
         public bool showCarLabels = true;
         public bool enableCarLod = true;
         public bool hideLeaderHighlightAfterRaceStart = true;
@@ -79,8 +84,10 @@ namespace F1XR.RestAPI.Replay
         private ReplayManifestPoller manifestPoller;
         private ReplayCarSet replayCars;
         private ReplayAudio replayAudio;
+        private float engineAudioDistanceScale = 1f;
         private EventPopoutReplay eventReplay;
         private int selectedDriverNumber;
+        private bool eventPresentationSuppressed;
         private readonly ReplayTimeline timeline = new();
         private readonly ReplayReadyStart readyStart = new();
         private readonly List<Vector3> fallbackOvertakeCenterline = new();
@@ -98,12 +105,29 @@ namespace F1XR.RestAPI.Replay
     
         public bool IsPlaying => timeline.IsPlaying;
         public float Duration => timeline.Duration;
+        public float PlaybackElapsedTime => timeline.ElapsedTime;
         public float ReadyUntilTime => timeline.ReadyUntilTime;
+        public float TimelineEndTime => timeline.EndTime;
+        public IReadOnlyList<ReplayTimelineGap> TimelineGaps => timeline.Gaps;
         public bool HasDataset => _manifest != null;
         public EventPopoutReplay EventReplay => eventReplay;
         internal DatasetManifestDto Manifest => _manifest;
         internal Dictionary<int, List<LocationSample>> LocationsByDriver =>
             replayChunks != null ? replayChunks.LocationsByDriver : null;
+
+        internal bool CopyLocationSourceRange(
+            int driverNumber,
+            float startTime,
+            float endTime,
+            List<LocationSample> destination)
+        {
+            return replayChunks != null &&
+                replayChunks.CopyLocationSourceRange(
+                    driverNumber,
+                    startTime,
+                    endTime,
+                    destination);
+        }
         public int SelectedDriverNumber => selectedDriverNumber;
         public bool IsTrackPlaced => HasPlacedTrack();
         public bool IsTrackPlacementActive => buildPlacer != null && buildPlacer.IsPlacementActive;
@@ -114,6 +138,19 @@ namespace F1XR.RestAPI.Replay
         public bool CanUndoTrackManipulation => buildPlacer != null && buildPlacer.CanUndo;
         public event Action<int> SelectedDriverChanged;
 
+        public void SetEngineAudioDistanceScale(float value)
+        {
+            float nextScale = Mathf.Max(0.0001f, value);
+            if (Mathf.Approximately(engineAudioDistanceScale, nextScale))
+                return;
+
+            engineAudioDistanceScale = nextScale;
+            replayAudio?.SetDistanceScale(
+                engineAudioDistanceScale,
+                engineSound,
+                ApplyDriverMetadata);
+        }
+
         public float TimelineToNormalized(float time)
         {
             return timeline.ToNormalized(time);
@@ -122,6 +159,11 @@ namespace F1XR.RestAPI.Replay
         public float NormalizedToTimeline(float normalized)
         {
             return timeline.FromNormalized(normalized);
+        }
+
+        public float TimelineToPlaybackTime(float sourceTime)
+        {
+            return timeline.ToElapsedTime(sourceTime);
         }
         
         private void Awake()
@@ -147,6 +189,7 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetLeaderHighlightVisible(false);
             replayCars.SetOvertakeSettings(overtakeMotion);
             replayAudio = new ReplayAudio(replayCars);
+            replayAudio.SetDistanceScale(engineAudioDistanceScale);
             replayAudio.Reset(
                 engineSound,
                 AreReplayCarsReady(),
@@ -166,6 +209,7 @@ namespace F1XR.RestAPI.Replay
 
         public void LoadDataset(DatasetManifestDto manifest, TrackOption track, bool playOnReady = true)
         {
+            SetEventPresentationSuppressed(false);
             EnsureEngineSound();
             EnsureOvertakeMotion();
             StopTrackAlignment();
@@ -181,6 +225,7 @@ namespace F1XR.RestAPI.Replay
                 ref buildPlacer,
                 ref trackCalibration);
             _datasetId = manifest.datasetId;
+            ConfigureTimelineCompression();
             timeline.Reset(manifest);
             readyStart.Reset(playOnReady);
             _hasDriverMetadata = false;
@@ -211,9 +256,11 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetLabelsVisible(showCarLabels);
             replayCars.SetLeaderHighlightVisible(false);
             replayEvents = ResolveReplayEvents(manifest);
+            eventReplay?.NotifyDatasetChanged();
             replayCars.SetOvertakeSettings(overtakeMotion);
             replayCars.SetReplayEvents(replayEvents);
             replayAudio ??= new ReplayAudio(replayCars);
+            replayAudio.SetDistanceScale(engineAudioDistanceScale);
             replayAudio.Reset(
                 engineSound,
                 AreReplayCarsReady(),
@@ -279,7 +326,7 @@ namespace F1XR.RestAPI.Replay
             timeline.Play();
             LoadNearChunks();
             replayCars.SetLeaderHighlightVisible(ShouldShowLeaderHighlight());
-            replayAudio.SetPlaying(true);
+            replayAudio.SetPlaying(!eventPresentationSuppressed);
             ApplyGridStartTimeline();
         }
 
@@ -400,7 +447,9 @@ namespace F1XR.RestAPI.Replay
             replayAudio.Update(
                 engineSound,
                 replayCarsReady,
-                timeline.IsPlaying,
+                timeline.IsPlaying &&
+                !timeline.IsWaitingForGapData &&
+                !eventPresentationSuppressed,
                 ApplyDriverMetadata);
             AudioStateMarker.End();
 
@@ -413,6 +462,9 @@ namespace F1XR.RestAPI.Replay
             if (_manifest == null)
                 return;
 
+            if (eventPresentationSuppressed)
+                return;
+
             if (!timeline.IsPlaying)
             {
                 if (replayCarsReady && !replayCars.HasCars)
@@ -421,7 +473,10 @@ namespace F1XR.RestAPI.Replay
                 return;
             }
 
-            timeline.Advance(Time.deltaTime, playbackSpeed);
+            timeline.Advance(
+                Time.deltaTime,
+                playbackSpeed,
+                IsTimelineGapTargetLoaded);
             ApplyStartingLightTimeline();
             ApplyGridStartTimeline();
 
@@ -449,6 +504,17 @@ namespace F1XR.RestAPI.Replay
             ApplyGridStartTimeline();
         }
 
+        internal void SetEventPresentationSuppressed(bool suppressed)
+        {
+            if (eventPresentationSuppressed == suppressed)
+                return;
+
+            eventPresentationSuppressed = suppressed;
+            replayCars?.SetPresentationVisible(!suppressed);
+            if (suppressed)
+                replayAudio?.SetPlaying(false);
+        }
+
         private bool ShouldShowLeaderHighlight()
         {
             if (_manifest == null)
@@ -465,6 +531,7 @@ namespace F1XR.RestAPI.Replay
         {
             _manifest = manifest;
             replayEvents = ResolveReplayEvents(manifest);
+            ConfigureTimelineCompression();
             timeline.SetManifest(manifest);
             replayChunks.SetManifest(manifest);
             replayCars.SetReplayEvents(replayEvents);
@@ -477,6 +544,30 @@ namespace F1XR.RestAPI.Replay
         {
             using var marker = LoadChunksMarker.Auto();
             replayChunks.LoadNear(timeline.CurrentTime, preloadChunksAhead, TryAutoPlay);
+        }
+
+        private bool IsTimelineGapTargetLoaded(float targetTime)
+        {
+            int chunkIndex = replayChunks.FindChunk(targetTime);
+            if (!replayChunks.CanLoad(chunkIndex))
+                return false;
+
+            if (!replayChunks.IsLoaded(chunkIndex) &&
+                !replayChunks.IsLoading(chunkIndex))
+            {
+                replayChunks.StartLoad(chunkIndex, TryAutoPlay);
+            }
+
+            return replayChunks.IsLoaded(chunkIndex);
+        }
+
+        private void ConfigureTimelineCompression()
+        {
+            timeline.ConfigureRedFlagCompression(
+                compressRedFlagDowntime,
+                redFlagVisibleTailSeconds,
+                restartVisibleLeadSeconds,
+                minimumRedFlagSkipSeconds);
         }
 
         private void TryAutoPlay()

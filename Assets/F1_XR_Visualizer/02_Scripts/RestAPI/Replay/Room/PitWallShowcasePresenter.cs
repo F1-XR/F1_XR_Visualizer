@@ -10,7 +10,9 @@ namespace F1XR.RestAPI.Replay.Room
     {
         private const float TargetVehicleLengthMeters = 5.6f;
         private const float PitDepthBehindWallMeters = 6f;
-        private const float VehicleGroundOffsetMeters = 0.28f;
+        private const float VehicleGroundClearanceMeters = 0.04f;
+        private const float FallbackVehicleOriginHeightMeters = 0.28f;
+        private const float MaximumVehicleOriginHeightRatio = 0.22f;
 
         private readonly List<ShowcaseWallFrame> walls = new();
         private ReplayPlayer replayPlayer;
@@ -104,7 +106,24 @@ namespace F1XR.RestAPI.Replay.Room
                 TargetVehicleLengthMeters /
                 Mathf.Max(0.0001f, localVehicleLength);
 
+            ShowcaseWallFrame portalWall = wall;
+            Vector3 wallBottom =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
             Vector3 up = wall.VerticalAxis.normalized;
+            if (showcaseLayout.TryGetDetectedFloorPlane(
+                    out Plane floorPlane) &&
+                TryAlignWallToFloor(
+                    wall,
+                    floorPlane,
+                    out ShowcaseWallFrame floorAlignedWall,
+                    out Vector3 floorAtWall))
+            {
+                portalWall = floorAlignedWall;
+                wallBottom = floorAtWall;
+                up = floorPlane.normal.normalized;
+            }
+
             Vector3 inward = Vector3.ProjectOnPlane(
                 wall.InwardNormal,
                 up).normalized;
@@ -122,12 +141,14 @@ namespace F1XR.RestAPI.Replay.Room
             Quaternion rotation = Quaternion.LookRotation(
                 laneDirection,
                 up);
-            Vector3 wallBottom =
-                wall.Center +
-                wall.VerticalAxis * wall.MinVertical;
+            float vehicleOriginHeight =
+                ResolveVehicleOriginHeight(
+                    stage,
+                    vehicle,
+                    targetScale);
             Vector3 desiredFocus =
                 wallBottom +
-                up * VehicleGroundOffsetMeters -
+                up * vehicleOriginHeight -
                 inward * PitDepthBehindWallMeters;
             Vector3 position =
                 desiredFocus -
@@ -146,7 +167,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             if (!portalPresentation.ConfigureSingleWall(
                     stage,
-                    wall,
+                    portalWall,
                     vehicle,
                     out string failure))
             {
@@ -164,6 +185,81 @@ namespace F1XR.RestAPI.Replay.Room
             boundLayoutRevision = layoutRevision;
             lastFailure = "";
             return true;
+        }
+
+        private static bool TryAlignWallToFloor(
+            ShowcaseWallFrame wall,
+            Plane floorPlane,
+            out ShowcaseWallFrame alignedWall,
+            out Vector3 floorAtWall)
+        {
+            alignedWall = wall;
+            floorAtWall =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+
+            Vector3 wallUp = wall.VerticalAxis.normalized;
+            float alignment = Vector3.Dot(
+                floorPlane.normal,
+                wallUp);
+            if (Mathf.Abs(alignment) <= 0.5f)
+                return false;
+
+            float distance = floorPlane.GetDistanceToPoint(floorAtWall);
+            floorAtWall -= wallUp * (distance / alignment);
+
+            float floorVertical = Vector3.Dot(
+                floorAtWall - wall.Center,
+                wallUp);
+            float alignedHeight = wall.MaxVertical - floorVertical;
+            if (!float.IsFinite(alignedHeight) || alignedHeight <= 0.5f)
+                return false;
+
+            alignedWall = new ShowcaseWallFrame(
+                wall.Id,
+                wall.Center,
+                wall.InwardNormal,
+                wall.HorizontalAxis,
+                wall.VerticalAxis,
+                wall.Width,
+                alignedHeight,
+                wall.MinHorizontal,
+                wall.MaxHorizontal,
+                floorVertical,
+                wall.MaxVertical);
+            return true;
+        }
+
+        private static float ResolveVehicleOriginHeight(
+            Transform stage,
+            Transform vehicle,
+            float targetScale)
+        {
+            if (stage == null ||
+                vehicle == null ||
+                !vehicle.TryGetComponent(
+                    out ReplayCarView vehicleView) ||
+                !vehicleView.TryGetVisualGroundOffset(
+                    stage,
+                    out float localGroundOffset))
+            {
+                return FallbackVehicleOriginHeightMeters;
+            }
+
+            float measuredHeight =
+                -localGroundOffset * targetScale +
+                VehicleGroundClearanceMeters;
+            if (float.IsInfinity(measuredHeight) ||
+                float.IsNaN(measuredHeight))
+            {
+                return FallbackVehicleOriginHeightMeters;
+            }
+
+            return Mathf.Clamp(
+                measuredHeight,
+                VehicleGroundClearanceMeters,
+                TargetVehicleLengthMeters *
+                MaximumVehicleOriginHeightRatio);
         }
 
         private bool TrySelectWall(out ShowcaseWallFrame selected)

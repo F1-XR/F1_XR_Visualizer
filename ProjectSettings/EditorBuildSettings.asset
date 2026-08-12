@@ -15,8 +15,8 @@ EditorBuildSettings:
     path: Assets/F1_XR_Visualizer/01_Scenes/SessionSpace.unity
     guid: 58dde73b9791fe34999e8af4069e0ff5
   - enabled: 1
-    path: Assets/F1_XR_Visualizer/01_Scenes/SessionSpace0803.unity
-    guid: 54433669a54a6824aa4849e3b1749faa
+    path: Assets/F1_XR_Visualizer/01_Scenes/SessionSpace0804.unity
+    guid: bb1c17eb855cee54ea6a9b86b946fad4
   - enabled: 1
     path: Assets/F1_XR_Visualizer/01_Scenes/VRDroneSpace.unity
     guid: a4c5919d5a8f4e5c8b3e2d0a9f7c6b1e

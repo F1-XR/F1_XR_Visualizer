@@ -9,6 +9,7 @@ namespace F1XR.RestAPI.Replay
         private readonly EngineSoundSettingsSnapshot settingsSnapshot = new();
 
         private bool wasPlacementReady;
+        private float distanceScale = 1f;
 
         public ReplayAudio(ReplayCarSet cars)
         {
@@ -53,6 +54,24 @@ namespace F1XR.RestAPI.Replay
         public void SetPlaying(bool isPlaying)
         {
             cars.SetSoundPlaying(isPlaying);
+        }
+
+        public void SetDistanceScale(float value)
+        {
+            distanceScale = Mathf.Max(0.0001f, value);
+        }
+
+        public void SetDistanceScale(
+            float value,
+            CarEngineSoundSettings settings,
+            Action applyDriverMetadata)
+        {
+            float nextScale = Mathf.Max(0.0001f, value);
+            if (Mathf.Approximately(distanceScale, nextScale))
+                return;
+
+            distanceScale = nextScale;
+            Refresh(settings, applyDriverMetadata);
         }
 
         public void ResetPlacement()
@@ -111,8 +130,21 @@ namespace F1XR.RestAPI.Replay
             Action applyDriverMetadata)
         {
             applyDriverMetadata?.Invoke();
-            cars.SetEngineSound(settings);
+            cars.SetEngineSound(GetScaledSettings(settings));
             settingsSnapshot.Capture(settings);
+        }
+
+        CarEngineSoundSettings GetScaledSettings(
+            CarEngineSoundSettings settings)
+        {
+            if (settings == null || Mathf.Approximately(distanceScale, 1f))
+                return settings;
+
+            CarEngineSoundSettings scaled = settings.CloneForProfile(null);
+            scaled.minDistance *= distanceScale;
+            scaled.maxDistance *= distanceScale;
+            scaled.maximumAudibleDistance *= distanceScale;
+            return scaled;
         }
     }
 }

@@ -60,8 +60,12 @@ namespace F1XR.RaceFlags
         private float raceControlStartGateT;
         private bool warnedMissingPlayer;
         private bool warnedMissingFlag;
+        private bool incidentYellowOverride;
+        private Transform incidentPresentationRoot;
 
         public event Action CheckeredFlagShown;
+        public bool IncidentYellowOverrideActive =>
+            incidentYellowOverride;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnablePresentersAfterSceneLoad()
@@ -122,6 +126,8 @@ namespace F1XR.RaceFlags
             if (raceFlagAlert != null)
                 raceFlagAlert.HideImmediately();
 
+            incidentYellowOverride = false;
+            incidentPresentationRoot = null;
             previousState = RaceFlagRuntimeState.Hidden;
         }
 
@@ -172,6 +178,25 @@ namespace F1XR.RaceFlags
             forceRaceFinishedForTesting = false;
             forceYellowForTesting = false;
             forceRedForTesting = false;
+            EvaluateAndApply(forceTransition: true);
+        }
+
+        public void SetIncidentYellowOverride(bool active)
+        {
+            if (incidentYellowOverride == active)
+                return;
+
+            incidentYellowOverride = active;
+            EvaluateAndApply(forceTransition: true);
+        }
+
+        public void SetIncidentPresentationRoot(Transform root)
+        {
+            if (incidentPresentationRoot == root)
+                return;
+
+            incidentPresentationRoot = root;
+            EnsureAnchorAndFlag();
             EvaluateAndApply(forceTransition: true);
         }
 
@@ -254,6 +279,9 @@ namespace F1XR.RaceFlags
 
         private Transform ResolveMapRoot()
         {
+            if (incidentPresentationRoot != null)
+                return incidentPresentationRoot;
+
             if (mapRootOverride != null && mapRootOverride != transform && !IsFlagTransform(mapRootOverride))
                 return mapRootOverride;
 
@@ -345,6 +373,9 @@ namespace F1XR.RaceFlags
 
             if (IsRaceControlActive(replayPlayer.RedFlags, effectiveT, raceEndTime, hasValidRaceEndTime))
                 return RaceFlagRuntimeState.Red;
+
+            if (incidentYellowOverride)
+                return RaceFlagRuntimeState.Yellow;
 
             if (IsRaceControlActive(replayPlayer.YellowFlags, effectiveT, raceEndTime, hasValidRaceEndTime))
                 return RaceFlagRuntimeState.Yellow;

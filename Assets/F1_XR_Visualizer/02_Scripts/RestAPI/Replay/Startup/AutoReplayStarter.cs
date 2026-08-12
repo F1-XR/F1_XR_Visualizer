@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using UnityEngine;
 using F1XR.RestAPI.Api;
@@ -6,6 +7,8 @@ namespace F1XR.RestAPI.Replay
 {
     public class AutoReplayStarter : MonoBehaviour
     {
+        private const int EventReplayInitialMinutes = 6;
+
         public ApiClient api;
         public ReplayPlayer player;
 
@@ -33,13 +36,7 @@ namespace F1XR.RestAPI.Replay
         private void Awake()
         {
             if (useEventReplayTestSession)
-            {
-                preferredYear = 2024;
-                preferredCircuitShortName = "Sakhir";
-                preferredSessionName = "Race";
-                replayMinutes = 10;
-                skipWarmupLap = true;
-            }
+                ApplyEventReplayTestSettings();
 
             if (api == null)
                 api = GetComponent<ApiClient>();
@@ -65,11 +62,35 @@ namespace F1XR.RestAPI.Replay
             StartCoroutine(LoadDefaultReplay());
         }
 
-        private IEnumerator LoadDefaultReplay()
+        public void ReloadEventReplayTestSession(
+            Action<bool> onComplete)
+        {
+            ApplyEventReplayTestSettings();
+            ReplayLoad.Clear();
+            StopAllCoroutines();
+            StartCoroutine(LoadDefaultReplay(onComplete));
+        }
+
+        private void ApplyEventReplayTestSettings()
+        {
+            useEventReplayTestSession = true;
+            preferredYear = 2024;
+            preferredCircuitShortName = "Suzuka";
+            preferredSessionName = "Race";
+            replayMinutes = 45;
+            skipWarmupLap = false;
+            useCachedDatasetFastStart = false;
+            cachedDatasetId = "";
+            cachedCircuitKey = 46;
+        }
+
+        private IEnumerator LoadDefaultReplay(
+            Action<bool> onComplete = null)
         {
             if (api == null || player == null)
             {
                 Debug.LogError("ReplayAutoLoader requires ApiClient and ReplayPlayer.");
+                onComplete?.Invoke(false);
                 yield break;
             }
 
@@ -106,7 +127,10 @@ namespace F1XR.RestAPI.Replay
             }
 
             if (loadedCachedDataset)
+            {
+                onComplete?.Invoke(true);
                 yield break;
+            }
 
             YearsResponse years = null;
             yield return api.GetYears(result => years = result, Debug.LogError);
@@ -120,6 +144,7 @@ namespace F1XR.RestAPI.Replay
             if (track == null)
             {
                 Debug.LogError("No F1 track was returned from the REST API.");
+                onComplete?.Invoke(false);
                 yield break;
             }
 
@@ -130,30 +155,52 @@ namespace F1XR.RestAPI.Replay
             if (session == null)
             {
                 Debug.LogError("No F1 session was returned from the REST API.");
+                onComplete?.Invoke(false);
                 yield break;
             }
 
+            int initialChunks = useEventReplayTestSession
+                ? Mathf.Max(
+                    1,
+                    Mathf.CeilToInt(
+                        (float)Mathf.Min(
+                            Mathf.Max(1, replayMinutes),
+                            EventReplayInitialMinutes) /
+                        Mathf.Max(1, chunkMinutes)))
+                : 1;
             CreateDatasetBody body = new CreateDatasetBody
             {
                 sessionKey = session.sessionKey,
                 chunkMinutes = chunkMinutes,
                 overlapSeconds = overlapSeconds,
-                initialChunks = 1,
+                initialChunks = initialChunks,
                 prefetchChunks = 0,
                 requestedMinutes = Mathf.Max(1, replayMinutes),
                 preStartSeconds = 0,
                 skipWarmupLap = skipWarmupLap
             };
 
+            bool loadedDataset = false;
             yield return api.CreateDataset(
                 body,
                 manifest =>
                 {
+                    if (manifest == null ||
+                        string.Equals(
+                            manifest.status,
+                            "failed",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
                     Debug.Log($"RestAPI scene dataset created: {manifest.datasetId}");
                     player.LoadDataset(manifest, track, true);
+                    loadedDataset = true;
                 },
                 error => Debug.LogError($"Create dataset failed: {error}")
             );
+            onComplete?.Invoke(loadedDataset);
         }
 
         private static bool IsReady(DatasetManifestDto manifest)

@@ -128,6 +128,31 @@ namespace F1XR.RestAPI.Replay.Tests
             Assert.That(merged[0].displayTitle, Is.EqualTo("manifest"));
         }
 
+        [Test]
+        public void MissingPitDataPreservesOtherShowcaseEvents()
+        {
+            ReplayEventDto overtake = new()
+            {
+                eventId = "fixture_overtake",
+                eventType = "Overtake",
+                anchorTime = 10f
+            };
+            ReplayEventDto collision = new()
+            {
+                eventId = "fixture_collision",
+                eventType = "Collision",
+                anchorTime = 20f
+            };
+
+            ReplayEventDto[] merged = ReplayEventMerger.Merge(
+                new[] { collision, overtake },
+                null);
+
+            Assert.That(merged, Has.Length.EqualTo(2));
+            Assert.That(merged[0].eventId, Is.EqualTo("fixture_overtake"));
+            Assert.That(merged[1].eventId, Is.EqualTo("fixture_collision"));
+        }
+
         private static ReplayEventDto Event(float stopDuration)
         {
             return new ReplayEventDto

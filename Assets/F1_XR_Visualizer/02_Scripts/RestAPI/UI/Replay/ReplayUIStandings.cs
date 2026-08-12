@@ -17,7 +17,7 @@ namespace F1XR.RestAPI.UI
                 return;
 
             if (lapHeader != null)
-                lapHeader.text = $"LAP  {FormatTime(player.CurrentTime)}";
+                lapHeader.text = $"LAP  {FormatTime(player.PlaybackElapsedTime)}";
 
             positionChangeTracker.BeginFrame(player.CurrentTime);
 

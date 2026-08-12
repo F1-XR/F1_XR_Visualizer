@@ -27,6 +27,7 @@ namespace F1XR.Drone
         GameObject environment;
         DroneViewCubeSpawner cubeSpawner;
         VRDroneFlightController flightController;
+        VRDroneAudioDistanceScaler audioDistanceScaler;
         Transform placementRoot;
         Transform visualRoot;
         Transform hiddenCube;
@@ -104,6 +105,11 @@ namespace F1XR.Drone
             cubeSpawner.CubeReleased -= EnterVr;
             cubeSpawner.CubeReleased += EnterVr;
 
+            audioDistanceScaler = GetComponent<VRDroneAudioDistanceScaler>();
+            if (audioDistanceScaler == null)
+                audioDistanceScaler = gameObject.AddComponent<VRDroneAudioDistanceScaler>();
+            audioDistanceScaler.ConfigureHostScene(hostScene);
+
             flightController = GetComponent<VRDroneFlightController>();
             if (flightController == null)
             {
@@ -122,6 +128,7 @@ namespace F1XR.Drone
             if (droneHud == null)
                 droneHud = gameObject.AddComponent<VRDroneHud>();
             droneHud.Configure(environment.transform);
+
         }
 
         bool TryResolveReferences()
@@ -210,6 +217,7 @@ namespace F1XR.Drone
             placementRoot.localScale = Vector3.Scale(
                 savedPlacementLocalScale,
                 Vector3.one * vrScaleMultiplier);
+            audioDistanceScaler?.Apply(vrScaleMultiplier);
 
             Vector3 target = placementRoot.TransformPoint(entryPlacementLocal);
             xrOrigin.MoveCameraToWorldLocation(target);
@@ -299,6 +307,7 @@ namespace F1XR.Drone
 
             if (placementRoot != null)
                 placementRoot.localScale = savedPlacementLocalScale;
+            audioDistanceScaler?.Restore();
 
             xrOrigin.transform.SetPositionAndRotation(
                 savedOriginPosition,
@@ -336,6 +345,11 @@ namespace F1XR.Drone
         public void SetExitHoldProgress(float normalizedProgress)
         {
             droneHud?.SetExitHoldProgress(normalizedProgress);
+        }
+
+        public void SetDroneSpeed(float speedKph)
+        {
+            droneHud?.SetSpeedKph(speedKph);
         }
 
         void SaveMrState()
