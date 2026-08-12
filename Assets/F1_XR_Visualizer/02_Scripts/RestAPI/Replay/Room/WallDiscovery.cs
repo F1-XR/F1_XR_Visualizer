@@ -450,10 +450,15 @@ namespace F1XR.RestAPI.Replay.Room
         {
             get
             {
-                // Meta Core is the authoritative room source on both Quest
-                // players and Quest Link. ARPlaneManager remains available
-                // for manual track placement, but it must not supply walls.
+#if UNITY_EDITOR
+                // Quest Link uses the Unity Meta OpenXR scene-plane provider.
+                // A parallel Meta Core room query can leave overlapping
+                // spatial requests alive during Play Mode shutdown.
+                return false;
+#else
+                // Quest players use the direct Meta Core room snapshot.
                 return useMetaSceneApi;
+#endif
             }
         }
 

@@ -381,14 +381,23 @@ namespace F1XR.RestAPI.Replay.Room
 
         void Awake()
         {
+#if UNITY_EDITOR
+            // Quest Link reads the saved Scene Model through Unity Meta
+            // OpenXR/ARFoundation. Do not start a second Meta Core spatial
+            // stack or add OVRManager in the Editor.
+            return;
+#else
             ResolveReferences();
             SuspendLegacySceneManagers();
             EnsureMetaRuntime();
+#endif
         }
 
         void Start()
         {
+#if !UNITY_EDITOR
             _ = RefreshRoomAsync();
+#endif
         }
 
         void OnDisable()
@@ -404,6 +413,12 @@ namespace F1XR.RestAPI.Replay.Room
 
         void OnApplicationFocus(bool hasFocus)
         {
+#if UNITY_EDITOR
+            // Game/Scene view focus changes are not an application resume.
+            // Querying again here can leave a native spatial-entity request
+            // alive while the Editor is exiting Play Mode.
+            return;
+#else
             if (!hasFocus || !isActiveAndEnabled || isLoading)
                 return;
 
@@ -412,10 +427,16 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
 #endif
             _ = RefreshRoomAsync();
+#endif
         }
 
         public async Task RefreshRoomAsync()
         {
+#if UNITY_EDITOR
+            // WallDiscovery and table placement use ARPlaneManager in Link.
+            await Task.CompletedTask;
+            return;
+#else
             if (!isActiveAndEnabled)
                 return;
 
@@ -526,6 +547,7 @@ namespace F1XR.RestAPI.Replay.Room
                     RestoreLegacySceneManagers();
                 }
             }
+#endif
         }
 
         public void RetryRoomSetup()
@@ -633,65 +655,72 @@ namespace F1XR.RestAPI.Replay.Room
         async Task<List<MetaSceneRoomSnapshot>>
             FetchRoomsWithTimeoutAsync(int generation)
         {
-            Task<List<MetaSceneRoomSnapshot>> fetch = FetchRoomsAsync(generation);
-            Task completed = await Task.WhenAny(
-                fetch,
-                Task.Delay(Mathf.CeilToInt(loadTimeout * 1000f)));
-            if (completed != fetch)
+            float startedAt = Time.realtimeSinceStartup;
+            List<MetaSceneRoomSnapshot> rooms =
+                await FetchRoomsAsync(generation);
+            float elapsed = Time.realtimeSinceStartup - startedAt;
+            if (elapsed > loadTimeout)
             {
                 Debug.LogWarning(
-                    $"[MetaScene] Room load timed out after {loadTimeout:0.#} seconds.",
+                    $"[MetaScene] Room load completed after {elapsed:0.#} " +
+                    $"seconds (target {loadTimeout:0.#} seconds).",
                     this);
-                return null;
             }
 
-            return await fetch;
+            return rooms;
         }
 
         async Task<List<MetaSceneRoomSnapshot>> FetchRoomsAsync(int generation)
         {
             var roomAnchors = new List<OVRAnchor>();
-            var roomResult = await OVRAnchor.FetchAnchorsAsync(
-                roomAnchors,
-                new OVRAnchor.FetchOptions
+            try
+            {
+                var roomResult = await OVRAnchor.FetchAnchorsAsync(
+                    roomAnchors,
+                    new OVRAnchor.FetchOptions
+                    {
+                        SingleComponentType = typeof(OVRRoomLayout)
+                    });
+                if (!roomResult.Success)
                 {
-                    SingleComponentType = typeof(OVRRoomLayout)
-                });
-            if (!roomResult.Success)
-            {
-                StatusMessage =
-                    $"Meta Scene anchor query failed ({roomResult.Status}). " +
-                    ResolveSceneAccessHint();
-                Debug.LogWarning($"[MetaScene] {StatusMessage}", this);
-                return null;
-            }
+                    StatusMessage =
+                        $"Meta Scene anchor query failed ({roomResult.Status}). " +
+                        ResolveSceneAccessHint();
+                    Debug.LogWarning($"[MetaScene] {StatusMessage}", this);
+                    return null;
+                }
 
-            if (logRoomSummary)
-            {
-                Debug.Log(
-                    $"[MetaScene] Room anchor query returned {roomAnchors.Count} room(s).",
-                    this);
-            }
+                if (logRoomSummary)
+                {
+                    Debug.Log(
+                        $"[MetaScene] Room anchor query returned {roomAnchors.Count} room(s).",
+                        this);
+                }
 
-            if (!IsCurrent(generation))
-                return roomResult.Success ? new List<MetaSceneRoomSnapshot>() : null;
-
-            roomAnchors.Sort((first, second) =>
-                first.Uuid.CompareTo(second.Uuid));
-            var rooms = new List<MetaSceneRoomSnapshot>(roomAnchors.Count);
-            for (int i = 0; i < roomAnchors.Count; i++)
-            {
                 if (!IsCurrent(generation))
-                    return rooms;
+                    return new List<MetaSceneRoomSnapshot>();
 
-                MetaSceneRoomSnapshot room = await BuildRoomAsync(
-                    roomAnchors[i],
-                    generation);
-                if (room != null)
-                    rooms.Add(room);
+                roomAnchors.Sort((first, second) =>
+                    first.Uuid.CompareTo(second.Uuid));
+                var rooms = new List<MetaSceneRoomSnapshot>(roomAnchors.Count);
+                for (int i = 0; i < roomAnchors.Count; i++)
+                {
+                    if (!IsCurrent(generation))
+                        return rooms;
+
+                    MetaSceneRoomSnapshot room = await BuildRoomAsync(
+                        roomAnchors[i],
+                        generation);
+                    if (room != null)
+                        rooms.Add(room);
+                }
+
+                return rooms;
             }
-
-            return rooms;
+            finally
+            {
+                DisposeFetchedAnchors(roomAnchors, generation);
+            }
         }
 
         async Task<MetaSceneRoomSnapshot> BuildRoomAsync(
@@ -708,60 +737,91 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             var childAnchors = new List<OVRAnchor>();
-            var childResult = await container.FetchAnchorsAsync(childAnchors);
-            if (!childResult.Success)
+            try
             {
-                Debug.LogWarning(
-                    $"[MetaScene] Child anchor query failed for room " +
-                    $"{roomAnchor.Uuid} ({childResult.Status}).",
-                    this);
-                return null;
-            }
-
-            if (!IsCurrent(generation))
-                return null;
-
-            childAnchors.Sort((first, second) =>
-                first.Uuid.CompareTo(second.Uuid));
-            var walls = new List<MetaSceneSurfaceSnapshot>();
-            var floors = new List<MetaSceneSurfaceSnapshot>();
-            var ceilings = new List<MetaSceneSurfaceSnapshot>();
-            var tables = new List<MetaSceneSurfaceSnapshot>();
-            for (int i = 0; i < childAnchors.Count; i++)
-            {
-                MetaSceneSurfaceSnapshot surface = await BuildSurfaceAsync(
-                    childAnchors[i],
-                    generation);
-                if (surface == null)
-                    continue;
-
-                switch (surface.Kind)
+                var childResult = await container.FetchAnchorsAsync(childAnchors);
+                if (!childResult.Success)
                 {
-                    case MetaSceneSurfaceKind.Wall:
-                        walls.Add(surface);
-                        break;
-                    case MetaSceneSurfaceKind.Floor:
-                        floors.Add(surface);
-                        break;
-                    case MetaSceneSurfaceKind.Ceiling:
-                        ceilings.Add(surface);
-                        break;
-                    case MetaSceneSurfaceKind.Table:
-                        tables.Add(surface);
-                        break;
+                    Debug.LogWarning(
+                        $"[MetaScene] Child anchor query failed for room " +
+                        $"{roomAnchor.Uuid} ({childResult.Status}).",
+                        this);
+                    return null;
                 }
+
+                if (!IsCurrent(generation))
+                    return null;
+
+                childAnchors.Sort((first, second) =>
+                    first.Uuid.CompareTo(second.Uuid));
+                var walls = new List<MetaSceneSurfaceSnapshot>();
+                var floors = new List<MetaSceneSurfaceSnapshot>();
+                var ceilings = new List<MetaSceneSurfaceSnapshot>();
+                var tables = new List<MetaSceneSurfaceSnapshot>();
+                for (int i = 0; i < childAnchors.Count; i++)
+                {
+                    MetaSceneSurfaceSnapshot surface = await BuildSurfaceAsync(
+                        childAnchors[i],
+                        generation);
+                    if (surface == null)
+                        continue;
+
+                    switch (surface.Kind)
+                    {
+                        case MetaSceneSurfaceKind.Wall:
+                            walls.Add(surface);
+                            break;
+                        case MetaSceneSurfaceKind.Floor:
+                            floors.Add(surface);
+                            break;
+                        case MetaSceneSurfaceKind.Ceiling:
+                            ceilings.Add(surface);
+                            break;
+                        case MetaSceneSurfaceKind.Table:
+                            tables.Add(surface);
+                            break;
+                    }
+                }
+
+                if (walls.Count == 0 && floors.Count == 0 &&
+                    ceilings.Count == 0 && tables.Count == 0)
+                    return null;
+
+                return new MetaSceneRoomSnapshot(
+                    roomAnchor.Uuid,
+                    walls,
+                    floors,
+                    ceilings,
+                    tables);
             }
+            finally
+            {
+                DisposeFetchedAnchors(childAnchors, generation);
+            }
+        }
 
-            if (walls.Count == 0 && floors.Count == 0 &&
-                ceilings.Count == 0 && tables.Count == 0)
-                return null;
+        private void DisposeFetchedAnchors(
+            IReadOnlyList<OVRAnchor> anchors,
+            int generation)
+        {
+            if (anchors == null ||
+                !IsCurrent(generation) ||
+                !OVRPlugin.initialized ||
+                !OVRManager.OVRManagerinitialized)
+                return;
 
-            return new MetaSceneRoomSnapshot(
-                roomAnchor.Uuid,
-                walls,
-                floors,
-                ceilings,
-                tables);
+            var disposedIds = new HashSet<Guid>();
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                OVRAnchor anchor = anchors[i];
+                if (anchor == OVRAnchor.Null ||
+                    !disposedIds.Add(anchor.Uuid))
+                {
+                    continue;
+                }
+
+                anchor.Dispose();
+            }
         }
 
         async Task<MetaSceneSurfaceSnapshot> BuildSurfaceAsync(
@@ -769,21 +829,17 @@ namespace F1XR.RestAPI.Replay.Room
             int generation)
         {
             if (!anchor.TryGetComponent(out OVRLocatable locatable) ||
-                !anchor.TryGetComponent(out OVRBounded2D bounded2D) ||
                 !anchor.TryGetComponent(out OVRSemanticLabels labels))
             {
                 return null;
             }
 
+            // Scene-model bounds and labels are read-only components. Saved
+            // scene anchors should already expose them as enabled; unlike
+            // Locatable, Meta does not allow enabling them from the app.
+            if (!labels.IsEnabled)
+                return null;
             if (!locatable.IsEnabled && !await locatable.SetEnabledAsync(true))
-                return null;
-            if (!bounded2D.IsEnabled &&
-                !await ((IOVRAnchorComponent<OVRBounded2D>)bounded2D)
-                    .SetEnabledAsync(true))
-                return null;
-            if (!labels.IsEnabled &&
-                !await ((IOVRAnchorComponent<OVRSemanticLabels>)labels)
-                    .SetEnabledAsync(true))
                 return null;
             if (!IsCurrent(generation) ||
                 !locatable.TryGetSceneAnchorPose(out var trackingPose))
@@ -793,6 +849,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             var classifications = new HashSet<OVRSemanticLabels.Classification>();
             labels.GetClassifications(classifications);
+            AddLegacyTableClassification(labels, classifications);
             if (!TryResolveKind(
                     classifications,
                     out MetaSceneSurfaceKind kind,
@@ -805,6 +862,36 @@ namespace F1XR.RestAPI.Replay.Room
             Quaternion? rotation = trackingPose.ComputeWorldRotation(trackingSpace);
             if (!position.HasValue || !rotation.HasValue)
                 return null;
+
+            bool hasPlaneBounds =
+                anchor.TryGetComponent(out OVRBounded2D bounded2D) &&
+                bounded2D.IsEnabled;
+            if (!hasPlaneBounds)
+            {
+                if (kind == MetaSceneSurfaceKind.Table &&
+                    anchor.TryGetComponent(out OVRBounded3D bounded3D) &&
+                    bounded3D.IsEnabled)
+                {
+                    try
+                    {
+                        return BuildVolumeTopSurface(
+                            anchor.Uuid,
+                            classification,
+                            bounded3D.BoundingBox,
+                            position.Value,
+                            rotation.Value);
+                    }
+                    catch (InvalidOperationException exception)
+                    {
+                        Debug.LogWarning(
+                            $"[MetaScene] Table volume bounds are unavailable: " +
+                            exception.Message,
+                            this);
+                    }
+                }
+
+                return null;
+            }
 
             Rect rect = bounded2D.BoundingBox;
             var worldBoundary = new List<Vector3>();
@@ -844,6 +931,117 @@ namespace F1XR.RestAPI.Replay.Room
                 worldBoundary,
                 localBoundary,
                 localToWorld.inverse);
+        }
+
+        static MetaSceneSurfaceSnapshot BuildVolumeTopSurface(
+            Guid id,
+            OVRSemanticLabels.Classification classification,
+            Bounds volume,
+            Vector3 anchorPosition,
+            Quaternion anchorRotation)
+        {
+            Quaternion surfaceRotation =
+                anchorRotation * Quaternion.Euler(-90f, 0f, 0f);
+            Vector3 surfacePosition = anchorPosition +
+                anchorRotation * new Vector3(0f, volume.max.y, 0f);
+            Rect rect = Rect.MinMaxRect(
+                volume.min.x,
+                -volume.max.z,
+                volume.max.x,
+                -volume.min.z);
+
+            var localBoundary = new List<Vector2>
+            {
+                rect.min,
+                new Vector2(rect.xMin, rect.yMax),
+                rect.max,
+                new Vector2(rect.xMax, rect.yMin)
+            };
+            var worldBoundary = new List<Vector3>(localBoundary.Count);
+            for (int i = 0; i < localBoundary.Count; i++)
+            {
+                Vector2 point = localBoundary[i];
+                worldBoundary.Add(surfacePosition +
+                    surfaceRotation * new Vector3(point.x, point.y, 0f));
+            }
+
+            Matrix4x4 localToWorld = Matrix4x4.TRS(
+                surfacePosition,
+                surfaceRotation,
+                Vector3.one);
+            return new MetaSceneSurfaceSnapshot(
+                id,
+                MetaSceneSurfaceKind.Table,
+                classification,
+                surfacePosition +
+                    surfaceRotation *
+                    new Vector3(rect.center.x, rect.center.y, 0f),
+                surfaceRotation,
+                (surfaceRotation * Vector3.forward).normalized,
+                (surfaceRotation * Vector3.right).normalized,
+                (surfaceRotation * Vector3.up).normalized,
+                rect,
+                worldBoundary,
+                localBoundary,
+                localToWorld.inverse);
+        }
+
+        static void AddLegacyTableClassification(
+            OVRSemanticLabels labels,
+            HashSet<OVRSemanticLabels.Classification> classifications)
+        {
+            if (classifications.Contains(
+                    OVRSemanticLabels.Classification.Table))
+            {
+                return;
+            }
+
+            foreach (OVRSemanticLabels.Classification classification in
+                classifications)
+            {
+                if (classification !=
+                        OVRSemanticLabels.Classification.Other &&
+                    classification !=
+                        OVRSemanticLabels.Classification.Unknown)
+                {
+                    return;
+                }
+            }
+
+            string legacyLabels;
+            try
+            {
+#pragma warning disable CS0618
+                legacyLabels = labels.Labels;
+#pragma warning restore CS0618
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    $"[MetaScene] Legacy semantic labels are unavailable: " +
+                    exception.Message);
+                return;
+            }
+
+            string[] values = legacyLabels.Split(',');
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (!string.Equals(
+                        values[i],
+                        "TABLE",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(
+                        values[i],
+                        "DESK",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                classifications.Add(
+                    OVRSemanticLabels.Classification.Table);
+                return;
+            }
         }
 
         static void CopyBoundary(

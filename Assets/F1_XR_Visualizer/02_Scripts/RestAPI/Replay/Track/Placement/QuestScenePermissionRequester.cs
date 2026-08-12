@@ -48,6 +48,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void Start()
         {
+            ResolveReferences();
+            SubscribeMetaScene();
 #if UNITY_ANDROID && !UNITY_EDITOR
             if (Permission.HasUserAuthorizedPermission(ScenePermission))
             {
@@ -129,11 +131,21 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void ApplySceneManagerState()
         {
+#if UNITY_EDITOR
+            // Quest Link has one spatial source: Unity Meta OpenXR planes.
+            // Environment raycasts use XR_EXT_future and have caused native
+            // shutdown failures, while walls and TABLE AUTO only need planes.
+            if (planeManager != null)
+                planeManager.enabled = true;
+            if (raycastManager != null)
+                raycastManager.enabled = false;
+#else
             bool metaSceneQueryActive = metaSceneSource != null &&
                 metaSceneSource.isActiveAndEnabled &&
                 IsMetaSceneQueryStatus(metaSceneSource.Status);
             SetSceneManagersEnabled(
                 scenePermissionGranted && !metaSceneQueryActive);
+#endif
         }
 
         static bool IsMetaSceneQueryStatus(MetaSceneRoomStatus status)
