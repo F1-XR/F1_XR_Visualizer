@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using F1XR.Experience.Room;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace F1XR.Experience.Fracture
 {
@@ -29,6 +30,13 @@ namespace F1XR.Experience.Fracture
             "transition. Turn off to leave the mode change untouched.")]
         [SerializeField] bool driveModeTransition = true;
 
+        [Tooltip("Turn off once the world-space VR fracture takes over the return to MR. " +
+            "The physical room shell is the right thing to break on the way into VR, where " +
+            "the user is looking at the real room, and the wrong thing on the way back, " +
+            "where they are looking at the VR world. Leaving this on keeps the existing " +
+            "behaviour; nothing here is deleted until the new route is proven on device.")]
+        [SerializeField] bool driveReturnToMR = true;
+
         [Header("Fracture")]
         [SerializeField] ShellFractureRig.Settings fractureSettings =
             ShellFractureRig.Settings.Default;
@@ -54,27 +62,14 @@ namespace F1XR.Experience.Fracture
         [Header("Passthrough reveal")]
         [SerializeField] PassthroughTransitionController passthrough;
 
-        [Tooltip("Fade the real world out over the course of the break, instead of after " +
-            "it, so the growing holes reveal the VR world behind the shell rather than more " +
-            "real room. The mode manager's own fade afterwards just confirms the end state.")]
-        [SerializeField] bool revealDuringBreak = true;
-
-        [Tooltip("The passthrough fade finishes at this fraction of the break, so the VR " +
-            "world is fully shown before the last fragment lands.")]
-        [SerializeField, Range(0.3f, 1f)] float revealFinishFraction = 0.85f;
-
         [Tooltip("Seconds to wait after the last piece before handing back to the mode " +
             "manager, so the fade does not start on top of the break.")]
         [SerializeField, Min(0f)] float tailSeconds = 0.15f;
 
         [Header("Visual mode")]
         [Tooltip("Force the flat debug colour even during real transitions. Off means MR to " +
-            "VR uses the passthrough mask and VR to MR uses the VR snapshot.")]
+            "VR uses the passthrough mask and VR to MR uses spatial alpha reveal.")]
         [SerializeField] bool forceDebugGray;
-
-        [Tooltip("Camera whose view is frozen for the VR->MR snapshot. Falls back to " +
-            "Camera.main.")]
-        [SerializeField] Camera vrCamera;
 
         [Header("Look")]
         [SerializeField] Color shellColor = new(0.78f, 0.76f, 0.72f, 1f);
@@ -83,8 +78,8 @@ namespace F1XR.Experience.Fracture
         readonly List<Transform> planeSpaces = new();
         Material sharedShellMaterial;   // debug gray
         Material maskMaterial;          // MR->VR passthrough mask
-        Material snapshotMaterial;      // VR->MR VR snapshot
-        RenderTexture snapshotTexture;
+        Material revealMaterial;        // VR->MR spatial alpha holes
+        Material shardMaterial;         // solid debris, both directions, after detach
         Coroutine activeRoutine;
 
         public int RigCount => rigs.Count;
@@ -116,7 +111,29 @@ namespace F1XR.Experience.Fracture
                 return;
 
             experienceManager.BreakSequence = PlayBreakSequence;
-            experienceManager.RebuildSequence = PlayRebuildSequence;
+
+            // Stand down from the return whenever the world-space fracture is present, so
+            // which one runs never depends on component order. The old route is kept, not
+            // deleted: it is one missing component away from coming back.
+            bool worldFracturePresent =
+                FindAnyObjectByType<VirtualGarageFractureController>() != null ||
+                FindAnyObjectByType<VRWorldFractureController>() != null;
+            if (driveReturnToMR && !worldFracturePresent)
+            {
+                experienceManager.RebuildSequence = PlayRebuildSequence;
+                Debug.Log(
+                    "[VR2MR][shell] Room shell OWNS the return. No VRWorldFractureController " +
+                    "in the scene, so Return MR breaks the physical room shell as before.",
+                    this);
+            }
+            else
+            {
+                Debug.Log(
+                    $"[VR2MR][shell] standing down from the return " +
+                    $"(driveReturnToMR={driveReturnToMR} " +
+                    $"worldFracture={worldFracturePresent}).",
+                    this);
+            }
         }
 
         void OnDisable()
@@ -137,12 +154,8 @@ namespace F1XR.Experience.Fracture
             ClearRigs();
             DestroySafely(sharedShellMaterial);
             DestroySafely(maskMaterial);
-            DestroySafely(snapshotMaterial);
-            if (snapshotTexture != null)
-            {
-                snapshotTexture.Release();
-                DestroySafely(snapshotTexture);
-            }
+            DestroySafely(revealMaterial);
+            DestroySafely(shardMaterial);
         }
 
         // ---------------------------------------------------------------- hooks
@@ -168,51 +181,78 @@ namespace F1XR.Experience.Fracture
         /// passthrough fades and whether the proxy renderers come back at the end, so the
         /// two transitions share this and cannot drift apart.
         /// </summary>
+        /// <summary>
+        /// VR to MR debris samples the camera opaque texture, which the mobile pipeline asset
+        /// keeps off because it costs a full colour copy every frame. Turn it on for the
+        /// length of the break only, and put it back however the break ends.
+        /// </summary>
         IEnumerator RunBreak(bool towardVR)
+        {
+            UniversalRenderPipelineAsset pipeline =
+                UniversalRenderPipeline.asset;
+            bool restoreOpaqueTexture =
+                !towardVR &&
+                !forceDebugGray &&
+                pipeline != null &&
+                !pipeline.supportsCameraOpaqueTexture;
+
+            if (restoreOpaqueTexture)
+                pipeline.supportsCameraOpaqueTexture = true;
+
+            try
+            {
+                yield return RunBreakCore(towardVR);
+            }
+            finally
+            {
+                if (restoreOpaqueTexture)
+                    pipeline.supportsCameraOpaqueTexture = false;
+            }
+        }
+
+        IEnumerator RunBreakCore(bool towardVR)
         {
             string tag = towardVR ? "MR2VR" : "VR2MR";
             Debug.Log($"[{tag}][build] break requested, clearing any previous rigs.", this);
 
             ClearRigs();
-            EnsureProxiesExist();
 
-            // Pick how the fragments are drawn. MR to VR masks passthrough; VR to MR shows a
-            // frozen VR snapshot. DebugGray is editor only.
+            // MR to VR masks passthrough. VR to MR leaves live VR rendering in place and
+            // writes alpha holes at the world-space cells that have detached.
             ShellVisualMode mode = forceDebugGray
                 ? ShellVisualMode.DebugGray
-                : (towardVR ? ShellVisualMode.MRMask : ShellVisualMode.VRSnapshot);
+                : (towardVR ? ShellVisualMode.MRMask : ShellVisualMode.SpatialReveal);
 
-            // The VR snapshot must be captured before anything moves, and it must never fall
-            // back to gray: if it fails, the transition should not pretend to work.
-            if (mode == ShellVisualMode.VRSnapshot && !CaptureVRSnapshot())
+            EnsureProxiesExist();
+
+            Material material = MaterialFor(mode);
+            if (material == null)
             {
                 Debug.LogError(
-                    "[VR2MR][FATAL VISUAL] Snapshot unavailable; not starting the fracture. " +
-                    "The mode change continues without the effect rather than showing gray.",
+                    $"[{tag}][FATAL VISUAL] Material unavailable for {mode}; fracture refused.",
                     this);
                 yield break;
             }
 
-            Material material = MaterialFor(mode);
+            // Both directions need solid debris: a piece that keeps writing only alpha after
+            // it detaches is a moving window onto the incoming world, not a chunk of the
+            // outgoing one.
+            Material shard = ShardMaterial();
+            if (shard == null)
+            {
+                Debug.LogError(
+                    $"[{tag}][FATAL VISUAL] Shard material unavailable; fracture refused.",
+                    this);
+                yield break;
+            }
 
-            if (!BuildRigs(mode, material))
+            if (!BuildRigs(mode, material, shard))
             {
                 Debug.LogWarning(
-                    $"[{tag}][build] Nothing to break: proxies=" +
-                    $"{(proxyGenerator != null ? proxyGenerator.Proxies.Count : -1)}. " +
+                    $"[{tag}][build] Nothing to break for visual mode {mode}. " +
                     "Transition continues without the effect.",
                     this);
                 yield break;
-            }
-
-            // Freeze the VR view onto the fragments before they move.
-            if (mode == ShellVisualMode.VRSnapshot)
-            {
-                Camera cam = ResolveVRCamera();
-                foreach (ShellFractureRig rig in rigs)
-                    rig.BakeSnapshotUVs(cam);
-
-                Debug.Log($"[{tag}][snapshot] UV baked onto {TotalFragments} fragments.", this);
             }
 
             Debug.Log($"[{tag}][visual] mode={mode} material={(material != null ? material.name : "NULL")}.", this);
@@ -227,21 +267,21 @@ namespace F1XR.Experience.Fracture
                 $"[{tag}][build] {rigs.Count} surfaces, {TotalFragments} fragments, {total:F2}s.",
                 this);
 
-            // Passthrough fades in parallel, in the direction of travel. Going to VR the real
-            // world fades out so the holes reveal VR; going to MR it fades in so the holes
-            // reveal the real room. The manager's own fade afterwards is a harmless confirm.
-            if (revealDuringBreak && passthrough != null)
+            // Neither direction fades globally. MR to VR lets the mask fragments fall away
+            // so VR is revealed piece by piece; VR to MR lets detached cells overwrite only
+            // their own framebuffer alpha. A global fade made the incoming world look like it
+            // was waiting behind the break instead of being uncovered by it.
+            if (!towardVR)
             {
-                if (towardVR)
-                    passthrough.EnterVR(total * revealFinishFraction);
-                else
-                    passthrough.EnterMR(total * revealFinishFraction);
-
-                Debug.Log($"[{tag}][passthrough] fade started over {total * revealFinishFraction:F2}s.", this);
+                Debug.Log("[VR2MR] FractureProfile=Common", this);
+                Debug.Log("[VR2MR][4] VR fracture started", this);
             }
 
             bool loggedFirstCrack = false;
+            bool loggedFirstLoose = false;
             bool loggedFirstDetach = false;
+            bool loggedHalfDetached = false;
+            float firstLooseTime = rigs[0].MinDelay + fractureSettings.liftDuration;
             float firstDetachTime = rigs[0].MinDelay +
                 fractureSettings.liftDuration + fractureSettings.holdDuration;
 
@@ -256,18 +296,66 @@ namespace F1XR.Experience.Fracture
                 {
                     loggedFirstCrack = true;
                     Debug.Log($"[{tag}][crack] first fragment cracked at {elapsed:F2}s.", this);
+                    if (!towardVR)
+                        Debug.Log("[VR2MR] CrackStarted", this);
+                }
+
+                if (!towardVR && !loggedFirstLoose && elapsed >= firstLooseTime)
+                {
+                    loggedFirstLoose = true;
+                    Debug.Log("[VR2MR] FirstLoose", this);
                 }
 
                 if (!loggedFirstDetach && elapsed >= firstDetachTime)
                 {
                     loggedFirstDetach = true;
                     Debug.Log($"[{tag}][detach] first fragment detached at {elapsed:F2}s.", this);
+
+                    if (!towardVR)
+                    {
+                        Debug.Log("[VR2MR][5] first fragment removed", this);
+                        Debug.Log("[VR2MR] FirstDetach", this);
+
+                        // Keep the Passthrough Layer completely off through Crack and Loose.
+                        // Step() has already activated the fixed alpha hole for this detached
+                        // cell, so enabling the underlay now cannot reveal MR before a hole
+                        // actually exists.
+                        if (passthrough == null || !passthrough.PrepareMRIncoming())
+                        {
+                            Debug.LogError(
+                                "[VR2MR][FATAL VISUAL] Spatial Passthrough reveal could not " +
+                                "be prepared at first detach.",
+                                this);
+                            ClearRigs();
+                            SetProxyRenderersVisible(true);
+                            yield break;
+                        }
+
+                        Debug.Log(
+                            "[VR2MR] Incoming MR prepared=True " +
+                            "Incoming MR globally visible=False",
+                            this);
+                        Debug.Log("[VR2MR][6] MR first reveal", this);
+                        Debug.Log("[VR2MR] FirstMRHoleRevealed", this);
+                    }
+                }
+
+                if (!towardVR && !loggedHalfDetached && ReleasedFragmentCount() * 2 >= TotalFragments)
+                {
+                    loggedHalfDetached = true;
+                    Debug.Log("[VR2MR][7] fracture 50%", this);
+                    Debug.Log("[VR2MR] 50PercentDetached", this);
                 }
 
                 yield return null;
             }
 
             Debug.Log($"[{tag}][done] fracture finished.", this);
+            if (!towardVR)
+            {
+                Debug.Log("[VR2MR][8] fracture complete", this);
+                Debug.Log("[VR2MR] FractureComplete", this);
+            }
 
             if (tailSeconds > 0f)
                 yield return new WaitForSeconds(tailSeconds);
@@ -344,7 +432,10 @@ namespace F1XR.Experience.Fracture
             proxyGenerator.BuildRoomProxies();
         }
 
-        bool BuildRigs(ShellVisualMode mode, Material material)
+        bool BuildRigs(
+            ShellVisualMode mode,
+            Material material,
+            Material detachedShardMaterial)
         {
             if (proxyGenerator == null || proxyGenerator.Proxies.Count == 0)
                 return false;
@@ -378,7 +469,8 @@ namespace F1XR.Experience.Fracture
                     rig.FragmentReleased += emitter.EmitAt;
 
                 if (rig.Build(boundary, origin, space.transform, material,
-                        SettingsFor(proxy.Type), proxy.GameObject.name + "_Fragments", mode))
+                        SettingsFor(proxy.Type), proxy.GameObject.name + "_Fragments", mode,
+                        detachedShardMaterial))
                 {
                     rigs.Add(rig);
                 }
@@ -389,6 +481,15 @@ namespace F1XR.Experience.Fracture
             }
 
             return rigs.Count > 0;
+        }
+
+        int ReleasedFragmentCount()
+        {
+            int count = 0;
+            for (int i = 0; i < rigs.Count; i++)
+                count += rigs[i].ReleasedCount;
+
+            return count;
         }
 
         /// <summary>
@@ -403,25 +504,20 @@ namespace F1XR.Experience.Fracture
             switch (type)
             {
                 case RoomSurfaceType.Ceiling:
-                    // Holds position and fades; ceiling pieces must never drop into the room.
-                    settings.fallsUnderGravity = false;
-                    settings.fadeStartFraction = 0f;
-                    settings.fallDistance = 0f;
+                    // Ceiling pieces drop like every other surface. They used to hold
+                    // position and fade out, which was the last fade left in the break.
+                    settings.fallDistance = ceilingFallDistance;
                     settings.settleDistance = 0f;
                     settings.liftDistance = 0.003f;
                     break;
 
                 case RoomSurfaceType.Floor:
-                    settings.fallsUnderGravity = true;
-                    settings.fadeStartFraction = 0.55f;
                     settings.fallDistance = floorFallDistance;
                     settings.settleDistance = 0f;
                     settings.lateralDistance = Mathf.Min(settings.lateralDistance, 0.04f);
                     break;
 
                 default:
-                    settings.fallsUnderGravity = true;
-                    settings.fadeStartFraction = 0.55f;
                     settings.fallDistance = wallFallDistance;
                     if (zeroCeilingNormalDrift)
                         settings.settleDistance = Mathf.Min(settings.settleDistance, 0.01f);
@@ -524,67 +620,40 @@ namespace F1XR.Experience.Fracture
                     }
                     return maskMaterial;
 
-                case ShellVisualMode.VRSnapshot:
-                    if (snapshotMaterial == null)
+                case ShellVisualMode.SpatialReveal:
+                    if (revealMaterial == null)
                     {
-                        Shader s = Shader.Find("F1XR/ShellSnapshot");
+                        Shader s = Shader.Find("F1XR/ShellPassthroughReveal");
                         if (s == null)
                         {
-                            Debug.LogError("[ShellFracture] ShellSnapshot shader missing.", this);
-                            return GetSharedMaterial();
+                            Debug.LogError(
+                                "[VR2MR][FATAL VISUAL] ShellPassthroughReveal shader missing.",
+                                this);
+                            return null;
                         }
-                        snapshotMaterial = new Material(s) { name = "ShellSnapshot" };
+                        revealMaterial = new Material(s) { name = "ShellPassthroughReveal" };
                     }
-                    if (snapshotTexture != null)
-                        snapshotMaterial.SetTexture("_SnapshotTex", snapshotTexture);
-                    return snapshotMaterial;
+                    return revealMaterial;
 
                 default:
                     return GetSharedMaterial();
             }
         }
 
-        Camera ResolveVRCamera()
+        Material ShardMaterial()
         {
-            return vrCamera != null ? vrCamera : Camera.main;
-        }
+            if (shardMaterial != null)
+                return shardMaterial;
 
-        /// <summary>
-        /// Renders the VR view once into a RenderTexture. Returns false on any failure so the
-        /// caller can refuse to start rather than fall back to gray.
-        /// </summary>
-        bool CaptureVRSnapshot()
-        {
-            Camera cam = ResolveVRCamera();
-            if (cam == null)
+            Shader shader = Shader.Find("F1XR/ShellFragmentShard");
+            if (shader == null)
             {
-                Debug.LogError("[VR2MR][snapshot] No camera to capture.", this);
-                return false;
+                Debug.LogError("[ShellFracture] ShellFragmentShard shader missing.", this);
+                return null;
             }
 
-            int w = Mathf.Max(2, cam.pixelWidth);
-            int h = Mathf.Max(2, cam.pixelHeight);
-
-            if (snapshotTexture == null || snapshotTexture.width != w || snapshotTexture.height != h)
-            {
-                if (snapshotTexture != null)
-                    snapshotTexture.Release();
-
-                snapshotTexture = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
-                {
-                    name = "VRTransitionRT"
-                };
-                snapshotTexture.Create();
-            }
-
-            // Render the current VR view into the texture without disturbing the live camera.
-            RenderTexture previous = cam.targetTexture;
-            cam.targetTexture = snapshotTexture;
-            cam.Render();
-            cam.targetTexture = previous;
-
-            Debug.Log($"[VR2MR][snapshot] captured {w}x{h} valid={snapshotTexture.IsCreated()}.", this);
-            return snapshotTexture.IsCreated();
+            shardMaterial = new Material(shader) { name = "ShellFragmentShard" };
+            return shardMaterial;
         }
 
         static void DestroySafely(Object target)

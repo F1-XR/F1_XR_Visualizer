@@ -8,8 +8,8 @@ Shader "F1XR/ShellSnapshot"
     // were there. The UVs are frozen, so the piece keeps its VR appearance as it moves.
     //
     // Output alpha comes from _Alpha (per fragment, via MaterialPropertyBlock). While the
-    // fragment is present it is opaque and hides the passthrough behind it; as it fades or
-    // falls away, passthrough (MR) shows through the gap.
+    // fragment is present it is opaque and hides the passthrough behind it. Wall and floor
+    // pieces keep alpha 1 until their fall completes; only ceiling pieces fade in place.
     Properties
     {
         _SnapshotTex ("VR Snapshot", 2D) = "black" {}

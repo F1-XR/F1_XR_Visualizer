@@ -92,6 +92,29 @@ namespace F1XR.Experience
 
         public void EnterMR() => EnterMR(defaultDuration);
 
+        /// <summary>
+        /// Enables the compositor underlay without revealing it globally. The camera stays
+        /// fully opaque; late spatial reveal meshes selectively overwrite framebuffer alpha
+        /// where detached VR fragments should expose the real room.
+        /// </summary>
+        public bool PrepareMRIncoming()
+        {
+            if (!ResolveReferences())
+            {
+                Debug.LogError(
+                    "[VR2MR][FATAL VISUAL] Passthrough could not be prepared for spatial reveal.",
+                    this);
+                return false;
+            }
+
+            StopFade();
+            hideAmount = 1f;
+            ApplyHideAmount(hideAmount);
+            passthroughLayer.SetActive(true);
+            state = PassthroughState.VR;
+            return true;
+        }
+
         /// <summary>Snap to fully visible Passthrough, cancelling any fade.</summary>
         public void ApplyMRImmediate()
         {
