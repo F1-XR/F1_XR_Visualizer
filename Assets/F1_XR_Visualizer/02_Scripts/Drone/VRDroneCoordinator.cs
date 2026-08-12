@@ -128,6 +128,7 @@ namespace F1XR.Drone
             if (droneHud == null)
                 droneHud = gameObject.AddComponent<VRDroneHud>();
             droneHud.Configure(environment.transform);
+
         }
 
         bool TryResolveReferences()
@@ -243,6 +244,11 @@ namespace F1XR.Drone
         public void SetExitHoldProgress(float normalizedProgress)
         {
             droneHud?.SetExitHoldProgress(normalizedProgress);
+        }
+
+        public void SetDroneSpeed(float speedKph)
+        {
+            droneHud?.SetSpeedKph(speedKph);
         }
 
         void SaveMrState()
