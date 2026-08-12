@@ -28,8 +28,19 @@ namespace F1XR.Experience.Fracture
         /// <summary>MR to VR: a passthrough mask. Present = real room shows, gone = VR shows.</summary>
         MRMask,
 
-        /// <summary>VR to MR: a frozen piece of the VR view, from a snapshot texture.</summary>
-        VRSnapshot
+        /// <summary>VR to MR: detached cells write spatial holes into framebuffer alpha.</summary>
+        SpatialReveal,
+
+        /// <summary>Legacy frozen VR snapshot mode, retained for the standalone prototype.</summary>
+        VRSnapshot,
+
+        /// <summary>
+        /// VR to MR against real virtual geometry. The fragment is drawn with the surface's
+        /// own material from the first frame, because it is that surface: the piece the user
+        /// was already looking at, now coming loose. A fixed hole at the cell it left behind
+        /// writes alpha 0, so the real room shows through the gap and nothing else does.
+        /// </summary>
+        VirtualSurface
     }
 
     public sealed class ShellFractureRig
@@ -60,15 +71,6 @@ namespace F1XR.Experience.Fracture
 
             [Tooltip("Fall shape over time. Ease-in reads as gravity taking hold.")]
             public AnimationCurve breakCurve;
-
-            [Tooltip("True for walls and floors: the piece drops. False for the ceiling: " +
-                "it holds position and only fades, so nothing rains into the room.")]
-            public bool fallsUnderGravity;
-
-            [Tooltip("Fraction of the break at which a piece begins to fade out. Walls and " +
-                "floors fade late (they are still falling); the ceiling fades the whole " +
-                "time, so set 0 there.")]
-            [Range(0f, 1f)] public float fadeStartFraction;
 
             [Tooltip("Crack time added for each step the crack walks out from the origin " +
                 "piece, following shared edges. This, not radius, is what makes the break " +
@@ -104,8 +106,6 @@ namespace F1XR.Experience.Fracture
                 settleDistance = 0.008f,
                 breakDuration = 0.7f,
                 breakCurve = GravityCurve(),
-                fallsUnderGravity = true,
-                fadeStartFraction = 0.55f,
 
                 propagationStep = 0.09f,
                 holdDuration = 0.12f,
@@ -146,19 +146,24 @@ namespace F1XR.Experience.Fracture
             public bool Released;
         }
 
-        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-        static readonly int ColorId = Shader.PropertyToID("_Color");
-        static readonly int AlphaId = Shader.PropertyToID("_Alpha");
+        static readonly int OutputAlphaId = Shader.PropertyToID("_OutputAlpha");
+        static readonly int OriginalObjectToWorldId =
+            Shader.PropertyToID("_OriginalObjectToWorld");
 
         ShellVisualMode visualMode = ShellVisualMode.DebugGray;
 
         readonly List<Mesh> ownedMeshes = new();
         Transform[] fragments;
         MeshRenderer[] renderers;
+        MeshRenderer[] revealRenderers;
         FragmentAnim[] anims;
         Settings settings;
         Vector3 localFall = Vector3.down;
-        Color baseColor = Color.white;
+
+        // What a piece switches to the instant it lets go. Until then a piece has no colour
+        // of its own so the outgoing world shows on the intact shell; afterwards it is a
+        // solid chunk, and the incoming world is seen only through the hole it left.
+        Material shardMaterial;
 
         // One block, reused for every fragment every frame. SetPropertyBlock copies it, so
         // there is no per-fragment allocation and no material is ever cloned.
@@ -170,6 +175,24 @@ namespace F1XR.Experience.Fracture
         public Transform Root { get; private set; }
         public int FragmentCount => fragments != null ? fragments.Length : 0;
         public int OwnedMeshCount => ownedMeshes.Count;
+
+        public int ReleasedCount
+        {
+            get
+            {
+                if (anims == null)
+                    return 0;
+
+                int count = 0;
+                for (int i = 0; i < anims.Length; i++)
+                {
+                    if (anims[i].Released)
+                        count++;
+                }
+
+                return count;
+            }
+        }
 
         float maxCrackTime;
 
@@ -188,11 +211,14 @@ namespace F1XR.Experience.Fracture
             Material sharedMaterial,
             Settings rigSettings,
             string rootName = "ShellFragments",
-            ShellVisualMode mode = ShellVisualMode.DebugGray)
+            ShellVisualMode mode = ShellVisualMode.DebugGray,
+            Material detachedShardMaterial = null,
+            Material revealMaterial = null)
         {
             Dispose();
             settings = rigSettings;
             visualMode = mode;
+            shardMaterial = detachedShardMaterial;
             settings.liftCurve ??= AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
             settings.breakCurve ??= AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
@@ -214,11 +240,11 @@ namespace F1XR.Experience.Fracture
 
             fragments = new Transform[cells.Count];
             renderers = new MeshRenderer[cells.Count];
+            bool leavesHoles = mode == ShellVisualMode.SpatialReveal ||
+                mode == ShellVisualMode.VirtualSurface;
+            revealRenderers = leavesHoles ? new MeshRenderer[cells.Count] : null;
             anims = new FragmentAnim[cells.Count];
             propertyBlock ??= new MaterialPropertyBlock();
-            baseColor = sharedMaterial != null && sharedMaterial.HasProperty(BaseColorId)
-                ? sharedMaterial.GetColor(BaseColorId)
-                : Color.white;
 
             float inset = settings.crackWidthMillimetres * 0.001f;
             var centroids = new Vector2[cells.Count];
@@ -247,9 +273,41 @@ namespace F1XR.Experience.Fracture
 
                 piece.AddComponent<MeshFilter>().sharedMesh = mesh;
                 MeshRenderer renderer = piece.AddComponent<MeshRenderer>();
-                renderer.sharedMaterial = sharedMaterial;
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
                 renderer.receiveShadows = false;
+
+                if (mode == ShellVisualMode.SpatialReveal)
+                {
+                    // VR to MR draws nothing at all until a piece detaches: the live VR
+                    // scene is already on screen and already opaque, so an intact cell needs
+                    // no renderer of its own. It appears only once it becomes solid debris.
+                    renderer.sharedMaterial = detachedShardMaterial;
+                    renderer.enabled = false;
+                }
+                else
+                {
+                    // Including VirtualSurface: the piece carries the surface's own material
+                    // from the first frame, so a fragment of the garage wall looks like the
+                    // garage wall it was cut out of, all the way down.
+                    renderer.sharedMaterial = sharedMaterial;
+                }
+
+                if (leavesHoles)
+                {
+                    var reveal = new GameObject($"Reveal_{i:00}");
+                    reveal.transform.SetParent(Root, false);
+                    reveal.transform.localPosition = piece.transform.localPosition;
+                    reveal.AddComponent<MeshFilter>().sharedMesh = mesh;
+
+                    MeshRenderer revealRenderer = reveal.AddComponent<MeshRenderer>();
+                    revealRenderer.sharedMaterial = mode == ShellVisualMode.VirtualSurface
+                        ? revealMaterial
+                        : sharedMaterial;
+                    revealRenderer.shadowCastingMode = ShadowCastingMode.Off;
+                    revealRenderer.receiveShadows = false;
+                    revealRenderer.enabled = false;
+                    revealRenderers[i] = revealRenderer;
+                }
 
                 fragments[i] = piece.transform;
                 renderers[i] = renderer;
@@ -396,6 +454,7 @@ namespace F1XR.Experience.Fracture
                 if (!anims[i].Released && time >= detachStart)
                 {
                     anims[i].Released = true;
+                    BecomeShard(i);
                     FragmentReleased?.Invoke(piece.position);
                 }
 
@@ -422,7 +481,6 @@ namespace F1XR.Experience.Fracture
                 piece.localRotation = Quaternion.SlerpUnclamped(
                     Quaternion.identity, anim.EndRotation, u * 0.15f);
                 piece.localScale = Vector3.one;
-                SetAlpha(index, 1f);
                 return;
             }
 
@@ -430,72 +488,83 @@ namespace F1XR.Experience.Fracture
             float progress = Mathf.Clamp01(
                 (time - detachStart) / settings.breakDuration);
 
-            if (settings.fallsUnderGravity)
-            {
-                // Wall and floor: the piece stays where it was on the surface and drops.
-                // No blast term, which is what threw pieces at the viewer before.
-                float fallen = settings.breakCurve.Evaluate(progress);
-                piece.localPosition = anim.LiftPosition
-                    + anim.FallDirection * (settings.fallDistance * fallen)
-                    + anim.LateralDirection * (settings.lateralDistance * progress)
-                    + Vector3.forward * (settings.settleDistance * progress);
-                piece.localRotation = Quaternion.SlerpUnclamped(
-                    Quaternion.identity, anim.EndRotation, Mathf.Lerp(0.15f, 1f, progress));
-            }
-            else
-            {
-                // Ceiling: hold position, turn a little, and let the fade do the work so
-                // nothing rains down into the room.
-                piece.localPosition = anim.LiftPosition;
-                piece.localRotation = Quaternion.SlerpUnclamped(
-                    Quaternion.identity, anim.EndRotation, progress);
-            }
-
+            // Every surface drops. No blast term, which is what threw pieces at the viewer
+            // before.
+            float fallen = settings.breakCurve.Evaluate(progress);
+            piece.localPosition = anim.LiftPosition
+                + anim.FallDirection * (settings.fallDistance * fallen)
+                + anim.LateralDirection * (settings.lateralDistance * progress)
+                + Vector3.forward * (settings.settleDistance * progress);
+            piece.localRotation = Quaternion.SlerpUnclamped(
+                Quaternion.identity, anim.EndRotation, Mathf.Lerp(0.15f, 1f, progress));
             piece.localScale = Vector3.one * Mathf.Lerp(1f, settings.endScale, progress);
-            SetAlpha(index, FadeAlpha(progress));
+
+            // Fragments stay fully visible for their entire fall. Nothing in the break
+            // fades: a fragment that dissolves in place reads as the incoming world waiting
+            // behind the old one rather than being uncovered by it.
+            if (progress >= 1f)
+                DisableMovingRenderer(index);
+
+            if (visualMode == ShellVisualMode.SpatialReveal ||
+                visualMode == ShellVisualMode.VirtualSurface)
+            {
+                SetReveal(index, 1f);
+            }
         }
 
-        float FadeAlpha(float progress)
+        /// <summary>
+        /// VR to MR only: the piece starts drawing at the instant it detaches, carrying the
+        /// VR image it was cut from. Its pose right now is recorded so the shard shader can
+        /// keep sampling that original screen position however far the piece then tumbles.
+        ///
+        /// MR to VR does not do this. Its pieces are chunks of the real room, and the real
+        /// room lives in the compositor where no shader can sample it, so those stay
+        /// passthrough masks the whole way down.
+        /// </summary>
+        void BecomeShard(int index)
         {
-            if (progress <= settings.fadeStartFraction)
-                return 1f;
+            if (shardMaterial == null || visualMode != ShellVisualMode.SpatialReveal)
+                return;
 
-            float span = 1f - settings.fadeStartFraction;
-            if (span <= 1e-4f)
-                return 1f - progress;
+            MeshRenderer renderer = renderers[index];
+            Transform piece = fragments[index];
+            if (renderer == null || piece == null)
+                return;
 
-            return 1f - (progress - settings.fadeStartFraction) / span;
+            renderer.sharedMaterial = shardMaterial;
+
+            propertyBlock ??= new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(propertyBlock);
+            propertyBlock.SetMatrix(OriginalObjectToWorldId, piece.localToWorldMatrix);
+            renderer.SetPropertyBlock(propertyBlock);
+
+            renderer.enabled = true;
         }
 
-        void SetAlpha(int index, float alpha)
+        void DisableMovingRenderer(int index)
         {
             MeshRenderer renderer = renderers[index];
+            if (renderer != null)
+                renderer.enabled = false;
+        }
+
+        void SetReveal(int index, float amount)
+        {
+            if (revealRenderers == null || index < 0 || index >= revealRenderers.Length)
+                return;
+
+            MeshRenderer renderer = revealRenderers[index];
             if (renderer == null)
                 return;
 
-            float a = Mathf.Clamp01(alpha);
-
-            if (visualMode == ShellVisualMode.MRMask)
-            {
-                // The mask always outputs alpha 0 so passthrough shows through it. Fading it
-                // toward 1 would paint black, not reveal VR, so instead the piece is simply
-                // switched off once it has faded out, and VR shows where it was.
-                bool visible = a > 0.02f;
-                if (renderer.enabled != visible)
-                    renderer.enabled = visible;
+            float reveal = Mathf.Clamp01(amount);
+            renderer.enabled = reveal > 0.001f;
+            if (!renderer.enabled)
                 return;
-            }
 
-            // DebugGray and VRSnapshot: drive the material alpha. DebugGray keeps its base
-            // translucency; VRSnapshot is fully opaque while present.
             propertyBlock ??= new MaterialPropertyBlock();
             renderer.GetPropertyBlock(propertyBlock);
-
-            Color color = baseColor;
-            color.a = baseColor.a * a;
-            propertyBlock.SetColor(BaseColorId, color);
-            propertyBlock.SetColor(ColorId, color);
-            propertyBlock.SetFloat(AlphaId, a);
+            propertyBlock.SetFloat(OutputAlphaId, 1f - reveal);
             renderer.SetPropertyBlock(propertyBlock);
         }
 
@@ -566,6 +635,7 @@ namespace F1XR.Experience.Fracture
             ownedMeshes.Clear();
             fragments = null;
             renderers = null;
+            revealRenderers = null;
             anims = null;
         }
 

@@ -236,26 +236,18 @@ namespace F1XR.Experience.Fracture
             switch (surfaceKind)
             {
                 case SurfaceKind.Ceiling:
-                    // Holds position and fades the whole time; nothing rains down. Almost
-                    // no lift either, so pieces barely separate before dissolving.
-                    settings.fallsUnderGravity = false;
-                    settings.fadeStartFraction = 0f;
-                    settings.fallDistance = 0f;
+                    settings.fallDistance = ceilingFallDistance;
                     settings.settleDistance = 0f;
                     settings.liftDistance = 0.003f;
                     break;
 
                 case SurfaceKind.Floor:
-                    settings.fallsUnderGravity = true;
-                    settings.fadeStartFraction = 0.55f;
                     settings.fallDistance = floorFallDistance;
                     settings.settleDistance = 0f;
                     settings.lateralDistance = Mathf.Min(settings.lateralDistance, 0.04f);
                     break;
 
                 default:
-                    settings.fallsUnderGravity = true;
-                    settings.fadeStartFraction = 0.55f;
                     settings.fallDistance = wallFallDistance;
                     break;
             }
