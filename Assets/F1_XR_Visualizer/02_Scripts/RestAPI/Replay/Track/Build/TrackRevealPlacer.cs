@@ -30,7 +30,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField] float inputArmDelay = 0.5f;
 
         [Header("Preview")]
-        [SerializeField] TrackPlacementMode placementMode = TrackPlacementMode.TableAutomatic;
+        [SerializeField] TrackPlacementMode placementMode = TrackPlacementMode.Free;
         [SerializeField] Material previewMaterial;
         [SerializeField] Color previewColor = new Color(0.2f, 1f, 0.35f, 0.35f);
         [FormerlySerializedAs("verticalOffset")]
@@ -524,9 +524,14 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 else
                 {
                     hasCurrentHit =
-                        placementController.TryGetPlacementHit(
-                            out currentPose,
-                            out currentPlane);
+                        placementController.TryGetPlacementSurface(
+                            out currentAutomaticSurface);
+                    if (hasCurrentHit)
+                    {
+                        currentPose = currentAutomaticSurface.Pose;
+                        currentPlane = currentAutomaticSurface.Plane;
+                        hasAutomaticSurface = true;
+                    }
                 }
             }
 
