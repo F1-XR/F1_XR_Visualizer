@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -15,13 +16,21 @@ namespace F1XR.RestAPI.Replay.Room
         private const int PortalSceneLayer = 30;
         private const int PortalSurfaceLayer = 2;
         private const int TextureSize = 512;
+        private const int PitTextureMinimumWidth = 1280;
+        private const int PitTextureMinimumHeight = 768;
+        private const int PitTextureMaximumDimension = 2048;
+        private const float PitTexturePixelsPerMeter = 520f;
         private const int TextureDepthBits = 16;
+        private const int PortalArchSegments = 40;
         private const float FallbackPortalWidth = 2.8f;
         private const float FallbackPortalHeight = 2.1f;
         private const float MinimumPortalWidth = 2f;
         private const float MinimumPortalHeight = 1.7f;
         private const float MaximumPortalWidth = 5.5f;
         private const float MaximumPortalHeight = 3.5f;
+        private const float MaximumPitPortalWidth = 8f;
+        private const float MaximumPitPortalHeight = 4f;
+        private const float PitPortalWallFill = 0.96f;
         private const float PortalWallFill = 1.1f;
         private const float MaximumPortalSideOverflow = 0.35f;
         private const float MaximumPortalTopOverflow = 0.5f;
@@ -31,6 +40,7 @@ namespace F1XR.RestAPI.Replay.Room
         private const float PortalApertureCropDepth = 2f;
         private const float PortalApertureExpansion = 1f;
         private const float RoomPlaneTolerance = 0.06f;
+        private const float TrackExitLongitudinalTolerance = 0.15f;
         internal const float ImmersiveMaximumScale = 3f;
         private const float ImmersiveScaleRampDistance = 3f;
 
@@ -38,14 +48,28 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly HashSet<Transform> capturedLayerTransforms = new();
         private readonly List<LabelRendererState> labelRendererStates = new();
         private readonly List<RendererBinding> roomCarRenderers = new();
+        private readonly List<TmpRendererBinding> roomCarTmpRenderers = new();
         private readonly List<GameObject> rendererProxies = new();
         private readonly List<Mesh> runtimeMeshes = new();
         private readonly List<Material> runtimeMaterials = new();
+        private readonly Dictionary<Renderer, Material[]>
+            roomTrackOriginalMaterials = new();
+        private readonly Dictionary<Renderer, Material[]>
+            roomVehicleOriginalMaterials = new();
+        private readonly HashSet<Material>
+            suppressedRoomOccluderMaterials = new();
+        private readonly HashSet<Material>
+            desiredRoomOccluderMaterials = new();
+        private readonly HashSet<Material>
+            plannedRoomOccluderMaterials = new();
+        private readonly HashSet<Material>
+            combinedRoomOccluderMaterials = new();
         private readonly List<RenderTexture> renderTextures = new();
         private readonly List<ARPlaneMeshVisualizer> suspendedPlaneVisualizers = new();
         private readonly List<ARPlaneManager> subscribedPlaneManagers = new();
         private readonly List<Vector3> roomTrackLeftBoundary = new();
         private readonly List<Vector3> roomTrackRightBoundary = new();
+        private readonly List<float> roomTrackDistances = new();
         private readonly Plane[] viewerLeftFrustumPlanes = new Plane[6];
         private readonly Plane[] viewerRightFrustumPlanes = new Plane[6];
 
@@ -72,13 +96,41 @@ namespace F1XR.RestAPI.Replay.Room
         private int excludedRoomTrackSubmeshes;
         private bool viewerMaskCaptured;
         private bool configured;
+        private bool pitStopOnly;
+        private Material roomOccluderClearMaterial;
+        private Material firstVehicleXRayMaterial;
+        private Material secondVehicleXRayMaterial;
+        private bool firstVehicleXRayApplied;
+        private bool secondVehicleXRayApplied;
+        private bool trackExitOnly;
+        private float trackExitDistance;
+        private bool trackExitDistanceValid;
+        private bool exitPortalVisible = true;
+        [SerializeField] private GameObject decorativePortalPrefab;
 
         public bool IsConfigured => configured;
+        public bool IsPitStopConfigured =>
+            configured && pitStopOnly;
+        public bool ExitPortalVisible =>
+            configured && exitPortalVisible;
         public bool ImmersiveScaleEnabled { get; set; }
         public int AuthoritativeVehicleCount =>
-            configured && firstVehicle != null && secondVehicle != null
-                ? 2
-                : 0;
+            !configured || firstVehicle == null
+                ? 0
+                : secondVehicle != null
+                    ? 2
+                    : 1;
+
+        public void SetExitPortalVisible(bool visible)
+        {
+            exitPortalVisible = visible;
+            if (exitSurface != null)
+            {
+                exitSurface.gameObject.SetActive(visible);
+            }
+            if (!visible && exitCamera != null)
+                exitCamera.enabled = false;
+        }
 
         public bool Configure(
             Transform stage,
@@ -191,13 +243,7 @@ namespace F1XR.RestAPI.Replay.Room
                 new GameObject("WallRoomWallPresentation").transform;
             presentationRoot.SetParent(transform, true);
 
-            originalViewerMask = viewerCamera.cullingMask;
-            viewerMaskCaptured = true;
-            viewerCamera.cullingMask &=
-                ~(1 << PortalSceneLayer);
-
             CaptureRoomTrackCorridor(stage);
-            CaptureAndHideSourceRenderers(stage);
             int roomTrackRendererCount =
                 CreateRoomTrackRenderers(stage);
             int firstProxyCount =
@@ -238,6 +284,13 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
+            CreateDecorativePortalVfx();
+
+            originalViewerMask = viewerCamera.cullingMask;
+            viewerMaskCaptured = true;
+            viewerCamera.cullingMask &=
+                ~(1 << PortalSceneLayer);
+            CaptureAndHideSourceRenderers(stage);
             configured = true;
             SuspendPlaneMeshVisualizers();
             Debug.Log(
@@ -252,10 +305,218 @@ namespace F1XR.RestAPI.Replay.Room
             return true;
         }
 
+        public bool ConfigureTrackExit(
+            Transform stage,
+            Pose trackExitPose,
+            Transform firstVehicleRoot,
+            Transform secondVehicleRoot,
+            out string failure)
+        {
+            Clear();
+            failure = "";
+
+            if (stage == null ||
+                firstVehicleRoot == null ||
+                secondVehicleRoot == null)
+            {
+                failure =
+                    "The stage or authoritative vehicles are unavailable for the track Exit portal.";
+                return false;
+            }
+
+            viewerCamera = Camera.main;
+            if (viewerCamera == null)
+            {
+                failure = "The XR main camera is unavailable.";
+                return false;
+            }
+
+            Vector3 travelDirection = Flat(trackExitPose.forward);
+            if (travelDirection.sqrMagnitude <= 0.000001f)
+            {
+                failure =
+                    "The track Exit has no stable travel direction.";
+                return false;
+            }
+
+            travelDirection.Normalize();
+            trackExitOnly = true;
+            exitPosition = trackExitPose.position;
+            exitInward = -travelDirection;
+            exitPortalSize = new Vector2(
+                FallbackPortalWidth,
+                FallbackPortalHeight);
+            Pose exitPortalPose = new Pose(
+                trackExitPose.position,
+                Quaternion.LookRotation(
+                    travelDirection,
+                    Vector3.up));
+            exitPortalPose = AlignPortalBottom(
+                exitPortalPose,
+                exitPortalSize,
+                trackExitPose.position.y -
+                PortalRoadOverlap);
+            exitPortalRight = exitPortalPose.right;
+            firstVehicle = firstVehicleRoot;
+            secondVehicle = secondVehicleRoot;
+
+            presentationRoot =
+                new GameObject("TrackExitPortalPresentation")
+                    .transform;
+            presentationRoot.SetParent(transform, true);
+
+            CaptureRoomTrackCorridor(stage);
+            int roomTrackRendererCount =
+                CreateRoomTrackRenderers(stage);
+            int firstProxyCount =
+                CreateRoomVehicleRenderers(firstVehicle);
+            int secondProxyCount =
+                CreateRoomVehicleRenderers(secondVehicle);
+
+            exitSurface = CreatePortal(
+                "TrackExitPortal",
+                exitPortalPose,
+                exitPortalSize,
+                out exitCamera);
+            exitSurfaceRenderer =
+                exitSurface != null
+                    ? exitSurface.GetComponent<Renderer>()
+                    : null;
+
+            if (exitSurface == null ||
+                exitCamera == null ||
+                roomTrackRendererCount == 0 ||
+                firstProxyCount == 0 ||
+                secondProxyCount == 0)
+            {
+                failure =
+                    "The track Exit portal or its render-only geometry could not be built.";
+                Clear();
+                return false;
+            }
+
+            CreateDecorativePortalVfx();
+
+            originalViewerMask = viewerCamera.cullingMask;
+            viewerMaskCaptured = true;
+            viewerCamera.cullingMask &=
+                ~(1 << PortalSceneLayer);
+            CaptureAndHideSourceRenderers(stage);
+            presentationRoot.SetParent(stage, true);
+            configured = true;
+            SuspendPlaneMeshVisualizers();
+            RefreshPortalViews();
+            RefreshRoomVehicleVisibility();
+            return true;
+        }
+
+        public bool ConfigureSingleWall(
+            Transform stage,
+            ShowcaseWallFrame wall,
+            Transform vehicleRoot,
+            out string failure)
+        {
+            Clear();
+            failure = "";
+            if (stage == null ||
+                vehicleRoot == null ||
+                !wall.IsValid)
+            {
+                failure =
+                    "The pit stage, vehicle, or selected wall is unavailable.";
+                return false;
+            }
+
+            viewerCamera = Camera.main;
+            if (viewerCamera == null)
+            {
+                failure = "The XR main camera is unavailable.";
+                return false;
+            }
+
+            Vector3 inward = Flat(wall.InwardNormal);
+            Vector3 up = wall.VerticalAxis.normalized;
+            if (inward.sqrMagnitude <= 0.000001f ||
+                up.sqrMagnitude <= 0.5f)
+            {
+                failure =
+                    "The selected pit wall has no stable frame.";
+                return false;
+            }
+
+            inward.Normalize();
+            entryPosition = wall.Center;
+            entryInward = inward;
+            entryPortalSize = ResolvePitPortalSize(
+                new Vector2(wall.Width, wall.Height));
+            Vector3 bottom =
+                wall.Center +
+                wall.VerticalAxis * wall.MinVertical;
+            Pose wallPose = new(
+                wall.Center,
+                Quaternion.LookRotation(inward, up));
+            Pose portalPose = ResolvePortalPose(
+                wallPose,
+                entryPortalSize,
+                true,
+                bottom,
+                up);
+            entryPortalRight = portalPose.right;
+            firstVehicle = vehicleRoot;
+            secondVehicle = null;
+
+            presentationRoot =
+                new GameObject("PitStopWallPresentation")
+                    .transform;
+            presentationRoot.SetParent(transform, true);
+            entrySurface = CreatePortal(
+                "PitStopPortal",
+                portalPose,
+                entryPortalSize,
+                out entryCamera,
+                true);
+            entrySurfaceRenderer =
+                entrySurface != null
+                    ? entrySurface.GetComponent<Renderer>()
+                    : null;
+            if (entrySurface == null || entryCamera == null)
+            {
+                failure = "The pit stop portal could not be built.";
+                Clear();
+                return false;
+            }
+
+            originalViewerMask = viewerCamera.cullingMask;
+            viewerMaskCaptured = true;
+            viewerCamera.cullingMask &=
+                ~(1 << PortalSceneLayer);
+            CaptureAndHideSourceRenderers(stage);
+            configured = true;
+            pitStopOnly = true;
+            exitPortalVisible = false;
+            SuspendPlaneMeshVisualizers();
+            RefreshPortalViews();
+            return true;
+        }
+
         public void Clear()
         {
+            plannedRoomOccluderMaterials.Clear();
+            ResetRoomOcclusionAssistance();
+            DisablePortalCamera(entryCamera);
+            DisablePortalCamera(exitCamera);
+            if (presentationRoot != null)
+                presentationRoot.gameObject.SetActive(false);
+
+            for (int i = 0; i < rendererProxies.Count; i++)
+            {
+                if (rendererProxies[i] != null)
+                    rendererProxies[i].SetActive(false);
+            }
+
             ClearOvertakePortalTransition();
             configured = false;
+            pitStopOnly = false;
             RestorePlaneMeshVisualizers();
 
             if (viewerMaskCaptured && viewerCamera != null)
@@ -275,6 +536,8 @@ namespace F1XR.RestAPI.Replay.Room
             exitPortalRight = Vector3.zero;
             includedRoomTrackSubmeshes = 0;
             excludedRoomTrackSubmeshes = 0;
+            trackExitOnly = false;
+            exitPortalVisible = true;
 
             for (int i = 0; i < sourceLayers.Count; i++)
             {
@@ -290,8 +553,17 @@ namespace F1XR.RestAPI.Replay.Room
 
             labelRendererStates.Clear();
             roomCarRenderers.Clear();
+            roomCarTmpRenderers.Clear();
+            roomTrackOriginalMaterials.Clear();
+            roomVehicleOriginalMaterials.Clear();
+            suppressedRoomOccluderMaterials.Clear();
+            desiredRoomOccluderMaterials.Clear();
+            combinedRoomOccluderMaterials.Clear();
             roomTrackLeftBoundary.Clear();
             roomTrackRightBoundary.Clear();
+            roomTrackDistances.Clear();
+            trackExitDistance = 0f;
+            trackExitDistanceValid = false;
 
             for (int i = 0; i < rendererProxies.Count; i++)
             {
@@ -321,6 +593,9 @@ namespace F1XR.RestAPI.Replay.Room
                     Destroy(runtimeMaterials[i]);
             }
             runtimeMaterials.Clear();
+            roomOccluderClearMaterial = null;
+            firstVehicleXRayMaterial = null;
+            secondVehicleXRayMaterial = null;
 
             for (int i = 0; i < runtimeMeshes.Count; i++)
             {
@@ -328,6 +603,15 @@ namespace F1XR.RestAPI.Replay.Room
                     Destroy(runtimeMeshes[i]);
             }
             runtimeMeshes.Clear();
+        }
+
+        private static void DisablePortalCamera(Camera portalCamera)
+        {
+            if (portalCamera == null)
+                return;
+
+            portalCamera.enabled = false;
+            portalCamera.targetTexture = null;
         }
 
         private void SuspendPlaneMeshVisualizers()
@@ -413,6 +697,9 @@ namespace F1XR.RestAPI.Replay.Room
         {
             roomTrackLeftBoundary.Clear();
             roomTrackRightBoundary.Clear();
+            roomTrackDistances.Clear();
+            trackExitDistance = 0f;
+            trackExitDistanceValid = false;
             if (stage == null)
                 return;
 
@@ -448,6 +735,33 @@ namespace F1XR.RestAPI.Replay.Room
                 roomTrackLeftBoundary.Add(left);
                 roomTrackRightBoundary.Add(right);
             }
+
+            if (roomTrackLeftBoundary.Count < 2)
+                return;
+
+            roomTrackDistances.Add(0f);
+            for (int i = 1;
+                 i < roomTrackLeftBoundary.Count;
+                 i++)
+            {
+                Vector3 previous =
+                    (roomTrackLeftBoundary[i - 1] +
+                     roomTrackRightBoundary[i - 1]) *
+                    0.5f;
+                Vector3 current =
+                    (roomTrackLeftBoundary[i] +
+                     roomTrackRightBoundary[i]) *
+                    0.5f;
+                roomTrackDistances.Add(
+                    roomTrackDistances[i - 1] +
+                    Vector3.Distance(previous, current));
+            }
+
+            trackExitDistanceValid =
+                trackExitOnly &&
+                TryGetTrackDistance(
+                    exitPosition,
+                    out trackExitDistance);
         }
 
         private void LateUpdate()
@@ -457,6 +771,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             RefreshPortalViews();
             RefreshRoomVehicleVisibility();
+            UpdateDecorativePortalVfx();
         }
 
         private void RefreshPortalViews()
@@ -522,7 +837,9 @@ namespace F1XR.RestAPI.Replay.Room
             for (int i = 0; i < renderers.Length; i++)
             {
                 Renderer renderer = renderers[i];
-                if (renderer == null)
+                if (renderer == null ||
+                    rendererProxies.Contains(
+                        renderer.gameObject))
                     continue;
 
                 Transform current = renderer.transform;
@@ -534,7 +851,8 @@ namespace F1XR.RestAPI.Replay.Room
                     current.gameObject.layer));
                 current.gameObject.layer = PortalSceneLayer;
 
-                if (IsDriverLabelRenderer(renderer))
+                if (!trackExitOnly &&
+                    IsDriverLabelRenderer(renderer))
                 {
                     labelRendererStates.Add(
                         new LabelRendererState(renderer));
@@ -595,6 +913,8 @@ namespace F1XR.RestAPI.Replay.Room
                     proxyRenderer);
                 proxyRenderer.sharedMaterials =
                     clippedMaterials;
+                roomTrackOriginalMaterials[proxyRenderer] =
+                    proxyRenderer.sharedMaterials;
                 created++;
             }
 
@@ -644,6 +964,33 @@ namespace F1XR.RestAPI.Replay.Room
                 }
                 else if (source is MeshRenderer meshRenderer)
                 {
+                    TextMeshPro sourceTmp =
+                        source.GetComponent<TextMeshPro>();
+                    if (sourceTmp != null)
+                    {
+                        GameObject textProxy =
+                            CreateRendererProxyObject(source);
+                        TextMeshPro proxyTmp =
+                            textProxy.AddComponent<TextMeshPro>();
+                        SyncTextMeshPro(sourceTmp, proxyTmp);
+                        MeshRenderer textProxyRenderer =
+                            textProxy.GetComponent<MeshRenderer>();
+                        CopyRendererSettings(
+                            meshRenderer,
+                            textProxyRenderer);
+                        roomCarRenderers.Add(
+                            new RendererBinding(
+                                source,
+                                textProxyRenderer,
+                                vehicleRoot));
+                        roomCarTmpRenderers.Add(
+                            new TmpRendererBinding(
+                                sourceTmp,
+                                proxyTmp));
+                        created++;
+                        continue;
+                    }
+
                     TextMesh sourceText =
                         source.GetComponent<TextMesh>();
                     if (sourceText != null)
@@ -688,6 +1035,8 @@ namespace F1XR.RestAPI.Replay.Room
                     CopyRendererSettings(
                         meshRenderer,
                         proxyRenderer);
+                    roomVehicleOriginalMaterials[proxyRenderer] =
+                        proxyRenderer.sharedMaterials;
                     roomCarRenderers.Add(
                         new RendererBinding(
                             source,
@@ -761,6 +1110,8 @@ namespace F1XR.RestAPI.Replay.Room
                     CopyRendererSettings(
                         skinned,
                         proxyRenderer);
+                    roomVehicleOriginalMaterials[proxyRenderer] =
+                        proxyRenderer.sharedMaterials;
                     roomCarRenderers.Add(
                         new RendererBinding(
                             source,
@@ -816,9 +1167,11 @@ namespace F1XR.RestAPI.Replay.Room
                  submesh < source.subMeshCount;
                  submesh++)
             {
-                if (!ShouldIncludeRoomTrackSubmesh(
+                bool trackSubmesh =
+                    ShouldIncludeRoomTrackSubmesh(
                         sourceRenderer,
-                        submesh))
+                        submesh);
+                if (!trackExitOnly && !trackSubmesh)
                 {
                     excludedRoomTrackSubmeshes++;
                     continue;
@@ -852,10 +1205,11 @@ namespace F1XR.RestAPI.Replay.Room
                             worldA,
                             worldB,
                             worldC) ||
-                        !TriangleTouchesTrackCorridor(
+                        (!trackExitOnly &&
+                         !TriangleTouchesTrackCorridor(
                             worldA,
                             worldB,
-                            worldC))
+                            worldC)))
                     {
                         continue;
                     }
@@ -1089,6 +1443,67 @@ namespace F1XR.RestAPI.Replay.Room
             return false;
         }
 
+        private bool TryGetTrackDistance(
+            Vector3 point,
+            out float distance)
+        {
+            distance = 0f;
+            if (roomTrackLeftBoundary.Count < 2 ||
+                roomTrackRightBoundary.Count !=
+                    roomTrackLeftBoundary.Count ||
+                roomTrackDistances.Count !=
+                    roomTrackLeftBoundary.Count)
+            {
+                return false;
+            }
+
+            float bestDistanceSquared =
+                float.PositiveInfinity;
+            for (int i = 0;
+                 i < roomTrackLeftBoundary.Count - 1;
+                 i++)
+            {
+                Vector3 start = Flat(
+                    (roomTrackLeftBoundary[i] +
+                     roomTrackRightBoundary[i]) *
+                    0.5f);
+                Vector3 end = Flat(
+                    (roomTrackLeftBoundary[i + 1] +
+                     roomTrackRightBoundary[i + 1]) *
+                    0.5f);
+                Vector3 segment = end - start;
+                float segmentLengthSquared =
+                    segment.sqrMagnitude;
+                float progress =
+                    segmentLengthSquared > 0.000001f
+                        ? Mathf.Clamp01(
+                            Vector3.Dot(
+                                Flat(point) - start,
+                                segment) /
+                            segmentLengthSquared)
+                        : 0f;
+                Vector3 closest =
+                    Vector3.Lerp(start, end, progress);
+                float candidateDistanceSquared =
+                    (Flat(point) - closest).sqrMagnitude;
+                if (candidateDistanceSquared >=
+                    bestDistanceSquared)
+                {
+                    continue;
+                }
+
+                bestDistanceSquared =
+                    candidateDistanceSquared;
+                distance = Mathf.Lerp(
+                    roomTrackDistances[i],
+                    roomTrackDistances[i + 1],
+                    progress);
+            }
+
+            return float.IsFinite(distance) &&
+                bestDistanceSquared < float.PositiveInfinity;
+        }
+
         private static bool PointInsideTriangleXZ(
             Vector3 point,
             Vector3 a,
@@ -1201,24 +1616,53 @@ namespace F1XR.RestAPI.Replay.Room
         {
             Vector3 center = (a + b + c) / 3f;
             bool touchesRoom =
-                IsInsideRoom(a) ||
-                IsInsideRoom(b) ||
-                IsInsideRoom(c) ||
-                IsInsideRoom(center);
+                IsInsideRoomGeometry(a) ||
+                IsInsideRoomGeometry(b) ||
+                IsInsideRoomGeometry(c) ||
+                IsInsideRoomGeometry(center);
             return touchesRoom &&
                 IsInsidePortalApertures(center);
         }
 
-        private bool IsInsideRoom(Vector3 position)
+        private bool IsInsideRoomGeometry(Vector3 position)
         {
+            bool insideExit = Vector3.Dot(
+                                  position - exitPosition,
+                                  exitInward) >=
+                              -RoomPlaneTolerance;
+            if (trackExitOnly)
+                return insideExit;
+
             return Vector3.Dot(
                        position - entryPosition,
                        entryInward) >=
                    -RoomPlaneTolerance &&
-                Vector3.Dot(
-                       position - exitPosition,
-                       exitInward) >=
-                   -RoomPlaneTolerance;
+                insideExit;
+        }
+
+        private bool IsInsideRoom(Vector3 position)
+        {
+            bool insideExit = Vector3.Dot(
+                                  position - exitPosition,
+                                  exitInward) >=
+                              -RoomPlaneTolerance;
+            if (trackExitOnly)
+            {
+                return trackExitDistanceValid &&
+                       TryGetTrackDistance(
+                           position,
+                           out float distance)
+                    ? distance <=
+                      trackExitDistance +
+                      TrackExitLongitudinalTolerance
+                    : insideExit;
+            }
+
+            return Vector3.Dot(
+                       position - entryPosition,
+                       entryInward) >=
+                   -RoomPlaneTolerance &&
+                insideExit;
         }
 
         public float EvaluateImmersiveScale(
@@ -1253,6 +1697,16 @@ namespace F1XR.RestAPI.Replay.Room
         private bool IsInsidePortalApertures(
             Vector3 position)
         {
+            if (trackExitOnly)
+            {
+                return IsInsidePortalAperture(
+                    position,
+                    exitPosition,
+                    exitInward,
+                    exitPortalRight,
+                    exitPortalSize.x * 0.5f);
+            }
+
             return IsInsidePortalAperture(
                     position,
                     entryPosition,
@@ -1295,16 +1749,26 @@ namespace F1XR.RestAPI.Replay.Room
             string name,
             Pose pose,
             Vector2 size,
-            out Camera portalCamera)
+            out Camera portalCamera,
+            bool highQuality = false)
         {
+            ResolvePortalTextureSize(
+                size,
+                highQuality,
+                out int textureWidth,
+                out int textureHeight);
             RenderTexture texture = new RenderTexture(
-                TextureSize,
-                TextureSize,
+                textureWidth,
+                textureHeight,
                 TextureDepthBits,
                 RenderTextureFormat.ARGB32)
             {
                 name = $"{name}Texture",
-                antiAliasing = 1,
+                antiAliasing = highQuality
+                    ? ResolvePitTextureAntiAliasing()
+                    : 1,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
                 useMipMap = false,
                 autoGenerateMips = false
             };
@@ -1339,6 +1803,10 @@ namespace F1XR.RestAPI.Replay.Room
             renderer.shadowCastingMode =
                 ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+            CreatePersistentPortalFrame(
+                name,
+                size,
+                surface.transform);
 
             GameObject cameraObject =
                 new GameObject($"{name}Camera");
@@ -1356,9 +1824,10 @@ namespace F1XR.RestAPI.Replay.Room
             portalCamera.clearFlags =
                 CameraClearFlags.SolidColor;
             portalCamera.backgroundColor =
-                new Color(0.015f, 0.025f, 0.04f, 1f);
+                new Color(0.015f, 0.025f, 0.04f, 0f);
             portalCamera.allowHDR = false;
-            portalCamera.allowMSAA = false;
+            portalCamera.allowMSAA = highQuality;
+            portalCamera.allowDynamicResolution = false;
             portalCamera.useOcclusionCulling = false;
             portalCamera.depth =
                 viewerCamera.depth - 10f;
@@ -1377,6 +1846,130 @@ namespace F1XR.RestAPI.Replay.Room
             return surface.transform;
         }
 
+        private void CreatePersistentPortalFrame(
+            string name,
+            Vector2 size,
+            Transform parent)
+        {
+            float referenceSize = Mathf.Min(size.x, size.y);
+            float glowWidth = Mathf.Clamp(
+                referenceSize * 0.045f,
+                0.045f,
+                0.11f);
+            float coreWidth = Mathf.Clamp(
+                referenceSize * 0.014f,
+                0.018f,
+                0.04f);
+            Material glowMaterial =
+                CreatePortalFrameMaterial(
+                    $"{name}FrameGlow",
+                    new Color(0.05f, 0.55f, 1f, 0.24f),
+                    3120);
+            Material coreMaterial =
+                CreatePortalFrameMaterial(
+                    $"{name}FrameCore",
+                    new Color(0.84f, 0.97f, 1f, 0.92f),
+                    3130);
+            if (glowMaterial == null || coreMaterial == null)
+                return;
+
+            CreatePersistentPortalFrameRenderer(
+                $"{name}FrameGlow",
+                CreatePortalFrameMesh(
+                    size,
+                    glowWidth,
+                    $"Runtime_{name}FrameGlow"),
+                glowMaterial,
+                parent,
+                -0.012f,
+                20);
+            CreatePersistentPortalFrameRenderer(
+                $"{name}FrameCore",
+                CreatePortalFrameMesh(
+                    size,
+                    coreWidth,
+                    $"Runtime_{name}FrameCore"),
+                coreMaterial,
+                parent,
+                -0.016f,
+                21);
+        }
+
+        private void CreatePersistentPortalFrameRenderer(
+            string name,
+            Mesh mesh,
+            Material material,
+            Transform parent,
+            float surfaceOffset,
+            int sortingOrder)
+        {
+            GameObject frame = new GameObject(name);
+            frame.layer = PortalSurfaceLayer;
+            frame.transform.SetParent(parent, false);
+            frame.transform.localPosition =
+                new Vector3(0f, 0f, surfaceOffset);
+            MeshFilter filter = frame.AddComponent<MeshFilter>();
+            filter.sharedMesh = mesh;
+            MeshRenderer renderer =
+                frame.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.lightProbeUsage = LightProbeUsage.Off;
+            renderer.reflectionProbeUsage =
+                ReflectionProbeUsage.Off;
+            renderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
+            renderer.sortingOrder = sortingOrder;
+        }
+
+        private Material CreatePortalFrameMaterial(
+            string name,
+            Color color,
+            int renderQueue)
+        {
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                return null;
+
+            Material material = new Material(shader)
+            {
+                name = $"{name}Material"
+            };
+            material.SetOverrideTag("RenderType", "Transparent");
+            if (material.HasProperty("_Surface"))
+                material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend"))
+                material.SetFloat("_Blend", 1f);
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat(
+                    "_SrcBlend",
+                    (float)BlendMode.SrcAlpha);
+            }
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat(
+                    "_DstBlend",
+                    (float)BlendMode.One);
+            }
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 0f);
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", color);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = renderQueue;
+            runtimeMaterials.Add(material);
+            return material;
+        }
+
         private Mesh CreatePortalMesh(
             string name,
             Vector2 size,
@@ -1384,32 +1977,66 @@ namespace F1XR.RestAPI.Replay.Room
         {
             float halfWidth = size.x * 0.5f;
             float halfHeight = size.y * 0.5f;
-            float leftU = mirrorHorizontally ? 1f : 0f;
-            float rightU = mirrorHorizontally ? 0f : 1f;
+            float archHeight = Mathf.Min(
+                halfWidth,
+                size.y * 0.42f);
+            float springY = halfHeight - archHeight;
+
+            List<Vector3> vertices = new List<Vector3>(
+                PortalArchSegments + 4)
+            {
+                Vector3.zero,
+                new Vector3(-halfWidth, -halfHeight, 0f),
+                new Vector3(halfWidth, -halfHeight, 0f),
+                new Vector3(halfWidth, springY, 0f)
+            };
+
+            for (int i = 1; i <= PortalArchSegments; i++)
+            {
+                float angle =
+                    Mathf.PI * i / PortalArchSegments;
+                vertices.Add(new Vector3(
+                    Mathf.Cos(angle) * halfWidth,
+                    springY +
+                    Mathf.Sin(angle) * archHeight,
+                    0f));
+            }
+
+            List<Vector2> uvs = new List<Vector2>(
+                vertices.Count);
+            for (int i = 0; i < vertices.Count; i++)
+            {
+                float u =
+                    vertices[i].x / size.x + 0.5f;
+                if (mirrorHorizontally)
+                    u = 1f - u;
+
+                uvs.Add(new Vector2(
+                    u,
+                    vertices[i].y / size.y + 0.5f));
+            }
+
+            int boundaryCount = vertices.Count - 1;
+            List<int> triangles = new List<int>(
+                boundaryCount * 6);
+            for (int i = 0; i < boundaryCount; i++)
+            {
+                int current = i + 1;
+                int next = (i + 1) % boundaryCount + 1;
+                triangles.Add(0);
+                triangles.Add(current);
+                triangles.Add(next);
+                triangles.Add(0);
+                triangles.Add(next);
+                triangles.Add(current);
+            }
+
             Mesh mesh = new Mesh
             {
                 name = $"{name}Mesh",
-                vertices = new[]
-                {
-                    new Vector3(-halfWidth, -halfHeight, 0f),
-                    new Vector3(halfWidth, -halfHeight, 0f),
-                    new Vector3(-halfWidth, halfHeight, 0f),
-                    new Vector3(halfWidth, halfHeight, 0f)
-                },
-                uv = new[]
-                {
-                    new Vector2(leftU, 0f),
-                    new Vector2(rightU, 0f),
-                    new Vector2(leftU, 1f),
-                    new Vector2(rightU, 1f)
-                },
-                triangles = new[]
-                {
-                    0, 2, 1,
-                    1, 2, 3,
-                    1, 2, 0,
-                    3, 2, 1
-                }
+                vertices = vertices.ToArray(),
+                uv = uvs.ToArray(),
+                triangles = triangles.ToArray()
             };
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
@@ -1439,6 +2066,27 @@ namespace F1XR.RestAPI.Replay.Room
                 material.SetTexture("_MainTex", texture);
             if (material.HasProperty("_BaseColor"))
                 material.SetColor("_BaseColor", Color.white);
+            material.SetOverrideTag("RenderType", "Transparent");
+            if (material.HasProperty("_Surface"))
+                material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend"))
+                material.SetFloat("_Blend", 0f);
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat(
+                    "_SrcBlend",
+                    (float)BlendMode.SrcAlpha);
+            }
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat(
+                    "_DstBlend",
+                    (float)BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 0f);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = (int)RenderQueue.Transparent;
             runtimeMaterials.Add(material);
             return material;
         }
@@ -1599,6 +2247,80 @@ namespace F1XR.RestAPI.Replay.Room
                     MinimumPortalHeight,
                     MaximumPortalHeight));
             return new Vector2(width, height);
+        }
+
+        private static Vector2 ResolvePitPortalSize(
+            Vector2 wallSize)
+        {
+            if (wallSize.x <= 0f || wallSize.y <= 0f)
+            {
+                return new Vector2(
+                    FallbackPortalWidth,
+                    FallbackPortalHeight);
+            }
+
+            return new Vector2(
+                Mathf.Min(
+                    wallSize.x * PitPortalWallFill,
+                    MaximumPitPortalWidth),
+                Mathf.Min(
+                    wallSize.y * PitPortalWallFill,
+                    MaximumPitPortalHeight));
+        }
+
+        private static void ResolvePortalTextureSize(
+            Vector2 portalSize,
+            bool highQuality,
+            out int width,
+            out int height)
+        {
+            if (!highQuality)
+            {
+                width = TextureSize;
+                height = TextureSize;
+                return;
+            }
+
+            float safeWidth = Mathf.Max(0.1f, portalSize.x);
+            float safeHeight = Mathf.Max(0.1f, portalSize.y);
+            float targetWidth =
+                safeWidth * PitTexturePixelsPerMeter;
+            float targetHeight =
+                safeHeight * PitTexturePixelsPerMeter;
+            float minimumScale = Mathf.Max(
+                1f,
+                Mathf.Max(
+                    PitTextureMinimumWidth / targetWidth,
+                    PitTextureMinimumHeight / targetHeight));
+            targetWidth *= minimumScale;
+            targetHeight *= minimumScale;
+            float maximumScale = Mathf.Min(
+                1f,
+                PitTextureMaximumDimension /
+                Mathf.Max(targetWidth, targetHeight));
+            targetWidth *= maximumScale;
+            targetHeight *= maximumScale;
+
+            width = Mathf.Min(
+                PitTextureMaximumDimension,
+                RoundTextureDimension(
+                    Mathf.CeilToInt(targetWidth)));
+            height = Mathf.Min(
+                PitTextureMaximumDimension,
+                RoundTextureDimension(
+                    Mathf.CeilToInt(targetHeight)));
+        }
+
+        private static int RoundTextureDimension(int value)
+        {
+            return Mathf.CeilToInt(value / 32f) * 32;
+        }
+
+        private static int ResolvePitTextureAntiAliasing()
+        {
+            return Application.platform == RuntimePlatform.Android
+                ? 2
+                : 4;
         }
 
         private static Pose ResolvePortalPose(
@@ -1781,6 +2503,17 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void RefreshRoomVehicleVisibility()
         {
+            for (int i = 0;
+                 i < roomCarTmpRenderers.Count;
+                 i++)
+            {
+                TmpRendererBinding binding =
+                    roomCarTmpRenderers[i];
+                SyncTextMeshPro(
+                    binding.Source,
+                    binding.Proxy);
+            }
+
             for (int i = 0; i < roomCarRenderers.Count; i++)
             {
                 RendererBinding binding =
@@ -1810,6 +2543,308 @@ namespace F1XR.RestAPI.Replay.Room
                 if (binding.Proxy != null)
                     binding.Proxy.enabled = visible;
             }
+        }
+
+        internal void SetRoomOcclusionAssistance(
+            ShowcaseOcclusionHit firstHit,
+            ShowcaseOcclusionHit secondHit)
+        {
+            if (!configured)
+            {
+                ResetRoomOcclusionAssistance();
+                return;
+            }
+
+            desiredRoomOccluderMaterials.Clear();
+            bool firstDecorativeSuppressed =
+                TryAddDecorativeSuppression(
+                    firstHit,
+                    desiredRoomOccluderMaterials);
+            bool secondDecorativeSuppressed =
+                TryAddDecorativeSuppression(
+                    secondHit,
+                    desiredRoomOccluderMaterials);
+            ApplyCombinedRoomOccluderSuppression();
+            SetVehicleXRay(
+                firstVehicle,
+                firstHit.IsOccluded &&
+                !firstDecorativeSuppressed,
+                GetVehicleXRayMaterial(true),
+                ref firstVehicleXRayApplied);
+            SetVehicleXRay(
+                secondVehicle,
+                secondHit.IsOccluded &&
+                !secondDecorativeSuppressed,
+                GetVehicleXRayMaterial(false),
+                ref secondVehicleXRayApplied);
+        }
+
+        internal void ResetRoomOcclusionAssistance()
+        {
+            desiredRoomOccluderMaterials.Clear();
+            ApplyCombinedRoomOccluderSuppression();
+            SetVehicleXRay(
+                firstVehicle,
+                false,
+                null,
+                ref firstVehicleXRayApplied);
+            SetVehicleXRay(
+                secondVehicle,
+                false,
+                null,
+                ref secondVehicleXRayApplied);
+        }
+
+        internal void SetPlannedRoomOccluders(
+            IReadOnlyCollection<Material> materials)
+        {
+            plannedRoomOccluderMaterials.Clear();
+            if (materials != null)
+            {
+                foreach (Material material in materials)
+                {
+                    if (material != null)
+                        plannedRoomOccluderMaterials.Add(material);
+                }
+            }
+
+            ApplyCombinedRoomOccluderSuppression();
+        }
+
+        private void ApplyCombinedRoomOccluderSuppression()
+        {
+            combinedRoomOccluderMaterials.Clear();
+            combinedRoomOccluderMaterials.UnionWith(
+                plannedRoomOccluderMaterials);
+            combinedRoomOccluderMaterials.UnionWith(
+                desiredRoomOccluderMaterials);
+            ApplyRoomOccluderSuppression(
+                combinedRoomOccluderMaterials);
+        }
+
+        private bool TryAddDecorativeSuppression(
+            ShowcaseOcclusionHit hit,
+            HashSet<Material> destination)
+        {
+            if (!hit.IsOccluded ||
+                hit.Kind != ShowcaseOccluderKind.Decorative ||
+                hit.Material == null ||
+                GetRoomOccluderClearMaterial() == null)
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<Renderer, Material[]> pair in
+                     roomTrackOriginalMaterials)
+            {
+                Material[] materials = pair.Value;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    if (materials[i] != hit.Material)
+                        continue;
+
+                    destination.Add(hit.Material);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ApplyRoomOccluderSuppression(
+            HashSet<Material> desired)
+        {
+            bool hasDesired = desired != null && desired.Count > 0;
+            if ((!hasDesired &&
+                 suppressedRoomOccluderMaterials.Count == 0) ||
+                hasDesired &&
+                suppressedRoomOccluderMaterials.SetEquals(desired))
+            {
+                return;
+            }
+
+            suppressedRoomOccluderMaterials.Clear();
+            if (hasDesired)
+                suppressedRoomOccluderMaterials.UnionWith(desired);
+
+            Material clearMaterial = hasDesired
+                ? GetRoomOccluderClearMaterial()
+                : null;
+            foreach (KeyValuePair<Renderer, Material[]> pair in
+                     roomTrackOriginalMaterials)
+            {
+                Renderer renderer = pair.Key;
+                if (renderer == null)
+                    continue;
+
+                Material[] originals = pair.Value;
+                Material[] applied =
+                    (Material[])originals.Clone();
+                if (clearMaterial != null)
+                {
+                    for (int i = 0; i < applied.Length; i++)
+                    {
+                        if (suppressedRoomOccluderMaterials.Contains(
+                                originals[i]))
+                        {
+                            applied[i] = clearMaterial;
+                        }
+                    }
+                }
+
+                renderer.sharedMaterials = applied;
+            }
+        }
+
+        private void SetVehicleXRay(
+            Transform vehicleRoot,
+            bool enabled,
+            Material xRayMaterial,
+            ref bool appliedState)
+        {
+            enabled &= xRayMaterial != null;
+            if (appliedState == enabled)
+                return;
+
+            foreach (KeyValuePair<Renderer, Material[]> pair in
+                     roomVehicleOriginalMaterials)
+            {
+                Renderer proxy = pair.Key;
+                if (proxy == null ||
+                    vehicleRoot == null ||
+                    !proxy.transform.IsChildOf(vehicleRoot))
+                {
+                    continue;
+                }
+
+                if (enabled)
+                {
+                    Material[] xRayMaterials =
+                        new Material[pair.Value.Length];
+                    for (int i = 0;
+                         i < xRayMaterials.Length;
+                         i++)
+                    {
+                        xRayMaterials[i] = xRayMaterial;
+                    }
+                    proxy.sharedMaterials = xRayMaterials;
+                    proxy.SetPropertyBlock(null);
+                }
+                else
+                {
+                    proxy.sharedMaterials = pair.Value;
+                    Renderer source = FindSourceRenderer(proxy);
+                    if (source != null)
+                    {
+                        MaterialPropertyBlock block =
+                            new MaterialPropertyBlock();
+                        source.GetPropertyBlock(block);
+                        proxy.SetPropertyBlock(block);
+                    }
+                }
+            }
+
+            appliedState = enabled;
+        }
+
+        private Renderer FindSourceRenderer(Renderer proxy)
+        {
+            for (int i = 0; i < roomCarRenderers.Count; i++)
+            {
+                if (roomCarRenderers[i].Proxy == proxy)
+                    return roomCarRenderers[i].Source;
+            }
+
+            return null;
+        }
+
+        private Material GetRoomOccluderClearMaterial()
+        {
+            if (roomOccluderClearMaterial == null)
+            {
+                roomOccluderClearMaterial =
+                    CreateOcclusionAssistMaterial(
+                        "Runtime_RoomOccluderClear",
+                        new Color(0f, 0f, 0f, 0f),
+                        false,
+                        3000);
+            }
+
+            return roomOccluderClearMaterial;
+        }
+
+        private Material GetVehicleXRayMaterial(bool first)
+        {
+            Material material = first
+                ? firstVehicleXRayMaterial
+                : secondVehicleXRayMaterial;
+            if (material != null)
+                return material;
+
+            Color color = first
+                ? new Color(0.05f, 0.78f, 1f, 0.62f)
+                : new Color(1f, 0.12f, 0.62f, 0.62f);
+            material = CreateOcclusionAssistMaterial(
+                first
+                    ? "Runtime_FirstVehicleXRay"
+                    : "Runtime_SecondVehicleXRay",
+                color,
+                true,
+                first ? 3250 : 3251);
+            if (first)
+                firstVehicleXRayMaterial = material;
+            else
+                secondVehicleXRayMaterial = material;
+            return material;
+        }
+
+        private Material CreateOcclusionAssistMaterial(
+            string name,
+            Color color,
+            bool depthAlways,
+            int renderQueue)
+        {
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                return null;
+
+            Material material = new(shader) { name = name };
+            material.SetOverrideTag("RenderType", "Transparent");
+            if (material.HasProperty("_Surface"))
+                material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat(
+                    "_SrcBlend",
+                    (float)BlendMode.SrcAlpha);
+            }
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat(
+                    "_DstBlend",
+                    (float)BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 0f);
+            if (material.HasProperty("_ZTest") && depthAlways)
+            {
+                material.SetFloat(
+                    "_ZTest",
+                    (float)CompareFunction.Always);
+            }
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            if (material.HasProperty(BaseColorId))
+                material.SetColor(BaseColorId, color);
+            if (material.HasProperty(ColorId))
+                material.SetColor(ColorId, color);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = renderQueue;
+            runtimeMaterials.Add(material);
+            return material;
         }
 
         private bool BoundsTouchesRoom(Bounds bounds)
@@ -2018,6 +3053,37 @@ namespace F1XR.RestAPI.Replay.Room
                 destination.color = source.color;
         }
 
+        private static void SyncTextMeshPro(
+            TextMeshPro source,
+            TextMeshPro destination)
+        {
+            if (source == null || destination == null)
+                return;
+
+            destination.text = source.text;
+            destination.font = source.font;
+            destination.fontSharedMaterial =
+                source.fontSharedMaterial;
+            destination.fontSize = source.fontSize;
+            destination.fontStyle = source.fontStyle;
+            destination.alignment = source.alignment;
+            destination.color = source.color;
+            destination.richText = source.richText;
+            destination.autoSizeTextContainer =
+                source.autoSizeTextContainer;
+            destination.enableAutoSizing =
+                source.enableAutoSizing;
+            destination.fontSizeMin = source.fontSizeMin;
+            destination.fontSizeMax = source.fontSizeMax;
+            destination.characterSpacing =
+                source.characterSpacing;
+            destination.wordSpacing = source.wordSpacing;
+            destination.lineSpacing = source.lineSpacing;
+            destination.overflowMode = source.overflowMode;
+            destination.margin = source.margin;
+            destination.ForceMeshUpdate();
+        }
+
         private static void CopyRendererSettings(
             Renderer source,
             Renderer destination)
@@ -2088,6 +3154,20 @@ namespace F1XR.RestAPI.Replay.Room
                     renderer.forceRenderingOff =
                         forceRenderingOff;
             }
+        }
+
+        private readonly struct TmpRendererBinding
+        {
+            public TmpRendererBinding(
+                TextMeshPro source,
+                TextMeshPro proxy)
+            {
+                Source = source;
+                Proxy = proxy;
+            }
+
+            public TextMeshPro Source { get; }
+            public TextMeshPro Proxy { get; }
         }
 
         private readonly struct RendererBinding

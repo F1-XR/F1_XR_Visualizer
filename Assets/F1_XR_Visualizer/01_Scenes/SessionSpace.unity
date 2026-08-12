@@ -844,6 +844,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42ec8acfd8ffff14c944fe4e0b07a885, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.ShowcasePortalPresentation
+  decorativePortalPrefab: {fileID: 439682714516546187, guid: 6e2d5c22d6c4c9d4a8ff0ed264bec010, type: 3}
 --- !u!114 &493722810
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -866,6 +867,7 @@ MonoBehaviour:
   mappedPathStart: 0
   mappedPathEnd: 1
   modelHeadingCorrection: 0
+  presentationMode: 0
   wallContinuationTarget: 10
   entryContinuationMultiplier: 1.5
   heroForwardOffset: 0.25
@@ -874,6 +876,53 @@ MonoBehaviour:
   showcaseVehicleScale: 0.7
   showcasePlaybackSpeedMultiplier: 1.5
   immersiveScaleEnabled: 0
+  normalizeRoomPresentation: 1
+  minimumRoomVehicleLength: 0.5
+  maximumRoomVehicleLength: 0.7
+  minimumVehiclePresentationScale: 0.5
+  maximumVehiclePresentationScale: 1.1
+  minimumBoostedBattleTravelInVehicleLengthsPerSecond: 10
+  maximumBoostedPlaybackSpeed: 2.4
+  cinematicRoomScaleEnabled: 1
+  minimumCinematicBattleTravelMetersPerSecond: 7.5
+  minimumCinematicBattleTravelInVehicleLengthsPerSecond: 14
+  minimumCinematicSlowSectionTravelInVehicleLengthsPerSecond: 10
+  cinematicSlowSectionPercentile: 0.25
+  maximumCinematicScaleMultiplier: 4
+  maximumCinematicEventScale: 320
+  measuredLocalBattleTravelPerSecond: 0
+  resolvedCinematicScaleMultiplier: 1
+  projectedCinematicBattleTravelMetersPerSecond: 0
+  measuredSlowSectionBattleTravelInVehicleLengthsPerSecond: 0
+  compositionMode: 0
+  criticalSegmentCenterBias: 0.65
+  balancedMaximumShift: 2
+  multiExchangeMaximumShift: 3.5
+  referencePassProfileEnabled: 1
+  referencePassCrossingYaw: 28
+  trackExitPortalEnabled: 1
+  connectedWallPortalsEnabled: 1
+  evaluateWallPortalCandidates: 1
+  minimumEvaluatedPortalWallWidth: 2
+  minimumEvaluatedPortalWallHeight: 1.7
+  wallPairRecommendationScore: 60
+  wallExitFocusScoreDistance: 6
+  evaluatedWallCount: 0
+  evaluatedWallPairCount: 0
+  qualifiedWallPairCount: 0
+  bestWallPairScore: 0
+  evaluatedWallExitCount: 0
+  qualifiedWallExitCount: 0
+  bestWallExitScore: 0
+  wallPortalRecommendation: 0
+  lifeSizeDriveBy:
+    roadWidth: 3.6
+    roadThickness: 0.08
+    vehicleLength: 5.2
+    portalHeight: 2.1
+    wallMargin: 0.1
+    seamPositionTolerance: 0.03
+    seamAngleTolerance: 2
   overtakePortalTransitionVfx:
     enabled: 1
     overtakingCarOnly: 1
@@ -923,7 +972,60 @@ MonoBehaviour:
     largeForwardSeekThresholdSeconds: 0.75
     largeForwardSeekPolicy: 0
     seekResetThresholdSeconds: 0.5
+  analyzeShotVisibility: 1
+  visibilitySampleSeconds: 0.2
+  visibilityMaximumDistance: 8
+  visibilityViewportMargin: 0.05
+  visibilityProbeHeightInVehicleLengths: 0.25
+  visibilityProbeCenterInVehicleHeight: 0.5
+  visibilityProbeSpanInVehicleHeight: 0.35
+  visibilityTerrainClearanceInVehicleLengths: 0.35
+  runtimeOcclusionAssistanceEnabled: 1
+  occlusionAssistSampleInterval: 0.1
+  occlusionAssistActivationDelay: 0.08
+  occlusionAssistReleaseDelay: 0.2
+  firstOcclusionAssistActive: 0
+  secondOcclusionAssistActive: 0
+  battleReframeDuration: 0.7
+  battleReframeStartColor: {r: 0.05, g: 0.78, b: 1, a: 0.82}
+  battleReframeEndColor: {r: 1, g: 0.12, b: 0.62, a: 0.82}
+  actionBeatCount: 0
+  visibleActionBeatCount: 0
+  continuousVisibleIntervalCount: 0
+  terrainOcclusionAvailable: 0
+  allActionBeatsVisible: 0
+  requiresAdditionalShot: 0
+  actionBeatsOutsideDistance: 0
+  actionBeatsOutsideView: 0
+  actionBeatsTerrainOccluded: 0
+  actionBeatsWithMissingPosition: 0
+  multiBeatTransitionSafetyMargin: 0.15
+  maximumBattleToWallFocusShift: 3
+  wallExitStrategy: 0
+  wallExitHandoffPrepared: 0
+  wallExitHandoffActive: 0
+  wallExitHandoffComplete: 0
+  wallExitHandoffTime: 0
+  wallExitTransitionBeatIndex: -1
+  perceptionEyeRelativeTrackFocus: {x: 0, y: 0, z: 0}
+  perceptionClosestVehicleDistance: 0
+  perceptionVehicleAngularSize: 0
+  perceptionScreenTravelPerSecond: 0
+  perceptionBattleVisibleFraction: 0
+  runtimePerceptionSampleCount: 0
+  runtimePerceptionVisibleFraction: 0
+  runtimePerceptionScreenSpeedP90: 0
+  runtimePerceptionScreenSpeedPeak: 0
+  runtimePerceptionLateralSpeedP90: 0
+  runtimePerceptionLateralSpeedPeak: 0
+  runtimePerceptionLoomingRateP90: 0
+  runtimePerceptionLoomingRatePeak: 0
+  runtimePerceptionAngularSizePeak: 0
+  runtimePerceptionClosestDistance: 0
+  runtimePerceptionClosestEyePosition: {x: 0, y: 0, z: 0}
   mappingEnabled: 1
+  exitPortalLifecycleState: 0
+  battleOnlyRearWallExitDistance: 0
 --- !u!4 &493722811
 Transform:
   m_ObjectHideFlags: 0
@@ -2178,37 +2280,6 @@ MonoBehaviour:
   positionChangeFlashSeconds: 1.2
   standingsMoveSpeed: 10
   refreshInterval: 0.1
---- !u!1 &1304137257
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1304137258}
-  m_Layer: 0
-  m_Name: EngineAudio
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1304137258
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1304137257}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1356394193
 GameObject:
   m_ObjectHideFlags: 0
@@ -2974,6 +3045,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChunkReplayPlayer
   api: {fileID: 1705380155}
   carPrefab: {fileID: 1628341792126080133, guid: 3ec939f767a8fec45bf3b6e803d33bca, type: 3}
+  carLabelFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
   teamCarPrefabs:
   - teamName: Alfa Romeo
     prefab: {fileID: 4614466437777478188, guid: f0daaf1c8ae548c68c1f76995c3a015e, type: 3}
@@ -3040,6 +3112,10 @@ MonoBehaviour:
   playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
+  compressRedFlagDowntime: 1
+  redFlagVisibleTailSeconds: 15
+  restartVisibleLeadSeconds: 15
+  minimumRedFlagSkipSeconds: 60
   showCarLabels: 1
   enableCarLod: 1
   hideLeaderHighlightAfterRaceStart: 1
@@ -3287,6 +3363,11 @@ MonoBehaviour:
     hysteresisInCarLengths: 0.05
     allowOrderingLeadFallback: 1
     orderingLeadInCarLengths: 0.08
+    accentFlashEnabled: 1
+    accentFlashDurationReplaySeconds: 0.22
+    accentFlashSizeInCarWidths: 0.82
+    accentFlashIntensity: 2.1
+    accentFlashColor: {r: 1, g: 1, b: 1, a: 0.96}
     pulseDurationReplaySeconds: 0.5
     pulseIntensity: 1.05
     pulseColor: {r: 0.32, g: 0.88, b: 1.25, a: 0.86}
@@ -3336,15 +3417,15 @@ MonoBehaviour:
   api: {fileID: 1705380155}
   player: {fileID: 1705380154}
   autoStart: 1
-  preferredYear: 2025
+  preferredYear: 2024
   preferredCircuitShortName: Suzuka
   preferredSessionName: Race
-  replayMinutes: 20
+  replayMinutes: 45
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
   useCachedDatasetFastStart: 1
-  cachedDatasetId: 2025_suzuka_race_10006_c2_o2_m20
+  cachedDatasetId: 2024_suzuka_race_9496_c2_o2_m45
   cachedCircuitKey: 46
   useEventReplayTestSession: 0
 --- !u!4 &1705380157
@@ -3388,7 +3469,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8387741373429518330, guid: 4e0fc0e4232ff2f429cb4022ca4749cf, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 1.2
+      value: 2.352
       objectReference: {fileID: 0}
     - target: {fileID: 8387741373429518330, guid: 4e0fc0e4232ff2f429cb4022ca4749cf, type: 3}
       propertyPath: m_LocalPosition.y
@@ -4106,7 +4187,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 0
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 20
+  m_SortingOrder: -1
   m_TargetDisplay: 0
 --- !u!224 &2100327795
 RectTransform:
@@ -4124,7 +4205,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 1.35}
+  m_AnchoredPosition: {x: 3.74, y: 1.35}
   m_SizeDelta: {x: 760, y: 650}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1660057539 &9223372036854775807
@@ -4141,7 +4222,6 @@ SceneRoots:
   - {fileID: 1113257132}
   - {fileID: 493722811}
   - {fileID: 1127476783}
-  - {fileID: 1304137258}
   - {fileID: 1751285736}
   - {fileID: 778030370}
   - {fileID: 803093117}

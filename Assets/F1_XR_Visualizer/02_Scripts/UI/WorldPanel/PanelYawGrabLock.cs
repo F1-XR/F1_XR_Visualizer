@@ -28,6 +28,19 @@ namespace F1XR.UI.WorldPanel
             UpdateRotation();
         }
 
+        public void Configure(
+            XRGrabInteractable panelGrab,
+            Transform rotationTarget,
+            bool onlyWhileGrabbed = true)
+        {
+            grab = panelGrab;
+            target = rotationTarget != null
+                ? rotationTarget
+                : transform;
+            faceOnlyWhileGrabbed = onlyWhileGrabbed;
+            ResolveUser();
+        }
+
         void UpdateRotation()
         {
             if (user == null)
