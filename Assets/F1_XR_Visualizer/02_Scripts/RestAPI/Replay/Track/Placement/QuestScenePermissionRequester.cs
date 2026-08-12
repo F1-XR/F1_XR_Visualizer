@@ -9,6 +9,7 @@ using UnityEngine.Android;
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
     [RenamedFrom("F1XR.AR.QuestScenePermissionRequester")]
+    [DefaultExecutionOrder(-1000)]
     public sealed class QuestScenePermissionRequester : MonoBehaviour
     {
         const string ScenePermission = "com.oculus.permission.USE_SCENE";
@@ -131,12 +132,13 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void ApplySceneManagerState()
         {
-#if UNITY_EDITOR
-            // Quest Link has one spatial source: Unity Meta OpenXR planes.
-            // Environment raycasts use XR_EXT_future and have caused native
-            // shutdown failures, while walls and TABLE AUTO only need planes.
+#if UNITY_EDITOR || UNITY_STANDALONE
+            // Quest Link spatial discovery is intentionally not used. It has
+            // alternated between returning no planes and crashing the Editor
+            // during OpenXR shutdown. WallDiscovery and TABLE AUTO consume the
+            // deterministic managed room profile instead.
             if (planeManager != null)
-                planeManager.enabled = true;
+                planeManager.enabled = false;
             if (raycastManager != null)
                 raycastManager.enabled = false;
 #else

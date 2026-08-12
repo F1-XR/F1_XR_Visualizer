@@ -6,11 +6,36 @@ using UnityEngine.XR;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using UnityEngine.XR.Hands;
+using Unity.XR.CoreUtils;
 using F1XR.RestAPI.Replay.Track;
 using F1XR.RestAPI.Replay.Room;
 
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
+    internal readonly struct AutomaticTableSurface
+    {
+        public AutomaticTableSurface(
+            Pose pose,
+            ARPlane plane,
+            Vector2 size,
+            Vector3 longAxis,
+            bool canCreateAnchor)
+        {
+            Pose = pose;
+            Plane = plane;
+            Size = size;
+            LongAxis = longAxis;
+            CanCreateAnchor = canCreateAnchor;
+        }
+
+        public Pose Pose { get; }
+        public ARPlane Plane { get; }
+        public Vector2 Size { get; }
+        public Vector3 LongAxis { get; }
+        public bool CanCreateAnchor { get; }
+        public bool HasBounds => Size.x > 0.001f && Size.y > 0.001f;
+    }
+
     public sealed partial class ARPlanePlacementController : MonoBehaviour
     {
         private enum InputSourcePriority
@@ -336,6 +361,9 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private static readonly List<ARRaycastHit> s_Hits = new();
         private ARPlane preferredPlacementPlane;
+#if UNITY_EDITOR || UNITY_STANDALONE
+        private XROrigin managedProfileOrigin;
+#endif
 
         public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
@@ -350,15 +378,52 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         public bool TryGetAutomaticTableHit(out Pose pose, out ARPlane plane)
         {
+            if (TryGetAutomaticTableSurface(out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
+
+        internal bool TryGetAutomaticTableSurface(
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+
+#if UNITY_EDITOR || UNITY_STANDALONE
+            if (managedProfileOrigin == null)
+            {
+                managedProfileOrigin = FindAnyObjectByType<XROrigin>(
+                    FindObjectsInactive.Include);
+            }
+
+            MetaSceneRoomSnapshot editorRoom =
+                ManagedEditorRoomProfile.GetOrCreate(
+                    managedProfileOrigin != null ? managedProfileOrigin.transform : null,
+                    Camera.main != null ? Camera.main.transform : rayOrigin);
+            if (TryGetAutomaticSnapshotTable(
+                    editorRoom?.Tables,
+                    canCreateAnchor: false,
+                    out surface))
+            {
+                return true;
+            }
+#endif
 
             ResolveMetaSceneSource();
             if (metaSceneSource != null)
             {
                 if (metaSceneSource.Status == MetaSceneRoomStatus.Ready)
                 {
-                    if (TryGetAutomaticMetaTableHit(out pose))
+                    if (TryGetAutomaticSnapshotTable(
+                            metaSceneSource.Tables,
+                            canCreateAnchor: true,
+                            out surface))
                         return true;
                 }
 
@@ -399,15 +464,28 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 return false;
 
             preferredPlacementPlane = bestPlane;
-            pose = bestPose;
-            plane = bestPlane;
+            Vector2 size = bestPlane.size;
+            Vector3 longAxis = size.x >= size.y
+                ? bestPlane.transform.right
+                : bestPlane.transform.forward;
+            surface = new AutomaticTableSurface(
+                bestPose,
+                bestPlane,
+                size,
+                longAxis,
+                canCreateAnchor: true);
             return true;
         }
 
-        private bool TryGetAutomaticMetaTableHit(out Pose pose)
+        private bool TryGetAutomaticSnapshotTable(
+            IReadOnlyList<MetaSceneSurfaceSnapshot> tables,
+            bool canCreateAnchor,
+            out AutomaticTableSurface surface)
         {
-            pose = default;
-            IReadOnlyList<MetaSceneSurfaceSnapshot> tables = metaSceneSource.Tables;
+            surface = default;
+            if (tables == null)
+                return false;
+
             MetaSceneSurfaceSnapshot bestTable = null;
             float bestScore = float.NegativeInfinity;
             Camera camera = Camera.main;
@@ -447,7 +525,21 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             if (bestTable == null)
                 return false;
 
-            pose = new Pose(bestTable.Center, Quaternion.identity);
+            Vector3 longAxis = bestTable.Width >= bestTable.Height
+                ? bestTable.HorizontalAxis
+                : bestTable.VerticalAxis;
+            longAxis = Vector3.ProjectOnPlane(longAxis, Vector3.up);
+            if (longAxis.sqrMagnitude <= 0.0001f)
+                longAxis = Vector3.forward;
+            else
+                longAxis.Normalize();
+
+            surface = new AutomaticTableSurface(
+                new Pose(bestTable.Center, Quaternion.identity),
+                null,
+                new Vector2(bestTable.Width, bestTable.Height),
+                longAxis,
+                canCreateAnchor);
             return true;
         }
 

@@ -381,10 +381,10 @@ namespace F1XR.RestAPI.Replay.Room
 
         void Awake()
         {
-#if UNITY_EDITOR
-            // Quest Link reads the saved Scene Model through Unity Meta
-            // OpenXR/ARFoundation. Do not start a second Meta Core spatial
-            // stack or add OVRManager in the Editor.
+#if UNITY_EDITOR || UNITY_STANDALONE
+            // Quest Link does not provide a stable scene-query lifecycle in
+            // this project. Editor placement uses ManagedEditorRoomProfile;
+            // never start Meta Core or add OVRManager here.
             return;
 #else
             ResolveReferences();
@@ -395,7 +395,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         void Start()
         {
-#if !UNITY_EDITOR
+#if !UNITY_EDITOR && !UNITY_STANDALONE
             _ = RefreshRoomAsync();
 #endif
         }
@@ -413,7 +413,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         void OnApplicationFocus(bool hasFocus)
         {
-#if UNITY_EDITOR
+#if UNITY_EDITOR || UNITY_STANDALONE
             // Game/Scene view focus changes are not an application resume.
             // Querying again here can leave a native spatial-entity request
             // alive while the Editor is exiting Play Mode.
@@ -432,8 +432,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         public async Task RefreshRoomAsync()
         {
-#if UNITY_EDITOR
-            // WallDiscovery and table placement use ARPlaneManager in Link.
+#if UNITY_EDITOR || UNITY_STANDALONE
+            // WallDiscovery and table placement use the managed Editor profile.
             await Task.CompletedTask;
             return;
 #else
