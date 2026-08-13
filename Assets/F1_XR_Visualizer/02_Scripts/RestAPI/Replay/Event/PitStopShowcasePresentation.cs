@@ -133,7 +133,7 @@ namespace F1XR.RestAPI.Replay
                 "TeamHeader",
                 root.transform,
                 new Vector3(carLength * 0.99f, carLength * 0.78f, 0f),
-                new Vector3(carLength * 0.04f, carLength * 0.18f, carLength * 3.8f),
+                new Vector3(carLength * 0.04f, carLength * 0.06f, carLength * 3.8f),
                 teamColor);
             teamHeaderRenderer = header.GetComponent<Renderer>();
 
@@ -1325,7 +1325,6 @@ namespace F1XR.RestAPI.Replay
                 floorColor,
                 Color.white,
                 0.08f);
-            Color markingColor = new(0.72f, 0.75f, 0.78f, 1f);
             Color barrierColor = new(0.035f, 0.045f, 0.06f, 1f);
             float trackLength = carLength * 15f;
 
@@ -1393,30 +1392,11 @@ namespace F1XR.RestAPI.Replay
                         carLength * 0.08f))
             };
 
-            float dashLength = carLength * 0.58f;
-            List<PitBoxSpec> markings = new();
-            for (int i = -6; i <= 6; i++)
-            {
-                markings.Add(new PitBoxSpec(
-                    new Vector3(
-                        -carLength * 0.78f,
-                        carLength * 0.012f,
-                        i * carLength * 1.05f),
-                    new Vector3(
-                        carLength * 0.025f,
-                        carLength * 0.012f,
-                        dashLength)));
-            }
             CreateCombinedBoxes(
                 "PitTrackBarriers",
                 parent,
                 barrierColor,
                 barriers);
-            CreateCombinedBoxes(
-                "PitLaneMarkings",
-                parent,
-                markingColor,
-                markings);
         }
 
         private void CreateFallbackPitBuilding(

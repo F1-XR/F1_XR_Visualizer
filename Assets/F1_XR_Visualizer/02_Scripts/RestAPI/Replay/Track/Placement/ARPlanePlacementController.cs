@@ -361,9 +361,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private static readonly List<ARRaycastHit> s_Hits = new();
         private ARPlane preferredPlacementPlane;
-#if UNITY_EDITOR || UNITY_STANDALONE
-        private XROrigin managedProfileOrigin;
-#endif
 
         public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
@@ -405,26 +402,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             out AutomaticTableSurface surface)
         {
             surface = default;
-
-#if UNITY_EDITOR || UNITY_STANDALONE
-            if (managedProfileOrigin == null)
-            {
-                managedProfileOrigin = FindAnyObjectByType<XROrigin>(
-                    FindObjectsInactive.Include);
-            }
-
-            MetaSceneRoomSnapshot editorRoom =
-                ManagedEditorRoomProfile.GetOrCreate(
-                    managedProfileOrigin != null ? managedProfileOrigin.transform : null,
-                    Camera.main != null ? Camera.main.transform : rayOrigin);
-            if (TryGetAutomaticSnapshotTable(
-                    editorRoom?.Tables,
-                    canCreateAnchor: false,
-                    out surface))
-            {
-                return true;
-            }
-#endif
 
             ResolveMetaSceneSource();
             if (metaSceneSource != null)
@@ -715,31 +692,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             out AutomaticTableSurface surface)
         {
             surface = default;
-#if UNITY_EDITOR || UNITY_STANDALONE
-            if (managedProfileOrigin == null)
-            {
-                managedProfileOrigin = FindAnyObjectByType<XROrigin>(
-                    FindObjectsInactive.Include);
-            }
-
-            MetaSceneRoomSnapshot editorRoom =
-                ManagedEditorRoomProfile.GetOrCreate(
-                    managedProfileOrigin != null
-                        ? managedProfileOrigin.transform
-                        : null,
-                    Camera.main != null
-                        ? Camera.main.transform
-                        : rayOrigin);
-            if (TryIntersectSnapshotTables(
-                    ray,
-                    editorRoom?.Tables,
-                    canCreateAnchor: false,
-                    out surface))
-            {
-                return true;
-            }
-#endif
-
             ResolveMetaSceneSource();
             return metaSceneSource != null &&
                 metaSceneSource.Status == MetaSceneRoomStatus.Ready &&
@@ -975,8 +927,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private ARAnchor CreateAnchor(Pose pose, ARPlane plane)
         {
-            if (anchorManager == null)
+            if (anchorManager == null ||
+                anchorManager.subsystem == null ||
+                !anchorManager.subsystem.running)
+            {
                 return null;
+            }
 
             if (plane != null)
             {

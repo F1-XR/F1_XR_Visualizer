@@ -34,6 +34,10 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField] private bool automaticSetupEnabled = true;
         [SerializeField, Min(0f)] private float containingRoomWaitDuration = 3f;
 
+        [Header("Quest Link Recovery")]
+        [SerializeField, Min(1f)] private float planeDiscoveryRetryDelay = 15f;
+        [SerializeField, Min(2f)] private float planeDiscoveryTimeout = 18f;
+
         [Header("Runtime Performance")]
         [SerializeField] private bool suspendSceneTrackingWhenReady = true;
 
@@ -52,6 +56,8 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<TrackableId> candidateMembershipScratch = new();
         private readonly List<WallCandidateInfo> automaticCandidates = new();
         private float automaticSetupWaitUntil;
+        private float roomWaitStartedAt;
+        private bool planeDiscoveryRetried;
         private float reacquisitionStartedAt = -1f;
         private bool sessionConfirmed;
         private bool initialized;
@@ -131,7 +137,15 @@ namespace F1XR.RestAPI.Replay.Room
             if (currentSetupState == RoomShowcaseSetupState.WaitingForRoom)
             {
                 if (wallProvider.CandidateCount == 0)
-                    SetUserMessage(ResolveRoomLoadingMessage());
+                {
+                    UpdateRoomLoadingState();
+                    if (currentSetupState !=
+                        RoomShowcaseSetupState.WaitingForRoom)
+                    {
+                        return;
+                    }
+                }
+
                 TryLeaveWaitingState();
             }
             else if (currentSetupState == RoomShowcaseSetupState.Ready &&
@@ -340,9 +354,7 @@ namespace F1XR.RestAPI.Replay.Room
                 candidatesStableSince = Time.unscaledTime;
                 automaticSetupWaitUntil =
                     Time.unscaledTime + containingRoomWaitDuration;
-                SetState(
-                    RoomShowcaseSetupState.WaitingForRoom,
-                    ResolveRoomLoadingMessage());
+                EnterWaitingForRoom();
                 return;
             }
 
@@ -406,9 +418,7 @@ namespace F1XR.RestAPI.Replay.Room
                 Time.unscaledTime + containingRoomWaitDuration;
             sessionConfirmed = false;
             ClearPreview();
-            SetState(
-                RoomShowcaseSetupState.WaitingForRoom,
-                ResolveRoomLoadingMessage());
+            EnterWaitingForRoom();
         }
 
         private void ResolveReferences()
@@ -462,6 +472,45 @@ namespace F1XR.RestAPI.Replay.Room
             };
         }
 
+        private void EnterWaitingForRoom()
+        {
+            roomWaitStartedAt = Time.unscaledTime;
+            planeDiscoveryRetried = false;
+            SetState(
+                RoomShowcaseSetupState.WaitingForRoom,
+                ResolveRoomLoadingMessage());
+        }
+
+        private void UpdateRoomLoadingState()
+        {
+            if (wallDiscovery == null || wallDiscovery.UsesMetaSceneApi)
+            {
+                SetUserMessage(ResolveRoomLoadingMessage());
+                return;
+            }
+
+            float elapsed = Time.unscaledTime - roomWaitStartedAt;
+            if (!planeDiscoveryRetried &&
+                elapsed >= planeDiscoveryRetryDelay)
+            {
+                planeDiscoveryRetried = true;
+                SetUserMessage("Waiting for the Quest Link room plane retry.");
+                return;
+            }
+
+            if (elapsed >= Mathf.Max(
+                    planeDiscoveryTimeout,
+                    planeDiscoveryRetryDelay + 2f))
+            {
+                SetState(
+                    RoomShowcaseSetupState.Error,
+                    "Quest Link spatial data is unavailable. Re-enter Quest Link, then use Reset Setup.");
+                return;
+            }
+
+            SetUserMessage(ResolveRoomLoadingMessage());
+        }
+
         private void ObserveCandidates()
         {
             var revision = wallProvider.CandidateRevision;
@@ -502,9 +551,7 @@ namespace F1XR.RestAPI.Replay.Room
                 if (currentSetupState !=
                     RoomShowcaseSetupState.WaitingForRoom)
                 {
-                    SetState(
-                        RoomShowcaseSetupState.WaitingForRoom,
-                        ResolveRoomLoadingMessage());
+                    EnterWaitingForRoom();
                 }
 
                 return;
