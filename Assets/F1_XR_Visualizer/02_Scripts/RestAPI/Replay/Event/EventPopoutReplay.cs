@@ -85,6 +85,8 @@ namespace F1XR.RestAPI.Replay
         private const float MinimumTrackRegionPadding = 0.00005f;
         private const float MaximumConventionalPitLaneSeconds = 120f;
         private const float MinimumRedFlagPitOverlapSeconds = 5f;
+        private const string PitShowcaseAssetResourcePath =
+            "PitShowcase/PitShowcaseAssets";
 
         [Header("Development")]
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -170,6 +172,7 @@ namespace F1XR.RestAPI.Replay
         private OvertakeBattleSequence battleSequence;
         private PitStopSequence pitStopSequence;
         private PitStopShowcasePresentation pitStopPresentation;
+        private PitShowcaseAssetProfile pitShowcaseAssets;
         private OvertakeMotionSettings eventOvertakeSettings;
         private GameObject stageRoot;
         private BoxCollider stageInteractionCollider;
@@ -239,11 +242,26 @@ namespace F1XR.RestAPI.Replay
             IsPitStopActive &&
             pitStopSequence != null &&
             pitStopSequence.IsDriveThrough;
+        public PitShowcaseAssetProfile PitShowcaseAssets =>
+            pitShowcaseAssets ??=
+                Resources.Load<PitShowcaseAssetProfile>(
+                    PitShowcaseAssetResourcePath);
         public PitStopPhase CurrentPitStopPhase =>
             pitStopSequence != null
                 ? pitStopSequence.GetPhase(CurrentTime)
                 : PitStopPhase.Approach;
         public float CurrentTime => isActive ? timeline.CurrentTime : 0f;
+
+        public bool TryGetPitStopPresentationState(
+            out PitStopPresentationState state)
+        {
+            state = default;
+            if (!IsPitStopActive || pitStopSequence == null)
+                return false;
+
+            state = pitStopSequence.GetPresentationState(CurrentTime);
+            return true;
+        }
         public bool OvertakeCompletionConfirmed =>
             isActive &&
             (battleSequence != null && battleSequence.IsValid
@@ -1270,7 +1288,28 @@ namespace F1XR.RestAPI.Replay
                 yield break;
             }
 
-            if (!BuildStage(definition, loadStart, loadEnd))
+            bool stageBuilt;
+            try
+            {
+                stageBuilt = BuildStage(
+                    definition,
+                    loadStart,
+                    loadEnd);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError(
+                    $"[EventReplay] Event '{definition.eventId}' stage build failed: " +
+                    exception.Message,
+                    this);
+                Debug.LogException(exception, this);
+                isLoading = false;
+                openRoutine = null;
+                Close();
+                yield break;
+            }
+
+            if (!stageBuilt)
             {
                 Debug.LogWarning(
                     $"[EventReplay] Event '{definition.eventId}' did not produce enough mapped track points.",
@@ -1451,6 +1490,12 @@ namespace F1XR.RestAPI.Replay
             bool collisionShowcase =
                 IsCollisionEvent(definition);
             bool pitStop = IsPitStopDefinition(definition);
+            if (pitStop && pitShowcaseAssets == null)
+            {
+                pitShowcaseAssets =
+                    Resources.Load<PitShowcaseAssetProfile>(
+                        PitShowcaseAssetResourcePath);
+            }
             eventCars = new ReplayCarSet(
                 player.carPrefab,
                 player,
@@ -1722,7 +1767,8 @@ namespace F1XR.RestAPI.Replay
                     pitStopSequence,
                     pitWheelGunPrefab,
                     pitWheelGunClip,
-                    ResolvePitEnvironmentProfile());
+                    ResolvePitEnvironmentProfile(),
+                    pitShowcaseAssets);
                 stageBounds.Encapsulate(
                     pitStopPresentation.LocalBounds);
             }
@@ -1731,6 +1777,8 @@ namespace F1XR.RestAPI.Replay
 
             eventAudio = new ReplayAudio(eventCars);
             eventAudio.Reset(player.engineSound, true, null);
+            if (pitStop)
+                SetShowcaseAudioFocus(referenceDriverNumber);
             stageRoot.SetActive(false);
 
             Debug.Log(
@@ -2963,7 +3011,8 @@ namespace F1XR.RestAPI.Replay
                 pitStopPresentation?.Apply(
                     replayTime,
                     timeline.IsPlaying &&
-                    !showcaseTransitionHeld);
+                    !showcaseTransitionHeld,
+                    showcaseTimelineRevision);
             }
             else if (IsCollisionEvent(currentEvent))
             {

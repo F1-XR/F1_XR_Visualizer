@@ -336,10 +336,33 @@ namespace F1XR.RestAPI.Replay
             int layoutRevision = ResolveCollisionShowcaseLayout() != null
                 ? collisionShowcaseLayout.LayoutRevision
                 : -1;
+            int trackGeometryRevision = 0;
+            if (RequiresCollisionTrackGeometry())
+            {
+                trackGeometryRevision = player != null &&
+                    player.TryGetReadyTrackGeometrySource(
+                        out _,
+                        out int readyRevision)
+                        ? readyRevision
+                        : -1;
+            }
             return $"{datasetId}|" +
                 $"{definition?.eventId}|" +
                 $"{definition?.anchorTime:0.000}|" +
-                $"layout:{layoutRevision}";
+                $"layout:{layoutRevision}|" +
+                $"track:{trackGeometryRevision}";
+        }
+
+        private bool RequiresCollisionTrackGeometry()
+        {
+            bool missingSerializedTrackDefaults =
+                collisionShowcase != null &&
+                collisionShowcase.forensicRoadWidthInCarWidths <= 0f &&
+                collisionShowcase.forensicKerbWidthInCarWidths <= 0f &&
+                collisionShowcase.forensicRunoffWidthInCarWidths <= 0f;
+            return collisionShowcase == null ||
+                collisionShowcase.enableForensicTrack ||
+                missingSerializedTrackDefaults;
         }
 
         private ShowcaseLayout ResolveCollisionShowcaseLayout()
@@ -2425,6 +2448,23 @@ namespace F1XR.RestAPI.Replay
 
             ReplayEventDto definition =
                 CreatePresentationEvent(source);
+            Transform trackGeometrySource = null;
+            int trackGeometryRevision = 0;
+            if (RequiresCollisionTrackGeometry() &&
+                !player.TryGetReadyTrackGeometrySource(
+                    out trackGeometrySource,
+                    out trackGeometryRevision))
+            {
+                collisionPreloadReady = false;
+                collisionPreparedDefinition = null;
+                collisionPreparationFailure = null;
+                collisionPreloadKey = CreateCollisionPreloadKey(
+                    definition);
+                collisionPreloadRoutine = StartCoroutine(
+                    WaitForCollisionTrackGeometryRoutine());
+                return;
+            }
+
             string key = CreateCollisionPreloadKey(definition);
             if (IsCollisionPrepared &&
                 string.Equals(
@@ -2442,7 +2482,50 @@ namespace F1XR.RestAPI.Replay
             collisionPreloadRoutine = StartCoroutine(
                 PrepareCollisionIncidentRoutine(
                     definition,
-                    key));
+                    key,
+                    trackGeometrySource,
+                    trackGeometryRevision));
+        }
+
+        private IEnumerator WaitForCollisionTrackGeometryRoutine()
+        {
+            const float trackReadyTimeoutSeconds = 8f;
+            float timeoutAt = Time.realtimeSinceStartup +
+                trackReadyTimeoutSeconds;
+            while (player != null &&
+                   player.HasDataset &&
+                   !isActive &&
+                   RequiresCollisionTrackGeometry() &&
+                   !player.TryGetReadyTrackGeometrySource(
+                       out _,
+                       out _) &&
+                   Time.realtimeSinceStartup < timeoutAt)
+            {
+                yield return null;
+            }
+
+            collisionPreloadRoutine = null;
+            if (player == null || !player.HasDataset || isActive)
+                yield break;
+
+            if (RequiresCollisionTrackGeometry() &&
+                !player.TryGetReadyTrackGeometrySource(
+                    out _,
+                    out _))
+            {
+                collisionPreloadReady = false;
+                collisionPreparedDefinition = null;
+                collisionPreparationFailure =
+                    "TRACK GEOMETRY NOT READY";
+                Debug.LogWarning(
+                    "[CollisionForensics] Timed out waiting for the " +
+                    "placed track and calibration. Retry Collision after " +
+                    "the track reveal has completed.",
+                    this);
+                yield break;
+            }
+
+            PrepareTestCollision();
         }
 
         public void ReplayCollisionImpact()
@@ -2475,7 +2558,9 @@ namespace F1XR.RestAPI.Replay
 
         private IEnumerator PrepareCollisionIncidentRoutine(
             ReplayEventDto definition,
-            string key)
+            string key,
+            Transform trackGeometrySource,
+            int trackGeometryRevision)
         {
             float startedAt = Time.realtimeSinceStartup;
             DestroyStage(false);
@@ -2497,7 +2582,16 @@ namespace F1XR.RestAPI.Replay
                 loadEnd,
                 value => loaded = value);
 
-            if (!IsCollisionPreparationCurrent(key) || !loaded)
+            if (!IsCollisionPreparationCurrent(key))
+                yield break;
+            if (!IsCollisionTrackGeometryCurrent(
+                    trackGeometrySource,
+                    trackGeometryRevision))
+            {
+                RestartCollisionPreparationForTrackChange(key);
+                yield break;
+            }
+            if (!loaded)
             {
                 FailCollisionPreparation(
                     key,
@@ -2526,8 +2620,16 @@ namespace F1XR.RestAPI.Replay
 
             // Keep data, geometry and visual allocation on separate frames.
             yield return null;
-            if (!IsCollisionPreparationCurrent(key) ||
-                !BuildStage(definition, loadStart, loadEnd))
+            if (!IsCollisionPreparationCurrent(key))
+                yield break;
+            if (!IsCollisionTrackGeometryCurrent(
+                    trackGeometrySource,
+                    trackGeometryRevision))
+            {
+                RestartCollisionPreparationForTrackChange(key);
+                yield break;
+            }
+            if (!BuildStage(definition, loadStart, loadEnd))
             {
                 FailCollisionPreparation(
                     key,
@@ -2649,7 +2751,10 @@ namespace F1XR.RestAPI.Replay
                     ResolveCollisionCorridorLengthLocal(),
                     reportedTime,
                     observedTime,
-                    collisionShowcase);
+                    collisionShowcase,
+                    trackGeometrySource,
+                    eventSpaceCenter,
+                    sourceToEventRotation);
             yield return null;
 
             ShowCollisionCars(CollisionPresentationContactTime);
@@ -2660,10 +2765,12 @@ namespace F1XR.RestAPI.Replay
             stageRoot.SetActive(false);
 
             if (!IsCollisionPreparationCurrent(key))
+                yield break;
+            if (!IsCollisionTrackGeometryCurrent(
+                    trackGeometrySource,
+                    trackGeometryRevision))
             {
-                FailCollisionPreparation(
-                    key,
-                    "the dataset changed during preparation");
+                RestartCollisionPreparationForTrackChange(key);
                 yield break;
             }
 
@@ -3067,6 +3174,47 @@ namespace F1XR.RestAPI.Replay
                     collisionPreloadKey,
                     key,
                     StringComparison.Ordinal);
+        }
+
+        private bool IsCollisionTrackGeometryCurrent(
+            Transform expectedSource,
+            int expectedRevision)
+        {
+            if (!RequiresCollisionTrackGeometry())
+                return true;
+
+            return player != null &&
+                player.TryGetReadyTrackGeometrySource(
+                    out Transform currentSource,
+                    out int currentRevision) &&
+                ReferenceEquals(currentSource, expectedSource) &&
+                currentRevision == expectedRevision;
+        }
+
+        private void RestartCollisionPreparationForTrackChange(
+            string key)
+        {
+            if (!IsCollisionPreparationCurrent(key))
+                return;
+
+            DestroyStage(false);
+            collisionPreloadReady = false;
+            collisionPreparedDefinition = null;
+            collisionPreparationFailure = null;
+            collisionPreloadKey = null;
+            collisionPreloadRoutine = StartCoroutine(
+                RestartCollisionPreparationNextFrame());
+            Debug.Log(
+                "[CollisionForensics] Track geometry changed during " +
+                "preparation; restarting with the ready source.",
+                this);
+        }
+
+        private IEnumerator RestartCollisionPreparationNextFrame()
+        {
+            yield return null;
+            collisionPreloadRoutine = null;
+            PrepareTestCollision();
         }
 
         private void FailCollisionPreparation(

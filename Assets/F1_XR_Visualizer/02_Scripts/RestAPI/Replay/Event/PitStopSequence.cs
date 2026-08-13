@@ -14,6 +14,46 @@ namespace F1XR.RestAPI.Replay
         Exit
     }
 
+    public enum PitStopResultState
+    {
+        Pending,
+        Completed,
+        DriveThrough
+    }
+
+    public readonly struct PitStopPresentationState
+    {
+        internal PitStopPresentationState(
+            PitStopPhase phase,
+            float phaseProgress,
+            float serviceElapsedSeconds,
+            float serviceTotalSeconds,
+            PitStopResultState resultState,
+            bool isReconstructed,
+            bool isDriveThrough)
+        {
+            Phase = phase;
+            PhaseProgress = phaseProgress;
+            ServiceElapsedSeconds = serviceElapsedSeconds;
+            ServiceTotalSeconds = serviceTotalSeconds;
+            ResultState = resultState;
+            IsReconstructed = isReconstructed;
+            IsDriveThrough = isDriveThrough;
+        }
+
+        public PitStopPhase Phase { get; }
+        public float PhaseProgress { get; }
+        public float ServiceElapsedSeconds { get; }
+        public float ServiceTotalSeconds { get; }
+        public float ServiceProgress => ServiceTotalSeconds > 0f
+            ? Mathf.Clamp01(
+                ServiceElapsedSeconds / ServiceTotalSeconds)
+            : 0f;
+        public PitStopResultState ResultState { get; }
+        public bool IsReconstructed { get; }
+        public bool IsDriveThrough { get; }
+    }
+
     public sealed class PitStopSequence
     {
         public PitStopSequence(
@@ -70,6 +110,88 @@ namespace F1XR.RestAPI.Replay
             if (replayTime < ReleaseEndTime)
                 return PitStopPhase.Release;
             return PitStopPhase.Exit;
+        }
+
+        public PitStopPresentationState GetPresentationState(
+            float replayTime)
+        {
+            PitStopPhase phase = GetPhase(replayTime);
+            float phaseProgress = GetPhaseProgress(phase, replayTime);
+            float serviceTotalSeconds = IsDriveThrough
+                ? 0f
+                : Mathf.Max(0f, ServiceEndTime - ServiceStartTime);
+            float serviceElapsedSeconds = IsDriveThrough
+                ? 0f
+                : Mathf.Clamp(
+                    replayTime - ServiceStartTime,
+                    0f,
+                    serviceTotalSeconds);
+            PitStopResultState resultState = IsDriveThrough
+                ? PitStopResultState.DriveThrough
+                : replayTime < ServiceEndTime
+                    ? PitStopResultState.Pending
+                    : PitStopResultState.Completed;
+
+            return new PitStopPresentationState(
+                phase,
+                phaseProgress,
+                serviceElapsedSeconds,
+                serviceTotalSeconds,
+                resultState,
+                IsReconstructed,
+                IsDriveThrough);
+        }
+
+        private float GetPhaseProgress(
+            PitStopPhase phase,
+            float replayTime)
+        {
+            if (IsDriveThrough)
+            {
+                return phase == PitStopPhase.Approach
+                    ? ResolveProgress(StartTime, FocusTime, replayTime)
+                    : ResolveProgress(FocusTime, EndTime, replayTime);
+            }
+
+            switch (phase)
+            {
+                case PitStopPhase.Approach:
+                    return ResolveProgress(
+                        StartTime,
+                        BrakeTime,
+                        replayTime);
+                case PitStopPhase.Brake:
+                    return ResolveProgress(
+                        BrakeTime,
+                        ServiceStartTime,
+                        replayTime);
+                case PitStopPhase.Service:
+                    return ResolveProgress(
+                        ServiceStartTime,
+                        ServiceEndTime,
+                        replayTime);
+                case PitStopPhase.Release:
+                    return ResolveProgress(
+                        ServiceEndTime,
+                        ReleaseEndTime,
+                        replayTime);
+                default:
+                    return ResolveProgress(
+                        ReleaseEndTime,
+                        EndTime,
+                        replayTime);
+            }
+        }
+
+        private static float ResolveProgress(
+            float startTime,
+            float endTime,
+            float replayTime)
+        {
+            if (endTime <= startTime)
+                return replayTime >= endTime ? 1f : 0f;
+
+            return Mathf.InverseLerp(startTime, endTime, replayTime);
         }
     }
 

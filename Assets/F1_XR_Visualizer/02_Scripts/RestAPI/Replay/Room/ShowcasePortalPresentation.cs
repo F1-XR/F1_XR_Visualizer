@@ -447,20 +447,32 @@ namespace F1XR.RestAPI.Replay.Room
             inward.Normalize();
             entryPosition = wall.Center;
             entryInward = inward;
+            PitWallOverlayLayout wallLayout =
+                PitWallLayoutPolicy.Resolve(
+                    wall.Width,
+                    wall.Height);
+            if (wallLayout == PitWallOverlayLayout.None)
+            {
+                failure =
+                    "The selected wall is too small for the pit wall presentation.";
+                return false;
+            }
             entryPortalSize = ResolvePitPortalSize(
                 new Vector2(wall.Width, wall.Height));
-            Vector3 bottom =
+            Vector3 verticalMidpoint =
                 wall.Center +
-                wall.VerticalAxis * wall.MinVertical;
+                up * ((wall.MinVertical + wall.MaxVertical) * 0.5f);
+            if (entryPortalSize.y + PortalBottomOffset * 2f < wall.Height)
+            {
+                verticalMidpoint =
+                    wall.Center +
+                    up * wall.MinVertical +
+                    up * (PortalBottomOffset + entryPortalSize.y * 0.5f);
+            }
             Pose wallPose = new(
-                wall.Center,
+                verticalMidpoint,
                 Quaternion.LookRotation(inward, up));
-            Pose portalPose = ResolvePortalPose(
-                wallPose,
-                entryPortalSize,
-                true,
-                bottom,
-                up);
+            Pose portalPose = wallPose;
             entryPortalRight = portalPose.right;
             firstVehicle = vehicleRoot;
             secondVehicle = null;
@@ -474,6 +486,7 @@ namespace F1XR.RestAPI.Replay.Room
                 portalPose,
                 entryPortalSize,
                 out entryCamera,
+                true,
                 true);
             entrySurfaceRenderer =
                 entrySurface != null
@@ -485,6 +498,11 @@ namespace F1XR.RestAPI.Replay.Room
                 Clear();
                 return false;
             }
+            CreatePitWallOverlay(
+                entrySurface,
+                entryPortalSize,
+                wallLayout);
+            CreatePitWallEditor(wall, stage);
 
             originalViewerMask = viewerCamera.cullingMask;
             viewerMaskCaptured = true;
@@ -501,6 +519,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void Clear()
         {
+            ClearPitWallEditor();
+            ClearPitWallOverlay();
             plannedRoomOccluderMaterials.Clear();
             ResetRoomOcclusionAssistance();
             DisablePortalCamera(entryCamera);
@@ -1750,7 +1770,8 @@ namespace F1XR.RestAPI.Replay.Room
             Pose pose,
             Vector2 size,
             out Camera portalCamera,
-            bool highQuality = false)
+            bool highQuality = false,
+            bool rectangular = false)
         {
             ResolvePortalTextureSize(
                 size,
@@ -1792,10 +1813,15 @@ namespace F1XR.RestAPI.Replay.Room
                     pose.position -
                     viewerCamera.transform.position,
                     pose.forward) < 0f;
-            filter.sharedMesh = CreatePortalMesh(
-                name,
-                size,
-                mirrorHorizontally);
+            filter.sharedMesh = rectangular
+                ? CreateRectangularPitPortalMesh(
+                    name,
+                    size,
+                    mirrorHorizontally)
+                : CreatePortalMesh(
+                    name,
+                    size,
+                    mirrorHorizontally);
             MeshRenderer renderer =
                 surface.AddComponent<MeshRenderer>();
             renderer.sharedMaterial =
@@ -1806,7 +1832,8 @@ namespace F1XR.RestAPI.Replay.Room
             CreatePersistentPortalFrame(
                 name,
                 size,
-                surface.transform);
+                surface.transform,
+                rectangular);
 
             GameObject cameraObject =
                 new GameObject($"{name}Camera");
@@ -1849,7 +1876,8 @@ namespace F1XR.RestAPI.Replay.Room
         private void CreatePersistentPortalFrame(
             string name,
             Vector2 size,
-            Transform parent)
+            Transform parent,
+            bool rectangular = false)
         {
             float referenceSize = Mathf.Min(size.x, size.y);
             float glowWidth = Mathf.Clamp(
@@ -1875,20 +1903,30 @@ namespace F1XR.RestAPI.Replay.Room
 
             CreatePersistentPortalFrameRenderer(
                 $"{name}FrameGlow",
-                CreatePortalFrameMesh(
-                    size,
-                    glowWidth,
-                    $"Runtime_{name}FrameGlow"),
+                rectangular
+                    ? CreateRectangularPitPortalFrameMesh(
+                        size,
+                        glowWidth,
+                        $"Runtime_{name}FrameGlow")
+                    : CreatePortalFrameMesh(
+                        size,
+                        glowWidth,
+                        $"Runtime_{name}FrameGlow"),
                 glowMaterial,
                 parent,
                 -0.012f,
                 20);
             CreatePersistentPortalFrameRenderer(
                 $"{name}FrameCore",
-                CreatePortalFrameMesh(
-                    size,
-                    coreWidth,
-                    $"Runtime_{name}FrameCore"),
+                rectangular
+                    ? CreateRectangularPitPortalFrameMesh(
+                        size,
+                        coreWidth,
+                        $"Runtime_{name}FrameCore")
+                    : CreatePortalFrameMesh(
+                        size,
+                        coreWidth,
+                        $"Runtime_{name}FrameCore"),
                 coreMaterial,
                 parent,
                 -0.016f,
@@ -2264,7 +2302,9 @@ namespace F1XR.RestAPI.Replay.Room
                     wallSize.x * PitPortalWallFill,
                     MaximumPitPortalWidth),
                 Mathf.Min(
-                    wallSize.y * PitPortalWallFill,
+                    Mathf.Max(
+                        0.1f,
+                        wallSize.y - PortalBottomOffset * 2f),
                     MaximumPitPortalHeight));
         }
 

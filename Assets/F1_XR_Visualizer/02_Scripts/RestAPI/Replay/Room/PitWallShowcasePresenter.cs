@@ -13,19 +13,64 @@ namespace F1XR.RestAPI.Replay.Room
         private const float VehicleGroundClearanceMeters = 0.04f;
         private const float FallbackVehicleOriginHeightMeters = 0.28f;
         private const float MaximumVehicleOriginHeightRatio = 0.22f;
+        private const float MaximumFloorSnapMeters = 0.2f;
 
         private readonly List<ShowcaseWallFrame> walls = new();
         private ReplayPlayer replayPlayer;
         private ShowcaseLayout showcaseLayout;
+        private WallDiscovery wallDiscovery;
         private ShowcasePortalPresentation portalPresentation;
         private EventPopoutReplay eventReplay;
         private Transform boundStage;
         private int boundSourceRevision = -1;
         private int boundLayoutRevision = -1;
         private int wallSelectionOffset;
+        private Color boundTeamColor = Color.red;
+        private PitWallOverlayLabels boundLabels;
+        private int suitabilityLayoutRevision = int.MinValue;
+        private int suitabilityCandidateRevision = int.MinValue;
+        private float nextSuitabilityCheckTime;
+        private bool hasSuitablePitWall;
         private string lastFailure = "";
 
         public string LastFailure => lastFailure;
+        public bool IsPortalEditMode =>
+            portalPresentation != null &&
+            portalPresentation.IsPitWallEditMode;
+        public bool CanUndoPortalEdit =>
+            portalPresentation != null &&
+            portalPresentation.CanUndoPitWallEdit;
+        public bool IsPortalManipulating =>
+            portalPresentation != null &&
+            portalPresentation.IsPitWallManipulating;
+        public bool CanEditPortal =>
+            portalPresentation != null &&
+            portalPresentation.IsPitStopConfigured;
+        public bool HasSuitablePitWall
+        {
+            get
+            {
+                ResolveReferences();
+                if (showcaseLayout == null)
+                    return false;
+
+                int revision = showcaseLayout.LayoutRevision;
+                int candidateRevision = wallDiscovery != null
+                    ? wallDiscovery.CandidateRevision
+                    : -1;
+                if (suitabilityLayoutRevision != revision ||
+                    suitabilityCandidateRevision != candidateRevision ||
+                    Time.unscaledTime >= nextSuitabilityCheckTime)
+                {
+                    suitabilityLayoutRevision = revision;
+                    suitabilityCandidateRevision = candidateRevision;
+                    nextSuitabilityCheckTime = Time.unscaledTime + 0.5f;
+                    hasSuitablePitWall =
+                        EvaluateSuitablePitWall();
+                }
+                return hasSuitablePitWall;
+            }
+        }
 
         public void Configure(
             ReplayPlayer player,
@@ -35,12 +80,34 @@ namespace F1XR.RestAPI.Replay.Room
             replayPlayer = player;
             showcaseLayout = layout;
             portalPresentation = portal;
+            suitabilityLayoutRevision = int.MinValue;
+            suitabilityCandidateRevision = int.MinValue;
+            nextSuitabilityCheckTime = 0f;
         }
 
         public void SelectNextPitWall()
         {
             wallSelectionOffset++;
             ReleaseBinding();
+        }
+
+        public bool TogglePortalEditMode()
+        {
+            ResolveReferences();
+            return portalPresentation != null &&
+                   portalPresentation.TogglePitWallEditMode();
+        }
+
+        public bool UndoPortalEdit()
+        {
+            return portalPresentation != null &&
+                   portalPresentation.UndoPitWallEdit();
+        }
+
+        public bool ResetPortalEdit()
+        {
+            return portalPresentation != null &&
+                   portalPresentation.ResetPitWallEdit();
         }
 
         private void LateUpdate()
@@ -74,6 +141,7 @@ namespace F1XR.RestAPI.Replay.Room
                 portalPresentation != null &&
                 portalPresentation.IsPitStopConfigured)
             {
+                UpdateLivingPitWall();
                 return;
             }
 
@@ -89,7 +157,7 @@ namespace F1XR.RestAPI.Replay.Room
                 showcaseLayout == null ||
                 !eventReplay.TryGetPitStopVehicle(
                     out Transform vehicle,
-                    out _) ||
+                    out int driverNumber) ||
                 !eventReplay.TryGetPitStopFocusLocalPosition(
                     out Vector3 localFocus) ||
                 !eventReplay.TryGetPitStopVehicleLength(
@@ -98,6 +166,8 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 lastFailure =
                     "A pit vehicle, focus point, or suitable wall is unavailable.";
+                eventReplay?.TryRestoreTableRelativePose();
+                eventReplay?.RestoreTableTrackRendering();
                 stage.gameObject.SetActive(false);
                 return false;
             }
@@ -134,6 +204,8 @@ namespace F1XR.RestAPI.Replay.Room
                 laneDirection.sqrMagnitude <= 0.5f)
             {
                 lastFailure = "The selected pit wall frame is unstable.";
+                eventReplay.TryRestoreTableRelativePose();
+                eventReplay.RestoreTableTrackRendering();
                 stage.gameObject.SetActive(false);
                 return false;
             }
@@ -161,6 +233,8 @@ namespace F1XR.RestAPI.Replay.Room
                     1.2f))
             {
                 lastFailure = "The pit stage pose could not be applied.";
+                eventReplay.TryRestoreTableRelativePose();
+                eventReplay.RestoreTableTrackRendering();
                 stage.gameObject.SetActive(false);
                 return false;
             }
@@ -173,6 +247,7 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 lastFailure = failure;
                 eventReplay.TryRestoreTableRelativePose();
+                eventReplay.RestoreTableTrackRendering();
                 stage.gameObject.SetActive(false);
                 return false;
             }
@@ -183,8 +258,58 @@ namespace F1XR.RestAPI.Replay.Room
             boundSourceRevision =
                 eventReplay.SourceGeometryRevision;
             boundLayoutRevision = layoutRevision;
+            ResolvePitWallIdentity(driverNumber);
             lastFailure = "";
+            UpdateLivingPitWall();
             return true;
+        }
+
+        private void ResolvePitWallIdentity(int driverNumber)
+        {
+            var info = replayPlayer != null
+                ? replayPlayer.GetDriverInfo(driverNumber)
+                : null;
+            boundTeamColor = replayPlayer != null
+                ? replayPlayer.GetDriverColor(driverNumber)
+                : Color.red;
+            string team = info != null &&
+                          !string.IsNullOrWhiteSpace(info.teamName)
+                ? info.teamName
+                : "PIT TEAM";
+            string driver = info != null &&
+                            !string.IsNullOrWhiteSpace(info.nameAcronym)
+                ? info.nameAcronym
+                : replayPlayer != null
+                    ? replayPlayer.GetDriverLabel(driverNumber)
+                    : driverNumber.ToString();
+            int lap = eventReplay != null &&
+                      eventReplay.CurrentEvent != null
+                ? eventReplay.CurrentEvent.lapNumber
+                : 0;
+            boundLabels = new PitWallOverlayLabels(
+                team,
+                driver,
+                lap,
+                eventReplay != null &&
+                eventReplay.PitShowcaseAssets != null
+                    ? eventReplay.PitShowcaseAssets.DisplayFont
+                    : null);
+        }
+
+        private void UpdateLivingPitWall()
+        {
+            if (portalPresentation == null ||
+                eventReplay == null ||
+                !eventReplay.TryGetPitStopPresentationState(
+                    out PitStopPresentationState state))
+            {
+                return;
+            }
+
+            portalPresentation.ApplyPitWallOverlay(
+                state,
+                boundTeamColor,
+                boundLabels);
         }
 
         private static bool TryAlignWallToFloor(
@@ -199,14 +324,28 @@ namespace F1XR.RestAPI.Replay.Room
                 wall.VerticalAxis * wall.MinVertical;
 
             Vector3 wallUp = wall.VerticalAxis.normalized;
+            if (!IsFinite(wallUp) ||
+                !IsFinite(floorPlane.normal))
+            {
+                return false;
+            }
+
             float alignment = Vector3.Dot(
                 floorPlane.normal,
                 wallUp);
-            if (Mathf.Abs(alignment) <= 0.5f)
+            if (!float.IsFinite(alignment) ||
+                Mathf.Abs(alignment) <= 0.5f)
                 return false;
 
             float distance = floorPlane.GetDistanceToPoint(floorAtWall);
-            floorAtWall -= wallUp * (distance / alignment);
+            float verticalCorrection = distance / alignment;
+            if (!float.IsFinite(verticalCorrection) ||
+                Mathf.Abs(verticalCorrection) > MaximumFloorSnapMeters)
+            {
+                return false;
+            }
+
+            floorAtWall -= wallUp * verticalCorrection;
 
             float floorVertical = Vector3.Dot(
                 floorAtWall - wall.Center,
@@ -229,6 +368,11 @@ namespace F1XR.RestAPI.Replay.Room
                 wall.MaxVertical);
             return true;
         }
+
+        private static bool IsFinite(Vector3 value) =>
+            float.IsFinite(value.x) &&
+            float.IsFinite(value.y) &&
+            float.IsFinite(value.z);
 
         private static float ResolveVehicleOriginHeight(
             Transform stage,
@@ -267,32 +411,25 @@ namespace F1XR.RestAPI.Replay.Room
             selected = default;
             walls.Clear();
             showcaseLayout.CopyAvailableWallFrames(walls);
-            if (walls.Count == 0 &&
-                showcaseLayout.TryGetEntryPose(out Pose pose) &&
-                showcaseLayout.TryGetEntryWallGeometry(
-                    out Vector2 size,
-                    out Vector3 bottom,
-                    out Vector3 vertical))
+            for (int i = walls.Count - 1; i >= 0; i--)
             {
-                Vector3 inward =
-                    showcaseLayout.EntryTravelDirection.normalized;
-                Vector3 horizontal = Vector3.Cross(
-                    vertical,
-                    inward).normalized;
-                walls.Add(new ShowcaseWallFrame(
-                    default(TrackableId),
-                    bottom + vertical * size.y * 0.5f,
-                    inward,
-                    horizontal,
-                    vertical,
-                    size.x,
-                    size.y,
-                    -size.x * 0.5f,
-                    size.x * 0.5f,
-                    -size.y * 0.5f,
-                    size.y * 0.5f));
+                ShowcaseWallFrame wall = walls[i];
+                if (PitWallLayoutPolicy.Resolve(
+                            wall.Width,
+                            wall.Height) ==
+                    PitWallOverlayLayout.None)
+                {
+                    walls.RemoveAt(i);
+                }
             }
-
+            if (walls.Count == 0 &&
+                TryCreateEntryWallFrame(out ShowcaseWallFrame entryWall) &&
+                PitWallLayoutPolicy.Resolve(
+                    entryWall.Width,
+                    entryWall.Height) != PitWallOverlayLayout.None)
+            {
+                walls.Add(entryWall);
+            }
             if (walls.Count == 0)
                 return false;
 
@@ -303,6 +440,71 @@ namespace F1XR.RestAPI.Replay.Room
             int index = Mathf.Abs(wallSelectionOffset) % walls.Count;
             selected = walls[index];
             return selected.IsValid;
+        }
+
+        private bool TryCreateEntryWallFrame(
+            out ShowcaseWallFrame wall)
+        {
+            wall = default;
+            if (showcaseLayout == null ||
+                !showcaseLayout.TryGetEntryPose(out _) ||
+                !showcaseLayout.TryGetEntryWallGeometry(
+                    out Vector2 size,
+                    out Vector3 bottom,
+                    out Vector3 vertical))
+            {
+                return false;
+            }
+
+            vertical.Normalize();
+            Vector3 inward =
+                showcaseLayout.EntryTravelDirection.normalized;
+            Vector3 horizontal = Vector3.Cross(
+                vertical,
+                inward).normalized;
+            if (vertical.sqrMagnitude <= 0.5f ||
+                inward.sqrMagnitude <= 0.5f ||
+                horizontal.sqrMagnitude <= 0.5f)
+            {
+                return false;
+            }
+
+            wall = new ShowcaseWallFrame(
+                default(TrackableId),
+                bottom + vertical * size.y * 0.5f,
+                inward,
+                horizontal,
+                vertical,
+                size.x,
+                size.y,
+                -size.x * 0.5f,
+                size.x * 0.5f,
+                -size.y * 0.5f,
+                size.y * 0.5f);
+            return wall.IsValid;
+        }
+
+        private bool EvaluateSuitablePitWall()
+        {
+            walls.Clear();
+            showcaseLayout.CopyAvailableWallFrames(walls);
+            for (int i = 0; i < walls.Count; i++)
+            {
+                if (PitWallLayoutPolicy.Resolve(
+                            walls[i].Width,
+                            walls[i].Height) !=
+                    PitWallOverlayLayout.None)
+                {
+                    return true;
+                }
+            }
+
+            return TryCreateEntryWallFrame(
+                       out ShowcaseWallFrame entryWall) &&
+                   PitWallLayoutPolicy.Resolve(
+                       entryWall.Width,
+                       entryWall.Height) !=
+                   PitWallOverlayLayout.None;
         }
 
         private static float ScoreWall(
@@ -341,6 +543,8 @@ namespace F1XR.RestAPI.Replay.Room
             boundStage = null;
             boundSourceRevision = -1;
             boundLayoutRevision = -1;
+            boundTeamColor = Color.red;
+            boundLabels = default;
         }
 
         private void ResolveReferences()
@@ -352,6 +556,8 @@ namespace F1XR.RestAPI.Replay.Room
             }
             if (showcaseLayout == null)
                 showcaseLayout = GetComponent<ShowcaseLayout>();
+            if (wallDiscovery == null)
+                wallDiscovery = GetComponent<WallDiscovery>();
             if (portalPresentation == null)
             {
                 portalPresentation =

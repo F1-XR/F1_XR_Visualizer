@@ -385,6 +385,52 @@ namespace F1XR.RestAPI.Replay
                 : null;
         }
 
+        internal bool TryGetReadyTrackGeometrySource(
+            out Transform sourceRoot,
+            out int revision)
+        {
+            sourceRoot = null;
+            revision = -1;
+
+            // Runtime source alignment can still move the calibrated replay
+            // path after the placed track is visible. Do not let Collision
+            // bake a track slice against that intermediate coordinate frame.
+            if (!trackAlignmentReady)
+                return false;
+
+            if (buildPlacer != null && buildPlacer.HasPlacement)
+            {
+                Transform placementRoot =
+                    buildPlacer.PlacementTransform;
+                Transform carsRoot = buildPlacer.CarsTransform;
+                if (placementRoot == null ||
+                    !placementRoot.gameObject.activeInHierarchy ||
+                    carsRoot == null ||
+                    !carsRoot.gameObject.activeInHierarchy)
+                {
+                    return false;
+                }
+
+                sourceRoot = placementRoot;
+                revision = placementRoot.GetHashCode();
+                return true;
+            }
+
+            if (placement == null || !placement.HasPlacement)
+                return false;
+
+            Transform legacyRoot = placement.PlacementTransform;
+            if (legacyRoot == null ||
+                !legacyRoot.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            sourceRoot = legacyRoot;
+            revision = legacyRoot.GetHashCode();
+            return true;
+        }
+
         internal float GetTrackMapScaleRatio()
         {
             Transform track = GetTrackPlacementTransform();
