@@ -19,6 +19,7 @@ namespace F1XR.AIBridge.Net
         WebSocket _ws;
         bool _destroyed;   // Play 정지·오브젝트 파괴 후 재연결 예약을 막기 위한 플래그
         bool _connecting;  // 동시 Connect 재진입 방지(연결 중복 생성 차단)
+        bool _reconnectScheduled;
 
         async void Start() { await Connect(); }
 
@@ -28,6 +29,7 @@ namespace F1XR.AIBridge.Net
             if (_connecting) return;          // 이미 연결 시도 중이면 중복 생성 안 함
             _connecting = true;
             CancelInvoke(nameof(Reconnect));  // 예약된 재연결 정리(중복 예약 제거)
+            _reconnectScheduled = false;
 
             // 이전 소켓이 남아 있으면 먼저 닫는다(연결·핸들러 누적 방지).
             // _ws를 먼저 null로 만들어, 옛 소켓의 OnClose가 재연결을 예약하지 못하게 한다(_ws==old 아님).
@@ -46,8 +48,7 @@ namespace F1XR.AIBridge.Net
                 // (교체된 옛 소켓은 _ws!=ws 라 여기서 재연결을 예약하지 못한다 → 연결 쌓임 방지)
                 if (!_destroyed && isActiveAndEnabled && config.autoReconnect && _ws == ws)
                 {
-                    CancelInvoke(nameof(Reconnect));
-                    Invoke(nameof(Reconnect), config.reconnectDelaySec);
+                    ScheduleReconnect();
                 }
             };
             _ws = ws;
@@ -57,6 +58,7 @@ namespace F1XR.AIBridge.Net
 
         async void Reconnect()
         {
+            _reconnectScheduled = false;
             if (!_destroyed) await Connect();
         }
 
@@ -71,6 +73,19 @@ namespace F1XR.AIBridge.Net
 #if !UNITY_WEBGL || UNITY_EDITOR
             _ws?.DispatchMessageQueue();   // NativeWebSocket: 수신 콜백을 메인스레드에서 처리
 #endif
+            if (!_destroyed && isActiveAndEnabled && config != null && config.autoReconnect && !_connecting)
+            {
+                if (_ws == null || _ws.State == WebSocketState.Closed)
+                    ScheduleReconnect();
+            }
+        }
+
+        void ScheduleReconnect()
+        {
+            if (_reconnectScheduled) return;
+            _reconnectScheduled = true;
+            CancelInvoke(nameof(Reconnect));
+            Invoke(nameof(Reconnect), Mathf.Max(0.2f, config.reconnectDelaySec));
         }
 
         async void OnDestroy()

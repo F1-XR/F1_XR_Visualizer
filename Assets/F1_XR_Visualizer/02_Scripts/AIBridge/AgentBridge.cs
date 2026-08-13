@@ -28,8 +28,8 @@ namespace F1XR.AIBridge
         [Header("예측형 능동 안내(서버 watcher)")]
         [Tooltip("켜면 리플레이 상태(현재 시각)를 주기 전송 → 서버가 '곧 추월' 예측 안내. " +
                  "서버 predict_watcher_enabled 와 함께 켠다. 켤 때 Unity PointOutWatcher는 끈다(안내 겹침 방지).")]
-        public bool sendReplayState = false;
-        public float replayStateInterval = 0.7f;   // heartbeat 주기(초)
+        public bool sendReplayState = true;
+        public float replayStateInterval = 0.25f;  // watcher가 2배속에서도 짧은 추월 직전 창을 놓치지 않게 촘촘히 전송
         float _hbTimer;
 
         void OnEnable() { if (client != null) client.OnMessage += Route; }
@@ -51,7 +51,8 @@ namespace F1XR.AIBridge
                 type = "replay_state",
                 session_key = ResolveSessionKey(0),
                 at_time = CurrentAtTime(),
-                is_playing = true,
+                is_playing = p.IsPlaying,
+                playback_speed = p.playbackSpeed,
                 selected_driver = p.SelectedDriverNumber,
             };
             try { client.Send(JsonConvert.SerializeObject(hb, SendSettings)); }
@@ -74,7 +75,7 @@ namespace F1XR.AIBridge
                     ttsPlayer?.Play((string)o["data"]);          // 답변: 최신 우선(이전 끊음)
                     break;
                 case "tts_announce":
-                    ttsPlayer?.Play((string)o["data"], false);   // 능동 안내: 재생 중이면 건너뜀
+                    ttsPlayer?.Play((string)o["data"], true);    // Demo watcher 안내는 반드시 들리게 최신 음성 우선
                     break;
                 case "command":
                     dispatcher?.Dispatch(json);
@@ -143,6 +144,10 @@ namespace F1XR.AIBridge
         {
             ReplayPlayer p = Player;
             int sel = (p != null) ? p.SelectedDriverNumber : 0;
+            // [임시 진단] AgentBridge가 어떤 ReplayPlayer의 어떤 선택값을 읽는지 확인용.
+            // 링은 보이는데 sel=0이면 → 다른 ReplayPlayer를 참조 중(인스턴스ID로 확인).
+            Debug.Log($"[AIBridge][diag] ReplayPlayer={(p != null ? p.name + "#" + p.GetInstanceID() : "NULL")} " +
+                      $"SelectedDriverNumber={sel}");
             if (sel <= 0) return null;
             return new InteractionContext
             {

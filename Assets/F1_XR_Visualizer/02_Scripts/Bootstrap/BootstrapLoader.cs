@@ -125,7 +125,7 @@ namespace F1XR.Bootstrap
         static void BindDroneViewCommand(VRDroneCoordinator coordinator)
         {
 #if AIBRIDGE_READY
-            var handler = Object.FindFirstObjectByType<
+            var handler = UnityEngine.Object.FindFirstObjectByType<
                 F1XR.AIBridge.Commands.DroneViewHandler>(FindObjectsInactive.Include);
             if (handler == null)
                 return;

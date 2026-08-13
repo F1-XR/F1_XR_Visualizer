@@ -230,9 +230,14 @@ namespace F1XR.AIBridge
             // Enter를 누르면 전송하고, 다음 질문을 위해 입력창을 비우고 다시 포커스한다.
             input.onSubmit.AddListener(_ =>
             {
+                // 빈 입력 제출은 무시 — 재포커스가 같은 Enter로 onSubmit을 한 번 더
+                // 발동시켜 defaultQuestion이 중복 전송되던 버그 방지.
+                if (string.IsNullOrWhiteSpace(input.text))
+                    return;
                 SendCurrent();
                 input.text = "";
-                FocusInput();
+                // 포커스는 다음 프레임에 — 같은 Enter 입력으로 재제출되는 것을 막는다.
+                StartCoroutine(FocusInputNextFrame());
             });
             return input;
         }

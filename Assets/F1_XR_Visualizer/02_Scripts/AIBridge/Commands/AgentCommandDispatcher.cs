@@ -52,7 +52,8 @@ namespace F1XR.AIBridge.Commands
                     // 능동 안내(예측): 그 차에 접근 리본을 잠깐 표시. probability 없으면 0.
                     predictOvertake?.Handle(
                         (int)args["driver_number"],
-                        args["probability"] != null ? (float)args["probability"] : 0f);
+                        args["probability"] != null ? (float)args["probability"] : 0f,
+                        args["risk_label"] != null ? (string)args["risk_label"] : null);
                     break;
                 case "droneView":
                     // 드론(공중) 시점 켜기/끄기. on 없으면 켜기로 간주.

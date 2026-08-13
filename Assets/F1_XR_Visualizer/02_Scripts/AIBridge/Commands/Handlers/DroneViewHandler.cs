@@ -15,6 +15,7 @@
 #if AIBRIDGE_READY
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.SceneManagement;
 
 namespace F1XR.AIBridge.Commands
 {
@@ -30,9 +31,45 @@ namespace F1XR.AIBridge.Commands
         public void Handle(bool on)
         {
             if (on)
+            {
                 onEnterDrone?.Invoke();
+                TryDesktopFallback(true);
+            }
             else
+            {
                 onExitDrone?.Invoke();
+                TryDesktopFallback(false);
+            }
+        }
+
+        void TryDesktopFallback(bool on)
+        {
+            Scene scene = gameObject.scene;
+            if (!scene.IsValid() || scene.name != "AICommandTest")
+                return;
+
+            bool hasSceneWiredEvent = on
+                ? onEnterDrone != null && onEnterDrone.GetPersistentEventCount() > 0
+                : onExitDrone != null && onExitDrone.GetPersistentEventCount() > 0;
+            if (hasSceneWiredEvent)
+                return;
+
+            DesktopDroneViewFallback fallback =
+                FindObjectOfType<DesktopDroneViewFallback>(true);
+            if (fallback == null)
+            {
+                Camera camera = Camera.main;
+                if (camera == null)
+                {
+                    Debug.LogWarning(
+                        "[AIBridge] AICommandTest desktop drone fallback skipped: no Main Camera.");
+                    return;
+                }
+
+                fallback = camera.gameObject.AddComponent<DesktopDroneViewFallback>();
+            }
+
+            fallback.SetDroneView(on);
         }
     }
 }

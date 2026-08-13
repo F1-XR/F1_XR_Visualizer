@@ -26,7 +26,7 @@ namespace F1XR.AIBridge.Commands
         [Header("확률 라벨")]
         public bool showLabel = true;
         [Tooltip("{0}=확률%. 한글 쓰면 폰트 필요 → 기본은 숫자만")]
-        public string labelFormat = "{0}%";
+        public string labelFormat = "Overtake Risk High";
         [Tooltip("차 위로 띄우는 높이(차 스케일 배수). 트랙이 작아도 비율 유지 — 너무 높으면 낮추기")]
         public float labelHeight = 1.5f;
         [Tooltip("라벨 글자 크기(차 스케일에 비례해 자동 축소). 여전히 크면 더 낮추기")]
@@ -42,6 +42,7 @@ namespace F1XR.AIBridge.Commands
         int targetDriver;
         float baseIntensity;
         float lastProbability;
+        string riskLabel;
         float activeUntil = -1f;
         ReplayCarView targetView;
 
@@ -55,7 +56,7 @@ namespace F1XR.AIBridge.Commands
             _ribbon.overtakerGlowColor = predictionGlowColor;  // 색만 노랑으로
         }
 
-        public void Handle(int driverNumber, float probability)
+        public void Handle(int driverNumber, float probability, string label = null)
         {
             if (driverNumber <= 0) return;
             if (targetView != null && targetDriver != driverNumber)
@@ -63,6 +64,7 @@ namespace F1XR.AIBridge.Commands
 
             targetDriver = driverNumber;
             lastProbability = Mathf.Clamp01(probability);
+            riskLabel = string.IsNullOrWhiteSpace(label) ? labelFormat : label;
             baseIntensity = Mathf.Max(minIntensity, lastProbability * intensityScale);
             activeUntil = Time.time + Mathf.Max(0.5f, holdSeconds);
             targetView = null;
@@ -76,6 +78,7 @@ namespace F1XR.AIBridge.Commands
             if (_label != null) _label.gameObject.SetActive(false);
             targetView = null;
             targetDriver = 0;
+            riskLabel = null;
             activeUntil = -1f;
         }
 
@@ -129,7 +132,9 @@ namespace F1XR.AIBridge.Commands
             _label.gameObject.SetActive(true);
             _label.color = predictionGlowColor;
             _label.fontSize = labelFontSize;
-            _label.text = string.Format(labelFormat, Mathf.RoundToInt(lastProbability * 100f));
+            _label.text = string.IsNullOrWhiteSpace(riskLabel)
+                ? "Overtake Risk High"
+                : riskLabel;
 
             // 라벨을 대상 차의 월드 스케일에 맞춘다 → 테이블탑/실물 어느 배율에서도 비율 일정.
             // (전엔 절대 크기라 작은 트랙에서 글자가 거대해지고 너무 높이(천장) 떴다.)

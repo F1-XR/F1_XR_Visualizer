@@ -44,14 +44,17 @@ namespace F1XR.RestAPI.UI
             ReplayCarView car = FindCar(mouse.position.ReadValue());
             SetHoveredCar(car);
 
-            if (!mouse.leftButton.wasPressedThisFrame ||
-                EventSystem.current?.IsPointerOverGameObject() == true)
-            {
+            if (!mouse.leftButton.wasPressedThisFrame)
                 return;
-            }
 
-            player ??= FindAnyObjectByType<ReplayPlayer>();
-            player?.SetSelectedDriver(car != null ? car.driverNumber : 0);
+            // 3D 레이가 차를 직접 맞췄을 때만 선택한다. UI 위 여부와 무관(XR용 EventSystem에서
+            // IsPointerOverGameObject가 어긋나 차 클릭이 막히던 문제 수정 — 호버만 되고 선택 0이던 증상).
+            // 빈 공간/UI 클릭으로는 선택을 풀지 않는다(카메라 이동 중 실수 해제 방지). 해제는 Esc로만.
+            if (car != null)
+            {
+                player ??= FindAnyObjectByType<ReplayPlayer>();
+                player?.SetSelectedDriver(car.driverNumber);
+            }
         }
 
         void OnDisable()
