@@ -229,6 +229,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5647931907121370637, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5647931907121370637, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_ClearFlags
       value: 2
       objectReference: {fileID: 0}
@@ -710,10 +714,7 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects:
     - {fileID: 1541015895724193519, guid: 8cdb478d3ec24df8aa07724597b9d5fa, type: 3}
-    m_AddedGameObjects:
-    - targetCorrespondingSourceObject: {fileID: 1847496310074362813, guid: 8cdb478d3ec24df8aa07724597b9d5fa, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1879897961}
+    m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 1847496310074362810, guid: 8cdb478d3ec24df8aa07724597b9d5fa, type: 3}
       insertIndex: -1
@@ -741,7 +742,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 58af8541b68ab744bbc99a629d72c7e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.WheelGunFireAnimator
-  button: {fileID: 1879897960}
+  button: {fileID: 0}
   buttonChildName: WheelGun_Trigger
   useRightHand: 1
   pressDirection: {x: 0, y: 0, z: -1}
@@ -808,21 +809,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9bedec544831f3248977e939d8f03712, type: 3}
---- !u!115 &388652186
-MonoScript:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: 
-  serializedVersion: 7
-  m_DefaultReferences: {}
-  m_Icon: {fileID: 0}
-  m_Type: 0
-  m_ExecutionOrder: 0
-  m_ClassName: OccludedInputVisualMarker
-  m_Namespace: F1XR.Interaction.Input
-  m_AssemblyName: Assembly-CSharp
 --- !u!21 &392141981
 Material:
   serializedVersion: 8
@@ -1238,7 +1224,7 @@ MonoBehaviour:
   textureSize: 1024
   updateEveryFrames: 1
   clipPlaneOffset: 0.04
-  useObliqueClipPlane: 1
+  useObliqueClipPlane: 0
   reflectionStrength: 0.562
   textureProperty: _PlanarReflectionTex
   logDiagnostics: 0
@@ -2041,11 +2027,6 @@ Material:
     - _Color: {r: 0.19999996, g: 0.17999998, b: 0.04, a: 0.35}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
---- !u!1 &899376451 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-  m_PrefabInstance: {fileID: 1879897959}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &907641438
 GameObject:
   m_ObjectHideFlags: 0
@@ -8212,11 +8193,6 @@ LookAtConstraint:
   m_Sources:
   - sourceTransform: {fileID: 59570558}
     weight: 1
---- !u!4 &1572662946 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 1847496310074362813, guid: 8cdb478d3ec24df8aa07724597b9d5fa, type: 3}
-  m_PrefabInstance: {fileID: 360308075}
-  m_PrefabAsset: {fileID: 0}
 --- !u!134 &1580729123
 PhysicsMaterial:
   m_ObjectHideFlags: 0
@@ -10537,120 +10513,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 887942854289471539, guid: ba777380f8679924989895475d221c37, type: 3}
   m_PrefabInstance: {fileID: 696109020}
   m_PrefabAsset: {fileID: 0}
---- !u!1001 &1879897959
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 1572662946}
-    m_Modifications:
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 0.2
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 0.2
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 0.2
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: -0.092
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -3526840493304358014, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: 'm_Materials.Array.data[0]'
-      value: 
-      objectReference: {fileID: 2100000, guid: be5da497a3636a544b65b1d28cfa3b87, type: 2}
-    - target: {fileID: -3245240686744552019, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -3245240686744552019, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -3245240686744552019, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 558668666736853678, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: 'm_Materials.Array.data[0]'
-      value: 
-      objectReference: {fileID: 2100000, guid: be5da497a3636a544b65b1d28cfa3b87, type: 2}
-    - target: {fileID: 919132149155446097, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      propertyPath: m_Name
-      value: WheelGun
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1879897963}
-  m_SourcePrefab: {fileID: 100100000, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
---- !u!4 &1879897960 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: -3245240686744552019, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-  m_PrefabInstance: {fileID: 1879897959}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &1879897961 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 0819ae923d6f686479459fd28bb66c6c, type: 3}
-  m_PrefabInstance: {fileID: 1879897959}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &1879897963
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 899376451}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 388652186}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Interaction.Input.OccludedInputVisualMarker
 --- !u!1 &1888845641
 GameObject:
   m_ObjectHideFlags: 0
@@ -11657,7 +11519,7 @@ AudioSource:
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
-  m_Resource: {fileID: 8300000, guid: f90f3d5b1018b0747856809b739eab74, type: 3}
+  m_Resource: {fileID: 8300000, guid: ee393a5855ad8d348bfcdd9697b74353, type: 3}
   m_PlayOnAwake: 0
   m_Volume: 0
   m_Pitch: 1
@@ -11755,7 +11617,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c36354ae582c4a5996520edbabbaeef5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.SceneBackgroundMusic
-  musicClip: {fileID: 8300000, guid: f90f3d5b1018b0747856809b739eab74, type: 3}
+  musicClip: {fileID: 8300000, guid: ee393a5855ad8d348bfcdd9697b74353, type: 3}
   targetVolume: 0.6
   fadeInDuration: 2
   fadeOutDuration: 1
