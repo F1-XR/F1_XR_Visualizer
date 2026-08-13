@@ -134,16 +134,16 @@ namespace F1XR.RestAPI.Replay
         private readonly List<ForensicOutline> forensicsOutlines = new();
         private readonly List<Renderer> forensicsGhostRenderers = new();
         private readonly List<ForensicStation> forensicsStations = new();
-        private ForensicOutline forensicsVictimContactOutline;
-        private ForensicOutline forensicsOtherContactOutline;
         private readonly List<Vector3> forensicsVictimTailPoints = new(32);
         private readonly List<Vector3> forensicsOtherTailPoints = new(32);
+        private EventTrackSegment forensicsActualTrackSegment;
         private Mesh forensicsTrackMesh;
         private int[][] forensicsTrackTriangles;
         private float forensicsTrackOuterHalfWidth;
         private float forensicsLastTrackProgress = -1f;
         private Color forensicsTrackWarningColor;
         private bool forensicsTrackEnabled;
+        private bool forensicsUsesActualTrack;
         private Vector3 forensicsCorridorForward = Vector3.forward;
         private Vector3 forensicsCorridorRight = Vector3.right;
         private float forensicsCorridorScale = 1f;
@@ -170,7 +170,6 @@ namespace F1XR.RestAPI.Replay
         private bool forensicsTimeLensEnabled;
         private bool forensicsLensActive;
         private bool forensicsManualContactLatched;
-        private bool forensicsContactSnapshotsSeparated;
         private float forensicsPreviousLensNormalized = float.NaN;
         private float forensicsManualContactPulseRemaining;
 
@@ -215,7 +214,10 @@ namespace F1XR.RestAPI.Replay
             float corridorLengthLocal,
             string reportedTime,
             string observedTime,
-            CollisionShowcaseVfxSettings settings)
+            CollisionShowcaseVfxSettings settings,
+            Transform trackSourceRoot,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation)
         {
             ClearTrajectoryForensics();
             if (analysis == null || stage == null || presentationRoot == null)
@@ -286,7 +288,13 @@ namespace F1XR.RestAPI.Replay
             };
             forensicsCurrentTime = forensicsVisibleStartTime;
 
-            CreateForensicsVisuals(settings);
+            CreateForensicsVisuals(
+                settings,
+                victimMappedLocalPath,
+                otherMappedLocalPath,
+                trackSourceRoot,
+                sourceCenter,
+                sourceToLocalRotation);
             forensicsConfigured = true;
             OrientForensicsReadableText();
             ResetTrajectoryForensicsPrepared();
@@ -343,10 +351,6 @@ namespace F1XR.RestAPI.Replay
                 float.NegativeInfinity,
                 false,
                 false);
-            SetForensicsContactOutlines(
-                false,
-                Vector3.zero,
-                Vector3.zero);
             forensicsTimeLensGate?.SetAvailable(false);
             forensicsTimeLensGate?.ResetValue(
                 forensicsDefaultLensNormalized,
@@ -480,10 +484,6 @@ namespace F1XR.RestAPI.Replay
             {
                 ResetVehicleMotion();
                 SetCarsVisible(false);
-                SetForensicsContactOutlines(
-                    false,
-                    Vector3.zero,
-                    Vector3.zero);
                 return;
             }
 
@@ -500,67 +500,17 @@ namespace F1XR.RestAPI.Replay
             {
                 ResetVehicleMotion();
                 SetCarsVisible(false);
-                SetForensicsContactOutlines(
-                    false,
-                    Vector3.zero,
-                    Vector3.zero);
                 return;
             }
 
-            Vector3 separation = otherPoint - victimPoint;
-            separation.y = 0f;
-            float distance = separation.magnitude;
-            Vector3 separationDirection = distance > 0.0001f
-                ? separation / distance
-                : forensicsCorridorRight;
-            bool contactFrame = Mathf.Abs(
-                forensicsCurrentTime -
-                forensicsAnalysis.PresentationTime) <= 0.03f;
-            float requiredCorrection = contactFrame
-                ? Mathf.Max(
-                    0f,
-                    carWidth * 0.85f - distance)
-                : 0f;
-            float maximumCorrection = carWidth * 0.6f;
-            float appliedCorrection = Mathf.Min(
-                requiredCorrection,
-                maximumCorrection);
-            Vector3 victimCorrection =
-                -separationDirection * appliedCorrection * 0.5f;
-            Vector3 otherCorrection =
-                separationDirection * appliedCorrection * 0.5f;
-            bool useContactOutlines = contactFrame &&
-                requiredCorrection > maximumCorrection + 0.0001f;
-            if (useContactOutlines)
-            {
-                Vector3 victimOutlineCorrection =
-                    -separationDirection * requiredCorrection * 0.5f;
-                Vector3 otherOutlineCorrection =
-                    separationDirection * requiredCorrection * 0.5f;
-                ResetVehicleMotion();
-                SetCarsVisible(false);
-                SetForensicsContactOutlines(
-                    true,
-                    victimOutlineCorrection,
-                    otherOutlineCorrection);
-                UpdateForensicsContactAnnotations(
-                    victimPoint + victimOutlineCorrection,
-                    otherPoint + otherOutlineCorrection);
-                return;
-            }
-
-            SetForensicsContactOutlines(
-                false,
-                Vector3.zero,
-                Vector3.zero);
             SetCarsVisible(true);
             ApplyForensicCarPose(
                 victim,
-                victimPoint + victimCorrection,
+                victimPoint,
                 victimTangent);
             ApplyForensicCarPose(
                 other,
-                otherPoint + otherCorrection,
+                otherPoint,
                 otherTangent);
             UpdateDriverAnnotations();
         }
@@ -610,6 +560,8 @@ namespace F1XR.RestAPI.Replay
 
         public void ClearTrajectoryForensics()
         {
+            forensicsActualTrackSegment?.Clear();
+            forensicsActualTrackSegment = null;
             if (forensicsTimeLensGate != null)
             {
                 forensicsTimeLensGate.ValueChanged -=
@@ -648,8 +600,6 @@ namespace F1XR.RestAPI.Replay
             forensicsOutlines.Clear();
             forensicsGhostRenderers.Clear();
             forensicsStations.Clear();
-            forensicsVictimContactOutline = default;
-            forensicsOtherContactOutline = default;
             forensicsVictimTailPoints.Clear();
             forensicsOtherTailPoints.Clear();
             forensicsAnalysis = null;
@@ -689,6 +639,7 @@ namespace F1XR.RestAPI.Replay
             forensicsTrackOuterHalfWidth = 0f;
             forensicsLastTrackProgress = -1f;
             forensicsTrackEnabled = false;
+            forensicsUsesActualTrack = false;
             forensicsLegend = null;
             forensicsLensHud = null;
             forensicsDefaultLensNormalized = 1f;
@@ -702,7 +653,6 @@ namespace F1XR.RestAPI.Replay
             forensicsManualContactLatched = false;
             forensicsPreviousLensNormalized = float.NaN;
             forensicsManualContactPulseRemaining = 0f;
-            forensicsContactSnapshotsSeparated = false;
             forensicsStatus = string.Empty;
             revealRunning = false;
             revealComplete = false;
@@ -827,7 +777,12 @@ namespace F1XR.RestAPI.Replay
         }
 
         private void CreateForensicsVisuals(
-            CollisionShowcaseVfxSettings settings)
+            CollisionShowcaseVfxSettings settings,
+            IReadOnlyList<Vector3> victimMappedLocalPath,
+            IReadOnlyList<Vector3> otherMappedLocalPath,
+            Transform trackSourceRoot,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation)
         {
             forensicsRoot = CreateRoot(
                 "CollisionTrajectoryForensics",
@@ -926,10 +881,20 @@ namespace F1XR.RestAPI.Replay
                 settings.enableForensicTrack ||
                 missingSerializedTrackDefaults;
             if (forensicsTrackEnabled)
-                BuildForensicsTrack(settings);
+            {
+                forensicsUsesActualTrack =
+                    TryBuildActualForensicsTrack(
+                        settings,
+                        victimMappedLocalPath,
+                        otherMappedLocalPath,
+                        trackSourceRoot,
+                        sourceCenter,
+                        sourceToLocalRotation);
+                if (!forensicsUsesActualTrack)
+                    BuildForensicsTrack(settings);
+            }
             BuildStableForensicsRails();
             BuildForensicsOutlines();
-            BuildForensicsContactOutlines();
             BuildForensicsStations();
             CreateForensicsLegend();
             UpdateBaseForensicsIncidentPanel();
@@ -966,7 +931,9 @@ namespace F1XR.RestAPI.Replay
                 ? "CLOSEST UNRESOLVED"
                 : $"CLOSEST {forensicsObservedTime}";
             forensicsLegend.text =
-                "TRACK CONTEXT | TIME-COMPRESSED\n" +
+                (forensicsUsesActualTrack
+                    ? "SUZUKA TRACK SLICE | TIME-COMPRESSED\n"
+                    : "TRACK CONTEXT | TIME-COMPRESSED\n") +
                 "<color=#F1FAFF>OBSERVED</color> | " +
                 "<color=#FF922E>CONTACT</color> | " + tier + "\n" +
                 $"REPORTED {forensicsReportedTime} | {closest}";
@@ -1030,6 +997,170 @@ namespace F1XR.RestAPI.Replay
             material.doubleSidedGI = true;
             forensicsMaterials.Add(material);
             return material;
+        }
+
+        private bool TryBuildActualForensicsTrack(
+            CollisionShowcaseVfxSettings settings,
+            IReadOnlyList<Vector3> victimMappedLocalPath,
+            IReadOnlyList<Vector3> otherMappedLocalPath,
+            Transform trackSourceRoot,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation)
+        {
+            int count = Mathf.Min(
+                victimMappedLocalPath?.Count ?? 0,
+                otherMappedLocalPath?.Count ?? 0);
+            count = Mathf.Min(
+                count,
+                Mathf.Min(
+                    forensicsVictimPath?.Points?.Length ?? 0,
+                    forensicsOtherPath?.Points?.Length ?? 0));
+            if (count < 2 ||
+                trackSourceRoot == null ||
+                forensicsTrackRoot == null)
+            {
+                return false;
+            }
+
+            Vector3[] sourceLocalPath = new Vector3[count];
+            Vector3[] targetLocalPath = new Vector3[count];
+            Vector3[] sourceMappedPath = new Vector3[count];
+            Quaternion localToSource =
+                Quaternion.Inverse(sourceToLocalRotation);
+            for (int index = 0; index < count; index++)
+            {
+                sourceLocalPath[index] =
+                    (victimMappedLocalPath[index] +
+                     otherMappedLocalPath[index]) * 0.5f;
+                targetLocalPath[index] =
+                    (forensicsVictimPath.Points[index] +
+                     forensicsOtherPath.Points[index]) * 0.5f;
+                sourceMappedPath[index] = sourceCenter +
+                    localToSource * sourceLocalPath[index];
+            }
+
+            float roadHalfWidth = ResolveForensicsRoadHalfWidth(settings);
+            float kerbWidth = ResolveForensicsKerbWidth(settings);
+            float runoffWidth = ResolveForensicsRunoffWidth(settings);
+            float outerHalfWidth =
+                roadHalfWidth + kerbWidth + runoffWidth;
+            EventTrackSegment segment = new();
+            if (!segment.Build(
+                    forensicsTrackRoot,
+                    trackSourceRoot,
+                    sourceMappedPath,
+                    sourceCenter,
+                    sourceToLocalRotation,
+                    outerHalfWidth,
+                    EventTrackSegmentSurfaceMode.TrackContextOnly,
+                    out _) ||
+                !segment.WarpToPath(
+                    sourceLocalPath,
+                    targetLocalPath,
+                    outerHalfWidth,
+                    carLength * 0.65f,
+                    out Bounds warpedBounds))
+            {
+                segment.Clear();
+                Debug.LogWarning(
+                    "[CollisionForensics] Actual Suzuka track context was " +
+                    "unavailable; using the generated track fallback.");
+                return false;
+            }
+
+            forensicsActualTrackSegment = segment;
+            forensicsTrackOuterHalfWidth = outerHalfWidth;
+            BuildActualForensicsTrackWarning(
+                targetLocalPath,
+                roadHalfWidth,
+                roadHalfWidth + kerbWidth);
+            Debug.Log(
+                "[CollisionForensics] Actual Suzuka track slice cached. " +
+                $"bounds={warpedBounds.size:F4}.");
+            return true;
+        }
+
+        private void BuildActualForensicsTrackWarning(
+            IReadOnlyList<Vector3> centers,
+            float roadHalfWidth,
+            float kerbOuter)
+        {
+            int count = centers?.Count ?? 0;
+            if (count < 2)
+                return;
+
+            Vector3[] leftRoadEdge = new Vector3[count];
+            Vector3[] rightRoadEdge = new Vector3[count];
+            Vector3[] leftKerbEdge = new Vector3[count];
+            Vector3[] rightKerbEdge = new Vector3[count];
+            int closestContactIndex = 0;
+            float closestContactDistance = float.PositiveInfinity;
+            Vector3 previousRight = forensicsCorridorRight;
+            for (int index = 0; index < count; index++)
+            {
+                int before = Mathf.Max(0, index - 1);
+                int after = Mathf.Min(count - 1, index + 1);
+                Vector3 tangent = FlattenNormalized(
+                    centers[after] - centers[before],
+                    forensicsCorridorForward);
+                Vector3 right = FlattenNormalized(
+                    Vector3.Cross(Vector3.up, tangent),
+                    previousRight);
+                if (index > 0 && Vector3.Dot(right, previousRight) < 0f)
+                    right = -right;
+                previousRight = right;
+                Vector3 lift = Vector3.up * carWidth * 0.03f;
+                leftRoadEdge[index] =
+                    centers[index] - right * roadHalfWidth + lift;
+                rightRoadEdge[index] =
+                    centers[index] + right * roadHalfWidth + lift;
+                leftKerbEdge[index] =
+                    centers[index] - right * kerbOuter + lift;
+                rightKerbEdge[index] =
+                    centers[index] + right * kerbOuter + lift;
+                float distance =
+                    (centers[index] - contactLocal).sqrMagnitude;
+                if (distance < closestContactDistance)
+                {
+                    closestContactDistance = distance;
+                    closestContactIndex = index;
+                }
+            }
+
+            BuildForensicsTrackWarning(
+                leftRoadEdge,
+                rightRoadEdge,
+                leftKerbEdge,
+                rightKerbEdge,
+                closestContactIndex);
+        }
+
+        private float ResolveForensicsRoadHalfWidth(
+            CollisionShowcaseVfxSettings settings)
+        {
+            float configured = settings != null
+                ? settings.forensicRoadWidthInCarWidths
+                : 5.4f;
+            return (configured > 0f ? configured : 5.4f) *
+                carWidth * 0.5f;
+        }
+
+        private float ResolveForensicsKerbWidth(
+            CollisionShowcaseVfxSettings settings)
+        {
+            float configured = settings != null
+                ? settings.forensicKerbWidthInCarWidths
+                : 0.42f;
+            return (configured > 0f ? configured : 0.42f) * carWidth;
+        }
+
+        private float ResolveForensicsRunoffWidth(
+            CollisionShowcaseVfxSettings settings)
+        {
+            float configured = settings != null
+                ? settings.forensicRunoffWidthInCarWidths
+                : 0.75f;
+            return (configured > 0f ? configured : 0.75f) * carWidth;
         }
 
         private void BuildForensicsTrack(
@@ -1462,9 +1593,7 @@ namespace F1XR.RestAPI.Replay
         private void SetForensicsTrackProgress(float progress)
         {
             if (!forensicsTrackEnabled ||
-                forensicsTrackRoot == null ||
-                forensicsTrackMesh == null ||
-                forensicsTrackTriangles == null)
+                forensicsTrackRoot == null)
             {
                 SetRootVisible(forensicsTrackRoot, false);
                 return;
@@ -1472,6 +1601,14 @@ namespace F1XR.RestAPI.Replay
 
             float clamped = Mathf.Clamp01(progress);
             SetRootVisible(forensicsTrackRoot, clamped > 0.0001f);
+            if (forensicsUsesActualTrack)
+                return;
+            if (forensicsTrackMesh == null ||
+                forensicsTrackTriangles == null)
+            {
+                SetRootVisible(forensicsTrackRoot, false);
+                return;
+            }
             if (Mathf.Abs(clamped - forensicsLastTrackProgress) < 0.001f)
                 return;
             forensicsLastTrackProgress = clamped;
@@ -1859,12 +1996,7 @@ namespace F1XR.RestAPI.Replay
             bool outcomeStation)
         {
             if (contactStation)
-            {
-                return forensicsContactSnapshotsSeparated
-                    ? "CONTACT  |  OBSERVED CLOSEST\n" +
-                      "MODEL OFFSET  |  OBSERVED POINTS UNCHANGED"
-                    : "CONTACT  |  OBSERVED CLOSEST";
-            }
+                return "CONTACT  |  OBSERVED CLOSEST";
             if (outcomeStation)
             {
                 return forensicsAnalysis.Tier ==
@@ -2087,71 +2219,6 @@ namespace F1XR.RestAPI.Replay
                 if (otherOutline.Root != null)
                     forensicsOutlines.Add(otherOutline);
             }
-
-            BuildForensicsContactSnapshots();
-        }
-
-        private void BuildForensicsContactSnapshots()
-        {
-            float contact = forensicsAnalysis.PresentationTime;
-            ForensicOutline victimSnapshot = CreateForensicsOutline(
-                forensicsVictimDriver,
-                contact,
-                "DriverAContactSnapshot",
-                forensicsVictimOutlineMaterial);
-            ForensicOutline otherSnapshot = CreateForensicsOutline(
-                forensicsOtherDriver,
-                contact,
-                "DriverBContactSnapshot",
-                forensicsOtherOutlineMaterial);
-            if (victimSnapshot.Root == null || otherSnapshot.Root == null)
-                return;
-
-            Vector3 separation = otherSnapshot.BasePosition -
-                victimSnapshot.BasePosition;
-            separation.y = 0f;
-            float distance = separation.magnitude;
-            Vector3 direction = distance > 0.0001f
-                ? separation / distance
-                : forensicsCorridorRight;
-            float correction = Mathf.Max(
-                0f,
-                carWidth * 0.88f - distance) * 0.5f;
-            Vector3 victimPosition = victimSnapshot.BasePosition -
-                direction * correction;
-            Vector3 otherPosition = otherSnapshot.BasePosition +
-                direction * correction;
-            victimSnapshot.Root.localPosition = victimPosition;
-            otherSnapshot.Root.localPosition = otherPosition;
-            forensicsContactSnapshotsSeparated = correction > 0.0001f;
-
-            forensicsOutlines.Add(new ForensicOutline(
-                victimSnapshot.Root,
-                victimSnapshot.Time,
-                victimSnapshot.DriverNumber,
-                victimPosition,
-                victimSnapshot.BaseScale));
-            forensicsOutlines.Add(new ForensicOutline(
-                otherSnapshot.Root,
-                otherSnapshot.Time,
-                otherSnapshot.DriverNumber,
-                otherPosition,
-                otherSnapshot.BaseScale));
-        }
-
-        private void BuildForensicsContactOutlines()
-        {
-            float contact = forensicsAnalysis.PresentationTime;
-            forensicsVictimContactOutline = CreateForensicsOutline(
-                forensicsVictimDriver,
-                contact,
-                "DriverAContactOutline",
-                forensicsVictimOutlineMaterial);
-            forensicsOtherContactOutline = CreateForensicsOutline(
-                forensicsOtherDriver,
-                contact,
-                "DriverBContactOutline",
-                forensicsOtherOutlineMaterial);
         }
 
         private ForensicOutline CreateForensicsOutline(
@@ -2969,36 +3036,6 @@ namespace F1XR.RestAPI.Replay
                 label.transform.localScale = baseScale * multiplier;
         }
 
-        private void SetForensicsContactOutlines(
-            bool visible,
-            Vector3 victimOffset,
-            Vector3 otherOffset)
-        {
-            SetForensicsContactOutline(
-                forensicsVictimContactOutline,
-                visible,
-                victimOffset);
-            SetForensicsContactOutline(
-                forensicsOtherContactOutline,
-                visible,
-                otherOffset);
-        }
-
-        private static void SetForensicsContactOutline(
-            ForensicOutline outline,
-            bool visible,
-            Vector3 offset)
-        {
-            if (outline.Root == null)
-                return;
-
-            outline.Root.localPosition = outline.BasePosition +
-                (visible ? offset : Vector3.zero);
-            outline.Root.gameObject.SetActive(visible);
-            outline.Root.localScale = outline.BaseScale *
-                (visible ? 1.06f : 1f);
-        }
-
         private void ApplyForensicCarPose(
             ReplayCarView car,
             Vector3 desiredLocal,
@@ -3027,47 +3064,6 @@ namespace F1XR.RestAPI.Replay
                         stageUp)
                     : 0f;
             car.ApplyVisualMotion(worldOffset, yaw);
-        }
-
-        private void UpdateForensicsContactAnnotations(
-            Vector3 victimPoint,
-            Vector3 otherPoint)
-        {
-            if (annotationRoot == null)
-                return;
-
-            Vector3 right = FlattenNormalized(
-                Vector3.Cross(Vector3.up, forwardLocal),
-                forensicsCorridorRight);
-            UpdateForensicsContactAnnotation(
-                victimLabel,
-                victimLabelTether,
-                victimPoint,
-                right);
-            UpdateForensicsContactAnnotation(
-                otherLabel,
-                otherLabelTether,
-                otherPoint,
-                -right);
-        }
-
-        private void UpdateForensicsContactAnnotation(
-            TextMeshPro label,
-            LineRenderer tether,
-            Vector3 vehiclePoint,
-            Vector3 side)
-        {
-            if (label == null || tether == null)
-                return;
-
-            Vector3 anchor = vehiclePoint +
-                Vector3.up * carWidth * 0.12f;
-            Vector3 labelPosition = anchor +
-                side * carWidth * 0.95f +
-                forwardLocal * carLength * 0.08f;
-            label.transform.localPosition = labelPosition;
-            tether.SetPosition(0, anchor);
-            tether.SetPosition(1, labelPosition);
         }
 
         private bool TryResolveForensicsPose(

@@ -219,6 +219,34 @@ namespace F1XR.RestAPI.Replay.Room
             IsValid = true;
         }
 
+        internal void UpdateFromMetaSurface(
+            MetaSceneSurfaceSnapshot surface)
+        {
+            SourcePlane = null;
+            Classifications = ResolveMetaClassification(
+                surface.Classification);
+            IsSemanticWall = true;
+            IsFallback = false;
+            Center = surface.Center;
+            InwardNormal = surface.Normal.normalized;
+            VerticalAxis = surface.VerticalAxis.normalized;
+            HorizontalAxis = surface.HorizontalAxis.normalized;
+            Rotation = Quaternion.LookRotation(
+                InwardNormal,
+                VerticalAxis);
+            hasOrientation = true;
+            inwardNormalSign = 1f;
+
+            boundary.Clear();
+            for (var i = 0; i < surface.Boundary.Count; i++)
+                boundary.Add(surface.Boundary[i]);
+
+            MeasureBoundary();
+            IsValid = boundary.Count >= 3 &&
+                Width > 0f &&
+                Height > 0f;
+        }
+
         internal void AlignInwardNormal(Vector3 referenceNormal)
         {
             if (Vector3.Dot(InwardNormal, referenceNormal) >= 0f)
@@ -289,8 +317,22 @@ namespace F1XR.RestAPI.Replay.Room
             MinVertical = minVertical;
             MaxVertical = maxVertical;
         }
+
+        private static PlaneClassifications ResolveMetaClassification(
+            OVRSemanticLabels.Classification classification)
+        {
+            return classification switch
+            {
+                OVRSemanticLabels.Classification.InvisibleWallFace =>
+                    PlaneClassifications.InvisibleWallFace,
+                OVRSemanticLabels.Classification.InnerWallFace =>
+                    PlaneClassifications.InnerWallFace,
+                _ => PlaneClassifications.WallFace
+            };
+        }
     }
 
+    [DefaultExecutionOrder(-900)]
     [DisallowMultipleComponent]
     public sealed class WallDiscovery : MonoBehaviour, IShowcaseWallProvider
     {
@@ -305,6 +347,8 @@ namespace F1XR.RestAPI.Replay.Room
             PlaneClassifications.Table;
 
         [Header("Sources")]
+        [SerializeField] private bool useMetaSceneApi = true;
+        [SerializeField] private MetaSceneRoomSource metaSceneSource;
         [SerializeField] private ARPlaneManager planeManager;
         [SerializeField] private Transform orientationCamera;
 
@@ -344,13 +388,21 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly Dictionary<TrackableId, WallDebugView> debugViews = new();
         private readonly List<Vector2> containingRoomBoundary = new();
         private readonly List<WallCandidate> boundaryOrderScratch = new();
+        private readonly HashSet<TrackableId> metaCandidateIds = new();
+        private readonly List<TrackableId> candidateIdScratch = new();
         private ReadOnlyCollection<WallCandidate> readOnlyCandidates;
-        private ARPlane containingFloor;
+        private TrackableId? containingFloorId;
+        private Plane containingFloorPlane;
+        private bool hasContainingFloorPlane;
+        private Vector3 containingFloorOrigin;
+        private Vector3 containingFloorAxisX;
+        private Vector3 containingFloorAxisY;
         private int containingRoomBoundarySignature;
         private TrackableId? entryWallId;
         private TrackableId? exitWallId;
         private Material debugMaterial;
         private bool isSubscribed;
+        private bool isMetaSubscribed;
         private bool managerWasActive;
         private bool debugWasVisible;
         private int observedEntryIndex;
@@ -393,8 +445,29 @@ namespace F1XR.RestAPI.Replay.Room
         public TrackableId? ExitSelectedTrackableId =>
             GetDiagnosticTrackableId(exitWallId, exitSelection);
         public bool HasContainingRoomBoundary =>
-            containingFloor != null &&
+            hasContainingFloorPlane &&
             containingRoomBoundary.Count >= 3;
+        private bool UseMetaSceneRuntime
+        {
+            get
+            {
+#if UNITY_EDITOR || UNITY_STANDALONE
+                // Quest Link uses the Unity Meta OpenXR plane provider. Keep
+                // the direct Meta Core room query for Quest players only.
+                return false;
+#else
+                // Quest players use the direct Meta Core room snapshot.
+                return useMetaSceneApi;
+#endif
+            }
+        }
+
+        public bool UsesMetaSceneApi => UseMetaSceneRuntime;
+        public MetaSceneRoomStatus MetaSceneStatus =>
+            metaSceneSource != null
+                ? metaSceneSource.Status
+                : MetaSceneRoomStatus.Idle;
+        public string MetaSceneStatusMessage => metaSceneSource?.StatusMessage;
         public int SelectionRevision => selectionRevision;
         public bool BothSelectionsValid =>
             TryGetEntryWall(out _) &&
@@ -403,22 +476,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         public bool TryGetContainingFloorPlane(out Plane floorPlane)
         {
-            floorPlane = default;
-            if (containingFloor == null)
-                return false;
-
-            Vector3 normal = containingFloor.transform.up;
-            if (normal.sqrMagnitude <= 0.5f)
-                return false;
-
-            normal.Normalize();
-            if (Vector3.Dot(normal, Vector3.up) < 0f)
-                normal = -normal;
-
-            floorPlane = new Plane(
-                normal,
-                containingFloor.transform.position);
-            return true;
+            floorPlane = containingFloorPlane;
+            return hasContainingFloorPlane;
         }
 
         private void Reset()
@@ -434,6 +493,28 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void OnEnable()
         {
+            ResolveReferences();
+            debugWasVisible = showDebug;
+            observedEntryIndex = entryCandidateIndex;
+            observedExitIndex = exitCandidateIndex;
+            RememberRootPose();
+
+            if (UseMetaSceneRuntime)
+            {
+                if (metaSceneSource == null)
+                {
+                    Debug.LogError(
+                        "[WallDiscovery] MetaSceneRoomSource is required.",
+                        this);
+                    enabled = false;
+                    return;
+                }
+
+                SubscribeMetaScene();
+                SyncMetaRoom();
+                return;
+            }
+
             if (planeManager == null)
             {
                 Debug.LogError("[WallDiscovery] ARPlaneManager is required.", this);
@@ -444,10 +525,6 @@ namespace F1XR.RestAPI.Replay.Room
             RequestWallAndTablePlanes();
             Subscribe();
             managerWasActive = planeManager.isActiveAndEnabled;
-            debugWasVisible = showDebug;
-            observedEntryIndex = entryCandidateIndex;
-            observedExitIndex = exitCandidateIndex;
-            RememberRootPose();
 
             if (managerWasActive)
             {
@@ -459,34 +536,36 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDisable()
         {
             Unsubscribe();
+            UnsubscribeMetaScene();
             ClearCandidates("Wall discovery disabled.");
-            containingFloor = null;
-            containingRoomBoundary.Clear();
-            containingRoomBoundarySignature = 0;
+            ClearContainingFloor();
             DestroyDebugMaterial();
         }
 
         private void Update()
         {
-            var managerIsActive =
-                planeManager != null &&
-                planeManager.isActiveAndEnabled;
-
-            if (managerWasActive && !managerIsActive)
-                ClearCandidates("ARPlaneManager was disabled.");
-            else if (!managerWasActive && managerIsActive)
+            if (!UseMetaSceneRuntime)
             {
-                RequestWallAndTablePlanes();
-                RefreshContainingRoomBoundary();
-                SyncExistingPlanes();
-            }
+                var managerIsActive =
+                    planeManager != null &&
+                    planeManager.isActiveAndEnabled;
 
-            managerWasActive = managerIsActive;
+                if (managerWasActive && !managerIsActive)
+                    ClearCandidates("ARPlaneManager was disabled.");
+                else if (!managerWasActive && managerIsActive)
+                {
+                    RequestWallAndTablePlanes();
+                    RefreshContainingRoomBoundary();
+                    SyncExistingPlanes();
+                }
 
-            if (managerIsActive && HasRootPoseChanged())
-            {
-                RefreshCandidatesAfterRootMove();
-                RememberRootPose();
+                managerWasActive = managerIsActive;
+
+                if (managerIsActive && HasRootPoseChanged())
+                {
+                    RefreshCandidatesAfterRootMove();
+                    RememberRootPose();
+                }
             }
 
             if (debugWasVisible != showDebug)
@@ -838,13 +917,226 @@ namespace F1XR.RestAPI.Replay.Room
             RefreshAllDebugViews();
         }
 
+        public void RetryMetaRoomSetup()
+        {
+            if (!UseMetaSceneRuntime)
+                return;
+
+            ResolveReferences();
+            metaSceneSource?.RetryRoomSetup();
+        }
+
         private void ResolveReferences()
         {
+            if (UseMetaSceneRuntime && metaSceneSource == null)
+            {
+                metaSceneSource = GetComponent<MetaSceneRoomSource>();
+                if (metaSceneSource == null && Application.isPlaying)
+                    metaSceneSource = gameObject.AddComponent<MetaSceneRoomSource>();
+            }
+
             if (planeManager == null)
                 planeManager = GetComponent<ARPlaneManager>();
 
             if (orientationCamera == null && Camera.main != null)
                 orientationCamera = Camera.main.transform;
+        }
+
+        private void SubscribeMetaScene()
+        {
+            if (isMetaSubscribed || metaSceneSource == null)
+                return;
+
+            metaSceneSource.RoomChanged += OnMetaRoomChanged;
+            metaSceneSource.StatusChanged += OnMetaSceneStatusChanged;
+            isMetaSubscribed = true;
+        }
+
+        private void UnsubscribeMetaScene()
+        {
+            if (!isMetaSubscribed || metaSceneSource == null)
+                return;
+
+            metaSceneSource.RoomChanged -= OnMetaRoomChanged;
+            metaSceneSource.StatusChanged -= OnMetaSceneStatusChanged;
+            isMetaSubscribed = false;
+        }
+
+        private void OnMetaRoomChanged()
+        {
+            SyncMetaRoom();
+        }
+
+        private void OnMetaSceneStatusChanged(MetaSceneRoomStatus status)
+        {
+            if (status == MetaSceneRoomStatus.Ready)
+            {
+                SyncMetaRoom();
+                return;
+            }
+
+            if ((status == MetaSceneRoomStatus.PermissionDenied ||
+                 status == MetaSceneRoomStatus.NoSceneModel ||
+                 status == MetaSceneRoomStatus.Failed) &&
+                metaSceneSource.CurrentRoom == null)
+            {
+                ClearCandidates($"Meta Scene room source changed to {status}.");
+                ClearContainingFloor();
+            }
+        }
+
+        private void SyncMetaRoom()
+        {
+            MetaSceneRoomSnapshot room = metaSceneSource?.CurrentRoom;
+            SyncRoomSnapshot(
+                room,
+                "Meta wall anchor is no longer in the current room.");
+        }
+
+        private void SyncRoomSnapshot(
+            MetaSceneRoomSnapshot room,
+            string removedReason)
+        {
+            if (room == null)
+            {
+                ClearContainingFloor();
+                return;
+            }
+
+            SetContainingFloor(FindContainingMetaFloor(room));
+            metaCandidateIds.Clear();
+            for (var i = 0; i < room.Walls.Count; i++)
+            {
+                MetaSceneSurfaceSnapshot wall = room.Walls[i];
+                TrackableId id = TrackableIdFromGuid(wall.Id);
+                metaCandidateIds.Add(id);
+                AddOrUpdateMetaCandidate(id, wall);
+            }
+
+            candidateIdScratch.Clear();
+            foreach (var pair in candidatesById)
+            {
+                if (!metaCandidateIds.Contains(pair.Key))
+                    candidateIdScratch.Add(pair.Key);
+            }
+
+            for (var i = 0; i < candidateIdScratch.Count; i++)
+            {
+                RemoveCandidate(
+                    candidateIdScratch[i],
+                    removedReason);
+            }
+
+            AttemptPendingReacquisitions();
+        }
+
+        private MetaSceneSurfaceSnapshot FindContainingMetaFloor(
+            MetaSceneRoomSnapshot room)
+        {
+            if (!restrictToContainingFloor || room == null)
+                return null;
+
+            Vector3 viewerPosition = orientationCamera != null
+                ? orientationCamera.position
+                : transform.position;
+            MetaSceneSurfaceSnapshot best = null;
+            float bestArea = float.PositiveInfinity;
+            for (var i = 0; i < room.Floors.Count; i++)
+            {
+                MetaSceneSurfaceSnapshot floor = room.Floors[i];
+                if (!floor.ContainsProjectedPoint(
+                        viewerPosition,
+                        maximumCameraHeightAboveFloor,
+                        out float area) ||
+                    area >= bestArea)
+                {
+                    continue;
+                }
+
+                best = floor;
+                bestArea = area;
+            }
+
+            if (best != null || room.Floors.Count == 0)
+                return best;
+
+            float closest = float.PositiveInfinity;
+            for (var i = 0; i < room.Floors.Count; i++)
+            {
+                MetaSceneSurfaceSnapshot floor = room.Floors[i];
+                float distance = Mathf.Abs(
+                    floor.WorldToLocal.MultiplyPoint3x4(viewerPosition).z);
+                if (distance >= closest)
+                    continue;
+
+                closest = distance;
+                best = floor;
+            }
+
+            return best;
+        }
+
+        private void AddOrUpdateMetaCandidate(
+            TrackableId id,
+            MetaSceneSurfaceSnapshot wall)
+        {
+            bool isNewCandidate = !candidatesById.TryGetValue(
+                id,
+                out WallCandidate candidate);
+            if (isNewCandidate)
+                candidate = new WallCandidate(id, 0);
+
+            candidate.UpdateFromMetaSurface(wall);
+            if (!candidate.IsValid ||
+                candidate.Width < minimumWidth ||
+                candidate.Height < minimumHeight)
+            {
+                if (!isNewCandidate)
+                {
+                    RemoveCandidate(
+                        id,
+                        $"Meta wall is below the minimum {minimumWidth:0.##} m x " +
+                        $"{minimumHeight:0.##} m.");
+                }
+
+                return;
+            }
+
+            if (HasContainingRoomBoundary &&
+                !IsOnContainingRoomBoundary(candidate))
+            {
+                if (!isNewCandidate)
+                {
+                    RemoveCandidate(
+                        id,
+                        "Meta wall is outside the selected room floor boundary.");
+                }
+
+                return;
+            }
+
+            if (isNewCandidate)
+            {
+                candidate.AssignUserFacingNumber(
+                    GetOrAssignUserFacingNumber(id));
+                InsertCandidateByUserFacingNumber(candidate);
+                candidatesById.Add(id, candidate);
+                IncrementCandidateRevision();
+            }
+
+            RefreshSelectedFrame(candidate);
+            RefreshSelectionIndices();
+            RefreshDebugView(candidate);
+        }
+
+        private static TrackableId TrackableIdFromGuid(Guid id)
+        {
+            byte[] bytes = id.ToByteArray();
+            ulong first = BitConverter.ToUInt64(bytes, 0);
+            ulong second = BitConverter.ToUInt64(bytes, 8);
+            if (first == 0ul && second == 0ul)
+                second = 1ul;
+            return new TrackableId(first, second);
         }
 
         private void RequestWallAndTablePlanes()
@@ -994,7 +1286,7 @@ namespace F1XR.RestAPI.Replay.Room
                 planeManager == null ||
                 orientationCamera == null)
             {
-                SetContainingFloor(null);
+                SetContainingFloor((ARPlane)null);
                 return;
             }
 
@@ -1038,26 +1330,36 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void SetContainingFloor(ARPlane floor)
         {
-            var oldFloorId = containingFloor != null
-                ? containingFloor.trackableId
-                : (TrackableId?)null;
+            var oldFloorId = containingFloorId;
             var oldSignature = containingRoomBoundarySignature;
 
-            containingFloor = floor;
             containingRoomBoundary.Clear();
             if (floor != null)
             {
+                containingFloorId = floor.trackableId;
+                containingFloorOrigin = floor.transform.position;
+                containingFloorAxisX = floor.transform.right.normalized;
+                containingFloorAxisY = floor.transform.forward.normalized;
+                Vector3 normal = floor.transform.up.normalized;
+                if (Vector3.Dot(normal, Vector3.up) < 0f)
+                    normal = -normal;
+                containingFloorPlane = new Plane(
+                    normal,
+                    containingFloorOrigin);
+                hasContainingFloorPlane = true;
+
                 var boundary = floor.boundary;
                 for (var i = 0; i < boundary.Length; i++)
                     containingRoomBoundary.Add(boundary[i]);
             }
+            else
+            {
+                ResetContainingFloorState();
+            }
 
             containingRoomBoundarySignature =
                 CalculateBoundarySignature(containingRoomBoundary);
-            var newFloorId = containingFloor != null
-                ? containingFloor.trackableId
-                : (TrackableId?)null;
-            if (oldFloorId == newFloorId &&
+            if (oldFloorId == containingFloorId &&
                 oldSignature == containingRoomBoundarySignature)
             {
                 return;
@@ -1065,6 +1367,73 @@ namespace F1XR.RestAPI.Replay.Room
 
             userFacingOrderFinalized = false;
             IncrementCandidateRevision();
+        }
+
+        private void SetContainingFloor(MetaSceneSurfaceSnapshot floor)
+        {
+            var oldFloorId = containingFloorId;
+            var oldSignature = containingRoomBoundarySignature;
+
+            containingRoomBoundary.Clear();
+            if (floor != null)
+            {
+                containingFloorId = TrackableIdFromGuid(floor.Id);
+                containingFloorAxisX = floor.HorizontalAxis.normalized;
+                containingFloorAxisY = floor.VerticalAxis.normalized;
+                containingFloorOrigin = floor.Center -
+                    containingFloorAxisX * floor.LocalBounds.center.x -
+                    containingFloorAxisY * floor.LocalBounds.center.y;
+                Vector3 normal = floor.Normal.normalized;
+                if (Vector3.Dot(normal, Vector3.up) < 0f)
+                    normal = -normal;
+                containingFloorPlane = new Plane(
+                    normal,
+                    containingFloorOrigin);
+                hasContainingFloorPlane = true;
+
+                for (var i = 0; i < floor.LocalBoundary.Count; i++)
+                    containingRoomBoundary.Add(floor.LocalBoundary[i]);
+            }
+            else
+            {
+                ResetContainingFloorState();
+            }
+
+            containingRoomBoundarySignature =
+                CalculateBoundarySignature(containingRoomBoundary);
+            if (oldFloorId == containingFloorId &&
+                oldSignature == containingRoomBoundarySignature)
+            {
+                return;
+            }
+
+            userFacingOrderFinalized = false;
+            IncrementCandidateRevision();
+        }
+
+        private void ClearContainingFloor()
+        {
+            var hadFloor = containingFloorId.HasValue ||
+                containingRoomBoundary.Count > 0 ||
+                hasContainingFloorPlane;
+            ResetContainingFloorState();
+            containingRoomBoundary.Clear();
+            containingRoomBoundarySignature = 0;
+            if (!hadFloor)
+                return;
+
+            userFacingOrderFinalized = false;
+            IncrementCandidateRevision();
+        }
+
+        private void ResetContainingFloorState()
+        {
+            containingFloorId = null;
+            containingFloorPlane = default;
+            hasContainingFloorPlane = false;
+            containingFloorOrigin = Vector3.zero;
+            containingFloorAxisX = Vector3.right;
+            containingFloorAxisY = Vector3.forward;
         }
 
         private bool IsOnContainingRoomBoundary(WallCandidate candidate)
@@ -1086,9 +1455,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (!HasContainingRoomBoundary)
                 return float.PositiveInfinity;
 
-            var local =
-                containingFloor.transform.InverseTransformPoint(worldPoint);
-            var point = new Vector2(local.x, local.z);
+            var point = ToContainingFloorPoint(worldPoint);
             var bestDistance = float.PositiveInfinity;
             for (var i = 0; i < containingRoomBoundary.Count; i++)
             {
@@ -1109,10 +1476,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (!HasContainingRoomBoundary)
                 return candidate.UserFacingNumber;
 
-            var local =
-                containingFloor.transform.InverseTransformPoint(
-                    candidate.Center);
-            var point = new Vector2(local.x, local.z);
+            var point = ToContainingFloorPoint(candidate.Center);
             var bestDistance = float.PositiveInfinity;
             var bestPosition = 0f;
             var traversed = 0f;
@@ -1141,6 +1505,14 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             return bestPosition;
+        }
+
+        private Vector2 ToContainingFloorPoint(Vector3 worldPoint)
+        {
+            Vector3 offset = worldPoint - containingFloorOrigin;
+            return new Vector2(
+                Vector3.Dot(offset, containingFloorAxisX),
+                Vector3.Dot(offset, containingFloorAxisY));
         }
 
         private static bool ContainsPoint(

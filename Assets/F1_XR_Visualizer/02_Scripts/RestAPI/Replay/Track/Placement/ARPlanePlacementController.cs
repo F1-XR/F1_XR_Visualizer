@@ -6,10 +6,36 @@ using UnityEngine.XR;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using UnityEngine.XR.Hands;
+using Unity.XR.CoreUtils;
 using F1XR.RestAPI.Replay.Track;
+using F1XR.RestAPI.Replay.Room;
 
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
+    internal readonly struct AutomaticTableSurface
+    {
+        public AutomaticTableSurface(
+            Pose pose,
+            ARPlane plane,
+            Vector2 size,
+            Vector3 longAxis,
+            bool canCreateAnchor)
+        {
+            Pose = pose;
+            Plane = plane;
+            Size = size;
+            LongAxis = longAxis;
+            CanCreateAnchor = canCreateAnchor;
+        }
+
+        public Pose Pose { get; }
+        public ARPlane Plane { get; }
+        public Vector2 Size { get; }
+        public Vector3 LongAxis { get; }
+        public bool CanCreateAnchor { get; }
+        public bool HasBounds => Size.x > 0.001f && Size.y > 0.001f;
+    }
+
     public sealed partial class ARPlanePlacementController : MonoBehaviour
     {
         private enum InputSourcePriority
@@ -24,6 +50,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField] private ARRaycastManager raycastManager;
         [SerializeField] private ARPlaneManager planeManager;
         [SerializeField] private ARAnchorManager anchorManager;
+        [SerializeField] private MetaSceneRoomSource metaSceneSource;
 
         [Header("Placement")]
         [SerializeField] private Transform rayOrigin;
@@ -100,6 +127,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
             if (rayOrigin == null && Camera.main != null)
                 rayOrigin = Camera.main.transform;
+
+            ResolveMetaSceneSource();
 
             CreateControllerPointerActions();
         }
@@ -335,19 +364,64 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
+            if (TryGetPlacementSurface(out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
 
-            if (!TryGetPlacementRay(out var ray))
-                return false;
-
-            return TryGetPlacementHit(ray, out pose, out plane);
+        internal bool TryGetPlacementSurface(
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+            return TryGetPlacementRay(out Ray ray) &&
+                TryGetPlacementSurface(ray, out surface);
         }
 
         public bool TryGetAutomaticTableHit(out Pose pose, out ARPlane plane)
         {
+            if (TryGetAutomaticTableSurface(out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
+
+        internal bool TryGetAutomaticTableSurface(
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+
+            ResolveMetaSceneSource();
+            if (metaSceneSource != null)
+            {
+                if (metaSceneSource.Status == MetaSceneRoomStatus.Ready)
+                {
+                    if (TryGetAutomaticSnapshotTable(
+                            metaSceneSource.Tables,
+                            canCreateAnchor: true,
+                            out surface))
+                        return true;
+                }
+
+                if (metaSceneSource.Status == MetaSceneRoomStatus.Loading ||
+                    metaSceneSource.Status == MetaSceneRoomStatus.WaitingForPermission ||
+                    metaSceneSource.Status == MetaSceneRoomStatus.OpeningSpaceSetup)
+                {
+                    return false;
+                }
+            }
 
             if (planeManager == null)
                 return false;
@@ -378,9 +452,92 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 return false;
 
             preferredPlacementPlane = bestPlane;
-            pose = bestPose;
-            plane = bestPlane;
+            Vector2 size = bestPlane.size;
+            Vector3 longAxis = size.x >= size.y
+                ? bestPlane.transform.right
+                : bestPlane.transform.forward;
+            surface = new AutomaticTableSurface(
+                bestPose,
+                bestPlane,
+                size,
+                longAxis,
+                canCreateAnchor: true);
             return true;
+        }
+
+        private bool TryGetAutomaticSnapshotTable(
+            IReadOnlyList<MetaSceneSurfaceSnapshot> tables,
+            bool canCreateAnchor,
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+            if (tables == null)
+                return false;
+
+            MetaSceneSurfaceSnapshot bestTable = null;
+            float bestScore = float.NegativeInfinity;
+            Camera camera = Camera.main;
+            for (int i = 0; i < tables.Count; i++)
+            {
+                MetaSceneSurfaceSnapshot table = tables[i];
+                if (table == null ||
+                    Vector3.Dot(table.Normal, Vector3.up) < 0.75f ||
+                    table.Center.y < minimumPlacementHeight)
+                {
+                    continue;
+                }
+
+                float score = Mathf.Min(table.Width * table.Height, 4f) * 4f;
+                if (camera != null)
+                {
+                    Vector3 offset = table.Center - camera.transform.position;
+                    score -= offset.magnitude * 4f;
+                    Vector3 forward = Vector3.ProjectOnPlane(
+                        camera.transform.forward,
+                        Vector3.up);
+                    Vector3 direction = Vector3.ProjectOnPlane(offset, Vector3.up);
+                    if (forward.sqrMagnitude > 0.0001f &&
+                        direction.sqrMagnitude > 0.0001f)
+                    {
+                        score -= Vector3.Angle(forward, direction) * 0.04f;
+                    }
+                }
+
+                if (score <= bestScore)
+                    continue;
+
+                bestScore = score;
+                bestTable = table;
+            }
+
+            if (bestTable == null)
+                return false;
+
+            Vector3 longAxis = bestTable.Width >= bestTable.Height
+                ? bestTable.HorizontalAxis
+                : bestTable.VerticalAxis;
+            longAxis = Vector3.ProjectOnPlane(longAxis, Vector3.up);
+            if (longAxis.sqrMagnitude <= 0.0001f)
+                longAxis = Vector3.forward;
+            else
+                longAxis.Normalize();
+
+            surface = new AutomaticTableSurface(
+                new Pose(bestTable.Center, Quaternion.identity),
+                null,
+                new Vector2(bestTable.Width, bestTable.Height),
+                longAxis,
+                canCreateAnchor);
+            return true;
+        }
+
+        private void ResolveMetaSceneSource()
+        {
+            if (metaSceneSource == null)
+            {
+                metaSceneSource = FindAnyObjectByType<MetaSceneRoomSource>(
+                    FindObjectsInactive.Include);
+            }
         }
 
         private static float ScoreAutomaticPlane(ARPlane candidate)
@@ -464,9 +621,25 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         public bool TryGetPlacementHit(Ray ray, out Pose pose, out ARPlane plane)
         {
+            if (TryGetPlacementSurface(
+                    ray,
+                    out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
 
+        private bool TryGetPlacementSurface(
+            Ray ray,
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
             if (raycastManager != null && raycastManager.enabled &&
                 raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
             {
@@ -482,8 +655,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                             continue;
                         }
 
-                        pose = hit.pose;
-                        plane = hitPlane;
+                        surface = CreatePlaneSurface(hit.pose, hitPlane);
                         return true;
                     }
                 }
@@ -494,14 +666,161 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                     if (!ShouldAcceptPlane(hit.pose, hitPlane))
                         continue;
 
-                    pose = hit.pose;
-                    plane = hitPlane;
                     preferredPlacementPlane = hitPlane;
+                    surface = CreatePlaneSurface(hit.pose, hitPlane);
                     return true;
                 }
             }
 
-            return TryGetWorldFloorFallback(ray, out pose);
+            if (TryGetPointedSnapshotTable(ray, out surface))
+                return true;
+
+            if (!TryGetWorldFloorFallback(ray, out Pose fallbackPose))
+                return false;
+
+            surface = new AutomaticTableSurface(
+                fallbackPose,
+                null,
+                Vector2.zero,
+                Vector3.forward,
+                canCreateAnchor: true);
+            return true;
+        }
+
+        private bool TryGetPointedSnapshotTable(
+            Ray ray,
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+            ResolveMetaSceneSource();
+            return metaSceneSource != null &&
+                metaSceneSource.Status == MetaSceneRoomStatus.Ready &&
+                TryIntersectSnapshotTables(
+                    ray,
+                    metaSceneSource.Tables,
+                    canCreateAnchor: true,
+                    out surface);
+        }
+
+        private bool TryIntersectSnapshotTables(
+            Ray ray,
+            IReadOnlyList<MetaSceneSurfaceSnapshot> tables,
+            bool canCreateAnchor,
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+            if (tables == null)
+                return false;
+
+            MetaSceneSurfaceSnapshot closestTable = null;
+            Vector3 closestPoint = default;
+            float closestDistance = float.PositiveInfinity;
+            Vector3 floorReference = ResolveFloorReferencePoint();
+            for (int i = 0; i < tables.Count; i++)
+            {
+                MetaSceneSurfaceSnapshot table = tables[i];
+                if (table == null)
+                {
+                    continue;
+                }
+
+                Vector3 normal = table.Normal.normalized;
+                if (Vector3.Dot(normal, Vector3.up) < 0.75f)
+                    continue;
+
+                if (Vector3.Dot(
+                        table.Center - floorReference,
+                        normal) < minimumPlacementHeight)
+                {
+                    continue;
+                }
+
+                var tablePlane = new Plane(normal, table.Center);
+                if (!tablePlane.Raycast(ray, out float distance) ||
+                    distance <= 0f ||
+                    distance > fallbackMaximumDistance ||
+                    distance >= closestDistance)
+                {
+                    continue;
+                }
+
+                Vector3 point = ray.GetPoint(distance);
+                if (!table.ContainsProjectedPoint(
+                        point,
+                        0.02f,
+                        out _))
+                {
+                    continue;
+                }
+
+                closestTable = table;
+                closestPoint = point;
+                closestDistance = distance;
+            }
+
+            if (closestTable == null)
+                return false;
+
+            Vector3 up = closestTable.Normal.normalized;
+            if (Vector3.Dot(up, Vector3.up) < 0f)
+                up = -up;
+            Vector3 forward = Vector3.ProjectOnPlane(
+                closestTable.VerticalAxis,
+                up);
+            if (forward.sqrMagnitude <= 0.0001f)
+                forward = Vector3.ProjectOnPlane(Vector3.forward, up);
+            if (forward.sqrMagnitude <= 0.0001f)
+                forward = Vector3.Cross(up, Vector3.right);
+            forward.Normalize();
+
+            Vector3 longAxis = closestTable.Width >= closestTable.Height
+                ? closestTable.HorizontalAxis
+                : closestTable.VerticalAxis;
+            longAxis = Vector3.ProjectOnPlane(longAxis, up);
+            if (longAxis.sqrMagnitude <= 0.0001f)
+                longAxis = forward;
+            else
+                longAxis.Normalize();
+
+            surface = new AutomaticTableSurface(
+                new Pose(
+                    closestPoint,
+                    Quaternion.LookRotation(forward, up)),
+                null,
+                new Vector2(
+                    closestTable.Width,
+                    closestTable.Height),
+                longAxis,
+                canCreateAnchor);
+            return true;
+        }
+
+        private Vector3 ResolveFloorReferencePoint()
+        {
+            XROrigin xrOrigin = FindAnyObjectByType<XROrigin>(
+                FindObjectsInactive.Include);
+
+            return xrOrigin != null
+                ? xrOrigin.transform.position
+                : new Vector3(0f, fallbackFloorHeight, 0f);
+        }
+
+        private static AutomaticTableSurface CreatePlaneSurface(
+            Pose pose,
+            ARPlane plane)
+        {
+            Vector2 size = plane != null ? plane.size : Vector2.zero;
+            Vector3 longAxis = plane != null && size.x < size.y
+                ? plane.transform.forward
+                : plane != null
+                    ? plane.transform.right
+                    : Vector3.forward;
+            return new AutomaticTableSurface(
+                pose,
+                plane,
+                size,
+                longAxis,
+                canCreateAnchor: true);
         }
 
         private bool TryGetWorldFloorFallback(Ray ray, out Pose pose)
@@ -608,8 +927,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private ARAnchor CreateAnchor(Pose pose, ARPlane plane)
         {
-            if (anchorManager == null)
+            if (anchorManager == null ||
+                anchorManager.subsystem == null ||
+                !anchorManager.subsystem.running)
+            {
                 return null;
+            }
 
             if (plane != null)
             {
