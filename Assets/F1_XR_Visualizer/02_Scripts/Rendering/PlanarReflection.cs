@@ -27,6 +27,7 @@ namespace F1XR.Rendering
 
         Camera reflectionCamera;
         RenderTexture reflectionTexture;
+        Camera lastSourceCamera;
         int lastRenderFrame = -1;
         bool isRendering;
         bool loggedFirstRender;
@@ -70,12 +71,20 @@ namespace F1XR.Rendering
             if (!CanRender(sourceCamera))
                 return;
 
+            // The throttle may only reuse a reflection for the camera it was rendered from. A planar
+            // reflection is valid for exactly one viewpoint -- its mirror -- so handing camera A's
+            // render to camera B projects the image from the wrong eye and the reflection slides
+            // across the floor as that camera moves. Any second camera in the same frame (this scene
+            // has a Main Camera at the origin alongside the XR camera) must get its own render.
             int interval = Mathf.Max(1, updateEveryFrames);
-            if (Application.isPlaying && Time.frameCount - lastRenderFrame < interval)
+            if (Application.isPlaying
+                && sourceCamera == lastSourceCamera
+                && Time.frameCount - lastRenderFrame < interval)
                 return;
 
             RenderReflection(context, sourceCamera);
             lastRenderFrame = Time.frameCount;
+            lastSourceCamera = sourceCamera;
         }
 
         bool CanRender(Camera sourceCamera)
@@ -132,12 +141,24 @@ namespace F1XR.Rendering
             reflectionCamera.backgroundColor = Color.black;
             reflectionCamera.targetTexture = reflectionTexture;
             reflectionCamera.cullingMask = reflectionMask;
-            reflectionCamera.stereoTargetEye = StereoTargetEyeMask.None;
             reflectionCamera.useOcclusionCulling = false;
+            // CopyFrom pulls the source camera's XR state across, so re-assert this every frame.
+            // Without it URP renders the reflection camera as an XR camera and overwrites the
+            // mirrored worldToCameraMatrix below with the head pose, putting the live view -- not
+            // the reflection -- into the RT. Camera.stereoTargetEye does NOT work here: URP logs
+            // "You can use Camera.stereoTargetEye only with the built-in renderer" and ignores it.
+            reflectionCamera.GetUniversalAdditionalCameraData().allowXRRendering = false;
 
+            // Mirror the orientation too, not just the position. URP renders from the camera
+            // transform, so copying the source rotation unchanged pointed the reflection camera the
+            // same way as the eye from below the floor -- not a mirror view at all -- and the RT
+            // ended up holding geometry that does not match worldToCameraMatrix. The reflection then
+            // slides across the floor as the eye moves instead of staying on the mirrored object.
             Vector3 reflectedPosition = reflectionMatrix.MultiplyPoint(sourceCamera.transform.position);
-            reflectionCamera.transform.position = reflectedPosition;
-            reflectionCamera.transform.rotation = sourceCamera.transform.rotation;
+            Vector3 reflectedForward = Vector3.Reflect(sourceCamera.transform.forward, floorNormal);
+            Vector3 reflectedUp = Vector3.Reflect(sourceCamera.transform.up, floorNormal);
+            reflectionCamera.transform.SetPositionAndRotation(
+                reflectedPosition, Quaternion.LookRotation(reflectedForward, reflectedUp));
             reflectionCamera.worldToCameraMatrix = sourceCamera.worldToCameraMatrix * reflectionMatrix;
 
             if (useObliqueClipPlane)
@@ -147,9 +168,20 @@ namespace F1XR.Rendering
             }
 
             Material material = floorRenderer.sharedMaterial;
+            // renderIntoTexture:false on purpose. This matrix is used to *sample* the reflection, not
+            // to render it, and SAMPLE_TEXTURE2D reads with a bottom-left origin. Passing true bakes
+            // in the render-target Y flip and the floor then samples the reflection upside down,
+            // which is what the removed ComputeScreenPos call used to paper over -- badly, since
+            // _ProjectionParams.x describes whichever camera is drawing the floor, not this RT.
+            Matrix4x4 gpuProjection = GL.GetGPUProjectionMatrix(reflectionCamera.projectionMatrix, false);
+
+            // The texture is a Properties-block entry, so it is material-scoped: a global would be
+            // ignored and the shader would fall back to the "black" default. The matrix is not a
+            // material property, and the SRP Batcher only uploads what lives in UnityPerMaterial,
+            // so Material.SetMatrix on it is silently dropped -> matrix zero -> uv 0 -> edgeFade 0
+            // -> probe-only floor. Each one has to go through the path that actually reaches it.
             material.SetTexture(ReflectionTexId, reflectionTexture);
-            Matrix4x4 gpuProjection = GL.GetGPUProjectionMatrix(reflectionCamera.projectionMatrix, true);
-            material.SetMatrix(ReflectionViewProjectionId, gpuProjection * reflectionCamera.worldToCameraMatrix);
+            Shader.SetGlobalMatrix(ReflectionViewProjectionId, gpuProjection * reflectionCamera.worldToCameraMatrix);
             material.SetFloat(ReflectionStrengthId, reflectionStrength);
             LogFirstRender(sourceCamera, material);
 

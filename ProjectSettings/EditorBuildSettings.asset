@@ -20,6 +20,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/F1_XR_Visualizer/01_Scenes/VRDroneSpace.unity
     guid: a4c5919d5a8f4e5c8b3e2d0a9f7c6b1e
+  - enabled: 1
+    path: Assets/F1_XR_Visualizer/01_Scenes/SessionSpace 1.unity
+    guid: bf42ef411e4662245934e4c2f49d3d6a
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

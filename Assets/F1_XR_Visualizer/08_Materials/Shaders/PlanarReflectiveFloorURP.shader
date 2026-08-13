@@ -100,8 +100,10 @@ Shader "F1XR/PlanarReflectiveFloorURP"
             {
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-                float4 reflectionScreen = ComputeScreenPos(input.reflectionCS);
-                float2 uv = reflectionScreen.xy / max(reflectionScreen.w, 0.0001);
+                // Not ComputeScreenPos: it flips y by _ProjectionParams.x, which describes the
+                // camera currently drawing the floor. reflectionCS already comes from the reflection
+                // RT's GPU projection matrix, so that second flip mirrors the reflection vertically.
+                float2 uv = input.reflectionCS.xy / max(input.reflectionCS.w, 0.0001) * 0.5 + 0.5;
 
                 half2 edge = saturate((0.5h - abs((half2)uv - 0.5h)) * 16.0h);
                 half edgeFade = edge.x * edge.y;
