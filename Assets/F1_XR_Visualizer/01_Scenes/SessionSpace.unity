@@ -833,6 +833,8 @@ MonoBehaviour:
   reacquisitionUiDelay: 0.6
   automaticSetupEnabled: 1
   containingRoomWaitDuration: 3
+  planeDiscoveryRetryDelay: 15
+  planeDiscoveryTimeout: 18
   suspendSceneTrackingWhenReady: 1
 --- !u!114 &493722809
 MonoBehaviour:
@@ -3120,7 +3122,7 @@ MonoBehaviour:
   restartVisibleLeadSeconds: 15
   minimumRedFlagSkipSeconds: 60
   showCarLabels: 1
-  enableCarLod: 1
+  enableCarLod: 0
   hideLeaderHighlightAfterRaceStart: 1
   leaderHighlightDelaySeconds: 10
   engineSound:

@@ -2,10 +2,12 @@ using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Room;
+using F1XR.UI.WorldPanel;
 
 namespace F1XR.RestAPI.UI
 {
@@ -30,6 +32,8 @@ namespace F1XR.RestAPI.UI
         private PitWallShowcasePresenter pitWallPresenter;
         private AutoReplayStarter replayStarter;
         private Canvas pitPortalControlsCanvas;
+        private XRGrabInteractable pitPortalControlsGrab;
+        private bool pitPortalControlsManuallyPlaced;
         private bool collisionDatasetLoading;
         private Coroutine collisionOpenWhenPreparedRoutine;
         private string eventLoadMessage;
@@ -260,6 +264,10 @@ namespace F1XR.RestAPI.UI
 
             RectTransform canvasRect =
                 pitPortalControlsCanvas.GetComponent<RectTransform>();
+            canvasRect.localScale =
+                Vector3.one * PitPortalControlsScale;
+            canvasRect.sizeDelta = eventControls.sizeDelta;
+
             Bounds portalBounds = portalFilter.sharedMesh.bounds;
             float panelHalfHeight =
                 eventControls.sizeDelta.y *
@@ -271,32 +279,32 @@ namespace F1XR.RestAPI.UI
                 0f,
                 portalBounds.min.y + verticalOffset,
                 -0.045f);
-            canvasRect.position =
-                portalSurface.transform.TransformPoint(localPosition);
-
             Camera viewCamera = Camera.main;
-            if (viewCamera != null)
+            if (!pitPortalControlsManuallyPlaced)
             {
-                Vector3 awayFromViewer =
-                    canvasRect.position -
-                    viewCamera.transform.position;
-                if (awayFromViewer.sqrMagnitude > 0.0001f)
+                canvasRect.position =
+                    portalSurface.transform.TransformPoint(localPosition);
+
+                if (viewCamera != null)
                 {
-                    canvasRect.rotation = Quaternion.LookRotation(
-                        awayFromViewer.normalized,
-                        portalSurface.transform.up);
+                    Vector3 awayFromViewer =
+                        canvasRect.position -
+                        viewCamera.transform.position;
+                    if (awayFromViewer.sqrMagnitude > 0.0001f)
+                    {
+                        canvasRect.rotation = Quaternion.LookRotation(
+                            awayFromViewer.normalized,
+                            portalSurface.transform.up);
+                    }
                 }
+                else
+                {
+                    canvasRect.rotation = portalSurface.transform.rotation;
+                }
+            }
 
+            if (viewCamera != null)
                 pitPortalControlsCanvas.worldCamera = viewCamera;
-            }
-            else
-            {
-                canvasRect.rotation = portalSurface.transform.rotation;
-            }
-
-            canvasRect.localScale =
-                Vector3.one * PitPortalControlsScale;
-            canvasRect.sizeDelta = eventControls.sizeDelta;
 
             if (eventControls.parent == canvasRect)
                 return;
@@ -345,6 +353,46 @@ namespace F1XR.RestAPI.UI
                 RenderMode.WorldSpace;
             pitPortalControlsCanvas.overrideSorting = true;
             pitPortalControlsCanvas.sortingOrder = 500;
+
+            RectTransform canvasRect =
+                pitPortalControlsCanvas.GetComponent<RectTransform>();
+            canvasRect.sizeDelta = eventControls.sizeDelta;
+
+            Rigidbody body = root.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            body.useGravity = false;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.constraints = RigidbodyConstraints.FreezeRotation;
+
+            BoxCollider panelCollider = root.AddComponent<BoxCollider>();
+            panelCollider.center = Vector3.zero;
+            panelCollider.size = new Vector3(
+                eventControls.sizeDelta.x,
+                eventControls.sizeDelta.y,
+                12f);
+
+            pitPortalControlsGrab =
+                root.AddComponent<XRGrabInteractable>();
+            pitPortalControlsGrab.colliders.Clear();
+            pitPortalControlsGrab.colliders.Add(panelCollider);
+            pitPortalControlsGrab.useDynamicAttach = true;
+            pitPortalControlsGrab.matchAttachPosition = true;
+            pitPortalControlsGrab.matchAttachRotation = false;
+            pitPortalControlsGrab.trackRotation = false;
+            pitPortalControlsGrab.snapToColliderVolume = true;
+            pitPortalControlsGrab.attachEaseInTime = 0.12f;
+            pitPortalControlsGrab.throwOnDetach = false;
+            pitPortalControlsGrab.selectEntered.AddListener(
+                _ => pitPortalControlsManuallyPlaced = true);
+
+            PanelEdgeGrab edgeGrab =
+                root.AddComponent<PanelEdgeGrab>();
+            edgeGrab.Configure(
+                pitPortalControlsGrab,
+                panelCollider,
+                canvasRect,
+                true,
+                true);
         }
 
         private void ReleasePitPortalEventControls()
@@ -366,6 +414,8 @@ namespace F1XR.RestAPI.UI
                 Destroy(pitPortalControlsCanvas.gameObject);
 
             pitPortalControlsCanvas = null;
+            pitPortalControlsGrab = null;
+            pitPortalControlsManuallyPlaced = false;
         }
 
         private void RefreshEventControls()
