@@ -382,9 +382,8 @@ namespace F1XR.RestAPI.Replay.Room
         void Awake()
         {
 #if UNITY_EDITOR || UNITY_STANDALONE
-            // Quest Link does not provide a stable scene-query lifecycle in
-            // this project. Editor placement uses ManagedEditorRoomProfile;
-            // never start Meta Core or add OVRManager here.
+            // Quest Link uses Unity Meta OpenXR ARPlaneManager. Never start
+            // the parallel Meta Core room query or add OVRManager here.
             return;
 #else
             ResolveReferences();

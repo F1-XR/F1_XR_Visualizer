@@ -443,8 +443,12 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         ARAnchor CreateAnchor(Pose pose, ARPlane plane)
         {
-            if (anchorManager == null)
+            if (anchorManager == null ||
+                anchorManager.subsystem == null ||
+                !anchorManager.subsystem.running)
+            {
                 return null;
+            }
 
             if (plane != null)
             {

@@ -1,4 +1,6 @@
+using System.Collections;
 using UnityEngine;
+using UnityEngine.XR;
 using UnityEngine.XR.ARFoundation;
 using Unity.VisualScripting;
 using F1XR.RestAPI.Replay.Room;
@@ -21,6 +23,10 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         bool scenePermissionGranted;
         bool metaSceneSubscribed;
+        Coroutine planeRecoveryRoutine;
+
+        const float PlaneSubsystemReadyTimeout = 10f;
+        const float EmptyPlaneRetryDelay = 5f;
 
         void Reset()
         {
@@ -44,6 +50,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void OnDisable()
         {
+            if (planeRecoveryRoutine != null)
+            {
+                StopCoroutine(planeRecoveryRoutine);
+                planeRecoveryRoutine = null;
+            }
+
             UnsubscribeMetaScene();
         }
 
@@ -73,8 +85,83 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 #else
             scenePermissionGranted = true;
             ApplySceneManagerState();
+#if UNITY_EDITOR || UNITY_STANDALONE
+            planeRecoveryRoutine =
+                StartCoroutine(RestartPlaneManagerOnceIfEmpty());
+#endif
 #endif
         }
+
+#if UNITY_EDITOR || UNITY_STANDALONE
+        IEnumerator RestartPlaneManagerOnceIfEmpty()
+        {
+            float readyUntil = Time.realtimeSinceStartup +
+                PlaneSubsystemReadyTimeout;
+            while (Time.realtimeSinceStartup < readyUntil &&
+                   !IsPlaneDiscoveryReady())
+            {
+                yield return null;
+            }
+
+            if (!IsPlaneDiscoveryReady())
+            {
+                planeRecoveryRoutine = null;
+                yield break;
+            }
+
+            float retryAt = Time.realtimeSinceStartup +
+                EmptyPlaneRetryDelay;
+            while (Time.realtimeSinceStartup < retryAt &&
+                   planeManager.trackables.count == 0)
+            {
+                yield return null;
+            }
+
+            if (IsPlaneDiscoveryReady() &&
+                planeManager.trackables.count == 0)
+            {
+                planeManager.enabled = false;
+                planeManager.enabled = true;
+                Debug.Log(
+                    "[QuestScene] Restarted ARPlaneManager after an empty Link query.",
+                    this);
+            }
+
+            planeRecoveryRoutine = null;
+        }
+
+        bool IsPlaneDiscoveryReady()
+        {
+            return planeManager != null &&
+                planeManager.isActiveAndEnabled &&
+                planeManager.subsystem != null &&
+                planeManager.subsystem.running &&
+                IsHeadsetTracked();
+        }
+
+        static bool IsHeadsetTracked()
+        {
+            InputDevice headset =
+                InputDevices.GetDeviceAtXRNode(XRNode.Head);
+            if (!headset.isValid)
+                return false;
+
+            if (headset.TryGetFeatureValue(
+                    CommonUsages.trackingState,
+                    out InputTrackingState trackingState))
+            {
+                const InputTrackingState required =
+                    InputTrackingState.Position |
+                    InputTrackingState.Rotation;
+                return (trackingState & required) == required;
+            }
+
+            return headset.TryGetFeatureValue(
+                       CommonUsages.isTracked,
+                       out bool isTracked) &&
+                isTracked;
+        }
+#endif
 
 #if UNITY_ANDROID && !UNITY_EDITOR
         void OnScenePermissionGranted(string permission)
@@ -133,12 +220,11 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         void ApplySceneManagerState()
         {
 #if UNITY_EDITOR || UNITY_STANDALONE
-            // Quest Link spatial discovery is intentionally not used. It has
-            // alternated between returning no planes and crashing the Editor
-            // during OpenXR shutdown. WallDiscovery and TABLE AUTO consume the
-            // deterministic managed room profile instead.
+            // Quest Link has one spatial source: Unity Meta OpenXR planes.
+            // Environment raycasts have caused native shutdown failures,
+            // while walls and TABLE AUTO only need the plane manager.
             if (planeManager != null)
-                planeManager.enabled = false;
+                planeManager.enabled = true;
             if (raycastManager != null)
                 raycastManager.enabled = false;
 #else
