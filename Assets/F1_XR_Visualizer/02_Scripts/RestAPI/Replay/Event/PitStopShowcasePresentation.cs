@@ -21,9 +21,6 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> crewWaitingPositions = new();
         private readonly List<Vector3> crewServicePositions = new();
         private readonly List<GameObject> wheelGuns = new();
-        private readonly List<Transform> serviceTyres = new();
-        private readonly List<Vector3> tyreWaitingPositions = new();
-        private readonly List<Vector3> tyreServicePositions = new();
         private readonly List<Renderer> wheelZoneRenderers = new();
         private readonly MaterialPropertyBlock presentationProperties =
             new();
@@ -165,12 +162,6 @@ namespace F1XR.RestAPI.Replay
 
             CreateStopTarget(carLength, teamColor);
             CreateCrew(carLength, teamColor, wheelGunPrefab);
-            CreateTireStacks(
-                carLength,
-                teamColor,
-                assetProfile != null
-                    ? assetProfile.TyreVisualPrefab
-                    : null);
             CreateSign(
                 carLength,
                 driver,
@@ -312,7 +303,6 @@ namespace F1XR.RestAPI.Replay
             if (serviceBeacon != null)
                 serviceBeacon.SetActive(servicing);
 
-            UpdateServiceTyres(state, servicing);
             UpdateWheelZones(state);
             UpdateBroadcastDisplay(state);
             UpdateReleaseEffects(state);
@@ -366,9 +356,6 @@ namespace F1XR.RestAPI.Replay
             crewWaitingPositions.Clear();
             crewServicePositions.Clear();
             wheelGuns.Clear();
-            serviceTyres.Clear();
-            tyreWaitingPositions.Clear();
-            tyreServicePositions.Clear();
             wheelZoneRenderers.Clear();
             for (int i = 0; i < materials.Count; i++)
             {
@@ -483,70 +470,6 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
-        private void CreateTireStacks(
-            float carLength,
-            Color teamColor,
-            GameObject tyreVisualPrefab)
-        {
-            Vector3[] waiting =
-            {
-                new(carLength * 0.88f, carLength * 0.13f, carLength * 1.08f),
-                new(carLength * 0.88f, carLength * 0.13f, carLength * 0.42f),
-                new(carLength * 0.88f, carLength * 0.13f, -carLength * 0.42f),
-                new(carLength * 0.88f, carLength * 0.13f, -carLength * 1.08f)
-            };
-            Vector3[] working =
-            {
-                new(carLength * 0.5f, carLength * 0.15f, carLength * 0.42f),
-                new(carLength * 0.5f, carLength * 0.15f, -carLength * 0.42f),
-                new(-carLength * 0.5f, carLength * 0.15f, carLength * 0.42f),
-                new(-carLength * 0.5f, carLength * 0.15f, -carLength * 0.42f)
-            };
-
-            for (int i = 0; i < waiting.Length; i++)
-            {
-                Transform tyreRoot = new GameObject(
-                    $"ServiceTyre_{i + 1}").transform;
-                tyreRoot.SetParent(root.transform, false);
-                tyreRoot.localPosition = waiting[i];
-
-                if (tyreVisualPrefab != null)
-                {
-                    GameObject tyre = Object.Instantiate(
-                        tyreVisualPrefab,
-                        tyreRoot);
-                    tyre.name = "TyreVisual";
-                    tyre.transform.localPosition = Vector3.zero;
-                    tyre.transform.localRotation =
-                        Quaternion.Euler(0f, 0f, 90f);
-                    NormalizeVisualSize(
-                        tyre,
-                        carLength * 0.29f);
-                    DisablePresentationPhysics(tyre);
-                    OptimizePresentationRenderers(tyre);
-                }
-                else
-                {
-                    GameObject tyre = CreatePrimitive(
-                        PrimitiveType.Cylinder,
-                        "TyreVisual",
-                        tyreRoot,
-                        Vector3.zero,
-                        new Vector3(
-                            carLength * 0.16f,
-                            carLength * 0.055f,
-                            carLength * 0.16f),
-                        Color.Lerp(Color.black, teamColor, 0.12f));
-                    tyre.transform.localRotation =
-                        Quaternion.Euler(0f, 0f, 90f);
-                }
-
-                serviceTyres.Add(tyreRoot);
-                tyreWaitingPositions.Add(waiting[i]);
-                tyreServicePositions.Add(working[i]);
-            }
-        }
-
         private void CreateSign(
             float carLength,
             DriverInfoDto driver,
@@ -617,12 +540,6 @@ namespace F1XR.RestAPI.Replay
 
             float line = vehicleLength * 0.018f;
             CreateBox(
-                "TargetLongitudinal",
-                stopTarget.transform,
-                new Vector3(0f, line, 0f),
-                new Vector3(line, line, vehicleLength * 1.62f),
-                Color.Lerp(accent, Color.white, 0.18f));
-            CreateBox(
                 "TargetStopLine",
                 stopTarget.transform,
                 new Vector3(0f, line, vehicleLength * 0.61f),
@@ -685,43 +602,6 @@ namespace F1XR.RestAPI.Replay
             text.renderer.shadowCastingMode = ShadowCastingMode.Off;
             text.renderer.receiveShadows = false;
             return text;
-        }
-
-        private void UpdateServiceTyres(
-            PitStopPresentationState state,
-            bool servicing)
-        {
-            float blend = 0f;
-            if (servicing)
-            {
-                float progress = state.ServiceProgress;
-                blend = progress < 0.48f
-                    ? Mathf.SmoothStep(0f, 1f, progress / 0.48f)
-                    : progress <= 0.52f
-                        ? 1f
-                        : 1f - Mathf.SmoothStep(
-                            0f,
-                            1f,
-                            (progress - 0.52f) / 0.48f);
-            }
-
-            for (int i = 0; i < serviceTyres.Count; i++)
-            {
-                Transform tyre = serviceTyres[i];
-                if (tyre == null)
-                    continue;
-
-                tyre.localPosition = Vector3.Lerp(
-                    tyreWaitingPositions[i],
-                    tyreServicePositions[i],
-                    blend);
-                tyre.localPosition += Vector3.up *
-                    (Mathf.Sin(blend * Mathf.PI) * carLength * 0.05f);
-                tyre.localRotation = Quaternion.Euler(
-                    state.ServiceProgress * 540f,
-                    0f,
-                    90f);
-            }
         }
 
         private void UpdateWheelZones(

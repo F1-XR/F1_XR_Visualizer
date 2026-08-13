@@ -1217,7 +1217,6 @@ namespace F1XR.RestAPI.Replay
                 name.Contains("rdcp") ||
                 name.Contains("runoff") ||
                 name.Contains("road_rk_green") ||
-                name.Contains("grass_rk_green") ||
                 name.Contains("skid") ||
                 name.Contains("groove") ||
                 name == "grid" ||
