@@ -1054,6 +1054,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
+  useMetaSceneApi: 1
+  metaSceneSource: {fileID: 0}
   planeManager: {fileID: 1674081569}
   orientationCamera: {fileID: 1674081566}
   allowVerticalFallback: 1
@@ -1139,6 +1141,8 @@ MonoBehaviour:
   reacquisitionUiDelay: 0.6
   automaticSetupEnabled: 1
   containingRoomWaitDuration: 3
+  planeDiscoveryRetryDelay: 15
+  planeDiscoveryTimeout: 18
   suspendSceneTrackingWhenReady: 1
 --- !u!114 &493722809
 MonoBehaviour:
@@ -2811,6 +2815,7 @@ MonoBehaviour:
   raycastManager: {fileID: 1674081568}
   planeManager: {fileID: 1674081569}
   anchorManager: {fileID: 1674081570}
+  metaSceneSource: {fileID: 0}
   rayOrigin: {fileID: 1674081566}
   cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
@@ -5824,7 +5829,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2042791791
 MonoBehaviour:
   m_ObjectHideFlags: 0
