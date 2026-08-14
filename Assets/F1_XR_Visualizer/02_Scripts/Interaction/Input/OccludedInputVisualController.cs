@@ -18,6 +18,8 @@ namespace F1XR.Interaction.Input
     [DisallowMultipleComponent]
     public sealed class OccludedInputVisualController : MonoBehaviour
     {
+        const string ControllerModelName = "UniversalController";
+
         static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         static readonly int RimStrengthId = Shader.PropertyToID("_RimStrength");
         static readonly int RimPowerId = Shader.PropertyToID("_RimPower");
@@ -182,8 +184,8 @@ namespace F1XR.Interaction.Input
                 (rightHandRoot == null || rightHandVisual.renderer != null);
 
             return handVisualsReady &&
-                leftControllerVisual.renderer != null &&
-                rightControllerVisual.renderer != null;
+                (leftControllerSources.Length == 0 || leftControllerVisual.renderer != null) &&
+                (rightControllerSources.Length == 0 || rightControllerVisual.renderer != null);
         }
 
         void CreateHandVisual(SkinnedMeshRenderer source, InputVisual visual, string visualName)
@@ -416,8 +418,16 @@ namespace F1XR.Interaction.Input
             if (root == null)
                 return System.Array.Empty<MeshRenderer>();
 
+            // Scan the controller model only. Anything else parented to the controller (wheel gun,
+            // handle, other attachments) would otherwise be baked into the silhouette mesh and drawn
+            // a second time on top of itself, which z-fights with the real attachment. No model on
+            // this controller (a custom visual replaced it) means no controller silhouette.
+            Transform model = FindControllerModel(root.transform);
+            if (model == null)
+                return System.Array.Empty<MeshRenderer>();
+
             var sources = new List<MeshRenderer>();
-            foreach (MeshRenderer renderer in root.GetComponentsInChildren<MeshRenderer>(true))
+            foreach (MeshRenderer renderer in model.GetComponentsInChildren<MeshRenderer>(true))
             {
                 if (renderer.GetComponentInParent<OccludedInputVisualMarker>() == null &&
                     renderer.TryGetComponent(out MeshFilter filter) &&
@@ -428,6 +438,17 @@ namespace F1XR.Interaction.Input
             }
 
             return sources.ToArray();
+        }
+
+        static Transform FindControllerModel(Transform root)
+        {
+            foreach (Transform item in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (item.name == ControllerModelName)
+                    return item;
+            }
+
+            return null;
         }
 
         static XRBaseInteractor[] CombineInteractors(GameObject first, GameObject second)
