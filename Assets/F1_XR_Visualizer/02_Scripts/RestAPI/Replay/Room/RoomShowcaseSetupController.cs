@@ -346,7 +346,6 @@ namespace F1XR.RestAPI.Replay.Room
             wallProvider?.ClearEntrySelection();
             wallProvider?.ClearExitSelection();
             showcaseLayout?.ClearHeroCapture();
-            wallDiscovery?.RetryMetaRoomSetup();
 
             if (wallProvider == null ||
                 wallProvider.CandidateCount == 0)
@@ -447,29 +446,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private string ResolveRoomLoadingMessage()
         {
-            if (wallDiscovery == null || !wallDiscovery.UsesMetaSceneApi)
-                return "Loading room wall candidates.";
-
-            return wallDiscovery.MetaSceneStatus switch
-            {
-                MetaSceneRoomStatus.WaitingForPermission =>
-                    "Allow Spatial Data access to load the room.",
-                MetaSceneRoomStatus.Loading =>
-                    "Loading the Meta room structure.",
-                MetaSceneRoomStatus.OpeningSpaceSetup =>
-                    "Complete Meta Space Setup, then return to the app.",
-                MetaSceneRoomStatus.PermissionDenied =>
-                    "Spatial Data permission was denied. Use Reset Setup to retry.",
-                MetaSceneRoomStatus.NoSceneModel =>
-                    wallDiscovery.MetaSceneStatusMessage ??
-                    "No saved room scan was found. Use Reset Setup to retry.",
-                MetaSceneRoomStatus.Failed =>
-                    wallDiscovery.MetaSceneStatusMessage ??
-                    "Meta room loading failed. Use Reset Setup to retry.",
-                MetaSceneRoomStatus.Ready =>
-                    "The Meta room loaded, but no valid wall anchors were found.",
-                _ => "Loading the Meta room structure."
-            };
+            return "Loading room wall candidates.";
         }
 
         private void EnterWaitingForRoom()
@@ -483,7 +460,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void UpdateRoomLoadingState()
         {
-            if (wallDiscovery == null || wallDiscovery.UsesMetaSceneApi)
+            if (wallDiscovery == null)
             {
                 SetUserMessage(ResolveRoomLoadingMessage());
                 return;
@@ -1177,12 +1154,10 @@ namespace F1XR.RestAPI.Replay.Room
 
                 planeManagerWasEnabled =
                     wallDiscovery != null &&
-                    !wallDiscovery.UsesMetaSceneApi &&
                     planeManager != null &&
                     planeManager.enabled;
                 raycastManagerWasEnabled =
                     wallDiscovery != null &&
-                    !wallDiscovery.UsesMetaSceneApi &&
                     raycastManager != null &&
                     raycastManager.enabled;
                 if (planeManagerWasEnabled)

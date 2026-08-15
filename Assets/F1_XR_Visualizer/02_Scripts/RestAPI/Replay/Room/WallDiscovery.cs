@@ -219,34 +219,6 @@ namespace F1XR.RestAPI.Replay.Room
             IsValid = true;
         }
 
-        internal void UpdateFromMetaSurface(
-            MetaSceneSurfaceSnapshot surface)
-        {
-            SourcePlane = null;
-            Classifications = ResolveMetaClassification(
-                surface.Classification);
-            IsSemanticWall = true;
-            IsFallback = false;
-            Center = surface.Center;
-            InwardNormal = surface.Normal.normalized;
-            VerticalAxis = surface.VerticalAxis.normalized;
-            HorizontalAxis = surface.HorizontalAxis.normalized;
-            Rotation = Quaternion.LookRotation(
-                InwardNormal,
-                VerticalAxis);
-            hasOrientation = true;
-            inwardNormalSign = 1f;
-
-            boundary.Clear();
-            for (var i = 0; i < surface.Boundary.Count; i++)
-                boundary.Add(surface.Boundary[i]);
-
-            MeasureBoundary();
-            IsValid = boundary.Count >= 3 &&
-                Width > 0f &&
-                Height > 0f;
-        }
-
         internal void AlignInwardNormal(Vector3 referenceNormal)
         {
             if (Vector3.Dot(InwardNormal, referenceNormal) >= 0f)
@@ -318,18 +290,6 @@ namespace F1XR.RestAPI.Replay.Room
             MaxVertical = maxVertical;
         }
 
-        private static PlaneClassifications ResolveMetaClassification(
-            OVRSemanticLabels.Classification classification)
-        {
-            return classification switch
-            {
-                OVRSemanticLabels.Classification.InvisibleWallFace =>
-                    PlaneClassifications.InvisibleWallFace,
-                OVRSemanticLabels.Classification.InnerWallFace =>
-                    PlaneClassifications.InnerWallFace,
-                _ => PlaneClassifications.WallFace
-            };
-        }
     }
 
     [DefaultExecutionOrder(-900)]
@@ -347,8 +307,6 @@ namespace F1XR.RestAPI.Replay.Room
             PlaneClassifications.Table;
 
         [Header("Sources")]
-        [SerializeField] private bool useMetaSceneApi = true;
-        [SerializeField] private MetaSceneRoomSource metaSceneSource;
         [SerializeField] private ARPlaneManager planeManager;
         [SerializeField] private Transform orientationCamera;
 
@@ -402,7 +360,6 @@ namespace F1XR.RestAPI.Replay.Room
         private TrackableId? exitWallId;
         private Material debugMaterial;
         private bool isSubscribed;
-        private bool isMetaSubscribed;
         private bool managerWasActive;
         private bool debugWasVisible;
         private int observedEntryIndex;
@@ -447,27 +404,6 @@ namespace F1XR.RestAPI.Replay.Room
         public bool HasContainingRoomBoundary =>
             hasContainingFloorPlane &&
             containingRoomBoundary.Count >= 3;
-        private bool UseMetaSceneRuntime
-        {
-            get
-            {
-#if UNITY_EDITOR || UNITY_STANDALONE
-                // Quest Link uses the Unity Meta OpenXR plane provider. Keep
-                // the direct Meta Core room query for Quest players only.
-                return false;
-#else
-                // Quest players use the direct Meta Core room snapshot.
-                return useMetaSceneApi;
-#endif
-            }
-        }
-
-        public bool UsesMetaSceneApi => UseMetaSceneRuntime;
-        public MetaSceneRoomStatus MetaSceneStatus =>
-            metaSceneSource != null
-                ? metaSceneSource.Status
-                : MetaSceneRoomStatus.Idle;
-        public string MetaSceneStatusMessage => metaSceneSource?.StatusMessage;
         public int SelectionRevision => selectionRevision;
         public bool BothSelectionsValid =>
             TryGetEntryWall(out _) &&
@@ -499,22 +435,6 @@ namespace F1XR.RestAPI.Replay.Room
             observedExitIndex = exitCandidateIndex;
             RememberRootPose();
 
-            if (UseMetaSceneRuntime)
-            {
-                if (metaSceneSource == null)
-                {
-                    Debug.LogError(
-                        "[WallDiscovery] MetaSceneRoomSource is required.",
-                        this);
-                    enabled = false;
-                    return;
-                }
-
-                SubscribeMetaScene();
-                SyncMetaRoom();
-                return;
-            }
-
             if (planeManager == null)
             {
                 Debug.LogError("[WallDiscovery] ARPlaneManager is required.", this);
@@ -536,7 +456,6 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDisable()
         {
             Unsubscribe();
-            UnsubscribeMetaScene();
             ClearCandidates("Wall discovery disabled.");
             ClearContainingFloor();
             DestroyDebugMaterial();
@@ -544,28 +463,25 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void Update()
         {
-            if (!UseMetaSceneRuntime)
+            var managerIsActive =
+                planeManager != null &&
+                planeManager.isActiveAndEnabled;
+
+            if (managerWasActive && !managerIsActive)
+                ClearCandidates("ARPlaneManager was disabled.");
+            else if (!managerWasActive && managerIsActive)
             {
-                var managerIsActive =
-                    planeManager != null &&
-                    planeManager.isActiveAndEnabled;
+                RequestWallAndTablePlanes();
+                RefreshContainingRoomBoundary();
+                SyncExistingPlanes();
+            }
 
-                if (managerWasActive && !managerIsActive)
-                    ClearCandidates("ARPlaneManager was disabled.");
-                else if (!managerWasActive && managerIsActive)
-                {
-                    RequestWallAndTablePlanes();
-                    RefreshContainingRoomBoundary();
-                    SyncExistingPlanes();
-                }
+            managerWasActive = managerIsActive;
 
-                managerWasActive = managerIsActive;
-
-                if (managerIsActive && HasRootPoseChanged())
-                {
-                    RefreshCandidatesAfterRootMove();
-                    RememberRootPose();
-                }
+            if (managerIsActive && HasRootPoseChanged())
+            {
+                RefreshCandidatesAfterRootMove();
+                RememberRootPose();
             }
 
             if (debugWasVisible != showDebug)
@@ -917,226 +833,13 @@ namespace F1XR.RestAPI.Replay.Room
             RefreshAllDebugViews();
         }
 
-        public void RetryMetaRoomSetup()
-        {
-            if (!UseMetaSceneRuntime)
-                return;
-
-            ResolveReferences();
-            metaSceneSource?.RetryRoomSetup();
-        }
-
         private void ResolveReferences()
         {
-            if (UseMetaSceneRuntime && metaSceneSource == null)
-            {
-                metaSceneSource = GetComponent<MetaSceneRoomSource>();
-                if (metaSceneSource == null && Application.isPlaying)
-                    metaSceneSource = gameObject.AddComponent<MetaSceneRoomSource>();
-            }
-
             if (planeManager == null)
                 planeManager = GetComponent<ARPlaneManager>();
 
             if (orientationCamera == null && Camera.main != null)
                 orientationCamera = Camera.main.transform;
-        }
-
-        private void SubscribeMetaScene()
-        {
-            if (isMetaSubscribed || metaSceneSource == null)
-                return;
-
-            metaSceneSource.RoomChanged += OnMetaRoomChanged;
-            metaSceneSource.StatusChanged += OnMetaSceneStatusChanged;
-            isMetaSubscribed = true;
-        }
-
-        private void UnsubscribeMetaScene()
-        {
-            if (!isMetaSubscribed || metaSceneSource == null)
-                return;
-
-            metaSceneSource.RoomChanged -= OnMetaRoomChanged;
-            metaSceneSource.StatusChanged -= OnMetaSceneStatusChanged;
-            isMetaSubscribed = false;
-        }
-
-        private void OnMetaRoomChanged()
-        {
-            SyncMetaRoom();
-        }
-
-        private void OnMetaSceneStatusChanged(MetaSceneRoomStatus status)
-        {
-            if (status == MetaSceneRoomStatus.Ready)
-            {
-                SyncMetaRoom();
-                return;
-            }
-
-            if ((status == MetaSceneRoomStatus.PermissionDenied ||
-                 status == MetaSceneRoomStatus.NoSceneModel ||
-                 status == MetaSceneRoomStatus.Failed) &&
-                metaSceneSource.CurrentRoom == null)
-            {
-                ClearCandidates($"Meta Scene room source changed to {status}.");
-                ClearContainingFloor();
-            }
-        }
-
-        private void SyncMetaRoom()
-        {
-            MetaSceneRoomSnapshot room = metaSceneSource?.CurrentRoom;
-            SyncRoomSnapshot(
-                room,
-                "Meta wall anchor is no longer in the current room.");
-        }
-
-        private void SyncRoomSnapshot(
-            MetaSceneRoomSnapshot room,
-            string removedReason)
-        {
-            if (room == null)
-            {
-                ClearContainingFloor();
-                return;
-            }
-
-            SetContainingFloor(FindContainingMetaFloor(room));
-            metaCandidateIds.Clear();
-            for (var i = 0; i < room.Walls.Count; i++)
-            {
-                MetaSceneSurfaceSnapshot wall = room.Walls[i];
-                TrackableId id = TrackableIdFromGuid(wall.Id);
-                metaCandidateIds.Add(id);
-                AddOrUpdateMetaCandidate(id, wall);
-            }
-
-            candidateIdScratch.Clear();
-            foreach (var pair in candidatesById)
-            {
-                if (!metaCandidateIds.Contains(pair.Key))
-                    candidateIdScratch.Add(pair.Key);
-            }
-
-            for (var i = 0; i < candidateIdScratch.Count; i++)
-            {
-                RemoveCandidate(
-                    candidateIdScratch[i],
-                    removedReason);
-            }
-
-            AttemptPendingReacquisitions();
-        }
-
-        private MetaSceneSurfaceSnapshot FindContainingMetaFloor(
-            MetaSceneRoomSnapshot room)
-        {
-            if (!restrictToContainingFloor || room == null)
-                return null;
-
-            Vector3 viewerPosition = orientationCamera != null
-                ? orientationCamera.position
-                : transform.position;
-            MetaSceneSurfaceSnapshot best = null;
-            float bestArea = float.PositiveInfinity;
-            for (var i = 0; i < room.Floors.Count; i++)
-            {
-                MetaSceneSurfaceSnapshot floor = room.Floors[i];
-                if (!floor.ContainsProjectedPoint(
-                        viewerPosition,
-                        maximumCameraHeightAboveFloor,
-                        out float area) ||
-                    area >= bestArea)
-                {
-                    continue;
-                }
-
-                best = floor;
-                bestArea = area;
-            }
-
-            if (best != null || room.Floors.Count == 0)
-                return best;
-
-            float closest = float.PositiveInfinity;
-            for (var i = 0; i < room.Floors.Count; i++)
-            {
-                MetaSceneSurfaceSnapshot floor = room.Floors[i];
-                float distance = Mathf.Abs(
-                    floor.WorldToLocal.MultiplyPoint3x4(viewerPosition).z);
-                if (distance >= closest)
-                    continue;
-
-                closest = distance;
-                best = floor;
-            }
-
-            return best;
-        }
-
-        private void AddOrUpdateMetaCandidate(
-            TrackableId id,
-            MetaSceneSurfaceSnapshot wall)
-        {
-            bool isNewCandidate = !candidatesById.TryGetValue(
-                id,
-                out WallCandidate candidate);
-            if (isNewCandidate)
-                candidate = new WallCandidate(id, 0);
-
-            candidate.UpdateFromMetaSurface(wall);
-            if (!candidate.IsValid ||
-                candidate.Width < minimumWidth ||
-                candidate.Height < minimumHeight)
-            {
-                if (!isNewCandidate)
-                {
-                    RemoveCandidate(
-                        id,
-                        $"Meta wall is below the minimum {minimumWidth:0.##} m x " +
-                        $"{minimumHeight:0.##} m.");
-                }
-
-                return;
-            }
-
-            if (HasContainingRoomBoundary &&
-                !IsOnContainingRoomBoundary(candidate))
-            {
-                if (!isNewCandidate)
-                {
-                    RemoveCandidate(
-                        id,
-                        "Meta wall is outside the selected room floor boundary.");
-                }
-
-                return;
-            }
-
-            if (isNewCandidate)
-            {
-                candidate.AssignUserFacingNumber(
-                    GetOrAssignUserFacingNumber(id));
-                InsertCandidateByUserFacingNumber(candidate);
-                candidatesById.Add(id, candidate);
-                IncrementCandidateRevision();
-            }
-
-            RefreshSelectedFrame(candidate);
-            RefreshSelectionIndices();
-            RefreshDebugView(candidate);
-        }
-
-        private static TrackableId TrackableIdFromGuid(Guid id)
-        {
-            byte[] bytes = id.ToByteArray();
-            ulong first = BitConverter.ToUInt64(bytes, 0);
-            ulong second = BitConverter.ToUInt64(bytes, 8);
-            if (first == 0ul && second == 0ul)
-                second = 1ul;
-            return new TrackableId(first, second);
         }
 
         private void RequestWallAndTablePlanes()
@@ -1351,48 +1054,6 @@ namespace F1XR.RestAPI.Replay.Room
                 var boundary = floor.boundary;
                 for (var i = 0; i < boundary.Length; i++)
                     containingRoomBoundary.Add(boundary[i]);
-            }
-            else
-            {
-                ResetContainingFloorState();
-            }
-
-            containingRoomBoundarySignature =
-                CalculateBoundarySignature(containingRoomBoundary);
-            if (oldFloorId == containingFloorId &&
-                oldSignature == containingRoomBoundarySignature)
-            {
-                return;
-            }
-
-            userFacingOrderFinalized = false;
-            IncrementCandidateRevision();
-        }
-
-        private void SetContainingFloor(MetaSceneSurfaceSnapshot floor)
-        {
-            var oldFloorId = containingFloorId;
-            var oldSignature = containingRoomBoundarySignature;
-
-            containingRoomBoundary.Clear();
-            if (floor != null)
-            {
-                containingFloorId = TrackableIdFromGuid(floor.Id);
-                containingFloorAxisX = floor.HorizontalAxis.normalized;
-                containingFloorAxisY = floor.VerticalAxis.normalized;
-                containingFloorOrigin = floor.Center -
-                    containingFloorAxisX * floor.LocalBounds.center.x -
-                    containingFloorAxisY * floor.LocalBounds.center.y;
-                Vector3 normal = floor.Normal.normalized;
-                if (Vector3.Dot(normal, Vector3.up) < 0f)
-                    normal = -normal;
-                containingFloorPlane = new Plane(
-                    normal,
-                    containingFloorOrigin);
-                hasContainingFloorPlane = true;
-
-                for (var i = 0; i < floor.LocalBoundary.Count; i++)
-                    containingRoomBoundary.Add(floor.LocalBoundary[i]);
             }
             else
             {

@@ -18,11 +18,9 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         [SerializeField] ARPlaneManager planeManager;
         [SerializeField] ARRaycastManager raycastManager;
-        [SerializeField] MetaSceneRoomSource metaSceneSource;
         [SerializeField] bool disableManagersUntilPermissionGranted = true;
 
         bool scenePermissionGranted;
-        bool metaSceneSubscribed;
         Coroutine planeRecoveryRoutine;
 
         const float PlaneSubsystemReadyTimeout = 10f;
@@ -38,14 +36,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         {
             scenePermissionGranted = !disableManagersUntilPermissionGranted;
             ResolveReferences();
-            SubscribeMetaScene();
             ApplySceneManagerState();
         }
 
         void OnEnable()
         {
             ResolveReferences();
-            SubscribeMetaScene();
         }
 
         void OnDisable()
@@ -56,13 +52,11 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 planeRecoveryRoutine = null;
             }
 
-            UnsubscribeMetaScene();
         }
 
         void Start()
         {
             ResolveReferences();
-            SubscribeMetaScene();
 #if UNITY_ANDROID && !UNITY_EDITOR
             if (Permission.HasUserAuthorizedPermission(ScenePermission))
             {
@@ -186,35 +180,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
             if (raycastManager == null)
                 raycastManager = GetComponentInParent<ARRaycastManager>();
-
-            if (metaSceneSource == null)
-            {
-                metaSceneSource = FindAnyObjectByType<MetaSceneRoomSource>(
-                    FindObjectsInactive.Include);
-            }
-        }
-
-        void SubscribeMetaScene()
-        {
-            if (metaSceneSubscribed || metaSceneSource == null)
-                return;
-
-            metaSceneSource.StatusChanged += OnMetaSceneStatusChanged;
-            metaSceneSubscribed = true;
-        }
-
-        void UnsubscribeMetaScene()
-        {
-            if (!metaSceneSubscribed || metaSceneSource == null)
-                return;
-
-            metaSceneSource.StatusChanged -= OnMetaSceneStatusChanged;
-            metaSceneSubscribed = false;
-        }
-
-        void OnMetaSceneStatusChanged(MetaSceneRoomStatus status)
-        {
-            ApplySceneManagerState();
         }
 
         void ApplySceneManagerState()
@@ -228,20 +193,8 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             if (raycastManager != null)
                 raycastManager.enabled = false;
 #else
-            bool metaSceneQueryActive = metaSceneSource != null &&
-                metaSceneSource.isActiveAndEnabled &&
-                IsMetaSceneQueryStatus(metaSceneSource.Status);
-            SetSceneManagersEnabled(
-                scenePermissionGranted && !metaSceneQueryActive);
+            SetSceneManagersEnabled(scenePermissionGranted);
 #endif
-        }
-
-        static bool IsMetaSceneQueryStatus(MetaSceneRoomStatus status)
-        {
-            return status == MetaSceneRoomStatus.Idle ||
-                status == MetaSceneRoomStatus.WaitingForPermission ||
-                status == MetaSceneRoomStatus.Loading ||
-                status == MetaSceneRoomStatus.OpeningSpaceSetup;
         }
 
         void SetSceneManagersEnabled(bool enabled)

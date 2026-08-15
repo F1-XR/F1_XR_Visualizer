@@ -115,6 +115,41 @@ namespace F1XR.Experience
             return true;
         }
 
+        /// <summary>
+        /// VR while something opaque in the scene covers the entire view.
+        ///
+        /// The composition layer stays live and the camera background stays fully transparent,
+        /// so the compositor's image of the real room is present the whole time and the only
+        /// thing hiding it is geometry. A hole in that geometry is then a hole through to the
+        /// room - no state to change, no native layer to rebuild at the exact moment it is
+        /// needed, and no frame where the transition waits for the compositor to catch up.
+        ///
+        /// Only for callers that can guarantee full opaque coverage. Anything less and the
+        /// real room appears in the middle of VR.
+        /// </summary>
+        public bool ApplyVRBehindOpaqueCover()
+        {
+            if (!ResolveReferences())
+            {
+                Debug.LogError(
+                    "[Passthrough] Could not prepare the behind-cover VR state.", this);
+                return false;
+            }
+
+            StopFade();
+            hideAmount = 0f;
+            ApplyHideAmount(hideAmount);
+
+            // VR by what the viewer sees, even though the passthrough plumbing is in its MR
+            // configuration. The state is about the experience, not about the alpha value.
+            state = PassthroughState.VR;
+
+            Debug.Log(
+                "[Passthrough] VR behind an opaque cover: layer live, camera alpha 0.", this);
+
+            return true;
+        }
+
         /// <summary>Snap to fully visible Passthrough, cancelling any fade.</summary>
         public void ApplyMRImmediate()
         {
