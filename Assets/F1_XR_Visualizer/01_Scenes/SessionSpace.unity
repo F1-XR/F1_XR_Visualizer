@@ -746,7 +746,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
-  useMetaSceneApi: 1
+  useMetaSceneApi: 0
   metaSceneSource: {fileID: 0}
   planeManager: {fileID: 1674081569}
   orientationCamera: {fileID: 1674081566}

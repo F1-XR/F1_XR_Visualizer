@@ -163,6 +163,7 @@ GameObject:
   - component: {fileID: 2003}
   - component: {fileID: 2004}
   - component: {fileID: 2005}
+  - component: {fileID: 2006}
   m_Layer: 0
   m_Name: VRDroneRuntime
   m_TagString: Untagged
@@ -233,6 +234,37 @@ MonoBehaviour:
   enterDuration: 1.2
   exitDuration: 1
   cameraCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  useTrackFracture: 0
+  useSkyShellExit: 1
+  mapRevealDelay: 1
+  skyRevealCommitThreshold: 0.98
+  skyFractureCommitTimeout: 4
+  mapRevealDuration: 0.7
+  mapRevealStartScaleMultiplier: 0.1
+  mapRevealCurve:
     serializedVersion: 2
     m_Curve:
     - serializedVersion: 3
@@ -345,6 +377,58 @@ MonoBehaviour:
     m_RotationOrder: 4
   fractureOriginForwardOffset: 0
   dust: {fileID: 0}
+--- !u!114 &2006
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6406af10cca9fbe48baa888770c59daf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Drone.SkyShell.VRSkyShellFractureController
+  skyShellRadius: 20
+  shellSubdivision: 2
+  patchDetail: 1
+  shellThickness: 0.9
+  shellColor: {r: 0.015, g: 0.02, b: 0.04, a: 1}
+  runFractureTestOnEntry: 0
+  compositingTestRevealDelay: 3
+  propagationStep: 0.11
+  looseDuration: 0.12
+  timingJitter: 0.04
+  fallDuration: 1.2
+  looseLift: 0.08
+  fallInRadii: 2.5
+  lateralSpread: 0.8
+  maxTumbleDegrees: 10
+  fallCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 2
+      outSlope: 2
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  randomSeed: 20260814
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

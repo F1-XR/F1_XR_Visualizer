@@ -67,6 +67,46 @@ namespace F1XR.Drone
         [Tooltip("Unused by the blink-based transition. See enterDuration.")]
         [SerializeField] AnimationCurve cameraCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
+        [Header("Sky Shell Exit")]
+        [Tooltip("Breaks the circuit itself on the way out. Off. The map is what the user " +
+            "came to look at, and tearing it apart to change scene destroys the subject to " +
+            "change the frame. Kept as a switch rather than deleted so the previous behaviour " +
+            "can be compared against the shell without restoring anything.")]
+        [SerializeField] bool useTrackFracture;
+
+        [Tooltip("Hands the exit to the sky shell break. Off during Phase A: the shell is " +
+            "being proven as a background and as a hole onto the real room first, and until " +
+            "that is confirmed on the headset the exit keeps the blink it already had. " +
+            "Turning this on before the hole test passes just hides which half is wrong.")]
+        [SerializeField] bool useSkyShellExit;
+
+        [Tooltip("Seconds of nothing at all once the shell is gone. The viewer has just been " +
+            "somewhere else at a thousand times this size; dropping the map in front of them " +
+            "the same instant gives them no chance to register that they are back in their " +
+            "own room.")]
+        [SerializeField, Min(0f)] float mapRevealDelay = 1f;
+
+        [Tooltip("How much of the sky has to be open onto the real room before the exit " +
+            "commits. High on purpose: the commit hides the circuit and snaps the viewer's " +
+            "origin back, and the only thing that makes those invisible is that almost " +
+            "everything they could be seen against is already the real room.")]
+        [SerializeField, Range(0.5f, 1f)] float skyRevealCommitThreshold = 0.98f;
+
+        [Tooltip("Seconds after the break starts, after which the exit commits whatever the " +
+            "coverage says. A bug that stops the coverage rising must not be able to leave " +
+            "someone stuck inside a circuit with no way out.")]
+        [SerializeField, Min(0.5f)] float skyFractureCommitTimeout = 4f;
+
+        [SerializeField, Min(0f)] float mapRevealDuration = 0.7f;
+
+        [Tooltip("Size the map appears at before it grows into place, as a fraction of its " +
+            "tabletop size.")]
+        [SerializeField, Range(0.01f, 1f)] float mapRevealStartScaleMultiplier = 0.1f;
+
+        [Tooltip("Must be monotonic. A bounce or an elastic overshoot on an object sitting " +
+            "on a real table reads as the table being unreal.")]
+        [SerializeField] AnimationCurve mapRevealCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
+
         [Header("Debug")]
         [SerializeField, FormerlySerializedAs("showGrabVolumeVisual")]
         bool showGrabRange;
@@ -125,6 +165,7 @@ namespace F1XR.Drone
         VRDroneTransitionOccluder occluder;
         TrackAnchorStabilizer anchorStabilizer;
         TrackFracture.VRTrackFractureController trackFracture;
+        SkyShell.VRSkyShellFractureController skyShell;
 
         // The chosen spot in world space, held from the moment the cube is dropped until the
         // map is back on the table. Both the growth and the collapse are centred on it.
@@ -233,6 +274,7 @@ namespace F1XR.Drone
             // Optional. Absent means the exit keeps working exactly as it did, with the blink
             // and no fracture.
             trackFracture ??= GetComponent<TrackFracture.VRTrackFractureController>();
+            skyShell ??= GetComponent<SkyShell.VRSkyShellFractureController>();
             xrCamera ??= xrOrigin != null ? xrOrigin.Camera : Camera.main;
 
             return trackPlacer != null &&
@@ -317,15 +359,17 @@ namespace F1XR.Drone
             // ---- Phase C: open the eyes, already inside -----------------------------------
             yield return Reveal(occlusionOutDuration);
 
-            // Fragments are built now, while the viewer is settling in and has a whole trip
-            // ahead of them, rather than at the moment they ask to leave. Building a hundred
-            // and fifty meshes on the exit press would stall the frame exactly when the
-            // motion is most visible.
+            // Both fractures are built now, while the viewer is settling in and has a whole
+            // trip ahead of them, rather than at the moment they ask to leave. Building the
+            // meshes on the exit press would stall the frame exactly when the motion is most
+            // visible.
             // isActiveAndEnabled, not just non-null: unticking the component in the inspector
-            // is then a one-click A/B between the fracture exit and the plain blink exit,
-            // which is the only way to tell which of the two owns a visual problem.
-            if (trackFracture != null && trackFracture.isActiveAndEnabled)
+            // is then a one-click A/B between a fracture exit and the plain blink exit, which
+            // is the only way to tell which of the two owns a visual problem.
+            if (useTrackFracture && trackFracture != null && trackFracture.isActiveAndEnabled)
                 yield return trackFracture.Prepare(placementRoot, visualRoot);
+
+            RaiseSkyShell();
 
             Debug.Log(
                 $"[DroneTransition][EnterComplete] scale={placementRoot.localScale} " +
@@ -468,6 +512,41 @@ namespace F1XR.Drone
         }
 
         /// <summary>
+        /// Puts the black sky up. Geometry only: the passthrough state is left exactly as
+        /// <see cref="PerformEnterHiddenJump"/> set it, which is layer off and camera alpha 1.
+        ///
+        /// This used to move passthrough behind the shell here, on the theory that the shell
+        /// covers every pixel with alpha 1 and so nothing could show through. The theory was
+        /// wrong. The circuit's three hundred glTF materials write their own texture alpha
+        /// straight into the framebuffer - the depth fix sets the alpha blend to One/Zero, so
+        /// whatever the base map holds lands in the alpha channel - and any texel between the
+        /// cutoff and one therefore let that fraction of the real room in. The result was the
+        /// room's walls showing through the track and the whole circuit looking washed out,
+        /// because the compositor was blending the two.
+        ///
+        /// Making a hole in the sky show the real room needs the alpha channel taken away from
+        /// the track first. Until that exists, normal VR keeps the state that has always been
+        /// correct: no underlay at all, so nothing in the alpha channel can matter.
+        /// </summary>
+        void RaiseSkyShell()
+        {
+            if (skyShell == null || !skyShell.isActiveAndEnabled || xrCamera == null)
+                return;
+
+            // The controller is handed the passthrough owner rather than reaching for it: the
+            // compositing test has to bring the underlay up and put it back down again, and
+            // nothing else in the drone scene is allowed to touch that state.
+            skyShell.Prepare(xrCamera.transform, passthrough);
+
+            if (!skyShell.IsVisible)
+            {
+                Debug.LogWarning(
+                    "[VRDrone] The sky shell did not build; the exit keeps its blink.",
+                    this);
+            }
+        }
+
+        /// <summary>
         /// Hands the screen over to VR. With a transition controller present that is one call
         /// and this component never touches the layer or the camera; without one it falls back
         /// to the original direct writes so host scenes lacking the controller still work.
@@ -503,6 +582,8 @@ namespace F1XR.Drone
             if (!isVrActive || isTransitioning)
                 return;
 
+            Debug.Log($"[SkyExit][BHoldAccepted] time={Time.realtimeSinceStartup:F3}", this);
+
             isTransitioning = true;
             transitionRoutine = StartCoroutine(ExitVrRoutine());
         }
@@ -520,12 +601,32 @@ namespace F1XR.Drone
                 $"origin={xrOrigin.transform.position}",
                 this);
 
+            // The shell owns the exit when it is there. It closes over the whole view, the
+            // transition commits behind it, and it then breaks apart onto the real room - so
+            // nothing else in this method runs, including the blink.
+            if (useSkyShellExit &&
+                skyShell != null && skyShell.isActiveAndEnabled && skyShell.IsPrepared &&
+                skyShell.BeginFracture(xrCamera != null ? xrCamera.transform : null))
+            {
+                yield return SkyShellExitRoutine();
+
+                Debug.Log(
+                    $"[DroneTransition][ExitComplete] via=skyShell " +
+                    $"scale={(placementRoot != null ? placementRoot.localScale : Vector3.zero)} " +
+                    $"origin={xrOrigin.transform.position}",
+                    this);
+
+                transitionRoutine = null;
+                isTransitioning = false;
+                yield break;
+            }
+
             // ---- Phase 0: break the circuit, in the open ----------------------------------
             // The one part of leaving that is worth watching. The track the viewer has been
             // flying around comes apart where they are standing, and the real room shows
             // through the gaps. Only once enough of it has gone does the blink take over for
             // the scale jump, which is still the part that makes people ill.
-            if (trackFracture != null && trackFracture.isActiveAndEnabled &&
+            if (useTrackFracture && trackFracture != null && trackFracture.isActiveAndEnabled &&
                 trackFracture.IsPrepared &&
                 trackFracture.BeginFracture(xrCamera != null ? xrCamera.transform : null))
             {
@@ -589,6 +690,212 @@ namespace F1XR.Drone
 
             transitionRoutine = null;
             isTransitioning = false;
+        }
+
+        /// <summary>
+        /// The exit as the shell plays it.
+        ///
+        /// Nothing here is hidden by a blink. The closed shell is a real surface covering every
+        /// pixel, so the commit happens behind geometry rather than behind a black quad, and
+        /// the same surface then breaks apart to uncover the room. One thing does the work that
+        /// previously took a curtain and a fracture that had to fight it.
+        /// </summary>
+        IEnumerator SkyShellExitRoutine()
+        {
+            // Hiding the map is the one step here that is invisible when it goes wrong. If
+            // anything between the commit and the reveal throws, or the routine is stopped,
+            // the map stays switched off and the user is left standing in an empty room with
+            // no way to get it back - and no error that points at why. The finally runs on
+            // disposal as well as on completion, so there is no path out of this method that
+            // leaves the map hidden.
+            try
+            {
+                float beganAt = Time.realtimeSinceStartup;
+                Debug.Log($"[SkyExit][FractureBegin] time={beganAt:F3}", this);
+
+                // Nothing at all is touched while the sky comes apart. The viewer stays exactly
+                // where they were flying, at a thousand times scale, with the circuit intact
+                // around them, and watches the black break open onto their own room. Every
+                // previous attempt moved something here and every one of them read as the world
+                // being switched rather than being uncovered.
+                float waited = 0f;
+                while (skyShell.RevealCoverage < skyRevealCommitThreshold &&
+                    waited < skyFractureCommitTimeout)
+                {
+                    waited += Time.deltaTime;
+                    yield return null;
+                }
+
+                if (skyShell.RevealCoverage < skyRevealCommitThreshold)
+                {
+                    Debug.LogWarning(
+                        $"[SkyExit] Committing on the timeout at {waited:F2}s with only " +
+                        $"{skyShell.RevealCoverage:P0} of the sky open. The commit will be " +
+                        $"more visible than it should be, but being stuck in VR is worse.",
+                        this);
+                }
+
+                CommitExitBehindShell();
+
+                // Straight after the commit, not after the last piece has finished falling.
+                // Those pieces are still tumbling out of frame behind a view that is already
+                // entirely the real room, and waiting on them is what turned a one second pause
+                // into nearly three.
+                skyShell.Cleanup(restorePassthrough: false);
+
+                float mrCompleteAt = Time.realtimeSinceStartup;
+                Debug.Log(
+                    $"[SkyExit][MRComplete] time={mrCompleteAt:F3} " +
+                    $"elapsedSinceBegin={mrCompleteAt - beganAt:F2}s",
+                    this);
+
+                // The real room, alone, with nothing moving in it. Deliberately dead time: the
+                // viewer has just come back from standing inside a circuit a thousand times
+                // this size, and needs a moment to be somewhere before something is put in
+                // front of them.
+                float held = 0f;
+                while (held < mapRevealDelay)
+                {
+                    held += Time.deltaTime;
+                    yield return null;
+                }
+
+                Debug.Log(
+                    $"[SkyExit][MapRevealStart] time={Time.realtimeSinceStartup:F3} " +
+                    $"elapsedSinceMRComplete={Time.realtimeSinceStartup - mrCompleteAt:F2}s",
+                    this);
+
+                yield return RevealTabletopMap();
+
+                Debug.Log(
+                    $"[SkyExit][MapRevealComplete] time={Time.realtimeSinceStartup:F3}", this);
+
+                ExitVrFinalize();
+            }
+            finally
+            {
+                SetMapVisible(true);
+                RestoreHostUi();
+            }
+        }
+
+        /// <summary>
+        /// Everything that would be unbearable to watch, done while the shell is closed: the
+        /// map back to tabletop size, the viewer back to the pose they left from, the drone
+        /// world switched off, and the screen handed to passthrough.
+        ///
+        /// The map goes all the way back to its saved size here rather than being left
+        /// oversized to shrink afterwards. Watching a circuit contract onto a table is the
+        /// wrong last impression - it says the big thing was the real one and this is what is
+        /// left of it. The map is hidden instead, and returns at the end by growing.
+        /// </summary>
+        void CommitExitBehindShell()
+        {
+            float coverage = skyShell != null ? skyShell.RevealCoverage : 0f;
+
+            // Order matters and only in this direction.
+            //
+            // The circuit stops being drawn first. It is a thousand times its tabletop size and
+            // the viewer is standing inside it, so restoring the origin while it is still
+            // visible drags a kilometre of track across the whole field of view in one frame.
+            // With it already gone, the same restore moves nothing anybody can see.
+            SetMapVisible(false);
+            droneHud?.Hide();
+            environment.SetActive(false);
+
+            if (visualRoot != null)
+            {
+                visualRoot.localPosition = savedVisualLocalPosition;
+                visualRoot.localRotation = savedVisualLocalRotation;
+                visualRoot.localScale = savedVisualLocalScale;
+            }
+
+            if (placementRoot != null)
+            {
+                placementRoot.localScale = savedPlacementLocalScale;
+                placementRoot.localPosition = savedPlacementLocalPositionAtEnter;
+            }
+
+            audioDistanceScaler?.Restore();
+
+            // The one and only origin move of the whole exit, and it happens here rather than
+            // at the start precisely because by now there is almost nothing virtual left for it
+            // to move relative to.
+            xrOrigin.transform.SetPositionAndRotation(savedOriginPosition, savedOriginRotation);
+
+            // Full MR endpoint before anything is torn down. The alpha seal and the masks are
+            // removed straight after this, and if the screen were not already committed to
+            // passthrough at that moment it would black out as they go.
+            ApplyMrScreenEndpoint();
+
+            isVrActive = false;
+
+            Debug.Log(
+                $"[SkyExit][Commit] time={Time.realtimeSinceStartup:F3} " +
+                $"revealCoverage={coverage:P0} " +
+                $"scale={(placementRoot != null ? placementRoot.localScale : Vector3.zero)} " +
+                $"origin={xrOrigin.transform.position}",
+                this);
+        }
+
+        /// <summary>
+        /// Brings the map back the way the viewer should remember it: small, then growing into
+        /// place on the table. Position and rotation never move - only scale - so it settles
+        /// where it belongs instead of flying in.
+        /// </summary>
+        IEnumerator RevealTabletopMap()
+        {
+            RestoreHostUi();
+
+            if (placementRoot == null)
+                yield break;
+
+            placementRoot.localPosition = savedPlacementLocalPositionAtEnter;
+            ApplyScaleMultiplier(mapRevealStartScaleMultiplier);
+            SetMapVisible(true);
+
+            float elapsed = 0f;
+            while (elapsed < mapRevealDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / mapRevealDuration);
+
+                // A straight interpolation, not the exponential the entry uses. That one exists
+                // because a thousandfold journey lerps to five hundred times by halfway; a
+                // tenth to one is a factor of ten and has no such runaway to correct for.
+                ApplyScaleMultiplier(Mathf.Lerp(
+                    mapRevealStartScaleMultiplier, 1f, Evaluate(mapRevealCurve, t)));
+
+                yield return null;
+            }
+
+            ApplyScaleMultiplier(1f);
+        }
+
+        void SetMapVisible(bool visible)
+        {
+            if (visualRoot == null)
+                return;
+
+            // Only ever the Visual child. If the lookup fell back to the placement root then
+            // switching it off would take this coordinator's own references and the anchor
+            // stabiliser down with it, and a map that pops into view is a far smaller problem
+            // than a transition that cannot finish.
+            if (visualRoot == placementRoot)
+            {
+                Debug.LogWarning(
+                    "[DroneTransition] No 'Visual' child under the placement root, so the map " +
+                    "cannot be hidden during the shell break; it will show through the first " +
+                    "hole that opens.",
+                    this);
+                return;
+            }
+
+            if (visualRoot.gameObject.activeSelf == visible)
+                return;
+
+            visualRoot.gameObject.SetActive(visible);
+            Debug.Log($"[DroneTransition] map visible={visible} ('{visualRoot.name}')", this);
         }
 
         /// <summary>
@@ -699,6 +1006,10 @@ namespace F1XR.Drone
             // strewn map contract onto the table.
             trackFracture?.Cleanup();
 
+            // The sky goes with it. Left up, an opaque near-black sphere would still be
+            // standing around the viewer's head once they are back in their own room.
+            skyShell?.Cleanup();
+
             if (visualRoot != null)
             {
                 visualRoot.localPosition = savedVisualLocalPosition;
@@ -753,6 +1064,14 @@ namespace F1XR.Drone
                 placementRoot.localPosition = savedPlacementLocalPositionAtEnter;
                 placementRoot.localScale = savedPlacementLocalScale;
             }
+
+            // Unconditionally, even though the reveal already did it. Hiding the map is the
+            // one step of this transition that is invisible when it goes wrong: if anything
+            // between the commit and the reveal throws, the coroutine dies with the map
+            // switched off and the user is left in an empty room with no way to get it back.
+            // Putting it back here as well costs a bool write and removes that failure mode.
+            SetMapVisible(true);
+            RestoreHostUi();
 
             // Originals switched back on, fragments and their meshes thrown away, so the next
             // trip in prepares from nothing and no state carries across.

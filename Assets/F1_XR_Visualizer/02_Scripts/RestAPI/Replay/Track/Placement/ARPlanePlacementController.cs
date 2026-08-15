@@ -50,7 +50,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField] private ARRaycastManager raycastManager;
         [SerializeField] private ARPlaneManager planeManager;
         [SerializeField] private ARAnchorManager anchorManager;
-        [SerializeField] private MetaSceneRoomSource metaSceneSource;
 
         [Header("Placement")]
         [SerializeField] private Transform rayOrigin;
@@ -128,7 +127,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             if (rayOrigin == null && Camera.main != null)
                 rayOrigin = Camera.main.transform;
 
-            ResolveMetaSceneSource();
 
             CreateControllerPointerActions();
         }
@@ -403,25 +401,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         {
             surface = default;
 
-            ResolveMetaSceneSource();
-            if (metaSceneSource != null)
-            {
-                if (metaSceneSource.Status == MetaSceneRoomStatus.Ready)
-                {
-                    if (TryGetAutomaticSnapshotTable(
-                            metaSceneSource.Tables,
-                            canCreateAnchor: true,
-                            out surface))
-                        return true;
-                }
-
-                if (metaSceneSource.Status == MetaSceneRoomStatus.Loading ||
-                    metaSceneSource.Status == MetaSceneRoomStatus.WaitingForPermission ||
-                    metaSceneSource.Status == MetaSceneRoomStatus.OpeningSpaceSetup)
-                {
-                    return false;
-                }
-            }
 
             if (planeManager == null)
                 return false;
@@ -465,80 +444,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return true;
         }
 
-        private bool TryGetAutomaticSnapshotTable(
-            IReadOnlyList<MetaSceneSurfaceSnapshot> tables,
-            bool canCreateAnchor,
-            out AutomaticTableSurface surface)
-        {
-            surface = default;
-            if (tables == null)
-                return false;
-
-            MetaSceneSurfaceSnapshot bestTable = null;
-            float bestScore = float.NegativeInfinity;
-            Camera camera = Camera.main;
-            for (int i = 0; i < tables.Count; i++)
-            {
-                MetaSceneSurfaceSnapshot table = tables[i];
-                if (table == null ||
-                    Vector3.Dot(table.Normal, Vector3.up) < 0.75f ||
-                    table.Center.y < minimumPlacementHeight)
-                {
-                    continue;
-                }
-
-                float score = Mathf.Min(table.Width * table.Height, 4f) * 4f;
-                if (camera != null)
-                {
-                    Vector3 offset = table.Center - camera.transform.position;
-                    score -= offset.magnitude * 4f;
-                    Vector3 forward = Vector3.ProjectOnPlane(
-                        camera.transform.forward,
-                        Vector3.up);
-                    Vector3 direction = Vector3.ProjectOnPlane(offset, Vector3.up);
-                    if (forward.sqrMagnitude > 0.0001f &&
-                        direction.sqrMagnitude > 0.0001f)
-                    {
-                        score -= Vector3.Angle(forward, direction) * 0.04f;
-                    }
-                }
-
-                if (score <= bestScore)
-                    continue;
-
-                bestScore = score;
-                bestTable = table;
-            }
-
-            if (bestTable == null)
-                return false;
-
-            Vector3 longAxis = bestTable.Width >= bestTable.Height
-                ? bestTable.HorizontalAxis
-                : bestTable.VerticalAxis;
-            longAxis = Vector3.ProjectOnPlane(longAxis, Vector3.up);
-            if (longAxis.sqrMagnitude <= 0.0001f)
-                longAxis = Vector3.forward;
-            else
-                longAxis.Normalize();
-
-            surface = new AutomaticTableSurface(
-                new Pose(bestTable.Center, Quaternion.identity),
-                null,
-                new Vector2(bestTable.Width, bestTable.Height),
-                longAxis,
-                canCreateAnchor);
-            return true;
-        }
-
-        private void ResolveMetaSceneSource()
-        {
-            if (metaSceneSource == null)
-            {
-                metaSceneSource = FindAnyObjectByType<MetaSceneRoomSource>(
-                    FindObjectsInactive.Include);
-            }
-        }
 
         private static float ScoreAutomaticPlane(ARPlane candidate)
         {
@@ -672,8 +577,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 }
             }
 
-            if (TryGetPointedSnapshotTable(ray, out surface))
-                return true;
 
             if (!TryGetWorldFloorFallback(ray, out Pose fallbackPose))
                 return false;
@@ -687,113 +590,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             return true;
         }
 
-        private bool TryGetPointedSnapshotTable(
-            Ray ray,
-            out AutomaticTableSurface surface)
-        {
-            surface = default;
-            ResolveMetaSceneSource();
-            return metaSceneSource != null &&
-                metaSceneSource.Status == MetaSceneRoomStatus.Ready &&
-                TryIntersectSnapshotTables(
-                    ray,
-                    metaSceneSource.Tables,
-                    canCreateAnchor: true,
-                    out surface);
-        }
-
-        private bool TryIntersectSnapshotTables(
-            Ray ray,
-            IReadOnlyList<MetaSceneSurfaceSnapshot> tables,
-            bool canCreateAnchor,
-            out AutomaticTableSurface surface)
-        {
-            surface = default;
-            if (tables == null)
-                return false;
-
-            MetaSceneSurfaceSnapshot closestTable = null;
-            Vector3 closestPoint = default;
-            float closestDistance = float.PositiveInfinity;
-            Vector3 floorReference = ResolveFloorReferencePoint();
-            for (int i = 0; i < tables.Count; i++)
-            {
-                MetaSceneSurfaceSnapshot table = tables[i];
-                if (table == null)
-                {
-                    continue;
-                }
-
-                Vector3 normal = table.Normal.normalized;
-                if (Vector3.Dot(normal, Vector3.up) < 0.75f)
-                    continue;
-
-                if (Vector3.Dot(
-                        table.Center - floorReference,
-                        normal) < minimumPlacementHeight)
-                {
-                    continue;
-                }
-
-                var tablePlane = new Plane(normal, table.Center);
-                if (!tablePlane.Raycast(ray, out float distance) ||
-                    distance <= 0f ||
-                    distance > fallbackMaximumDistance ||
-                    distance >= closestDistance)
-                {
-                    continue;
-                }
-
-                Vector3 point = ray.GetPoint(distance);
-                if (!table.ContainsProjectedPoint(
-                        point,
-                        0.02f,
-                        out _))
-                {
-                    continue;
-                }
-
-                closestTable = table;
-                closestPoint = point;
-                closestDistance = distance;
-            }
-
-            if (closestTable == null)
-                return false;
-
-            Vector3 up = closestTable.Normal.normalized;
-            if (Vector3.Dot(up, Vector3.up) < 0f)
-                up = -up;
-            Vector3 forward = Vector3.ProjectOnPlane(
-                closestTable.VerticalAxis,
-                up);
-            if (forward.sqrMagnitude <= 0.0001f)
-                forward = Vector3.ProjectOnPlane(Vector3.forward, up);
-            if (forward.sqrMagnitude <= 0.0001f)
-                forward = Vector3.Cross(up, Vector3.right);
-            forward.Normalize();
-
-            Vector3 longAxis = closestTable.Width >= closestTable.Height
-                ? closestTable.HorizontalAxis
-                : closestTable.VerticalAxis;
-            longAxis = Vector3.ProjectOnPlane(longAxis, up);
-            if (longAxis.sqrMagnitude <= 0.0001f)
-                longAxis = forward;
-            else
-                longAxis.Normalize();
-
-            surface = new AutomaticTableSurface(
-                new Pose(
-                    closestPoint,
-                    Quaternion.LookRotation(forward, up)),
-                null,
-                new Vector2(
-                    closestTable.Width,
-                    closestTable.Height),
-                longAxis,
-                canCreateAnchor);
-            return true;
-        }
 
         private Vector3 ResolveFloorReferencePoint()
         {

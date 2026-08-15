@@ -12,9 +12,9 @@ namespace F1XR.Experience.Room
     ///
     /// Source of the data: AR Foundation's <see cref="ARPlaneManager"/>, backed by the
     /// "Meta Quest: Planes" OpenXR feature, which maps Meta's semantic labels onto
-    /// <see cref="PlaneClassifications"/>. MRUK is installed but is not used here: its
-    /// <c>MRUK.Awake</c> logs an error unless an <c>OVRCameraRig</c> is present, and this
-    /// project runs on an XR Origin rig that must not be replaced.
+    /// <see cref="PlaneClassifications"/>. The Meta XR SDK is not installed: it offered the
+    /// same OS room data through a second, competing path, and its room utilities require an
+    /// OVRCameraRig that would displace the XR Origin rig this project runs on.
     ///
     /// The AR planes themselves are the cache. This component does not copy their pose or
     /// size into a parallel structure that could go stale; it only classifies them and
