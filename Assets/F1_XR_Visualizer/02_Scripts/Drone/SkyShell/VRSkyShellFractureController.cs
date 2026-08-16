@@ -97,6 +97,8 @@ namespace F1XR.Drone.SkyShell
         Transform root;
         Transform viewer;
         Material intactMaterial;
+        Material transitionMaterial;
+        bool transitionDepthMode;
         Light shellLight;
 
         F1XR.Experience.PassthroughTransitionController passthrough;
@@ -192,7 +194,10 @@ namespace F1XR.Drone.SkyShell
 
             passthrough = passthroughController;
 
-            Material material = ResolveIntactMaterial();
+            Material material = transitionDepthMode
+                ? ResolveTransitionMaterial()
+                : ResolveIntactMaterial();
+
             if (material == null)
                 return;
 
@@ -437,7 +442,9 @@ namespace F1XR.Drone.SkyShell
 
                 if (fragment.Renderer != null)
                 {
-                    fragment.Renderer.sharedMaterial = intactMaterial;
+                    fragment.Renderer.sharedMaterial = transitionDepthMode
+                        ? transitionMaterial
+                        : intactMaterial;
                     fragment.Renderer.enabled = true;
                 }
 
@@ -787,6 +794,7 @@ namespace F1XR.Drone.SkyShell
         {
             Cleanup();
             DestroySafely(intactMaterial);
+            DestroySafely(transitionMaterial);
             DestroySafely(detachedMaterial);
             DestroySafely(alphaSealMaterial);
             DestroySafely(revealMaterial);
@@ -817,6 +825,71 @@ namespace F1XR.Drone.SkyShell
             intactMaterial = new Material(shader) { name = "SkyShell Intact (Runtime)" };
             intactMaterial.SetColor("_BaseColor", shellColor);
             return intactMaterial;
+        }
+
+        /// <summary>
+        /// Moves the sky between being the background and being something the real room can
+        /// stand in front of.
+        ///
+        /// Coming out of MR the room is drawn as passthrough masks that write depth at
+        /// queue 1999 and nothing to the alpha channel: where a mask stands, the VR behind it
+        /// is depth-rejected and the camera's transparent clear is left showing the real room.
+        /// That only works if nothing has already painted the whole view opaque - and the
+        /// background queue does exactly that, before the mask has had a chance to run. So for
+        /// the length of that transition the sky moves behind the masks in queue order instead,
+        /// at 2050, where its depth test can fail against them.
+        ///
+        /// Two shared materials rather than one with its queue rewritten: the queue lives on
+        /// the material, and editing it in place would change the sky for every other use at
+        /// the same time.
+        /// </summary>
+        public void SetTransitionDepthMode(bool transition)
+        {
+            if (transitionDepthMode == transition && built != null)
+                return;
+
+            transitionDepthMode = transition;
+
+            Material material = transition ? ResolveTransitionMaterial() : ResolveIntactMaterial();
+            if (material == null || built == null)
+                return;
+
+            for (int i = 0; i < built.Fragments.Count; i++)
+            {
+                // A piece that has already come away is a lit shard now, not sky, and must not
+                // be dragged back to a background material.
+                if (i < detached.Count && detached[i])
+                    continue;
+
+                MeshRenderer renderer = built.Fragments[i].Renderer;
+                if (renderer != null)
+                    renderer.sharedMaterial = material;
+            }
+
+            Debug.Log(
+                $"[SkyShell] depth mode = {(transition ? "transition (queue 2050)" : "background (queue 1000)")}",
+                this);
+        }
+
+        Material ResolveTransitionMaterial()
+        {
+            if (transitionMaterial != null)
+                return transitionMaterial;
+
+            Material source = ResolveIntactMaterial();
+            if (source == null)
+                return null;
+
+            transitionMaterial = new Material(source)
+            {
+                name = "SkyShell Transition (Runtime)",
+
+                // Past the room masks at 1999, so their depth is already in the buffer and this
+                // fails against it wherever a piece of the real room is still standing.
+                renderQueue = 2050
+            };
+
+            return transitionMaterial;
         }
 
         /// <summary>

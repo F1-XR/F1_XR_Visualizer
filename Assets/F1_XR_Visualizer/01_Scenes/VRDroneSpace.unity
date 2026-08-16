@@ -259,35 +259,16 @@ MonoBehaviour:
     m_RotationOrder: 4
   useTrackFracture: 0
   useSkyShellExit: 1
-  mapRevealDelay: 1
-  skyRevealCommitThreshold: 0.98
+  useRoomShellEnter: 1
+  minFractureLeadTime: 1
+  mapGrowStartBreakCoverage: 1
+  mapGrowDuration: 1.6
+  groundEnableScaleMultiplier: 75
+  roomBreakTimeout: 6
+  roomBreakCommitCoverage: 0.95
+  mapShrinkStartRevealCoverage: 0.75
+  mapShrinkDuration: 1
   skyFractureCommitTimeout: 4
-  mapRevealDuration: 0.7
-  mapRevealStartScaleMultiplier: 0.1
-  mapRevealCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
   showGrabRange: 1
 --- !u!114 &2003
 MonoBehaviour:
@@ -396,7 +377,7 @@ MonoBehaviour:
   shellColor: {r: 0.015, g: 0.02, b: 0.04, a: 1}
   runFractureTestOnEntry: 0
   compositingTestRevealDelay: 3
-  propagationStep: 0.11
+  propagationStep: 0.07
   looseDuration: 0.12
   timingJitter: 0.04
   fallDuration: 1.2
