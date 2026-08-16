@@ -71,10 +71,16 @@ namespace F1XR.Experience.Fracture
             "VR uses the passthrough mask and VR to MR uses spatial alpha reveal.")]
         [SerializeField] bool forceDebugGray;
 
+        [Header("Surface stagger")]
+        [Tooltip("Seconds between each surface starting its fracture. Surfaces are ordered " +
+            "by distance from the camera: nearest cracks first, farthest last.")]
+        [SerializeField, Min(0f)] float surfaceStaggerStep = 0.2f;
+
         [Header("Look")]
         [SerializeField] Color shellColor = new(0.78f, 0.76f, 0.72f, 1f);
 
         readonly List<ShellFractureRig> rigs = new();
+        readonly List<float> surfaceDelays = new();
         readonly List<Transform> planeSpaces = new();
         Material sharedShellMaterial;   // debug gray
         Material maskMaterial;          // MR->VR passthrough mask
@@ -83,6 +89,40 @@ namespace F1XR.Experience.Fracture
         Coroutine activeRoutine;
 
         public int RigCount => rigs.Count;
+
+        /// <summary>
+        /// Fraction of the room that has come away. Counted by pieces released rather than
+        /// pieces finished falling, because what matters to anything waiting on this is how
+        /// much of the real room has stopped covering the incoming world.
+        /// </summary>
+        public float BreakCoverage
+        {
+            get
+            {
+                int total = TotalFragments;
+                return total == 0 ? 0f : (float)ReleasedFragmentCount() / total;
+            }
+        }
+
+        /// <summary>
+        /// Whether there is any real surface to break, checked before a transition commits to
+        /// the room being its carrier. A room that was never scanned reports nothing here, and
+        /// the caller is expected to fall back rather than play a break with no pieces in it.
+        /// </summary>
+        public bool HasBreakableSurfaces
+        {
+            get
+            {
+                EnsureProxiesExist();
+                return proxyGenerator != null && proxyGenerator.Proxies.Count > 0;
+            }
+        }
+
+        /// <summary>
+        /// Throws away the fragments and leaves the proxies hidden, which is the correct end
+        /// state going into VR - the real room is not supposed to come back.
+        /// </summary>
+        public void ClearShellFragments() => ClearRigs();
 
         public int TotalFragments
         {
@@ -260,11 +300,12 @@ namespace F1XR.Experience.Fracture
             SetProxyRenderersVisible(false);
 
             float total = 0f;
-            foreach (ShellFractureRig rig in rigs)
-                total = Mathf.Max(total, rig.TotalSeconds);
+            for (int i = 0; i < rigs.Count; i++)
+                total = Mathf.Max(total, rigs[i].TotalSeconds + surfaceDelays[i]);
 
             Debug.Log(
-                $"[{tag}][build] {rigs.Count} surfaces, {TotalFragments} fragments, {total:F2}s.",
+                $"[{tag}][build] {rigs.Count} surfaces, {TotalFragments} fragments, " +
+                $"{total:F2}s (stagger {surfaceDelays[surfaceDelays.Count - 1]:F2}s).",
                 this);
 
             // Neither direction fades globally. MR to VR lets the mask fragments fall away
@@ -290,7 +331,7 @@ namespace F1XR.Experience.Fracture
             {
                 elapsed += Time.deltaTime;
                 for (int i = 0; i < rigs.Count; i++)
-                    rigs[i].Step(elapsed);
+                    rigs[i].Step(elapsed - surfaceDelays[i]);
 
                 if (!loggedFirstCrack && elapsed >= rigs[0].MinDelay)
                 {
@@ -480,7 +521,48 @@ namespace F1XR.Experience.Fracture
                 }
             }
 
+            ComputeSurfaceDelays();
             return rigs.Count > 0;
+        }
+
+        void ComputeSurfaceDelays()
+        {
+            surfaceDelays.Clear();
+
+            if (rigs.Count == 0 || surfaceStaggerStep <= 0f)
+            {
+                for (int i = 0; i < rigs.Count; i++)
+                    surfaceDelays.Add(0f);
+                return;
+            }
+
+            Camera camera = Camera.main;
+            Vector3 camPos = camera != null
+                ? camera.transform.position
+                : Vector3.zero;
+
+            // Distance from camera per rig, paired with index.
+            var distances = new List<(float dist, int index)>(rigs.Count);
+            for (int i = 0; i < planeSpaces.Count && i < rigs.Count; i++)
+            {
+                float dist = Vector3.Distance(camPos, planeSpaces[i].position);
+                distances.Add((dist, i));
+            }
+
+            distances.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+            // Assign delay by rank: nearest = 0, next = step, next = 2*step, ...
+            float[] delays = new float[rigs.Count];
+            for (int rank = 0; rank < distances.Count; rank++)
+                delays[distances[rank].index] = rank * surfaceStaggerStep;
+
+            for (int i = 0; i < delays.Length; i++)
+                surfaceDelays.Add(delays[i]);
+
+            Debug.Log(
+                $"[MR2VR][stagger] {rigs.Count} surfaces, step={surfaceStaggerStep:F2}s, " +
+                $"maxDelay={surfaceDelays[surfaceDelays.Count - 1]:F2}s.",
+                this);
         }
 
         int ReleasedFragmentCount()
@@ -575,6 +657,7 @@ namespace F1XR.Experience.Fracture
                 rig.Dispose();
 
             rigs.Clear();
+            surfaceDelays.Clear();
 
             foreach (Transform space in planeSpaces)
             {

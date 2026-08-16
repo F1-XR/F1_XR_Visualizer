@@ -80,32 +80,54 @@ namespace F1XR.Drone
             "Turning this on before the hole test passes just hides which half is wrong.")]
         [SerializeField] bool useSkyShellExit;
 
-        [Tooltip("Seconds of nothing at all once the shell is gone. The viewer has just been " +
-            "somewhere else at a thousand times this size; dropping the map in front of them " +
-            "the same instant gives them no chance to register that they are back in their " +
-            "own room.")]
-        [SerializeField, Min(0f)] float mapRevealDelay = 1f;
+        [Header("Room Shell Enter")]
+        [Tooltip("Enters VR by breaking the real room instead of blinking. Falls back to the " +
+            "blink on its own whenever the room was never scanned, so leaving this on cannot " +
+            "stop anyone getting into the drone.")]
+        [SerializeField] bool useRoomShellEnter = true;
 
-        [Tooltip("How much of the sky has to be open onto the real room before the exit " +
-            "commits. High on purpose: the commit hides the circuit and snaps the viewer's " +
-            "origin back, and the only thing that makes those invisible is that almost " +
-            "everything they could be seen against is already the real room.")]
-        [SerializeField, Range(0.5f, 1f)] float skyRevealCommitThreshold = 0.98f;
+        [Tooltip("Seconds the break gets entirely to itself before the circuit is allowed to " +
+            "move at all. Coverage alone is not enough of a gate: the first pieces come away " +
+            "fast, so a coverage threshold can be met before the viewer has registered that " +
+            "anything is happening, and then everything starts at once.")]
+        [SerializeField, Min(0f)] float minFractureLeadTime = 0.65f;
 
-        [Tooltip("Seconds after the break starts, after which the exit commits whatever the " +
+        [Tooltip("How much of the room has to be gone before the circuit starts growing. Both " +
+            "this and the lead time above must be satisfied - time makes the break readable, " +
+            "coverage makes sure there is actually a hole for the circuit to grow through.")]
+        [SerializeField, Range(0f, 1f)] float mapGrowStartBreakCoverage = 1f;
+
+        [Tooltip("Seconds for the circuit to go from tabletop to immersive scale. Long enough " +
+            "that the growth is still going while the last of the room falls, so the second " +
+            "half of the transition belongs to the circuit rather than to the break.")]
+        [SerializeField, Min(0.1f)] float mapGrowDuration = 1.6f;
+
+        [Tooltip("Map scale at which the drone's ground plane is placed and switched on. The " +
+            "ground is ten kilometres across and sits about half a metre under the real floor, " +
+            "so bringing it up early puts it in a depth fight with the room across the whole " +
+            "view. By this scale it is nowhere near anything real.")]
+        [SerializeField, Range(10f, 300f)] float groundEnableScaleMultiplier = 75f;
+
+        [Tooltip("Seconds after which the entry finishes regardless of how much room is left. " +
+            "Nobody may be stranded halfway into VR by a break that stalled.")]
+        [SerializeField, Min(0.5f)] float roomBreakTimeout = 6f;
+
+        [Tooltip("How much of the room has to be gone before VR is committed to.")]
+        [SerializeField, Range(0.5f, 1f)] float roomBreakCommitCoverage = 0.95f;
+
+        [Tooltip("How much of the sky has to be open before the circuit starts shrinking. " +
+            "Deliberately not near one: the point is that the shell is still visibly coming " +
+            "apart while the world inside it contracts, so the two read as one event. Wait " +
+            "until the break is over and it becomes 'VR ended, then a map appeared'.")]
+        [SerializeField, Range(0.5f, 1f)] float mapShrinkStartRevealCoverage = 0.75f;
+
+        [Tooltip("Seconds for the circuit to go from immersive scale to tabletop.")]
+        [SerializeField, Min(0.1f)] float mapShrinkDuration = 1f;
+
+        [Tooltip("Seconds after the break starts, after which the shrink begins whatever the " +
             "coverage says. A bug that stops the coverage rising must not be able to leave " +
             "someone stuck inside a circuit with no way out.")]
         [SerializeField, Min(0.5f)] float skyFractureCommitTimeout = 4f;
-
-        [SerializeField, Min(0f)] float mapRevealDuration = 0.7f;
-
-        [Tooltip("Size the map appears at before it grows into place, as a fraction of its " +
-            "tabletop size.")]
-        [SerializeField, Range(0.01f, 1f)] float mapRevealStartScaleMultiplier = 0.1f;
-
-        [Tooltip("Must be monotonic. A bounce or an elastic overshoot on an object sitting " +
-            "on a real table reads as the table being unreal.")]
-        [SerializeField] AnimationCurve mapRevealCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
         [Header("Debug")]
         [SerializeField, FormerlySerializedAs("showGrabVolumeVisual")]
@@ -166,6 +188,7 @@ namespace F1XR.Drone
         TrackAnchorStabilizer anchorStabilizer;
         TrackFracture.VRTrackFractureController trackFracture;
         SkyShell.VRSkyShellFractureController skyShell;
+        Experience.Fracture.RoomShellFractureController roomShell;
 
         // The chosen spot in world space, held from the moment the cube is dropped until the
         // map is back on the table. Both the growth and the collapse are centred on it.
@@ -271,6 +294,9 @@ namespace F1XR.Drone
             passthroughLayer ??= FindInScene(hostScene, "Passthrough Layer");
             passthrough ??= FindInScene<PassthroughTransitionController>(hostScene);
 
+            // Optional. Without it the entry is the blink it has always been.
+            roomShell ??= FindInScene<Experience.Fracture.RoomShellFractureController>(hostScene);
+
             // Optional. Absent means the exit keeps working exactly as it did, with the blink
             // and no fracture.
             trackFracture ??= GetComponent<TrackFracture.VRTrackFractureController>();
@@ -336,6 +362,26 @@ namespace F1XR.Drone
             // Position is this component's for the duration; give it back on the way out.
             SetAnchorStabilizerPaused(true);
 
+            // The room is the way in whenever there is a room to break. Everything below this
+            // - the visible tenfold growth, the blink, the scale jump, the origin teleport -
+            // exists only because there was previously nothing to uncover VR through.
+            if (useRoomShellEnter && roomShell != null && roomShell.isActiveAndEnabled &&
+                roomShell.HasBreakableSurfaces)
+            {
+                yield return RoomShellEnterRoutine();
+                transitionRoutine = null;
+                isTransitioning = false;
+                yield break;
+            }
+
+            if (useRoomShellEnter)
+            {
+                Debug.LogWarning(
+                    "[MR2VR] No breakable room surfaces, so the entry falls back to the blink. " +
+                    "Complete Space Setup on the device for the room to be the way in.",
+                    this);
+            }
+
             // ---- Phase A: the part the viewer watches -------------------------------------
             // The viewer does not move at all. One moving thing: the map growing out of the
             // spot they chose, with the real room steady around it.
@@ -379,6 +425,165 @@ namespace F1XR.Drone
 
             transitionRoutine = null;
             isTransitioning = false;
+        }
+
+        /// <summary>
+        /// Enters VR by taking the real room apart, with the circuit growing through the gaps.
+        ///
+        /// Nothing is switched from one world to the other. The room is drawn as passthrough
+        /// masks that occlude the VR behind them, so while a mask stands the viewer sees their
+        /// own room and while it is gone they see the drone world - and the same tabletop map
+        /// they were looking at grows from a model on the table into the circuit around them
+        /// without its renderers ever being touched.
+        ///
+        /// No blink, no scale jump, and no origin move. The last of those is the important one:
+        /// at a thousand times scale the entry point is within a metre of where the head
+        /// already is, so teleporting the viewer to it buys nothing and costs the one thing the
+        /// transition cannot afford, which is the world lurching sideways.
+        /// </summary>
+        IEnumerator RoomShellEnterRoutine()
+        {
+            float beganAt = Time.realtimeSinceStartup;
+            Debug.Log(
+                $"[MR2VR][EnterBegin] time={beganAt:F3} anchor={entryWorldAnchor} " +
+                $"entryLocal={entryPointLocal}",
+                this);
+
+            // The sky first, behind the room rather than in front of everything. Its usual
+            // background queue would paint the whole view opaque before the masks ran, and the
+            // masks have no way to undo that - they write depth, not alpha.
+            if (skyShell != null && skyShell.isActiveAndEnabled)
+            {
+                skyShell.SetTransitionDepthMode(true);
+                skyShell.Prepare(xrCamera.transform, passthrough);
+            }
+
+            // The drone world comes up now, while the room still covers it completely, so that
+            // the first hole has something waiting behind it instead of opening onto a frame of
+            // nothing. The ground is held back - it is ten kilometres wide and would be fighting
+            // the real floor for the depth buffer across the entire room.
+            environment.SetActive(true);
+            if (ground != null)
+                ground.SetActive(false);
+
+            droneHud?.Hide();
+
+            // One frame with everything up and nothing yet broken. Shaders compile and the
+            // renderers register here rather than in the middle of the break.
+            yield return null;
+
+            Coroutine breaking = roomShell.StartCoroutine(roomShell.PlayBreakSequence());
+
+            // The break gets the opening to itself. Both gates have to open: the lead time so
+            // that "the room is coming apart" has time to land as its own event, and the
+            // coverage so that there is really a hole for the circuit to grow through rather
+            // than just a crack. Coverage alone let the growth start inside half a second,
+            // which put both effects on screen at once and left neither of them legible.
+            float waited = 0f;
+            while (waited < roomBreakTimeout &&
+                (waited < minFractureLeadTime ||
+                    roomShell.BreakCoverage < mapGrowStartBreakCoverage))
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            Debug.Log(
+                $"[MR2VR][GrowStart] time={Time.realtimeSinceStartup:F3} " +
+                $"fractureElapsed={waited:F2}s (lead {minFractureLeadTime:F2}s) " +
+                $"breakCoverage={roomShell.BreakCoverage:P0} (gate {mapGrowStartBreakCoverage:P0}) " +
+                $"fragments={roomShell.TotalFragments}",
+                this);
+
+            yield return MapGrowRoutine();
+
+            // The rest of the room, on its own clock. The circuit is already at full size by
+            // now, so nothing anybody is looking at is waiting on this.
+            float settle = 0f;
+            while (roomShell.BreakCoverage < roomBreakCommitCoverage && settle < roomBreakTimeout)
+            {
+                settle += Time.deltaTime;
+                yield return null;
+            }
+
+            if (breaking != null)
+                roomShell.StopCoroutine(breaking);
+
+            // VR endpoint only now, with the room essentially gone. Doing it earlier would
+            // switch the underlay off and take the remaining real surfaces away in one frame,
+            // which is the whole failure this replaces.
+            ApplyVrScreenEndpoint();
+            roomShell.ClearShellFragments();
+            skyShell?.SetTransitionDepthMode(false);
+
+            audioDistanceScaler?.Apply(vrScaleMultiplier);
+            HideHostUi();
+
+            isVrActive = true;
+            droneHud?.Show(xrCamera);
+            flightController?.ResetFlight();
+
+            Debug.Log(
+                $"[MR2VR][EnterComplete] time={Time.realtimeSinceStartup:F3} " +
+                $"total={Time.realtimeSinceStartup - beganAt:F2}s " +
+                $"scale={placementRoot.localScale} " +
+                $"breakCoverage={roomShell.BreakCoverage:P0} " +
+                $"originMoved=0m camera={xrCamera.transform.position}",
+                this);
+        }
+
+        /// <summary>
+        /// The tabletop circuit growing into the one the viewer ends up standing in, anchored on
+        /// the spot they put the cube down.
+        /// </summary>
+        IEnumerator MapGrowRoutine()
+        {
+            bool groundUp = false;
+            float elapsed = 0f;
+
+            while (elapsed < mapGrowDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / mapGrowDuration);
+
+                // Exponential. One to a thousand interpolated straight is already at five
+                // hundred times by halfway, so almost the whole growth would happen in the
+                // first instant and the rest would look like nothing moving.
+                float multiplier = Mathf.Pow(vrScaleMultiplier, Evaluate(scaleCurve, t));
+                ApplyScaleAnchored(multiplier, entryWorldAnchor);
+
+                // Placed first, shown second. The ground's height is read off the circuit's
+                // bounds, and switching it on before that is computed puts it at last frame's
+                // position for one frame - a ten kilometre plane in the wrong place.
+                if (!groundUp && multiplier >= groundEnableScaleMultiplier && ground != null)
+                {
+                    groundUp = true;
+                    PlaceGround(placementRoot.up);
+                    ground.SetActive(true);
+
+                    Debug.Log(
+                        $"[MR2VR][GroundUp] multiplier={multiplier:F0} " +
+                        $"groundY={ground.transform.position.y:F3}",
+                        this);
+                }
+
+                yield return null;
+            }
+
+            ApplyScaleAnchored(vrScaleMultiplier, entryWorldAnchor);
+
+            if (ground != null)
+            {
+                // Once more at the final scale: the bounds this is derived from have grown by
+                // the whole thousandfold since it was first placed.
+                PlaceGround(placementRoot.up);
+                ground.SetActive(true);
+            }
+
+            Debug.Log(
+                $"[MR2VR][GrowComplete] scale={placementRoot.localScale} " +
+                $"placementPos={placementRoot.position}",
+                this);
         }
 
         /// <summary>
@@ -714,61 +919,51 @@ namespace F1XR.Drone
                 Debug.Log($"[SkyExit][FractureBegin] time={beganAt:F3}", this);
 
                 // Nothing at all is touched while the sky comes apart. The viewer stays exactly
-                // where they were flying, at a thousand times scale, with the circuit intact
-                // around them, and watches the black break open onto their own room. Every
-                // previous attempt moved something here and every one of them read as the world
-                // being switched rather than being uncovered.
+                // where they were flying, at a thousand times scale, with the circuit around
+                // them, and watches the black break open onto their own room.
                 float waited = 0f;
-                while (skyShell.RevealCoverage < skyRevealCommitThreshold &&
+                while (skyShell.RevealCoverage < mapShrinkStartRevealCoverage &&
                     waited < skyFractureCommitTimeout)
                 {
                     waited += Time.deltaTime;
                     yield return null;
                 }
 
-                if (skyShell.RevealCoverage < skyRevealCommitThreshold)
+                if (skyShell.RevealCoverage < mapShrinkStartRevealCoverage)
                 {
                     Debug.LogWarning(
-                        $"[SkyExit] Committing on the timeout at {waited:F2}s with only " +
-                        $"{skyShell.RevealCoverage:P0} of the sky open. The commit will be " +
-                        $"more visible than it should be, but being stuck in VR is worse.",
+                        $"[SkyExit] Starting the shrink on the timeout at {waited:F2}s with " +
+                        $"only {skyShell.RevealCoverage:P0} of the sky open. Being stuck in VR " +
+                        $"is worse than an early shrink.",
                         this);
                 }
 
-                CommitExitBehindShell();
+                // Only the drone's own furniture goes. The circuit stays exactly as it is - it
+                // is the thing that is about to shrink, and switching it off for even a frame
+                // turns the whole transition back into "VR ended, then a map appeared".
+                droneHud?.Hide();
+                environment.SetActive(false);
 
-                // Straight after the commit, not after the last piece has finished falling.
-                // Those pieces are still tumbling out of frame behind a view that is already
-                // entirely the real room, and waiting on them is what turned a one second pause
-                // into nearly three.
-                skyShell.Cleanup(restorePassthrough: false);
+                yield return MapShrinkRoutine();
 
-                float mrCompleteAt = Time.realtimeSinceStartup;
-                Debug.Log(
-                    $"[SkyExit][MRComplete] time={mrCompleteAt:F3} " +
-                    $"elapsedSinceBegin={mrCompleteAt - beganAt:F2}s",
-                    this);
-
-                // The real room, alone, with nothing moving in it. Deliberately dead time: the
-                // viewer has just come back from standing inside a circuit a thousand times
-                // this size, and needs a moment to be somewhere before something is put in
-                // front of them.
-                float held = 0f;
-                while (held < mapRevealDelay)
+                // The last pieces of sky, finishing on their own. By now the circuit is already
+                // sitting on the table at its proper size, so this costs nothing anybody is
+                // waiting on.
+                float settle = 0f;
+                while (skyShell.IsRunning && settle < skyFractureCommitTimeout)
                 {
-                    held += Time.deltaTime;
+                    settle += Time.deltaTime;
                     yield return null;
                 }
 
-                Debug.Log(
-                    $"[SkyExit][MapRevealStart] time={Time.realtimeSinceStartup:F3} " +
-                    $"elapsedSinceMRComplete={Time.realtimeSinceStartup - mrCompleteAt:F2}s",
-                    this);
+                RestoreExitBookkeeping();
 
-                yield return RevealTabletopMap();
+                // Full MR only now. Doing it at the shrink would have thrown the whole room up
+                // at once and thrown away the piece-by-piece reveal the shell exists for.
+                ApplyMrScreenEndpoint();
 
-                Debug.Log(
-                    $"[SkyExit][MapRevealComplete] time={Time.realtimeSinceStartup:F3}", this);
+                // Seal and masks last, and only once the screen is already committed to MR.
+                skyShell.Cleanup(restorePassthrough: false);
 
                 ExitVrFinalize();
             }
@@ -777,6 +972,118 @@ namespace F1XR.Drone
                 SetMapVisible(true);
                 RestoreHostUi();
             }
+        }
+
+        /// <summary>
+        /// The circuit the viewer has been flying around contracts onto the real table, without
+        /// ever stopping being drawn.
+        ///
+        /// This is the whole point of the transition. Hiding the huge circuit, waiting, and then
+        /// growing a small one back reads as one scene ending and another starting; the same
+        /// geometry shrinking in place reads as the world the viewer was standing in becoming
+        /// the model on their table. Same renderers, same hierarchy, no swap, no gap.
+        /// </summary>
+        IEnumerator MapShrinkRoutine()
+        {
+            if (placementRoot == null)
+                yield break;
+
+            // Where the circuit has to end up, in world terms, right now.
+            //
+            // The anchor was captured when the origin was where the viewer left it, and flying
+            // the drone has moved that origin since. The real table has not moved - it is the
+            // virtual world that has slid relative to it - so the anchor is carried through the
+            // origin's change to find where that same real spot is at this moment. Shrinking
+            // onto the stale anchor would put the circuit wherever the table used to be
+            // relative to the world, which is not where the viewer can see it.
+            Matrix4x4 originAtEnter = Matrix4x4.TRS(
+                savedOriginPosition, savedOriginRotation, Vector3.one);
+            Matrix4x4 originNow = Matrix4x4.TRS(
+                xrOrigin.transform.position, xrOrigin.transform.rotation, Vector3.one);
+
+            Vector3 shrinkAnchor =
+                (originNow * originAtEnter.inverse).MultiplyPoint3x4(entryWorldAnchor);
+
+            float startedAt = Time.realtimeSinceStartup;
+
+            Debug.Log(
+                $"[SkyExit][ShrinkStart] coverage={skyShell.RevealCoverage:P0} " +
+                $"multiplier={vrScaleMultiplier} anchor={shrinkAnchor} " +
+                $"origin={xrOrigin.transform.position}",
+                this);
+
+            float elapsed = 0f;
+            while (elapsed < mapShrinkDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / mapShrinkDuration);
+
+                // Exponential, the entry's growth run backwards. A straight interpolation from
+                // a thousand to one is still at five hundred times by halfway, so the circuit
+                // would look unchanged for most of the shrink and then vanish at the end.
+                // Raising the multiplier to the remaining progress takes a constant proportion
+                // off every second instead, which is what reads as a steady contraction.
+                ApplyScaleAnchored(
+                    Mathf.Pow(vrScaleMultiplier, 1f - Evaluate(scaleCurve, t)), shrinkAnchor);
+
+                yield return null;
+            }
+
+            ApplyScaleAnchored(1f, shrinkAnchor);
+
+            Debug.Log(
+                $"[SkyExit][ShrinkComplete] duration={Time.realtimeSinceStartup - startedAt:F2}s " +
+                $"placementScale={placementRoot.localScale} " +
+                $"placementPos={placementRoot.position} " +
+                $"originBeforeBookkeeping={xrOrigin.transform.position}",
+                this);
+        }
+
+        /// <summary>
+        /// Puts the origin back where the rest of the application expects it, and moves the map
+        /// by exactly the amount that cancels out.
+        ///
+        /// The origin holds the camera, so restoring it moves the viewer, not the world. On its
+        /// own that is a teleport - the thing every previous attempt at this transition was
+        /// wrecked by. Done in the same frame as the matching correction to the map, the two
+        /// changes leave the map's pose relative to the camera algebraically identical, and
+        /// nothing on screen moves at all.
+        /// </summary>
+        void RestoreExitBookkeeping()
+        {
+            Vector3 originBefore = xrOrigin.transform.position;
+            Vector3 mapBefore = placementRoot != null ? placementRoot.position : Vector3.zero;
+            Vector3 cameraBefore = xrCamera.transform.position;
+            Vector3 relativeBefore = mapBefore - cameraBefore;
+
+            xrOrigin.transform.SetPositionAndRotation(savedOriginPosition, savedOriginRotation);
+
+            if (placementRoot != null)
+            {
+                placementRoot.localPosition = savedPlacementLocalPositionAtEnter;
+                placementRoot.localScale = savedPlacementLocalScale;
+            }
+
+            if (visualRoot != null)
+            {
+                visualRoot.localPosition = savedVisualLocalPosition;
+                visualRoot.localRotation = savedVisualLocalRotation;
+                visualRoot.localScale = savedVisualLocalScale;
+            }
+
+            audioDistanceScaler?.Restore();
+            isVrActive = false;
+
+            Vector3 relativeAfter = placementRoot != null
+                ? placementRoot.position - xrCamera.transform.position
+                : Vector3.zero;
+
+            Debug.Log(
+                $"[SkyExit][BookkeepingComplete] origin={xrOrigin.transform.position} " +
+                $"placementPos={(placementRoot != null ? placementRoot.position : Vector3.zero)} " +
+                $"visualDeltaBeforeAfter={(relativeAfter - relativeBefore).magnitude:F4}m " +
+                $"originMoved={Vector3.Distance(originBefore, savedOriginPosition):F3}m",
+                this);
         }
 
         /// <summary>
@@ -789,89 +1096,6 @@ namespace F1XR.Drone
         /// wrong last impression - it says the big thing was the real one and this is what is
         /// left of it. The map is hidden instead, and returns at the end by growing.
         /// </summary>
-        void CommitExitBehindShell()
-        {
-            float coverage = skyShell != null ? skyShell.RevealCoverage : 0f;
-
-            // Order matters and only in this direction.
-            //
-            // The circuit stops being drawn first. It is a thousand times its tabletop size and
-            // the viewer is standing inside it, so restoring the origin while it is still
-            // visible drags a kilometre of track across the whole field of view in one frame.
-            // With it already gone, the same restore moves nothing anybody can see.
-            SetMapVisible(false);
-            droneHud?.Hide();
-            environment.SetActive(false);
-
-            if (visualRoot != null)
-            {
-                visualRoot.localPosition = savedVisualLocalPosition;
-                visualRoot.localRotation = savedVisualLocalRotation;
-                visualRoot.localScale = savedVisualLocalScale;
-            }
-
-            if (placementRoot != null)
-            {
-                placementRoot.localScale = savedPlacementLocalScale;
-                placementRoot.localPosition = savedPlacementLocalPositionAtEnter;
-            }
-
-            audioDistanceScaler?.Restore();
-
-            // The one and only origin move of the whole exit, and it happens here rather than
-            // at the start precisely because by now there is almost nothing virtual left for it
-            // to move relative to.
-            xrOrigin.transform.SetPositionAndRotation(savedOriginPosition, savedOriginRotation);
-
-            // Full MR endpoint before anything is torn down. The alpha seal and the masks are
-            // removed straight after this, and if the screen were not already committed to
-            // passthrough at that moment it would black out as they go.
-            ApplyMrScreenEndpoint();
-
-            isVrActive = false;
-
-            Debug.Log(
-                $"[SkyExit][Commit] time={Time.realtimeSinceStartup:F3} " +
-                $"revealCoverage={coverage:P0} " +
-                $"scale={(placementRoot != null ? placementRoot.localScale : Vector3.zero)} " +
-                $"origin={xrOrigin.transform.position}",
-                this);
-        }
-
-        /// <summary>
-        /// Brings the map back the way the viewer should remember it: small, then growing into
-        /// place on the table. Position and rotation never move - only scale - so it settles
-        /// where it belongs instead of flying in.
-        /// </summary>
-        IEnumerator RevealTabletopMap()
-        {
-            RestoreHostUi();
-
-            if (placementRoot == null)
-                yield break;
-
-            placementRoot.localPosition = savedPlacementLocalPositionAtEnter;
-            ApplyScaleMultiplier(mapRevealStartScaleMultiplier);
-            SetMapVisible(true);
-
-            float elapsed = 0f;
-            while (elapsed < mapRevealDuration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / mapRevealDuration);
-
-                // A straight interpolation, not the exponential the entry uses. That one exists
-                // because a thousandfold journey lerps to five hundred times by halfway; a
-                // tenth to one is a factor of ten and has no such runaway to correct for.
-                ApplyScaleMultiplier(Mathf.Lerp(
-                    mapRevealStartScaleMultiplier, 1f, Evaluate(mapRevealCurve, t)));
-
-                yield return null;
-            }
-
-            ApplyScaleMultiplier(1f);
-        }
-
         void SetMapVisible(bool visible)
         {
             if (visualRoot == null)
