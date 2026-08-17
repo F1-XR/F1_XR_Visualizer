@@ -15,6 +15,7 @@ namespace F1XR.Drone
     public sealed class VRDroneCoordinator : MonoBehaviour
     {
         const string EnvironmentName = "VRDroneEnvironment";
+        const string GroundTextureResourcePath = "Drone/SuzukaTerrain";
 
         [SerializeField, Min(1f)] float vrScaleMultiplier = 1000f;
 
@@ -153,6 +154,7 @@ namespace F1XR.Drone
         Transform visualRoot;
         Transform hiddenCube;
         GameObject ground;
+        Material groundMaterial;
         VRDroneHud droneHud;
         readonly List<XRBaseInteractable> disabledInteractables = new();
 
@@ -1484,10 +1486,36 @@ namespace F1XR.Drone
                 ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 ground.name = "VR Drone Ground";
                 ground.transform.SetParent(environment.transform, false);
-                ground.transform.localScale = Vector3.one * 1000f;
                 Renderer renderer = ground.GetComponent<Renderer>();
-                if (renderer != null)
-                    renderer.material.color = new Color(0.025f, 0.035f, 0.06f, 1f);
+                Texture2D terrainTexture = Resources.Load<Texture2D>(
+                    GroundTextureResourcePath);
+
+                if (terrainTexture == null)
+                {
+                    ground.transform.localScale = Vector3.one * 1000f;
+                    Debug.LogWarning(
+                        $"[VRDrone] Missing ground texture at Resources/{GroundTextureResourcePath}.",
+                        this);
+                    return;
+                }
+
+                float aspect = (float)terrainTexture.width / terrainTexture.height;
+                ground.transform.localScale = new Vector3(1000f * aspect, 1f, 1000f);
+
+                Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ??
+                    Shader.Find("Unlit/Texture");
+                if (shader == null)
+                {
+                    Debug.LogWarning("[VRDrone] No unlit shader was found for the ground texture.", this);
+                    return;
+                }
+
+                groundMaterial = new Material(shader)
+                {
+                    name = "VR Drone Ground Terrain",
+                    mainTexture = terrainTexture
+                };
+                renderer.sharedMaterial = groundMaterial;
             }
 
         }
