@@ -4009,7 +4009,7 @@ MonoBehaviour:
   driveModeTransition: 1
   driveReturnToMR: 1
   fractureSettings:
-    fragmentCount: 30
+    fragmentCount: 70
     randomSeed: 1234
     originBias: 0.8
     crackWidthMillimetres: 2.5
@@ -4084,6 +4084,7 @@ MonoBehaviour:
   forceDebugGray: 0
   surfaceStaggerStep: 0.2
   shellColor: {r: 0.78, g: 0.76, b: 0.72, a: 0.55}
+  fragmentThickness: 0.08
 --- !u!114 &1510071738
 MonoBehaviour:
   m_ObjectHideFlags: 0

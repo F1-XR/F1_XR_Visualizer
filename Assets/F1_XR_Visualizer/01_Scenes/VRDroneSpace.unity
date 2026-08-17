@@ -260,6 +260,11 @@ MonoBehaviour:
   useTrackFracture: 0
   useSkyShellExit: 1
   useRoomShellEnter: 1
+  useRoomShellExit: 1
+  earlyShrinkStartCoverage: 0
+  earlyShrinkEndCoverage: 0.15
+  earlyShrinkTargetMultiplier: 5
+  tabletopShrinkEndCoverage: 0.85
   minFractureLeadTime: 1
   mapGrowStartBreakCoverage: 1
   mapGrowDuration: 1.6
