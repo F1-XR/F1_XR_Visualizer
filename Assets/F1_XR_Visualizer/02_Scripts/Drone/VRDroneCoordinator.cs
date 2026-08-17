@@ -80,11 +80,28 @@ namespace F1XR.Drone
             "Turning this on before the hole test passes just hides which half is wrong.")]
         [SerializeField] bool useSkyShellExit;
 
-        [Header("Room Shell Enter")]
+        [Header("Room Shell")]
         [Tooltip("Enters VR by breaking the real room instead of blinking. Falls back to the " +
             "blink on its own whenever the room was never scanned, so leaving this on cannot " +
             "stop anyone getting into the drone.")]
         [SerializeField] bool useRoomShellEnter = true;
+
+        [Tooltip("Exits VR by reversing the room fracture — same fragments fly back to their " +
+            "intact positions, reality reappears through each piece. Requires a successful " +
+            "room shell enter to have dormant fragments. Falls back to legacy blink exit.")]
+        [SerializeField] bool useRoomShellExit = true;
+
+        [Header("Room reverse — Phase A (time-based rapid collapse)")]
+        [Tooltip("Seconds for Phase A. Map goes from immersive to earlyShrinkTargetMultiplier " +
+            "on a fixed timer, independent of reassembly coverage.")]
+        [SerializeField, Min(0.1f)] float earlyShrinkDuration = 0.5f;
+
+        [Tooltip("Map multiplier at the end of Phase A. 1000 → this value.")]
+        [SerializeField, Min(1f)] float earlyShrinkTargetMultiplier = 5f;
+
+        [Header("Room reverse — Phase B (coverage-based tabletop settle)")]
+        [Tooltip("Coverage at which Phase B ends and the map reaches 1×.")]
+        [SerializeField, Range(0.3f, 1f)] float tabletopShrinkEndCoverage = 0.85f;
 
         [Tooltip("Seconds the break gets entirely to itself before the circuit is allowed to " +
             "move at all. Coverage alone is not enough of a gate: the first pieces come away " +
@@ -513,7 +530,7 @@ namespace F1XR.Drone
             // switch the underlay off and take the remaining real surfaces away in one frame,
             // which is the whole failure this replaces.
             ApplyVrScreenEndpoint();
-            roomShell.ClearShellFragments();
+            // Fragments stay dormant for reverse playback on exit.
             skyShell?.SetTransitionDepthMode(false);
 
             audioDistanceScaler?.Apply(vrScaleMultiplier);
@@ -806,9 +823,23 @@ namespace F1XR.Drone
                 $"origin={xrOrigin.transform.position}",
                 this);
 
-            // The shell owns the exit when it is there. It closes over the whole view, the
-            // transition commits behind it, and it then breaks apart onto the real room - so
-            // nothing else in this method runs, including the blink.
+            // RoomShell reverse: same fragments fly back, reality reappears.
+            if (useRoomShellExit && roomShell != null && roomShell.HasDormantFragments)
+            {
+                yield return RoomShellExitRoutine();
+
+                Debug.Log(
+                    $"[DroneTransition][ExitComplete] via=roomShellReverse " +
+                    $"scale={(placementRoot != null ? placementRoot.localScale : Vector3.zero)} " +
+                    $"origin={xrOrigin.transform.position}",
+                    this);
+
+                transitionRoutine = null;
+                isTransitioning = false;
+                yield break;
+            }
+
+            // Legacy sky shell exit — kept as fallback.
             if (useSkyShellExit &&
                 skyShell != null && skyShell.isActiveAndEnabled && skyShell.IsPrepared &&
                 skyShell.BeginFracture(xrCamera != null ? xrCamera.transform : null))
@@ -895,6 +926,170 @@ namespace F1XR.Drone
 
             transitionRoutine = null;
             isTransitioning = false;
+        }
+
+        /// <summary>
+        /// VR→MR via room shell reverse. The forward fracture's fragments fly back to their
+        /// intact positions while the map shrinks from immersive to tabletop. Same geometry,
+        /// same paths, reversed time. Reality appears through each returning piece.
+        /// </summary>
+        IEnumerator RoomShellExitRoutine()
+        {
+            float beganAt = Time.realtimeSinceStartup;
+
+            droneHud?.Hide();
+            SetAnchorStabilizerPaused(true);
+
+            // SkyShell to transition depth mode so mask fragments (queue 1999) can
+            // depth-block the sky (queue 2050). Without this the sky at Background queue
+            // paints alpha 1 over the whole view before the masks run.
+            skyShell?.SetTransitionDepthMode(true);
+
+            // Passthrough compositing: layer ON, camera alpha 0. The VR environment +
+            // SkyShell still cover every pixel so the viewer sees no change yet. As mask
+            // fragments return they depth-block VR at their position, and the camera's
+            // alpha-0 background lets passthrough show through those patches.
+            if (passthrough != null)
+                passthrough.ApplyVRBehindOpaqueCover();
+
+            Debug.Log(
+                $"[RoomReverse][Begin] time={beganAt:F3} " +
+                $"dormantFragments={roomShell.TotalFragments} " +
+                $"passthroughActive={(passthrough != null)} " +
+                $"cameraAlpha={(xrCamera != null ? xrCamera.backgroundColor.a : -1f):F2} " +
+                $"earlyDuration={earlyShrinkDuration:F2}s earlyTarget={earlyShrinkTargetMultiplier:F0}× " +
+                $"tabletopEnd={tabletopShrinkEndCoverage:F2} vrScale={vrScaleMultiplier:F0}",
+                this);
+
+            // Start reassembly on its own coroutine. The map shrink is driven by
+            // reassembly coverage below, not by a separate coroutine.
+            Coroutine reassembling = roomShell.StartCoroutine(roomShell.PlayReverseSequence());
+
+            // Shrink anchor: same math as MapShrinkRoutine, accounting for origin drift.
+            Matrix4x4 originAtEnter = Matrix4x4.TRS(
+                savedOriginPosition, savedOriginRotation, Vector3.one);
+            Matrix4x4 originNow = Matrix4x4.TRS(
+                xrOrigin.transform.position, xrOrigin.transform.rotation, Vector3.one);
+            Vector3 shrinkAnchor =
+                (originNow * originAtEnter.inverse).MultiplyPoint3x4(entryWorldAnchor);
+
+            bool groundOff = false;
+
+            // ── Phase A: time-based rapid collapse ──
+            // Shrinks the map on a fixed timer, independent of how many fragments
+            // have returned. By the time MR becomes prominent the track is already
+            // small enough that it doesn't plaster over the real room.
+            float phaseAElapsed = 0f;
+            float logStartA = Mathf.Log(vrScaleMultiplier);
+            float logEndA = Mathf.Log(earlyShrinkTargetMultiplier);
+
+            Debug.Log(
+                $"[RoomReverse][PhaseA-Start] duration={earlyShrinkDuration:F2}s " +
+                $"target={earlyShrinkTargetMultiplier:F0}×", this);
+
+            while (phaseAElapsed < earlyShrinkDuration &&
+                roomShell.State == Experience.Fracture.RoomShellState.ReassemblingToMR)
+            {
+                phaseAElapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(phaseAElapsed / earlyShrinkDuration);
+                float multiplier = Mathf.Exp(Mathf.Lerp(logStartA, logEndA, t));
+                ApplyScaleAnchored(multiplier, shrinkAnchor);
+
+                if (!groundOff && multiplier < groundEnableScaleMultiplier && ground != null)
+                {
+                    ground.SetActive(false);
+                    groundOff = true;
+                }
+
+                yield return null;
+            }
+
+            // Snap to Phase A endpoint.
+            ApplyScaleAnchored(earlyShrinkTargetMultiplier, shrinkAnchor);
+
+            Debug.Log(
+                $"[RoomReverse][PhaseA-Done] elapsed={phaseAElapsed:F2}s " +
+                $"coverage={roomShell.ReassemblyCoverage:P0} " +
+                $"multiplier={earlyShrinkTargetMultiplier:F0}×", this);
+
+            // ── Phase B: coverage-based tabletop settle ──
+            // From earlyShrinkTargetMultiplier → 1×, driven by reassembly coverage.
+            bool loggedPhaseB = false;
+            bool loggedShrinkComplete = false;
+            float phaseBStartCoverage = roomShell.ReassemblyCoverage;
+            float logStartB = Mathf.Log(earlyShrinkTargetMultiplier);
+
+            float settle = 0f;
+            while (roomShell.State == Experience.Fracture.RoomShellState.ReassemblingToMR &&
+                settle < roomBreakTimeout)
+            {
+                settle += Time.deltaTime;
+                float coverage = roomShell.ReassemblyCoverage;
+
+                float t = Mathf.InverseLerp(
+                    phaseBStartCoverage, tabletopShrinkEndCoverage, coverage);
+                t = Mathf.Clamp01(t);
+                float multiplier = Mathf.Exp(Mathf.Lerp(logStartB, 0f, t));
+                ApplyScaleAnchored(multiplier, shrinkAnchor);
+
+                if (!loggedPhaseB && t > 0f)
+                {
+                    loggedPhaseB = true;
+                    Debug.Log(
+                        $"[RoomReverse][PhaseB] coverage={coverage:P0} " +
+                        $"multiplier={multiplier:F1}", this);
+                }
+
+                if (!groundOff && multiplier < groundEnableScaleMultiplier && ground != null)
+                {
+                    ground.SetActive(false);
+                    groundOff = true;
+                }
+
+                if (!loggedShrinkComplete && t >= 1f)
+                {
+                    loggedShrinkComplete = true;
+                    Debug.Log(
+                        $"[RoomReverse][MapShrinkComplete] coverage={coverage:P0}", this);
+                }
+
+                yield return null;
+            }
+
+            // Final snap to tabletop scale.
+            ApplyScaleAnchored(1f, shrinkAnchor);
+            if (ground != null) ground.SetActive(false);
+
+            if (reassembling != null)
+                roomShell.StopCoroutine(reassembling);
+
+            environment.SetActive(false);
+
+            Debug.Log(
+                $"[RoomReverse][PreFinalize] " +
+                $"placementRoot={(placementRoot != null ? placementRoot.position.ToString("F3") : "null")} " +
+                $"placementScale={(placementRoot != null ? placementRoot.localScale.ToString("F3") : "null")} " +
+                $"visualRoot={(visualRoot != null ? visualRoot.gameObject.activeSelf : false)} " +
+                $"visualScale={(visualRoot != null ? visualRoot.localScale.ToString("F3") : "null")} " +
+                $"cameraAlpha={(xrCamera != null ? xrCamera.backgroundColor.a : -1f):F2}", this);
+
+            RestoreExitBookkeeping();
+            ApplyMrScreenEndpoint();
+
+            skyShell?.SetTransitionDepthMode(false);
+            skyShell?.Cleanup(restorePassthrough: false);
+
+            roomShell.ClearShellFragments();
+            ExitVrFinalize();
+
+            Debug.Log(
+                $"[RoomReverse][Complete] total={Time.realtimeSinceStartup - beganAt:F2}s " +
+                $"origin={xrOrigin.transform.position} " +
+                $"placementPos={(placementRoot != null ? placementRoot.position.ToString("F3") : "null")} " +
+                $"placementScale={(placementRoot != null ? placementRoot.localScale.ToString("F3") : "null")} " +
+                $"visualActive={(visualRoot != null ? visualRoot.gameObject.activeSelf : false)} " +
+                $"visualActiveInHierarchy={(visualRoot != null ? visualRoot.gameObject.activeInHierarchy : false)} " +
+                $"cameraAlpha={(xrCamera != null ? xrCamera.backgroundColor.a : -1f):F2}", this);
         }
 
         /// <summary>
@@ -1007,7 +1202,9 @@ namespace F1XR.Drone
             float startedAt = Time.realtimeSinceStartup;
 
             Debug.Log(
-                $"[SkyExit][ShrinkStart] coverage={skyShell.RevealCoverage:P0} " +
+                $"[DroneTransition][ShrinkStart] " +
+                $"skyCoverage={(skyShell != null ? skyShell.RevealCoverage.ToString("P0") : "n/a")} " +
+                $"roomState={(roomShell != null ? roomShell.State.ToString() : "n/a")} " +
                 $"multiplier={vrScaleMultiplier} anchor={shrinkAnchor} " +
                 $"origin={xrOrigin.transform.position}",
                 this);
