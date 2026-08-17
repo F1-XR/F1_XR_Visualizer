@@ -19,6 +19,10 @@ namespace F1XR.Drone
 
         [SerializeField, Min(1f)] float vrScaleMultiplier = 1000f;
 
+        [Header("Drone Ground")]
+        [SerializeField, Min(1f)] float groundPlaneScale = 250f;
+        [SerializeField, Min(0f)] float groundOffsetAboveTrack = 0.1f;
+
         [Header("Transition")]
         [Tooltip("How much of the growth the viewer actually watches. The rest happens behind " +
             "the blink. Showing all thousand times of it is what made the transition " +
@@ -121,7 +125,7 @@ namespace F1XR.Drone
         [SerializeField, Min(0.1f)] float mapGrowDuration = 1.6f;
 
         [Tooltip("Map scale at which the drone's ground plane is placed and switched on. The " +
-            "ground is ten kilometres across and sits about half a metre under the real floor, " +
+            "ground sits just below the track and is held back until it is clear of the room, " +
             "so bringing it up early puts it in a depth fight with the room across the whole " +
             "view. By this scale it is nowhere near anything real.")]
         [SerializeField, Range(10f, 300f)] float groundEnableScaleMultiplier = 75f;
@@ -479,7 +483,7 @@ namespace F1XR.Drone
 
             // The drone world comes up now, while the room still covers it completely, so that
             // the first hole has something waiting behind it instead of opening onto a frame of
-            // nothing. The ground is held back - it is ten kilometres wide and would be fighting
+            // nothing. The ground is held back - it would otherwise be fighting
             // the real floor for the depth buffer across the entire room.
             environment.SetActive(true);
             if (ground != null)
@@ -624,7 +628,7 @@ namespace F1XR.Drone
 
             audioDistanceScaler?.Apply(vrScaleMultiplier);
 
-            // Switched on here rather than before Phase A: its ground plane is a kilometre
+            // Switched on here rather than before Phase A: its ground plane is large enough
             // across and would otherwise be sitting in the middle of the real room while the
             // map is still on the table.
             environment.SetActive(true);
@@ -1677,7 +1681,7 @@ namespace F1XR.Drone
 
                 if (terrainTexture == null)
                 {
-                    ground.transform.localScale = Vector3.one * 1000f;
+                    ground.transform.localScale = Vector3.one * groundPlaneScale;
                     Debug.LogWarning(
                         $"[VRDrone] Missing ground texture at Resources/{GroundTextureResourcePath}.",
                         this);
@@ -1685,7 +1689,10 @@ namespace F1XR.Drone
                 }
 
                 float aspect = (float)terrainTexture.width / terrainTexture.height;
-                ground.transform.localScale = new Vector3(1000f * aspect, 1f, 1000f);
+                ground.transform.localScale = new Vector3(
+                    groundPlaneScale * aspect,
+                    1f,
+                    groundPlaneScale);
 
                 Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ??
                     Shader.Find("Unlit/Texture");
@@ -1697,9 +1704,13 @@ namespace F1XR.Drone
 
                 groundMaterial = new Material(shader)
                 {
-                    name = "VR Drone Ground Terrain",
-                    mainTexture = terrainTexture
+                    name = "VR Drone Ground Terrain"
                 };
+                groundMaterial.mainTexture = terrainTexture;
+                if (groundMaterial.HasProperty("_BaseMap"))
+                    groundMaterial.SetTexture("_BaseMap", terrainTexture);
+                if (groundMaterial.HasProperty("_BaseColor"))
+                    groundMaterial.SetColor("_BaseColor", Color.white);
                 renderer.sharedMaterial = groundMaterial;
             }
 
@@ -1707,9 +1718,9 @@ namespace F1XR.Drone
 
         void PlaceGround(Vector3 up)
         {
-            float localY = GetTrackBaseLocalY() - 1f;
-            ground.transform.position = placementRoot.TransformPoint(
-                new Vector3(0f, localY, 0f));
+            Vector3 trackBase = placementRoot.TransformPoint(
+                new Vector3(0f, GetTrackBaseLocalY(), 0f));
+            ground.transform.position = trackBase + up.normalized * groundOffsetAboveTrack;
             ground.transform.rotation = Quaternion.FromToRotation(
                 Vector3.up,
                 up);
