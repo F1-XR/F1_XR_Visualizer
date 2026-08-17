@@ -2,15 +2,19 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using System.Collections.Generic;
 
 public static class F1TitleMeshSetup
 {
     private const string ScenePath = "Assets/F1_XR_Visualizer/01_Scenes/HomeSpace 1.unity";
     private const string MeshPath = "Assets/F1_XR_Visualizer/05_Models/MyLittleGrandPrix.obj";
+    private const string CapsMeshPath = "Assets/F1_XR_Visualizer/05_Models/MyLittleGrandPrixCaps.asset";
+    private const string SidesMeshPath = "Assets/F1_XR_Visualizer/05_Models/MyLittleGrandPrixSides.asset";
     private const string MaterialPath = "Assets/F1_XR_Visualizer/08_Materials/F1_Logo_Metal.mat";
     private const string DoubleSidedMaterialPath = "Assets/F1_XR_Visualizer/08_Materials/F1_Title_Metal.mat";
     private const string ObjectName = "MyLittleGrandPrixText";
-    private const string BackFaceName = "BackFace";
+    private const string CapsName = "Caps";
+    private const string SidesName = "Sides";
 
     [MenuItem("F1 XR/Setup My Little Grand Prix Title %#m")]
     public static void Setup()
@@ -163,26 +167,164 @@ public static class F1TitleMeshSetup
 
         renderer.sharedMaterial = material;
 
-        var backFace = title.transform.Find(BackFaceName);
-        if (backFace == null)
+        var oldBackFace = title.transform.Find("BackFace");
+        if (oldBackFace != null)
         {
-            backFace = new GameObject(BackFaceName, typeof(MeshFilter), typeof(MeshRenderer)).transform;
-            backFace.SetParent(title.transform, false);
+            Object.DestroyImmediate(oldBackFace.gameObject);
         }
 
-        backFace.localPosition = new Vector3(0f, 0f, filter.sharedMesh.bounds.size.z);
-        backFace.localRotation = Quaternion.identity;
-        backFace.localScale = new Vector3(1f, 1f, -1f);
+        var caps = title.transform.Find(CapsName);
+        if (caps == null)
+        {
+            caps = new GameObject(CapsName, typeof(MeshFilter), typeof(MeshRenderer)).transform;
+            caps.SetParent(title.transform, false);
+        }
 
-        var backFilter = backFace.GetComponent<MeshFilter>();
-        var backRenderer = backFace.GetComponent<MeshRenderer>();
-        backFilter.sharedMesh = filter.sharedMesh;
-        backRenderer.sharedMaterial = material;
-        backRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        backRenderer.receiveShadows = true;
+        caps.localPosition = Vector3.zero;
+        caps.localRotation = Quaternion.identity;
+        caps.localScale = Vector3.one;
+
+        var capsFilter = caps.GetComponent<MeshFilter>();
+        var capsRenderer = caps.GetComponent<MeshRenderer>();
+        capsFilter.sharedMesh = CreateReversedCaps(filter.sharedMesh);
+        capsRenderer.sharedMaterial = material;
+        capsRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        capsRenderer.receiveShadows = true;
+
+        var sides = title.transform.Find(SidesName);
+        if (sides == null)
+        {
+            sides = new GameObject(SidesName, typeof(MeshFilter), typeof(MeshRenderer)).transform;
+            sides.SetParent(title.transform, false);
+        }
+
+        sides.localPosition = Vector3.zero;
+        sides.localRotation = Quaternion.identity;
+        sides.localScale = Vector3.one;
+
+        var sidesFilter = sides.GetComponent<MeshFilter>();
+        var sidesRenderer = sides.GetComponent<MeshRenderer>();
+        sidesFilter.sharedMesh = CreateReversedSides(filter.sharedMesh);
+        sidesRenderer.sharedMaterial = material;
+        sidesRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        sidesRenderer.receiveShadows = true;
 
         EditorSceneManager.MarkSceneDirty(title.scene);
         EditorSceneManager.SaveScene(title.scene);
-        Debug.Log("[F1TitleMeshSetup] Added a reverse-winding title copy with F1_Logo_Metal.");
+        Debug.Log("[F1TitleMeshSetup] Added reverse-winding caps and sides with F1_Logo_Metal.");
+    }
+
+    private static Mesh CreateReversedCaps(Mesh source)
+    {
+        var caps = AssetDatabase.LoadAssetAtPath<Mesh>(CapsMeshPath);
+        if (caps == null)
+        {
+            caps = new Mesh { name = "MyLittleGrandPrixCaps" };
+            AssetDatabase.CreateAsset(caps, CapsMeshPath);
+        }
+
+        var sourceVertices = source.vertices;
+        var sourceTriangles = source.triangles;
+        var bounds = source.bounds;
+        var minimumZ = bounds.min.z;
+        var maximumZ = bounds.max.z;
+        const float epsilon = 0.0001f;
+        var vertexMap = new Dictionary<int, int>();
+        var vertices = new List<Vector3>();
+        var triangles = new List<int>();
+
+        for (var i = 0; i < sourceTriangles.Length; i += 3)
+        {
+            var a = sourceTriangles[i];
+            var b = sourceTriangles[i + 1];
+            var c = sourceTriangles[i + 2];
+            var isCap = (Mathf.Abs(sourceVertices[a].z - minimumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[b].z - minimumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[c].z - minimumZ) < epsilon) ||
+                        (Mathf.Abs(sourceVertices[a].z - maximumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[b].z - maximumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[c].z - maximumZ) < epsilon);
+            if (!isCap)
+            {
+                continue;
+            }
+
+            triangles.Add(GetOrAddVertex(c, sourceVertices, vertexMap, vertices));
+            triangles.Add(GetOrAddVertex(b, sourceVertices, vertexMap, vertices));
+            triangles.Add(GetOrAddVertex(a, sourceVertices, vertexMap, vertices));
+        }
+
+        caps.Clear();
+        caps.SetVertices(vertices);
+        caps.SetTriangles(triangles, 0);
+        caps.RecalculateNormals();
+        caps.RecalculateBounds();
+        EditorUtility.SetDirty(caps);
+        AssetDatabase.SaveAssets();
+        return caps;
+    }
+
+    private static int GetOrAddVertex(int sourceIndex, Vector3[] sourceVertices,
+        Dictionary<int, int> vertexMap, List<Vector3> vertices)
+    {
+        if (vertexMap.TryGetValue(sourceIndex, out var index))
+        {
+            return index;
+        }
+
+        index = vertices.Count;
+        vertexMap[sourceIndex] = index;
+        vertices.Add(sourceVertices[sourceIndex]);
+        return index;
+    }
+
+    private static Mesh CreateReversedSides(Mesh source)
+    {
+        var sides = AssetDatabase.LoadAssetAtPath<Mesh>(SidesMeshPath);
+        if (sides == null)
+        {
+            sides = new Mesh { name = "MyLittleGrandPrixSides" };
+            AssetDatabase.CreateAsset(sides, SidesMeshPath);
+        }
+
+        var sourceVertices = source.vertices;
+        var sourceTriangles = source.triangles;
+        var bounds = source.bounds;
+        var minimumZ = bounds.min.z;
+        var maximumZ = bounds.max.z;
+        const float epsilon = 0.0001f;
+        var vertexMap = new Dictionary<int, int>();
+        var vertices = new List<Vector3>();
+        var triangles = new List<int>();
+
+        for (var i = 0; i < sourceTriangles.Length; i += 3)
+        {
+            var a = sourceTriangles[i];
+            var b = sourceTriangles[i + 1];
+            var c = sourceTriangles[i + 2];
+            var isCap = (Mathf.Abs(sourceVertices[a].z - minimumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[b].z - minimumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[c].z - minimumZ) < epsilon) ||
+                        (Mathf.Abs(sourceVertices[a].z - maximumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[b].z - maximumZ) < epsilon &&
+                         Mathf.Abs(sourceVertices[c].z - maximumZ) < epsilon);
+            if (isCap)
+            {
+                continue;
+            }
+
+            triangles.Add(GetOrAddVertex(c, sourceVertices, vertexMap, vertices));
+            triangles.Add(GetOrAddVertex(b, sourceVertices, vertexMap, vertices));
+            triangles.Add(GetOrAddVertex(a, sourceVertices, vertexMap, vertices));
+        }
+
+        sides.Clear();
+        sides.SetVertices(vertices);
+        sides.SetTriangles(triangles, 0);
+        sides.RecalculateNormals();
+        sides.RecalculateBounds();
+        EditorUtility.SetDirty(sides);
+        AssetDatabase.SaveAssets();
+        return sides;
     }
 }
