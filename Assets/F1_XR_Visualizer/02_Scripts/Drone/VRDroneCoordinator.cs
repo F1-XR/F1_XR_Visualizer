@@ -15,13 +15,47 @@ namespace F1XR.Drone
     public sealed class VRDroneCoordinator : MonoBehaviour
     {
         const string EnvironmentName = "VRDroneEnvironment";
-        const string GroundTextureResourcePath = "Drone/SuzukaTerrain";
+        const string GroundTextureResourcePath = "Drone/SuzukaAerial";
 
         [SerializeField, Min(1f)] float vrScaleMultiplier = 1000f;
+
+        [Header("Drone Camera")]
+        [SerializeField, Min(1f)] float droneFarClipPlane = 5000f;
 
         [Header("Drone Ground")]
         [SerializeField, Min(1f)] float groundPlaneScale = 250f;
         [SerializeField, Min(0f)] float groundOffsetAboveTrack = 0.1f;
+
+        [Header("Aerial Ground")]
+        [Tooltip("Replaces the fixed-size plate with the aerial photo, placed in the " +
+            "track's own metric space so it rides the placement scale. Off falls back " +
+            "to the old plate, so the previous look is one checkbox away.")]
+        [SerializeField] bool useAerialGround = true;
+
+        [Tooltip("Photo centre in the circuit's own metres, read off the Blender scene. " +
+            "glTFast negates X on import (NodeExtension.GetTransform), so Blender " +
+            "(x, y, z) arrives as Unity (-x, z, y).")]
+        [SerializeField] Vector3 aerialLocalPosition = new Vector3(-64.9576f, 26.56f, 40.0006f);
+
+        [Tooltip("Yaw of the photo in the same space. Blender's -39 about +Z arrives as " +
+            "+39 about Unity's +Y (the same X-flip negates the quaternion's y).")]
+        [SerializeField] float aerialLocalYaw = 39f;
+
+        [Tooltip("Ground footprint of the photo in metres. 11304.42 x 7118.60 is 11.3 km " +
+            "of Suzuka countryside with the circuit punched out of the middle.")]
+        [SerializeField] Vector2 aerialLocalSize = new Vector2(11304.42f, 7118.60f);
+
+        [Tooltip("The placeholder plate and walls that stand in for the world under the " +
+            "tabletop map. They stay for MR, but in VR the aerial photo takes over that " +
+            "job, so their renderers are hidden for the trip and restored on the way " +
+            "out. Renderers only - colliders and grab targets keep working. Matched by " +
+            "name because the glTF import nests them behind generated parents.")]
+        [SerializeField] string[] plateRendererNames =
+        {
+            "suzuka_rect_fill",
+            "suzuka_rect_walls",
+            "Cube",
+        };
 
         [Header("Transition")]
         [Tooltip("How much of the growth the viewer actually watches. The rest happens behind " +
@@ -176,6 +210,9 @@ namespace F1XR.Drone
         Transform hiddenCube;
         GameObject ground;
         Material groundMaterial;
+        readonly List<Renderer> plateRenderers = new();
+        bool plateRenderersScanned;
+        bool warnedMissingPlates;
         VRDroneHud droneHud;
         readonly List<XRBaseInteractable> disabledInteractables = new();
 
@@ -196,6 +233,7 @@ namespace F1XR.Drone
         Vector3 savedVisualLocalScale;
         CameraClearFlags savedClearFlags;
         Color savedBackgroundColor;
+        float savedFarClipPlane;
         bool savedPassthroughActive;
         bool savedTrackEditMode;
         bool appliedShowGrabVolumeVisual;
@@ -296,7 +334,7 @@ namespace F1XR.Drone
                 flightController.Configure(this);
             }
 
-            environment.SetActive(false);
+            SetDroneWorldActive(false);
             EnsureEnvironment();
             droneHud = GetComponent<VRDroneHud>();
             if (droneHud == null)
@@ -349,6 +387,7 @@ namespace F1XR.Drone
             visualRoot = placementRoot != null
                 ? placementRoot.Find("Visual") ?? placementRoot
                 : null;
+            plateRenderersScanned = false;
             if (visualRoot == null)
                 return;
 
@@ -485,7 +524,7 @@ namespace F1XR.Drone
             // the first hole has something waiting behind it instead of opening onto a frame of
             // nothing. The ground is held back - it would otherwise be fighting
             // the real floor for the depth buffer across the entire room.
-            environment.SetActive(true);
+            SetDroneWorldActive(true);
             if (ground != null)
                 ground.SetActive(false);
 
@@ -631,7 +670,7 @@ namespace F1XR.Drone
             // Switched on here rather than before Phase A: its ground plane is large enough
             // across and would otherwise be sitting in the middle of the real room while the
             // map is still on the table.
-            environment.SetActive(true);
+            SetDroneWorldActive(true);
             ApplyVrScreenEndpoint();
             PlaceGround(placementRoot.up);
             HideHostUi();
@@ -781,6 +820,8 @@ namespace F1XR.Drone
         /// </summary>
         void ApplyVrScreenEndpoint()
         {
+            xrCamera.farClipPlane = droneFarClipPlane;
+
             if (passthrough != null)
             {
                 passthrough.ApplyVRImmediate();
@@ -794,6 +835,8 @@ namespace F1XR.Drone
 
         void ApplyMrScreenEndpoint()
         {
+            xrCamera.farClipPlane = savedFarClipPlane;
+
             if (passthrough != null)
             {
                 passthrough.ApplyMRImmediate();
@@ -1070,7 +1113,7 @@ namespace F1XR.Drone
                 roomShell.StopCoroutine(reassembling);
 
             // VR environment off only after room is mostly restored.
-            environment.SetActive(false);
+            SetDroneWorldActive(false);
 
             RestoreExitBookkeeping();
             ApplyMrScreenEndpoint();
@@ -1131,7 +1174,7 @@ namespace F1XR.Drone
                 // is the thing that is about to shrink, and switching it off for even a frame
                 // turns the whole transition back into "VR ended, then a map appeared".
                 droneHud?.Hide();
-                environment.SetActive(false);
+                SetDroneWorldActive(false);
 
                 yield return MapShrinkRoutine();
 
@@ -1455,7 +1498,7 @@ namespace F1XR.Drone
             ApplyMrScreenEndpoint();
 
             droneHud?.Hide();
-            environment.SetActive(false);
+            SetDroneWorldActive(false);
             RestoreHostUi();
 
             // Already in MR by every measure that matters, so the drone is no longer flying.
@@ -1541,6 +1584,7 @@ namespace F1XR.Drone
             savedVisualLocalScale = visualRoot.localScale;
             savedClearFlags = xrCamera.clearFlags;
             savedBackgroundColor = xrCamera.backgroundColor;
+            savedFarClipPlane = xrCamera.farClipPlane;
             savedPassthroughActive = passthroughLayer.activeSelf;
             savedTrackEditMode = trackPlacer.IsEditMode;
         }
@@ -1688,11 +1732,16 @@ namespace F1XR.Drone
                     return;
                 }
 
-                float aspect = (float)terrainTexture.width / terrainTexture.height;
-                ground.transform.localScale = new Vector3(
-                    groundPlaneScale * aspect,
-                    1f,
-                    groundPlaneScale);
+                if (!useAerialGround)
+                {
+                    float aspect = (float)terrainTexture.width / terrainTexture.height;
+                    ground.transform.localScale = new Vector3(
+                        groundPlaneScale * aspect,
+                        1f,
+                        groundPlaneScale);
+                }
+                // In aerial mode PlaceGround owns the scale: it is track-relative and is
+                // rewritten on every call, including mid-growth.
 
                 Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ??
                     Shader.Find("Unlit/Texture");
@@ -1712,18 +1761,183 @@ namespace F1XR.Drone
                 if (groundMaterial.HasProperty("_BaseColor"))
                     groundMaterial.SetColor("_BaseColor", Color.white);
                 renderer.sharedMaterial = groundMaterial;
+
+                if (useAerialGround)
+                    MakeTransparent(groundMaterial);
             }
 
         }
 
         void PlaceGround(Vector3 up)
         {
-            Vector3 trackBase = placementRoot.TransformPoint(
-                new Vector3(0f, GetTrackBaseLocalY(), 0f));
-            ground.transform.position = trackBase + up.normalized * groundOffsetAboveTrack;
-            ground.transform.rotation = Quaternion.FromToRotation(
-                Vector3.up,
-                up);
+            if (!useAerialGround)
+            {
+                Vector3 trackBase = placementRoot.TransformPoint(
+                    new Vector3(0f, GetTrackBaseLocalY(), 0f));
+                ground.transform.position =
+                    trackBase + up.normalized * groundOffsetAboveTrack;
+                ground.transform.rotation = Quaternion.FromToRotation(
+                    Vector3.up,
+                    up);
+                return;
+            }
+
+            // Everything below is expressed in the circuit's own metres. The anchor is
+            // the instantiated map itself, not placementRoot: the circuit arrives through
+            // TrackMapView with its own shrink factor (the prefab is authored at 0.001,
+            // and Show() then overwrites the instance scale), so a metre of circuit is
+            // nowhere near one placementRoot unit. The calibration asset says as much -
+            // its target positions span about one unit for a 2.2 km circuit. Reading the
+            // map's own transform folds the table fit, that shrink factor and the x1000
+            // growth into one number, and PlaceGround already reruns mid-growth and at
+            // the end, which is exactly the resync this needs.
+            Transform anchor = FindAerialAnchor();
+            float metresToWorld = anchor.lossyScale.x;
+
+            ground.transform.position =
+                anchor.TransformPoint(aerialLocalPosition) +
+                up.normalized * groundOffsetAboveTrack;
+
+            // The anchor already carries the surface orientation; the photo only adds
+            // its own yaw. FromToRotation would throw that yaw away.
+            ground.transform.rotation =
+                anchor.rotation * Quaternion.Euler(0f, aerialLocalYaw, 0f);
+
+            // Unity's Plane primitive is 10 x 10 units at scale 1.
+            ground.transform.localScale = new Vector3(
+                aerialLocalSize.x * metresToWorld / 10f,
+                1f,
+                aerialLocalSize.y * metresToWorld / 10f);
+
+            Debug.Log(
+                "[VRDrone][AerialGround] anchor=" + anchor.name +
+                " metresToWorld=" + metresToWorld.ToString("F6") +
+                " placementScale=" + placementRoot.lossyScale.x.ToString("F6") +
+                " groundWidth=" + (aerialLocalSize.x * metresToWorld).ToString("F1"),
+                this);
+        }
+
+        /// <summary>
+        /// The transform whose local space is the circuit's own metres: the instantiated
+        /// map root sitting directly under visualRoot. Found by climbing up from a known
+        /// circuit renderer, because TrackMapView keeps its instance private and the
+        /// prefab name is data, not something to hard-code. Falls back to placementRoot,
+        /// which is wrong by the map's own shrink factor - but that branch is only
+        /// reachable when no circuit renderer exists, i.e. when there is nothing on
+        /// screen to be misaligned with anyway.
+        /// </summary>
+        Transform FindAerialAnchor()
+        {
+            if (visualRoot == null)
+                return placementRoot;
+
+            ScanTrackPlateRenderers();
+
+            foreach (Renderer plate in plateRenderers)
+            {
+                if (plate == null)
+                    continue;
+
+                Transform node = plate.transform;
+                while (node.parent != null && node.parent != visualRoot)
+                    node = node.parent;
+
+                if (node.parent == visualRoot)
+                    return node;
+            }
+
+            return placementRoot;
+        }
+
+        /// <summary>
+        /// The photo has the circuit punched out of it, so the plate has to actually
+        /// respect alpha. URP/Unlit ships opaque, and an opaque plate would paint the
+        /// hole straight back in.
+        /// </summary>
+        static void MakeTransparent(Material material)
+        {
+            material.SetOverrideTag("RenderType", "Transparent");
+            if (material.HasProperty("_Surface"))
+                material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend"))
+                material.SetFloat("_Blend", 0f);
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 0f);
+            if (material.HasProperty("_SrcBlend"))
+                material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (material.HasProperty("_DstBlend"))
+                material.SetInt(
+                    "_DstBlend",
+                    (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        }
+
+        /// <summary>
+        /// The aerial world and the tabletop plate always move together - the photo
+        /// replaces the plate, so one appearing is the other leaving. Kept in one place
+        /// so a new call site cannot toggle half of it.
+        /// </summary>
+        void SetDroneWorldActive(bool active)
+        {
+            environment.SetActive(active);
+
+            if (useAerialGround)
+                SetTrackPlateVisible(!active);
+        }
+
+        /// <summary>
+        /// Renderers only, never SetActive: colliders and grab targets on the plate keep
+        /// working, and the placement bounds are computed with includeInactive anyway, so
+        /// hiding this way changes nothing about how the map sits on the table.
+        /// </summary>
+        void SetTrackPlateVisible(bool visible)
+        {
+            ScanTrackPlateRenderers();
+
+            foreach (Renderer plate in plateRenderers)
+            {
+                if (plate != null)
+                    plate.enabled = visible;
+            }
+        }
+
+        void ScanTrackPlateRenderers()
+        {
+            if (visualRoot == null)
+                return;
+
+            // A successful scan sticks; an empty one is retried, because the map prefab
+            // is instantiated under visualRoot at some point after ConfigureHostScene and
+            // there is no callback that says when.
+            if (plateRenderersScanned && plateRenderers.Count > 0)
+                return;
+
+            plateRenderers.Clear();
+            foreach (Renderer child in visualRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (string plateName in plateRendererNames)
+                {
+                    if (!string.Equals(child.name, plateName, StringComparison.Ordinal))
+                        continue;
+
+                    plateRenderers.Add(child);
+                    break;
+                }
+            }
+
+            plateRenderersScanned = true;
+
+            if (plateRenderers.Count == 0 && !warnedMissingPlates)
+            {
+                warnedMissingPlates = true;
+                Debug.LogWarning(
+                    "[VRDrone] No plate renderers matched " +
+                    "[" + string.Join(", ", plateRendererNames) + "] under " +
+                    "'" + visualRoot.name + "'. The placeholder plate will stay " +
+                    "visible under the aerial photo.",
+                    this);
+            }
         }
 
         static T FindInScene<T>(Scene scene) where T : Component
