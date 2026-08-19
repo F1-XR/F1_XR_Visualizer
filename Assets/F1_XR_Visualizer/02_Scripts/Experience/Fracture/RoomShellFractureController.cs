@@ -302,7 +302,7 @@ namespace F1XR.Experience.Fracture
 
             state = RoomShellState.ReassemblingToMR;
 
-            Material flight = GetSharedMaterial() ?? MaterialFor(ShellVisualMode.MRMask);
+            Material flight = MaterialFor(ShellVisualMode.MRMask);
             for (int i = 0; i < rigs.Count; i++)
             {
                 Vector3 outward = i < rigOutwardNormals.Count
