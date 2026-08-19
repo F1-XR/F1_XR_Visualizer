@@ -71,6 +71,13 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField, Min(0.5f)] private float automaticTableDiagnosticInterval = 2f;
         [SerializeField, Min(0.001f)] private float automaticTableSlowScanSeconds = 0.02f;
 
+        [Header("Automatic Table Preview")]
+        [SerializeField] private bool showAutomaticTableCandidates;
+        [SerializeField] private Color automaticTableCandidateColor =
+            new(0.25f, 0.85f, 1f, 0.28f);
+        [SerializeField, Min(0.05f)] private float automaticTablePreviewInterval = 0.25f;
+        [SerializeField, Min(0f)] private float automaticTablePreviewHeightOffset = 0.01f;
+
         [Header("No Room Data Fallback")]
         [SerializeField] private bool allowWorldFloorFallback;
         [SerializeField] private float fallbackFloorHeight;
@@ -159,15 +166,21 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
             SetControllerPointerActionsEnabled(false);
             UnsubscribeHandSubsystem();
+            ClearAutomaticTableCandidatePreviews();
         }
 
         private void OnDestroy()
         {
             DisposeControllerPointerActions();
+            ClearAutomaticTableCandidatePreviews();
+            if (automaticTablePreviewMaterial != null)
+                Destroy(automaticTablePreviewMaterial);
         }
 
         private void Update()
         {
+            UpdateAutomaticTableCandidatePreviews();
+
             if (useHandPinchPlacement && handSubsystem == null)
                 TrySubscribeHandSubsystem();
 
@@ -769,6 +782,124 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private ARAnchor currentAnchor;
         private GameObject spawnedCube;
+        private readonly Dictionary<TrackableId, GameObject>
+            automaticTableCandidatePreviews = new();
+        private readonly HashSet<TrackableId>
+            activeAutomaticTableCandidateIds = new();
+        private readonly List<TrackableId>
+            automaticTableCandidateIdsToRemove = new();
+        private Material automaticTablePreviewMaterial;
+        private float nextAutomaticTablePreviewTime;
+
+        private void UpdateAutomaticTableCandidatePreviews()
+        {
+            if (!showAutomaticTableCandidates || planeManager == null)
+            {
+                ClearAutomaticTableCandidatePreviews();
+                return;
+            }
+
+            if (Time.unscaledTime < nextAutomaticTablePreviewTime)
+                return;
+
+            nextAutomaticTablePreviewTime = Time.unscaledTime +
+                automaticTablePreviewInterval;
+            activeAutomaticTableCandidateIds.Clear();
+            foreach (ARPlane plane in planeManager.trackables)
+            {
+                if (!TryUseAutomaticPlane(plane, out Pose pose))
+                    continue;
+
+                TrackableId id = plane.trackableId;
+                activeAutomaticTableCandidateIds.Add(id);
+                UpdateAutomaticTableCandidatePreview(plane, pose);
+            }
+
+            automaticTableCandidateIdsToRemove.Clear();
+            foreach (TrackableId id in automaticTableCandidatePreviews.Keys)
+            {
+                if (!activeAutomaticTableCandidateIds.Contains(id))
+                    automaticTableCandidateIdsToRemove.Add(id);
+            }
+
+            foreach (TrackableId id in automaticTableCandidateIdsToRemove)
+            {
+                GameObject preview = automaticTableCandidatePreviews[id];
+                if (preview != null)
+                    Destroy(preview);
+                automaticTableCandidatePreviews.Remove(id);
+            }
+        }
+
+        private void UpdateAutomaticTableCandidatePreview(ARPlane plane, Pose pose)
+        {
+            TrackableId id = plane.trackableId;
+            if (!automaticTableCandidatePreviews.TryGetValue(id, out GameObject preview) ||
+                preview == null)
+            {
+                preview = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                preview.name = "Automatic Table Candidate Preview";
+                Destroy(preview.GetComponent<Collider>());
+
+                var renderer = preview.GetComponent<MeshRenderer>();
+                renderer.sharedMaterial = GetAutomaticTablePreviewMaterial();
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+                automaticTableCandidatePreviews[id] = preview;
+            }
+
+            preview.transform.SetPositionAndRotation(
+                pose.position + plane.transform.up * automaticTablePreviewHeightOffset,
+                plane.transform.rotation * Quaternion.Euler(-90f, 0f, 0f));
+            preview.transform.localScale = new Vector3(
+                Mathf.Max(plane.size.x, 0.01f),
+                Mathf.Max(plane.size.y, 0.01f),
+                1f);
+        }
+
+        private Material GetAutomaticTablePreviewMaterial()
+        {
+            if (automaticTablePreviewMaterial != null)
+                return automaticTablePreviewMaterial;
+
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Unlit/Color");
+
+            automaticTablePreviewMaterial = new Material(shader)
+            {
+                color = automaticTableCandidateColor
+            };
+            if (automaticTablePreviewMaterial.HasProperty("_BaseColor"))
+                automaticTablePreviewMaterial.SetColor(
+                    "_BaseColor", automaticTableCandidateColor);
+            if (automaticTablePreviewMaterial.HasProperty("_Surface"))
+                automaticTablePreviewMaterial.SetFloat("_Surface", 1f);
+
+            automaticTablePreviewMaterial.SetInt(
+                "_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            automaticTablePreviewMaterial.SetInt(
+                "_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            automaticTablePreviewMaterial.SetInt("_ZWrite", 0);
+            automaticTablePreviewMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            automaticTablePreviewMaterial.EnableKeyword("_ALPHABLEND_ON");
+            automaticTablePreviewMaterial.renderQueue =
+                (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            return automaticTablePreviewMaterial;
+        }
+
+        private void ClearAutomaticTableCandidatePreviews()
+        {
+            foreach (GameObject preview in automaticTableCandidatePreviews.Values)
+            {
+                if (preview != null)
+                    Destroy(preview);
+            }
+
+            automaticTableCandidatePreviews.Clear();
+            activeAutomaticTableCandidateIds.Clear();
+            automaticTableCandidateIdsToRemove.Clear();
+        }
 
         public bool TryPlaceCube()
         {
