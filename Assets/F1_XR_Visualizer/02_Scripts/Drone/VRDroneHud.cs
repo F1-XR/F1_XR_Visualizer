@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -39,6 +40,9 @@ namespace F1XR.Drone
         Image[] speedMarkers;
         Image[] whiteTicks;
         TextMeshProUGUI speedValue;
+        RectTransform targetOverlay;
+        readonly List<TargetBox> targetBoxes = new();
+        TargetCard targetCard;
         float targetSpeedKph;
         float displayedSpeedKph;
         float nextSpeedUpdateTime;
@@ -139,7 +143,108 @@ namespace F1XR.Drone
             CreateCrosshair(rect);
             CreateExitHint(rect);
             CreateSpeedometer(rect);
+            targetOverlay = CreateRect("Vehicle Targets", rect);
+            targetOverlay.anchorMin = Vector2.zero;
+            targetOverlay.anchorMax = Vector2.one;
+            targetOverlay.offsetMin = Vector2.zero;
+            targetOverlay.offsetMax = Vector2.zero;
             return result;
+        }
+
+        public void SetVehicleTargets(IReadOnlyList<DroneVehicleTarget> targets)
+        {
+            int count = targets != null ? targets.Count : 0;
+            EnsureTargetBoxCount(count);
+
+            for (int i = 0; i < targetBoxes.Count; i++)
+            {
+                bool active = i < count;
+                targetBoxes[i].SetActive(active);
+                if (active)
+                    targetBoxes[i].SetTarget(targets[i]);
+            }
+
+            if (count == 0)
+            {
+                targetCard?.SetActive(false);
+                return;
+            }
+
+            targetCard ??= CreateTargetCard(targetOverlay);
+            targetCard.SetTarget(targets[0]);
+        }
+
+        void EnsureTargetBoxCount(int count)
+        {
+            while (targetBoxes.Count < count)
+                targetBoxes.Add(CreateTargetBox(targetOverlay));
+        }
+
+        TargetBox CreateTargetBox(Transform parent)
+        {
+            RectTransform root = CreateRect("Vehicle Target Box", parent);
+            Image top = CreateImage("Top", root, Color.cyan);
+            Image bottom = CreateImage("Bottom", root, Color.cyan);
+            Image left = CreateImage("Left", root, Color.cyan);
+            Image right = CreateImage("Right", root, Color.cyan);
+
+            top.rectTransform.anchorMin = new Vector2(0f, 1f);
+            top.rectTransform.anchorMax = Vector2.one;
+            top.rectTransform.pivot = new Vector2(0.5f, 1f);
+            top.rectTransform.sizeDelta = new Vector2(0f, 4f);
+            bottom.rectTransform.anchorMin = Vector2.zero;
+            bottom.rectTransform.anchorMax = new Vector2(1f, 0f);
+            bottom.rectTransform.pivot = Vector2.zero;
+            bottom.rectTransform.sizeDelta = new Vector2(0f, 4f);
+            left.rectTransform.anchorMin = Vector2.zero;
+            left.rectTransform.anchorMax = new Vector2(0f, 1f);
+            left.rectTransform.pivot = Vector2.zero;
+            left.rectTransform.sizeDelta = new Vector2(4f, 0f);
+            right.rectTransform.anchorMin = new Vector2(1f, 0f);
+            right.rectTransform.anchorMax = Vector2.one;
+            right.rectTransform.pivot = new Vector2(1f, 0f);
+            right.rectTransform.sizeDelta = new Vector2(4f, 0f);
+
+            root.gameObject.SetActive(false);
+            return new TargetBox(root, top, bottom, left, right);
+        }
+
+        TargetCard CreateTargetCard(Transform parent)
+        {
+            RectTransform root = CreateRect("Vehicle Target Card", parent);
+            root.sizeDelta = new Vector2(300f, 170f);
+            Image background = CreateImage("Background", root,
+                new Color(0.02f, 0.05f, 0.08f, 0.9f));
+            background.rectTransform.anchorMin = Vector2.zero;
+            background.rectTransform.anchorMax = Vector2.one;
+            background.rectTransform.offsetMin = Vector2.zero;
+            background.rectTransform.offsetMax = Vector2.zero;
+            Image accent = CreateImage("Accent", root, Color.cyan);
+            accent.rectTransform.anchorMin = Vector2.zero;
+            accent.rectTransform.anchorMax = new Vector2(0f, 1f);
+            accent.rectTransform.sizeDelta = new Vector2(8f, 0f);
+            TextMeshProUGUI number = CreateText("Number", root, "", 30f);
+            TextMeshProUGUI driver = CreateText("Driver", root, "", 38f);
+            TextMeshProUGUI team = CreateText("Team", root, "", 23f);
+            TextMeshProUGUI rank = CreateText("Rank", root, "", 28f);
+            SetCardTextRect(number.rectTransform, new Vector2(26f, -26f), new Vector2(240f, 34f));
+            SetCardTextRect(driver.rectTransform, new Vector2(26f, -64f), new Vector2(250f, 46f));
+            SetCardTextRect(team.rectTransform, new Vector2(26f, -108f), new Vector2(250f, 30f));
+            SetCardTextRect(rank.rectTransform, new Vector2(26f, -140f), new Vector2(180f, 28f));
+            number.font = f1NumberFont;
+            driver.font = f1NumberFont;
+            rank.font = f1NumberFont;
+            root.gameObject.SetActive(false);
+            return new TargetCard(root, accent, number, driver, team, rank);
+        }
+
+        static void SetCardTextRect(RectTransform rect, Vector2 position, Vector2 size)
+        {
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
         }
 
         void CreateFrame(RectTransform parent)
@@ -416,6 +521,89 @@ namespace F1XR.Drone
 
             foreach (Image tick in whiteTicks)
                 tick.enabled = true;
+        }
+
+        sealed class TargetBox
+        {
+            readonly RectTransform root;
+            readonly Image[] borders;
+
+            public TargetBox(RectTransform root, params Image[] borders)
+            {
+                this.root = root;
+                this.borders = borders;
+            }
+
+            public void SetActive(bool active)
+            {
+                root.gameObject.SetActive(active);
+            }
+
+            public void SetTarget(DroneVehicleTarget target)
+            {
+                root.anchorMin = target.viewportRect.min;
+                root.anchorMax = target.viewportRect.max;
+                root.offsetMin = Vector2.zero;
+                root.offsetMax = Vector2.zero;
+                foreach (Image border in borders)
+                    border.color = target.teamColor;
+            }
+        }
+
+        sealed class TargetCard
+        {
+            readonly RectTransform root;
+            readonly Image accent;
+            readonly TextMeshProUGUI number;
+            readonly TextMeshProUGUI driver;
+            readonly TextMeshProUGUI team;
+            readonly TextMeshProUGUI rank;
+
+            public TargetCard(
+                RectTransform root,
+                Image accent,
+                TextMeshProUGUI number,
+                TextMeshProUGUI driver,
+                TextMeshProUGUI team,
+                TextMeshProUGUI rank)
+            {
+                this.root = root;
+                this.accent = accent;
+                this.number = number;
+                this.driver = driver;
+                this.team = team;
+                this.rank = rank;
+            }
+
+            public void SetActive(bool active)
+            {
+                root.gameObject.SetActive(active);
+            }
+
+            public void SetTarget(DroneVehicleTarget target)
+            {
+                float x = target.viewportRect.xMax * CanvasSize.x + 26f;
+                bool placeLeft = x + root.sizeDelta.x > CanvasSize.x - 24f;
+                if (placeLeft)
+                    x = target.viewportRect.xMin * CanvasSize.x -
+                        root.sizeDelta.x - 26f;
+
+                root.anchorMin = Vector2.zero;
+                root.anchorMax = Vector2.zero;
+                root.pivot = Vector2.zero;
+                root.anchoredPosition = new Vector2(
+                    Mathf.Clamp(x, 24f, CanvasSize.x - root.sizeDelta.x - 24f),
+                    Mathf.Clamp(
+                        target.viewportRect.yMin * CanvasSize.y,
+                        24f,
+                        CanvasSize.y - root.sizeDelta.y - 24f));
+                accent.color = target.teamColor;
+                number.text = $"#{target.driverNumber}";
+                driver.text = target.driverLabel;
+                team.text = target.teamName;
+                rank.text = target.rank > 0 ? $"P{target.rank}" : string.Empty;
+                root.gameObject.SetActive(true);
+            }
         }
 
         static Vector2 Direction(float angle)

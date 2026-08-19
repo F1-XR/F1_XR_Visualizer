@@ -66,6 +66,11 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField] private float verticalOffset = 0.04f;
         [SerializeField] private float defaultCubeSize = 0.08f;
 
+        [Header("Diagnostics")]
+        [SerializeField] private bool logAutomaticTableDiagnostics;
+        [SerializeField, Min(0.5f)] private float automaticTableDiagnosticInterval = 2f;
+        [SerializeField, Min(0.001f)] private float automaticTableSlowScanSeconds = 0.02f;
+
         [Header("No Room Data Fallback")]
         [SerializeField] private bool allowWorldFloorFallback;
         [SerializeField] private float fallbackFloorHeight;
@@ -199,6 +204,9 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         private bool wasLeftPinching;
         private bool wasRightPinching;
         private Handedness lastPinchHandedness = Handedness.Invalid;
+        private float nextAutomaticTableDiagnosticTime;
+        private bool hasLoggedAutomaticTableResult;
+        private bool lastAutomaticTableResult;
 
         private void TrySubscribeHandSubsystem()
         {
@@ -405,13 +413,35 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             if (planeManager == null)
                 return false;
 
+            bool collectDiagnostics = logAutomaticTableDiagnostics;
+            double scanStartedAt = collectDiagnostics
+                ? Time.realtimeSinceStartupAsDouble
+                : 0d;
+            int trackableCount = 0;
+            int tableClassifiedCount = 0;
+            int acceptedCount = 0;
+
             ARPlane bestPlane = null;
             Pose bestPose = default;
             float bestScore = float.NegativeInfinity;
             foreach (ARPlane candidate in planeManager.trackables)
             {
+                if (collectDiagnostics)
+                {
+                    trackableCount++;
+                    if (candidate != null && HasClassification(
+                            candidate.classifications,
+                            PlaneClassifications.Table))
+                    {
+                        tableClassifiedCount++;
+                    }
+                }
+
                 if (!TryUseAutomaticPlane(candidate, out Pose candidatePose))
                     continue;
+
+                if (collectDiagnostics)
+                    acceptedCount++;
 
                 float score = ScoreAutomaticPlane(candidate);
                 if (preferredPlacementPlane != null &&
@@ -427,7 +457,21 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 bestScore = score;
             }
 
-            if (bestPlane == null)
+            bool foundSurface = bestPlane != null;
+            if (collectDiagnostics)
+            {
+                float scanSeconds = (float)(Time.realtimeSinceStartupAsDouble - scanStartedAt);
+                LogAutomaticTableDiagnostics(
+                    foundSurface,
+                    trackableCount,
+                    tableClassifiedCount,
+                    acceptedCount,
+                    bestPlane,
+                    bestScore,
+                    scanSeconds);
+            }
+
+            if (!foundSurface)
                 return false;
 
             preferredPlacementPlane = bestPlane;
@@ -442,6 +486,40 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 longAxis,
                 canCreateAnchor: true);
             return true;
+        }
+
+        private void LogAutomaticTableDiagnostics(
+            bool foundSurface,
+            int trackableCount,
+            int tableClassifiedCount,
+            int acceptedCount,
+            ARPlane bestPlane,
+            float bestScore,
+            float scanSeconds)
+        {
+            float now = Time.realtimeSinceStartup;
+            bool resultChanged = !hasLoggedAutomaticTableResult ||
+                lastAutomaticTableResult != foundSurface;
+            bool slowScan = scanSeconds >= automaticTableSlowScanSeconds;
+            if (!resultChanged && !slowScan && now < nextAutomaticTableDiagnosticTime)
+                return;
+
+            hasLoggedAutomaticTableResult = true;
+            lastAutomaticTableResult = foundSurface;
+            nextAutomaticTableDiagnosticTime = now + automaticTableDiagnosticInterval;
+
+            string selected = bestPlane == null
+                ? "none"
+                : $"id={bestPlane.trackableId}, size={bestPlane.size}, " +
+                  $"classifications={bestPlane.classifications}, score={bestScore:F2}";
+            string message =
+                $"[TableAuto] found={foundSurface}, trackables={trackableCount}, " +
+                $"accepted={acceptedCount}, tableClassified={tableClassifiedCount}, " +
+                $"scanMs={scanSeconds * 1000f:F2}, selected={selected}";
+            if (slowScan)
+                Debug.LogWarning(message, this);
+            else
+                Debug.Log(message, this);
         }
 
 
