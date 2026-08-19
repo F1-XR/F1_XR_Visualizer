@@ -108,7 +108,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDisable()
         {
             wallProvider?.ClearPreview();
-            SetSceneTrackingSuspended(false);
+            // Do not restart Meta plane subsystems while OpenXR is tearing down.
         }
 
         private void Update()

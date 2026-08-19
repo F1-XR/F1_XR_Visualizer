@@ -746,8 +746,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
-  useMetaSceneApi: 0
-  metaSceneSource: {fileID: 0}
   planeManager: {fileID: 1674081569}
   orientationCamera: {fileID: 1674081566}
   allowVerticalFallback: 1
@@ -2087,7 +2085,6 @@ MonoBehaviour:
   raycastManager: {fileID: 1674081568}
   planeManager: {fileID: 1674081569}
   anchorManager: {fileID: 1674081570}
-  metaSceneSource: {fileID: 0}
   rayOrigin: {fileID: 1674081566}
   cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
