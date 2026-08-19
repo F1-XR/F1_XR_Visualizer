@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.XR.ARFoundation;
@@ -373,6 +374,7 @@ namespace F1XR.RestAPI.Replay.Room
         private int nextUserFacingNumber = 1;
         private bool userFacingOrderFinalized;
         private bool reacquisitionPausedForNoCandidates;
+        private int lastPlaneDiagnosticSignature = int.MinValue;
         private readonly SelectionData entrySelection = new();
         private readonly SelectionData exitSelection = new();
 
@@ -450,6 +452,7 @@ namespace F1XR.RestAPI.Replay.Room
             {
                 RefreshContainingRoomBoundary();
                 SyncExistingPlanes();
+                LogPlaneDiagnostics("wall discovery enabled");
             }
         }
 
@@ -875,6 +878,7 @@ namespace F1XR.RestAPI.Replay.Room
 
             RefreshContainingRoomBoundary();
             SyncExistingPlanes();
+            LogPlaneDiagnostics("trackables changed");
         }
 
         private void SyncExistingPlanes()
@@ -889,6 +893,109 @@ namespace F1XR.RestAPI.Replay.Room
         {
             RefreshContainingRoomBoundary();
             SyncExistingPlanes();
+            LogPlaneDiagnostics("XR root moved");
+        }
+
+        private void LogPlaneDiagnostics(string reason)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (planeManager == null)
+                return;
+
+            unchecked
+            {
+                var signature = 17;
+                var planeCount = 0;
+                foreach (var plane in planeManager.trackables)
+                {
+                    if (plane == null)
+                        continue;
+
+                    planeCount++;
+                    signature = signature * 31 + plane.trackableId.GetHashCode();
+                    signature = signature * 31 + plane.classifications.GetHashCode();
+                    signature = signature * 31 + plane.alignment.GetHashCode();
+                    signature = signature * 31 + plane.boundary.Length;
+                    signature = signature * 31 +
+                        Mathf.RoundToInt(plane.size.x * 100f);
+                    signature = signature * 31 +
+                        Mathf.RoundToInt(plane.size.y * 100f);
+                }
+
+                signature = signature * 31 + candidates.Count;
+                signature = signature * 31 +
+                    (containingFloorId?.GetHashCode() ?? 0);
+                signature = signature * 31 + containingRoomBoundary.Count;
+                if (signature == lastPlaneDiagnosticSignature)
+                    return;
+
+                lastPlaneDiagnosticSignature = signature;
+                var cameraPosition = orientationCamera != null
+                    ? orientationCamera.position
+                    : Vector3.zero;
+                var builder = new StringBuilder(1024);
+                builder.Append("[WallPlaneDiagnostics] reason=")
+                    .Append(reason)
+                    .Append(", planes=").Append(planeCount)
+                    .Append(", wallCandidates=").Append(candidates.Count)
+                    .Append(", selectedFloor=")
+                    .Append(containingFloorId?.ToString() ?? "none")
+                    .Append(", floorBoundaryPoints=")
+                    .Append(containingRoomBoundary.Count)
+                    .Append(", camera=").Append(cameraPosition.ToString("F3"));
+
+                foreach (var plane in planeManager.trackables)
+                {
+                    if (plane == null)
+                        continue;
+
+                    var boundaryCount = plane.boundary.Length;
+                    var area = boundaryCount >= 3
+                        ? PolygonArea(plane.boundary)
+                        : 0f;
+                    var cameraLocal = orientationCamera != null
+                        ? plane.transform.InverseTransformPoint(cameraPosition)
+                        : Vector3.zero;
+                    var heightValid = orientationCamera != null &&
+                        cameraLocal.y >= -0.5f &&
+                        cameraLocal.y <= maximumCameraHeightAboveFloor;
+                    var containsCamera = orientationCamera != null &&
+                        boundaryCount >= 3 &&
+                        ContainsPoint(
+                            plane.boundary,
+                            new Vector2(cameraLocal.x, cameraLocal.z));
+                    var isFloor = HasAny(
+                        plane.classifications,
+                        PlaneClassifications.Floor);
+
+                    builder.Append("\n  plane id=").Append(plane.trackableId)
+                        .Append(", class=").Append(plane.classifications)
+                        .Append(", alignment=").Append(plane.alignment)
+                        .Append(", size=").Append(plane.size.ToString("F3"))
+                        .Append(", boundary=").Append(boundaryCount)
+                        .Append(", area=").Append(area.ToString("F3"))
+                        .Append(", cameraLocal=")
+                        .Append(cameraLocal.ToString("F3"))
+                        .Append(", containsCamera=").Append(containsCamera)
+                        .Append(", floorEligible=")
+                        .Append(isFloor && heightValid && containsCamera);
+                }
+
+                foreach (var candidate in candidates)
+                {
+                    builder.Append("\n  wall id=")
+                        .Append(candidate.TrackableId)
+                        .Append(", number=").Append(candidate.UserFacingNumber)
+                        .Append(", class=").Append(candidate.Classifications)
+                        .Append(", size=")
+                        .Append(candidate.Width.ToString("F3"))
+                        .Append('x').Append(candidate.Height.ToString("F3"))
+                        .Append(", semantic=").Append(candidate.IsSemanticWall);
+                }
+
+                Debug.Log(builder.ToString(), this);
+            }
+#endif
         }
 
         private bool HasRootPoseChanged()
