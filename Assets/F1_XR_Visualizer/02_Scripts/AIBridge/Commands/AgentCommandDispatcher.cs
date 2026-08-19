@@ -63,11 +63,16 @@ namespace F1XR.AIBridge.Commands
                     controlReplay?.Handle((string)args["action"], args["value"]);
                     break;
                 case "showBattleContext":
-                    // 두 차 사이 Gap Line + 복합 배지("0.8s · Closing · DRS")를 잠깐 표시.
+                    // 두 차 사이 Gap Line + 복합 배지("0.8s → 0.4s(3s) · Closing · DRS") + 예측 화살표를 잠깐 표시.
+                    // predicted_gap_seconds(3초 뒤 예측 갭)가 없거나 null이면 -1 전달 → 화살표 생략.
                     showBattleContext?.Handle(
                         (int)args["subject_driver"],
                         (int)args["target_driver"],
                         args["gap_seconds"] != null ? (float)args["gap_seconds"] : 0f,
+                        (args["predicted_gap_seconds"] != null
+                            && args["predicted_gap_seconds"].Type != JTokenType.Null)
+                            ? (float)args["predicted_gap_seconds"] : -1f,
+                        args["predict_horizon_sec"] != null ? (float)args["predict_horizon_sec"] : 3f,
                         (string)args["trend"],
                         args["drs"] != null && (bool)args["drs"],
                         args["confidence"] != null ? (float)args["confidence"] : 0f,
