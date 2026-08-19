@@ -87,6 +87,9 @@ namespace F1XR.Experience.Fracture
             public Vector3 rotationRange;
             [Range(0.5f, 1f)] public float endScale;
 
+            [Tooltip("Approach progress (0-1) at which the crack gap starts closing.")]
+            [Range(0f, 1f)] public float seamCloseStart;
+
             public static Settings Default => new()
             {
                 fragmentCount = 48,
@@ -112,7 +115,8 @@ namespace F1XR.Experience.Fracture
                 delayJitter = 0.05f,
                 rotationStrength = 1f,
                 rotationRange = new Vector3(10f, 10f, 8f),
-                endScale = 0.95f
+                endScale = 0.95f,
+                seamCloseStart = 0.65f
             };
 
             /// <summary>
@@ -165,6 +169,12 @@ namespace F1XR.Experience.Fracture
         Vector3[] reverseStartPositions;
         Quaternion[] reverseStartRotations;
         bool useExteriorReverse;
+
+        // Seam closing: mesh vertex expansion to close inset gaps.
+        Mesh[] seamMeshes;
+        Vector3[][] seamBaseVerts;
+        Vector3[] seamWorkBuffer;
+        float seamInset;
 
         // What a piece switches to the instant it lets go. Until then a piece has no colour
         // of its own so the outgoing world shows on the intact shell; afterwards it is a
@@ -662,6 +672,31 @@ namespace F1XR.Experience.Fracture
 
                 anims[i].Released = true;
             }
+
+            seamInset = settings.crackWidthMillimetres * 0.001f;
+            Debug.Log(
+                $"[SeamClose] crackWidth={settings.crackWidthMillimetres}mm " +
+                $"seamInset={seamInset:F4}m seamCloseStart={settings.seamCloseStart:F2} " +
+                $"fragments={fragments.Length}");
+            if (seamInset > 0f)
+            {
+                seamMeshes = new Mesh[fragments.Length];
+                seamBaseVerts = new Vector3[fragments.Length][];
+                int maxVerts = 0;
+                for (int i = 0; i < fragments.Length; i++)
+                {
+                    MeshFilter mf = fragments[i] != null
+                        ? fragments[i].GetComponent<MeshFilter>() : null;
+                    if (mf != null && mf.sharedMesh != null)
+                    {
+                        seamMeshes[i] = mf.sharedMesh;
+                        seamBaseVerts[i] = mf.sharedMesh.vertices;
+                        if (mf.sharedMesh.vertexCount > maxVerts)
+                            maxVerts = mf.sharedMesh.vertexCount;
+                    }
+                }
+                seamWorkBuffer = new Vector3[maxVerts];
+            }
         }
 
         Vector3 ComputeFallenPosition(FragmentAnim anim, float time)
@@ -727,6 +762,19 @@ namespace F1XR.Experience.Fracture
                     ApplyPoseOnly(i, piece, anims[i], time);
                 }
 
+                // Seam closing: expand vertices outward to undo inset gap.
+                if (seamInset > 0f && seamBaseVerts != null)
+                {
+                    float approachT = useExteriorReverse && reverseStartPositions != null
+                        ? Mathf.Clamp01(1f - time / (detachStart + settings.breakDuration))
+                        : Mathf.Clamp01(1f - progress);
+                    float seamRaw = Mathf.InverseLerp(
+                        settings.seamCloseStart, 1f, approachT);
+                    float seamT = Mathf.SmoothStep(0f, 1f, seamRaw);
+                    if (seamT > 0f)
+                        ApplySeamClose(i, seamT);
+                }
+
                 if (revealRenderers != null && i < revealRenderers.Length)
                 {
                     bool shouldReveal = time >= detachStart;
@@ -734,6 +782,34 @@ namespace F1XR.Experience.Fracture
                         revealRenderers[i].enabled = shouldReveal;
                 }
             }
+        }
+
+        void ApplySeamClose(int index, float seamProgress)
+        {
+            if (seamMeshes == null || index >= seamMeshes.Length)
+                return;
+            Mesh mesh = seamMeshes[index];
+            Vector3[] baseVerts = seamBaseVerts[index];
+            if (mesh == null || baseVerts == null)
+                return;
+
+            int count = baseVerts.Length;
+            System.Array.Copy(baseVerts, seamWorkBuffer, count);
+
+            float expansion = seamInset * seamProgress;
+            for (int v = 0; v < count; v++)
+            {
+                float x = seamWorkBuffer[v].x;
+                float y = seamWorkBuffer[v].y;
+                float radial = Mathf.Sqrt(x * x + y * y);
+                if (radial < 1e-6f) continue;
+                float scale = (radial + expansion) / radial;
+                seamWorkBuffer[v].x = x * scale;
+                seamWorkBuffer[v].y = y * scale;
+            }
+
+            mesh.SetVertices(seamWorkBuffer, 0, count);
+            mesh.RecalculateBounds();
         }
 
         void ApplyPoseOnly(int index, Transform piece, FragmentAnim anim, float time)
@@ -938,6 +1014,9 @@ namespace F1XR.Experience.Fracture
             reverseStartPositions = null;
             reverseStartRotations = null;
             useExteriorReverse = false;
+            seamMeshes = null;
+            seamBaseVerts = null;
+            seamWorkBuffer = null;
         }
 
         static void DestroySafely(Object target)
