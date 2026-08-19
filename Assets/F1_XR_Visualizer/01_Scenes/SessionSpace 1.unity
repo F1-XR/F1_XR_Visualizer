@@ -4084,6 +4084,19 @@ MonoBehaviour:
   forceDebugGray: 0
   surfaceStaggerStep: 0.2
   shellColor: {r: 0.78, g: 0.76, b: 0.72, a: 0.55}
+  wallFragmentThickness: 0.06
+  ceilingFragmentThickness: 0.05
+  floorFragmentThickness: 0.1
+  wallFragmentCount: 0
+  ceilingFragmentCount: 0
+  floorFragmentCount: 0
+  wallReverseOutwardDistance: 0.6
+  ceilingReverseOutwardDistance: 0.5
+  floorReverseOutwardDistance: 0.4
+  reverseScatterFactor: 0.15
+  reverseMaxScatter: 0.3
+  sideColor: {r: 1, g: 0.102, b: 0.102, a: 1}
+  sideEmissionIntensity: 0.35
   fragmentThickness: 0.08
 --- !u!114 &1510071738
 MonoBehaviour:
@@ -4349,8 +4362,8 @@ Mesh:
   m_CookingOptions: 30
   m_BakedConvexCollisionMesh: 
   m_BakedTriangleCollisionMesh: 
-  'm_MeshMetrics[0]': 100.00002
-  'm_MeshMetrics[1]': 1
+  m_MeshMetrics[0]: 100.00002
+  m_MeshMetrics[1]: 1
   m_MeshOptimizationFlags: 1
   m_StreamData:
     serializedVersion: 2
@@ -4608,6 +4621,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 347346111352918431, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1203198283124479178, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1473409034299224219, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_Name
       value: XR Origin (VR)
@@ -4652,6 +4673,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3664281703862286721, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4405907895061535674, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_SelectInput.m_InputActionReferenceValue
       value: 
@@ -4673,9 +4698,13 @@ PrefabInstance:
       value: 
       objectReference: {fileID: -7966444640328253993, guid: c348712bda248c246b8c49b3db54643f, type: 3}
     - target: {fileID: 5606601098552753620, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: 'm_Materials.Array.data[0]'
+      propertyPath: m_Materials.Array.data[0]
       value: 
       objectReference: {fileID: 10306, guid: 0000000000000000f000000000000000, type: 0}
+    - target: {fileID: 8758587121800840445, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
