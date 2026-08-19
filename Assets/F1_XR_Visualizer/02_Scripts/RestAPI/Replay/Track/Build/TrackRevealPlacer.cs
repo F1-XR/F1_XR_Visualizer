@@ -77,6 +77,10 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField] string persistenceKey = "F1XR.TrackPlacement.v1";
         [SerializeField, Min(0f)] float persistenceSaveDelay = 0.4f;
 
+        [Header("Diagnostics")]
+        [SerializeField] bool logPlacementDiagnostics;
+        [SerializeField, Min(0.5f)] float placementDiagnosticInterval = 2f;
+
         public bool HasPlacement => spawnedInstance != null;
         public bool IsPlacementActive => placementActive;
         public bool HasValidSurface =>
@@ -111,6 +115,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
         bool surfaceHitMissing;
         bool rotationResetWhileMissing;
         float surfaceHitMissingSince;
+        float nextPlacementDiagnosticTime;
+        bool hasLoggedPlacementHit;
+        bool lastLoggedPlacementHit;
 
         bool inputsArmed;
         float enableTime;
@@ -273,6 +280,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             placementActive = true;
             enableTime = Time.time;
             inputsArmed = false;
+            LogPlacementDiagnostic("begin");
         }
 
         public void SetPlacementMode(TrackPlacementMode mode)
@@ -282,6 +290,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
             placementMode = mode;
             ClearPreview();
+            LogPlacementDiagnostic($"mode={mode}");
         }
 
         public void CancelPlacement()
@@ -292,6 +301,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             placementActive = false;
             hasCurrentHit = false;
             HidePreview();
+            LogPlacementDiagnostic("cancel");
         }
 
         public void ToggleEditMode()
@@ -539,6 +549,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             {
                 surfaceHitMissing = false;
                 rotationResetWhileMissing = false;
+                LogPlacementDiagnostic("surface");
                 return;
             }
 
@@ -547,6 +558,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 surfaceHitMissing = true;
                 rotationResetWhileMissing = false;
                 surfaceHitMissingSince = Time.unscaledTime;
+                LogPlacementDiagnostic("surface-missing");
                 return;
             }
 
@@ -565,6 +577,31 @@ namespace F1XR.RestAPI.Replay.Track.Build
             lockedRotationPlane = null;
             hasLockedPlacementRotation = false;
             hasPlacementFallbackRotation = false;
+        }
+
+        void LogPlacementDiagnostic(string phase)
+        {
+            if (!logPlacementDiagnostics)
+                return;
+
+            float now = Time.unscaledTime;
+            bool hitChanged = !hasLoggedPlacementHit ||
+                lastLoggedPlacementHit != hasCurrentHit;
+            if (!hitChanged && now < nextPlacementDiagnosticTime)
+                return;
+
+            hasLoggedPlacementHit = true;
+            lastLoggedPlacementHit = hasCurrentHit;
+            nextPlacementDiagnosticTime = now + placementDiagnosticInterval;
+            string plane = currentPlane == null
+                ? "none"
+                : $"id={currentPlane.trackableId}, size={currentPlane.size}, " +
+                  $"classifications={currentPlane.classifications}";
+            Debug.Log(
+                $"[TrackPlacement] phase={phase}, active={placementActive}, " +
+                $"mode={placementMode}, hit={hasCurrentHit}, " +
+                $"automatic={hasAutomaticSurface}, plane={plane}",
+                this);
         }
 
     }

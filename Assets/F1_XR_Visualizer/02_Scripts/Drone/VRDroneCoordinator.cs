@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using F1XR.Experience;
+using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Track.Build;
 using Unity.XR.CoreUtils;
 using UnityEngine;
@@ -214,6 +215,8 @@ namespace F1XR.Drone
         bool plateRenderersScanned;
         bool warnedMissingPlates;
         VRDroneHud droneHud;
+        DroneVehicleTargeting vehicleTargeting;
+        ReplayPlayer replayPlayer;
         readonly List<XRBaseInteractable> disabledInteractables = new();
 
         // Host-scene UI switched off for the flight. Only the ones this turned off are
@@ -340,6 +343,12 @@ namespace F1XR.Drone
             if (droneHud == null)
                 droneHud = gameObject.AddComponent<VRDroneHud>();
             droneHud.Configure(environment.transform);
+
+            replayPlayer = FindInScene<ReplayPlayer>(hostScene);
+            vehicleTargeting = GetComponent<DroneVehicleTargeting>();
+            if (vehicleTargeting == null)
+                vehicleTargeting = gameObject.AddComponent<DroneVehicleTargeting>();
+            vehicleTargeting.Configure(replayPlayer, droneHud, xrCamera);
 
         }
 
@@ -528,7 +537,7 @@ namespace F1XR.Drone
             if (ground != null)
                 ground.SetActive(false);
 
-            droneHud?.Hide();
+            HideDroneHud();
 
             // One frame with everything up and nothing yet broken. Shaders compile and the
             // renderers register here rather than in the middle of the break.
@@ -582,7 +591,7 @@ namespace F1XR.Drone
             HideHostUi();
 
             isVrActive = true;
-            droneHud?.Show(xrCamera);
+            ShowDroneHud();
             flightController?.ResetFlight();
 
             Debug.Log(
@@ -676,7 +685,7 @@ namespace F1XR.Drone
             HideHostUi();
 
             isVrActive = true;
-            droneHud?.Show(xrCamera);
+            ShowDroneHud();
             flightController?.ResetFlight();
         }
 
@@ -986,7 +995,7 @@ namespace F1XR.Drone
         {
             float beganAt = Time.realtimeSinceStartup;
 
-            droneHud?.Hide();
+            HideDroneHud();
             SetAnchorStabilizerPaused(true);
 
             // SkyShell to transition depth mode so mask fragments (queue 1999) can
@@ -1173,7 +1182,7 @@ namespace F1XR.Drone
                 // Only the drone's own furniture goes. The circuit stays exactly as it is - it
                 // is the thing that is about to shrink, and switching it off for even a frame
                 // turns the whole transition back into "VR ended, then a map appeared".
-                droneHud?.Hide();
+                HideDroneHud();
                 SetDroneWorldActive(false);
 
                 yield return MapShrinkRoutine();
@@ -1497,7 +1506,7 @@ namespace F1XR.Drone
                 savedOriginRotation);
             ApplyMrScreenEndpoint();
 
-            droneHud?.Hide();
+            HideDroneHud();
             SetDroneWorldActive(false);
             RestoreHostUi();
 
@@ -1571,6 +1580,18 @@ namespace F1XR.Drone
         public void SetDroneSpeed(float speedKph)
         {
             droneHud?.SetSpeedKph(speedKph);
+        }
+
+        void ShowDroneHud()
+        {
+            droneHud?.Show(xrCamera);
+            vehicleTargeting?.Show(xrCamera);
+        }
+
+        void HideDroneHud()
+        {
+            vehicleTargeting?.Hide();
+            droneHud?.Hide();
         }
 
         void SaveMrState()
