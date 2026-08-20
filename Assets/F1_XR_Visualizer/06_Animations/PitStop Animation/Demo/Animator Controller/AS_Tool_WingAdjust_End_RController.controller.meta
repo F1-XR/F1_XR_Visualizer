@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d2884e5cf0321584db876ddf1803aa9b
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Tool_WingAdjust_End_RController.controller
+  uploadId: 906384

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 76a247f8a0a7d7e4d88d346b29c405ce
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Drill_WingAdjust_End_LController.controller
+  uploadId: 906384
