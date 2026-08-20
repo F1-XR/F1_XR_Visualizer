@@ -4,10 +4,12 @@ using System.Collections.Generic;
 using F1XR.Experience;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Track.Build;
+using F1XR.RestAPI.Replay.Track.Placement;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
+using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace F1XR.Drone
@@ -188,6 +190,14 @@ namespace F1XR.Drone
         [SerializeField, FormerlySerializedAs("showGrabVolumeVisual")]
         bool showGrabRange;
 
+        [Tooltip("Skips manual track and drone-cube placement. The map is created at the " +
+            "TrackRevealPlacer fixed pose, then Drone mode starts automatically.")]
+        [SerializeField] bool debugSkipPlacementAndEnterDrone;
+
+        [Tooltip("Drone entry point in the track's local space when debug auto-entry is on. " +
+            "(0, 0, 0) uses the map origin.")]
+        [SerializeField] Vector3 debugDroneEntryLocalPoint;
+
         TrackRevealPlacer trackPlacer;
         XROrigin xrOrigin;
         Camera xrCamera;
@@ -214,8 +224,13 @@ namespace F1XR.Drone
         bool warnedMissingPlates;
         VRDroneHud droneHud;
         DroneVehicleTargeting vehicleTargeting;
+        DroneVehicleWorldTargetPresenter worldTargetPresenter;
         ReplayPlayer replayPlayer;
         readonly List<XRBaseInteractable> disabledInteractables = new();
+        readonly List<ARPlaneMeshVisualizer> hiddenPlaneVisualizers = new();
+        readonly List<ARPlaneManager> subscribedPlaneManagers = new();
+        readonly List<AutomaticTableCandidatePreview>
+            hiddenCandidatePreviews = new();
 
         // Host-scene UI switched off for the flight. Only the ones this turned off are
         // recorded, so a panel the user had already closed stays closed on the way back.
@@ -299,6 +314,8 @@ namespace F1XR.Drone
         {
             if (cubeSpawner != null)
                 cubeSpawner.CubeReleased -= EnterVr;
+
+            RestorePlaneVisualizers();
         }
 
         IEnumerator Initialize()
@@ -306,17 +323,20 @@ namespace F1XR.Drone
             while (!TryResolveReferences())
                 yield return null;
 
-            cubeSpawner = trackPlacer.GetComponent<DroneViewCubeSpawner>();
-            if (cubeSpawner == null)
-                cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
+            if (!debugSkipPlacementAndEnterDrone)
+            {
+                cubeSpawner = trackPlacer.GetComponent<DroneViewCubeSpawner>();
+                if (cubeSpawner == null)
+                    cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
 
-            cubeSpawner.Configure(
-                trackPlacer,
-                xrCamera.transform,
-                showGrabRange);
-            appliedShowGrabVolumeVisual = showGrabRange;
-            cubeSpawner.CubeReleased -= EnterVr;
-            cubeSpawner.CubeReleased += EnterVr;
+                cubeSpawner.Configure(
+                    trackPlacer,
+                    xrCamera.transform,
+                    showGrabRange);
+                appliedShowGrabVolumeVisual = showGrabRange;
+                cubeSpawner.CubeReleased -= EnterVr;
+                cubeSpawner.CubeReleased += EnterVr;
+            }
 
             audioDistanceScaler = GetComponent<VRDroneAudioDistanceScaler>();
             if (audioDistanceScaler == null)
@@ -343,10 +363,25 @@ namespace F1XR.Drone
             droneHud.Configure(environment.transform);
 
             replayPlayer = FindInScene<ReplayPlayer>(hostScene);
+            worldTargetPresenter =
+                GetComponent<DroneVehicleWorldTargetPresenter>();
+            if (worldTargetPresenter == null)
+            {
+                worldTargetPresenter =
+                    gameObject.AddComponent<DroneVehicleWorldTargetPresenter>();
+            }
+
+            worldTargetPresenter.Configure(xrCamera, droneHud.NumberFont);
             vehicleTargeting = GetComponent<DroneVehicleTargeting>();
             if (vehicleTargeting == null)
                 vehicleTargeting = gameObject.AddComponent<DroneVehicleTargeting>();
-            vehicleTargeting.Configure(replayPlayer, droneHud, xrCamera);
+            vehicleTargeting.Configure(
+                replayPlayer,
+                worldTargetPresenter,
+                xrCamera);
+
+            if (debugSkipPlacementAndEnterDrone)
+                StartCoroutine(EnterDroneDebugWhenReady());
 
         }
 
@@ -390,6 +425,36 @@ namespace F1XR.Drone
             }
 
             Transform placement = trackPlacer.PlacementTransform;
+            if (placement == null)
+                return;
+
+            BeginEnterVr(
+                placement.InverseTransformPoint(cubeTransform.position),
+                cubeTransform);
+        }
+
+        IEnumerator EnterDroneDebugWhenReady()
+        {
+            trackPlacer.SetPlacementMode(TrackPlacementMode.Fixed);
+
+            while (!trackPlacer.HasPlacement)
+            {
+                trackPlacer.TryPlaceFixed();
+                yield return null;
+            }
+
+            BeginEnterVr(debugDroneEntryLocalPoint, null);
+        }
+
+        void BeginEnterVr(Vector3 entryLocal, Transform sourceCube)
+        {
+            if (isVrActive || isTransitioning || trackPlacer == null ||
+                !trackPlacer.HasPlacement)
+            {
+                return;
+            }
+
+            Transform placement = trackPlacer.PlacementTransform;
             placementRoot = placement;
             visualRoot = placementRoot != null
                 ? placementRoot.Find("Visual") ?? placementRoot
@@ -398,22 +463,20 @@ namespace F1XR.Drone
             if (visualRoot == null)
                 return;
 
+            entryPointLocal = entryLocal;
             isTransitioning = true;
-            transitionRoutine = StartCoroutine(EnterVrRoutine(cubeTransform));
+            transitionRoutine = StartCoroutine(EnterVrRoutine(sourceCube));
         }
 
         IEnumerator EnterVrRoutine(Transform cubeTransform)
         {
-            // The chosen spot, in the map's own coordinates. Held for the whole transition:
-            // the map is being scaled underneath it, so the world position it corresponds to
-            // changes, and only the local one stays meaningful.
-            entryPointLocal = placementRoot.InverseTransformPoint(cubeTransform.position);
-
             SaveMrState();
+            SuspendPlaneVisualizers();
             LockTrackInteraction();
 
             hiddenCube = cubeTransform;
-            hiddenCube.gameObject.SetActive(false);
+            if (hiddenCube != null)
+                hiddenCube.gameObject.SetActive(false);
 
             Debug.Log(
                 $"[DroneTransition][EnterStart] entryLocal={entryPointLocal} " +
@@ -1563,7 +1626,94 @@ namespace F1XR.Drone
                 hiddenCube.gameObject.SetActive(true);
 
             RestoreTrackInteraction();
+            RestorePlaneVisualizers();
             isVrActive = false;
+        }
+
+        void SuspendPlaneVisualizers()
+        {
+            RestorePlaneVisualizers();
+
+            ARPlaneMeshVisualizer[] visualizers =
+                FindObjectsByType<ARPlaneMeshVisualizer>(
+                    FindObjectsInactive.Include);
+            foreach (ARPlaneMeshVisualizer visualizer in visualizers)
+                HidePlaneVisualizer(visualizer);
+
+            AutomaticTableCandidatePreview[] candidatePreviews =
+                FindObjectsByType<AutomaticTableCandidatePreview>(
+                    FindObjectsInactive.Include);
+            foreach (AutomaticTableCandidatePreview candidatePreview in
+                candidatePreviews)
+            {
+                if (candidatePreview == null)
+                    continue;
+
+                candidatePreview.SetRuntimeVisible(false);
+                hiddenCandidatePreviews.Add(candidatePreview);
+            }
+
+            ARPlaneManager[] planeManagers =
+                FindObjectsByType<ARPlaneManager>(
+                    FindObjectsInactive.Include);
+            foreach (ARPlaneManager planeManager in planeManagers)
+            {
+                if (planeManager == null || !planeManager.isActiveAndEnabled)
+                    continue;
+
+                planeManager.trackablesChanged.AddListener(
+                    OnPlaneTrackablesChanged);
+                subscribedPlaneManagers.Add(planeManager);
+            }
+        }
+
+        void OnPlaneTrackablesChanged(
+            ARTrackablesChangedEventArgs<ARPlane> changes)
+        {
+            foreach (ARPlane plane in changes.added)
+                HidePlaneVisualizer(plane?.GetComponent<ARPlaneMeshVisualizer>());
+
+            foreach (ARPlane plane in changes.updated)
+                HidePlaneVisualizer(plane?.GetComponent<ARPlaneMeshVisualizer>());
+        }
+
+        void HidePlaneVisualizer(ARPlaneMeshVisualizer visualizer)
+        {
+            if (visualizer == null || !visualizer.enabled)
+                return;
+
+            hiddenPlaneVisualizers.Add(visualizer);
+            visualizer.enabled = false;
+        }
+
+        void RestorePlaneVisualizers()
+        {
+            foreach (ARPlaneManager planeManager in subscribedPlaneManagers)
+            {
+                if (planeManager != null)
+                {
+                    planeManager.trackablesChanged.RemoveListener(
+                        OnPlaneTrackablesChanged);
+                }
+            }
+
+            subscribedPlaneManagers.Clear();
+
+            foreach (AutomaticTableCandidatePreview candidatePreview in
+                hiddenCandidatePreviews)
+            {
+                candidatePreview?.SetRuntimeVisible(true);
+            }
+
+            hiddenCandidatePreviews.Clear();
+
+            foreach (ARPlaneMeshVisualizer visualizer in hiddenPlaneVisualizers)
+            {
+                if (visualizer != null)
+                    visualizer.enabled = true;
+            }
+
+            hiddenPlaneVisualizers.Clear();
         }
 
         public void ApplyDroneMotion(Vector3 movement, float yaw)

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: acf29a885d7d66f4c8abf5d64e17c82a
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Front_Jack_LController.controller
+  uploadId: 906384

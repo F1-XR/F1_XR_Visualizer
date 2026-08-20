@@ -110,6 +110,20 @@ namespace F1XR.RestAPI.Replay
             return carInstances.TryGetVisualTransform(driverNumber, out carTransform);
         }
 
+        public bool TryGetDrivingTelemetry(
+            int driverNumber,
+            out float speedKph,
+            out int brake)
+        {
+            speedKph = 0f;
+            brake = 0;
+            return carInstances.Cars.TryGetValue(
+                    driverNumber,
+                    out ReplayCarView car) &&
+                car != null &&
+                car.TryGetDrivingTelemetry(out speedKph, out brake);
+        }
+
         public bool TryGetVisualLength(
             int driverNumber,
             out float visualLength)

@@ -811,6 +811,19 @@ namespace F1XR.RestAPI.Replay
             return replayCars != null && replayCars.TryGetVisualTransform(driverNumber, out carTransform);
         }
 
+        public bool TryGetDrivingTelemetry(
+            int driverNumber,
+            out float speedKph,
+            out int brake)
+        {
+            speedKph = 0f;
+            brake = 0;
+            return replayCars != null && replayCars.TryGetDrivingTelemetry(
+                driverNumber,
+                out speedKph,
+                out brake);
+        }
+
         public string GetDriverLabel(int driverNumber)
         {
             return replayCars.GetDriverLabel(driverNumber);

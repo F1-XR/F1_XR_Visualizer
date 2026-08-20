@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ff04b9ff2f138ec47ad5aebcdc2312bb
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Driver_Turn_RightController.controller
+  uploadId: 906384
