@@ -2799,6 +2799,8 @@ MonoBehaviour:
   restoreSavedPlacement: 0
   persistenceKey: F1XR.TrackPlacement.v1
   persistenceSaveDelay: 0.4
+  logPlacementDiagnostics: 0
+  placementDiagnosticInterval: 2
 --- !u!114 &1113257130
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2827,6 +2829,13 @@ MonoBehaviour:
   minimumPlacementHeight: 0.35
   verticalOffset: 0.04
   defaultCubeSize: 0.08
+  logAutomaticTableDiagnostics: 0
+  automaticTableDiagnosticInterval: 2
+  automaticTableSlowScanSeconds: 0.02
+  showAutomaticTableCandidates: 0
+  automaticTableCandidateColor: {r: 0.25, g: 0.85, b: 1, a: 0.28}
+  automaticTablePreviewInterval: 0.25
+  automaticTablePreviewHeightOffset: 0.01
   allowWorldFloorFallback: 0
   fallbackFloorHeight: 0
   fallbackMaximumDistance: 8
@@ -4097,9 +4106,8 @@ MonoBehaviour:
   floorReverseOutwardDistance: 0.4
   reverseScatterFactor: 0.15
   reverseMaxScatter: 0.3
-  sideColor: {r: 1, g: 0.102, b: 0.102, a: 1}
-  sideEmissionIntensity: 0.35
-  fragmentThickness: 0.08
+  sideColor: {r: 0.93, g: 0.04, b: 0.12, a: 1}
+  sideEmissionIntensity: 0.5
 --- !u!114 &1510071738
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4365,8 +4373,8 @@ Mesh:
   m_CookingOptions: 30
   m_BakedConvexCollisionMesh: 
   m_BakedTriangleCollisionMesh: 
-  m_MeshMetrics[0]: 100.00002
-  m_MeshMetrics[1]: 1
+  'm_MeshMetrics[0]': 100.00002
+  'm_MeshMetrics[1]': 1
   m_MeshOptimizationFlags: 1
   m_StreamData:
     serializedVersion: 2
@@ -4701,7 +4709,7 @@ PrefabInstance:
       value: 
       objectReference: {fileID: -7966444640328253993, guid: c348712bda248c246b8c49b3db54643f, type: 3}
     - target: {fileID: 5606601098552753620, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 10306, guid: 0000000000000000f000000000000000, type: 0}
     - target: {fileID: 8758587121800840445, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
