@@ -49,6 +49,7 @@ namespace F1XR.AIBridge.Commands
         OvertakeApproachRibbonSettings _ribbon;   // 예측 전용(노랑). 공유설정 안 씀
         TextMeshPro _label;
         AudioSource _audio;
+        float _diagTimer;
 
         void Awake()
         {
@@ -69,6 +70,7 @@ namespace F1XR.AIBridge.Commands
             activeUntil = Time.time + Mathf.Max(0.5f, holdSeconds);
             targetView = null;
 
+            Debug.Log($"[AIBridge] predictOvertake handle driver={targetDriver} probability={lastProbability:0.00} hold={holdSeconds:0.##}s");
             PlayPing();   // 명령 도착 즉시 방향 효과음
         }
 
@@ -86,11 +88,24 @@ namespace F1XR.AIBridge.Commands
         {
             if (activeUntil < 0f) return;
             ReplayPlayer p = Player;
-            if (p == null || !p.HasDataset) return;
+            if (p == null)
+            {
+                LogBlocked("ReplayPlayer not found");
+                return;
+            }
+            if (!p.HasDataset)
+            {
+                LogBlocked($"dataset not loaded player={p.name}#{p.GetInstanceID()}");
+                return;
+            }
             if (Time.time >= activeUntil) { Clear(); return; }
 
             if (targetView == null) targetView = FindCarView(targetDriver);
-            if (targetView == null) return;
+            if (targetView == null)
+            {
+                LogBlocked($"driver car view not found driver={targetDriver}");
+                return;
+            }
 
             float fade = Mathf.Clamp01((activeUntil - Time.time) / Mathf.Max(0.01f, holdSeconds));
             float intensity = baseIntensity * Mathf.Lerp(0.5f, 1f, fade);
@@ -100,6 +115,14 @@ namespace F1XR.AIBridge.Commands
                 _ribbon, overtaker: true, intensity: intensity, replayTime: p.CurrentTime);
 
             UpdateLabel();
+        }
+
+        void LogBlocked(string reason)
+        {
+            _diagTimer += Time.unscaledDeltaTime;
+            if (_diagTimer < 1f) return;
+            _diagTimer = 0f;
+            Debug.LogWarning($"[AIBridge] predictOvertake blocked: {reason}");
         }
 
         void PlayPing()

@@ -31,6 +31,7 @@ namespace F1XR.AIBridge
         public bool sendReplayState = true;
         public float replayStateInterval = 0.25f;  // watcher가 2배속에서도 짧은 추월 직전 창을 놓치지 않게 촘촘히 전송
         float _hbTimer;
+        float _hbDiagTimer;
 
         void OnEnable() { if (client != null) client.OnMessage += Route; }
         void OnDisable() { if (client != null) client.OnMessage -= Route; }
@@ -39,24 +40,64 @@ namespace F1XR.AIBridge
         // (예측형 능동 안내 watcher가 '지금 몇 분인지'를 알아야 스스로 안내할 수 있음)
         void Update()
         {
-            if (!sendReplayState || client == null) return;
+            if (!sendReplayState)
+            {
+                LogHeartbeatBlocked("sendReplayState=false");
+                return;
+            }
+            if (client == null)
+            {
+                LogHeartbeatBlocked("client=null");
+                return;
+            }
             ReplayPlayer p = Player;
-            if (p == null || !p.HasDataset) return;
+            if (p == null)
+            {
+                LogHeartbeatBlocked("ReplayPlayer not found");
+                return;
+            }
+            if (!p.HasDataset)
+            {
+                LogHeartbeatBlocked($"dataset not loaded player={p.name}#{p.GetInstanceID()}");
+                return;
+            }
             _hbTimer += Time.unscaledDeltaTime;
             if (_hbTimer < replayStateInterval) return;
             _hbTimer = 0f;
 
+            int? sessionKey = ResolveSessionKey(0);
+            string atTime = CurrentAtTime();
             var hb = new
             {
                 type = "replay_state",
-                session_key = ResolveSessionKey(0),
-                at_time = CurrentAtTime(),
+                session_key = sessionKey,
+                at_time = atTime,
                 is_playing = p.IsPlaying,
                 playback_speed = p.playbackSpeed,
                 selected_driver = p.SelectedDriverNumber,
             };
-            try { client.Send(JsonConvert.SerializeObject(hb, SendSettings)); }
+            bool sent = false;
+            try { sent = client.Send(JsonConvert.SerializeObject(hb, SendSettings)); }
             catch (System.Exception e) { Debug.LogWarning($"[hb] replay_state 전송 실패: {e.Message}"); }
+            if (sent) LogHeartbeatSent(sessionKey, atTime, p.IsPlaying, p.playbackSpeed);
+        }
+
+        void LogHeartbeatBlocked(string reason)
+        {
+            _hbDiagTimer += Time.unscaledDeltaTime;
+            if (_hbDiagTimer < 2f) return;
+            _hbDiagTimer = 0f;
+            Debug.LogWarning($"[AIBridge][hb-blocked] replay_state not sent: {reason}");
+        }
+
+        void LogHeartbeatSent(int? sessionKey, string atTime, bool isPlaying, float playbackSpeed)
+        {
+            _hbDiagTimer += Time.unscaledDeltaTime;
+            if (_hbDiagTimer < 2f) return;
+            _hbDiagTimer = 0f;
+            string sk = sessionKey.HasValue ? sessionKey.Value.ToString() : "null";
+            string t = string.IsNullOrEmpty(atTime) ? "null" : atTime;
+            Debug.Log($"[AIBridge][hb] replay_state sent session_key={sk} at_time={t} is_playing={isPlaying} speed={playbackSpeed:0.##}");
         }
 
         /// <summary>수신 JSON을 type별로 라우팅.</summary>

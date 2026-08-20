@@ -21,6 +21,9 @@ namespace F1XR.AIBridge.Commands
         //   (droneView의 onEnter/onExit ↔ VRDroneCoordinator 연결은 BootstrapLoader가 런타임에 수행)
         void Awake()
         {
+            if (predictOvertake == null)
+                predictOvertake = GetComponent<PredictOvertakeRibbonHandler>()
+                    ?? gameObject.AddComponent<PredictOvertakeRibbonHandler>();
             if (droneView == null)
                 droneView = GetComponent<DroneViewHandler>()
                     ?? gameObject.AddComponent<DroneViewHandler>();
@@ -35,6 +38,7 @@ namespace F1XR.AIBridge.Commands
             var o = JObject.Parse(commandJson);
             string name = (string)o["name"];
             var args = o["args"] as JObject;
+            Debug.Log($"[AIBridge] command received: {name}");
 
             switch (name)
             {
@@ -50,10 +54,17 @@ namespace F1XR.AIBridge.Commands
                     break;
                 case "predictOvertake":
                     // 능동 안내(예측): 그 차에 접근 리본을 잠깐 표시. probability 없으면 0.
-                    predictOvertake?.Handle(
-                        (int)args["driver_number"],
-                        args["probability"] != null ? (float)args["probability"] : 0f,
-                        args["risk_label"] != null ? (string)args["risk_label"] : null);
+                    if (predictOvertake == null)
+                    {
+                        Debug.LogWarning("[AIBridge] predictOvertake handler missing");
+                    }
+                    else
+                    {
+                        predictOvertake.Handle(
+                            (int)args["driver_number"],
+                            args["probability"] != null ? (float)args["probability"] : 0f,
+                            args["risk_label"] != null ? (string)args["risk_label"] : null);
+                    }
                     break;
                 case "droneView":
                     // 드론(공중) 시점 켜기/끄기. on 없으면 켜기로 간주.

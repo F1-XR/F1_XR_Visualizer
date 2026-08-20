@@ -62,10 +62,15 @@ namespace F1XR.AIBridge.Net
             if (!_destroyed) await Connect();
         }
 
-        public void Send(string json)
+        public bool Send(string json)
         {
-            if (_ws != null && _ws.State == WebSocketState.Open) _ws.SendText(json);
-            else Debug.LogWarning("[AIBridge] 미연결 상태 — 전송 무시");
+            if (_ws != null && _ws.State == WebSocketState.Open)
+            {
+                _ws.SendText(json);
+                return true;
+            }
+            Debug.LogWarning("[AIBridge] 미연결 상태 — 전송 무시");
+            return false;
         }
 
         void Update()
