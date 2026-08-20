@@ -2,10 +2,12 @@ using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using F1XR.RestAPI.Api;
 using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Room;
+using F1XR.UI.WorldPanel;
 
 namespace F1XR.RestAPI.UI
 {
@@ -21,12 +23,17 @@ namespace F1XR.RestAPI.UI
         private Button eventNextButton;
         private Button eventCloseButton;
         private Button eventPitWallButton;
+        private Button eventPitEditButton;
+        private Button eventPitUndoButton;
+        private Button eventPitResetButton;
         private Slider eventSlider;
         private bool refreshingEventSlider;
         private RoomShowcaseSetupController roomSetup;
         private PitWallShowcasePresenter pitWallPresenter;
         private AutoReplayStarter replayStarter;
         private Canvas pitPortalControlsCanvas;
+        private XRGrabInteractable pitPortalControlsGrab;
+        private bool pitPortalControlsManuallyPlaced;
         private bool collisionDatasetLoading;
         private Coroutine collisionOpenWhenPreparedRoutine;
         private string eventLoadMessage;
@@ -96,6 +103,24 @@ namespace F1XR.RestAPI.UI
                 -84f,
                 92f,
                 SelectNextPitWall);
+            eventPitEditButton = CreateEventButton(
+                "Edit Pit",
+                8f,
+                -126f,
+                86f,
+                TogglePitPortalEdit);
+            eventPitUndoButton = CreateEventButton(
+                "Undo",
+                104f,
+                -126f,
+                86f,
+                UndoPitPortalEdit);
+            eventPitResetButton = CreateEventButton(
+                "Reset",
+                200f,
+                -126f,
+                92f,
+                ResetPitPortalEdit);
             eventSlider = CreateEventSlider();
             eventSlider.onValueChanged.AddListener(SeekEvent);
             RefreshEventControls();
@@ -219,13 +244,17 @@ namespace F1XR.RestAPI.UI
             GameObject portalSurface =
                 GameObject.Find(PitPortalSurfaceName);
             if (portalSurface == null)
+            {
+                ReleasePitPortalEventControls();
                 return;
+            }
 
             MeshFilter portalFilter =
                 portalSurface.GetComponent<MeshFilter>();
             if (portalFilter == null ||
                 portalFilter.sharedMesh == null)
             {
+                ReleasePitPortalEventControls();
                 return;
             }
 
@@ -235,6 +264,10 @@ namespace F1XR.RestAPI.UI
 
             RectTransform canvasRect =
                 pitPortalControlsCanvas.GetComponent<RectTransform>();
+            canvasRect.localScale =
+                Vector3.one * PitPortalControlsScale;
+            canvasRect.sizeDelta = eventControls.sizeDelta;
+
             Bounds portalBounds = portalFilter.sharedMesh.bounds;
             float panelHalfHeight =
                 eventControls.sizeDelta.y *
@@ -246,32 +279,32 @@ namespace F1XR.RestAPI.UI
                 0f,
                 portalBounds.min.y + verticalOffset,
                 -0.045f);
-            canvasRect.position =
-                portalSurface.transform.TransformPoint(localPosition);
-
             Camera viewCamera = Camera.main;
-            if (viewCamera != null)
+            if (!pitPortalControlsManuallyPlaced)
             {
-                Vector3 awayFromViewer =
-                    canvasRect.position -
-                    viewCamera.transform.position;
-                if (awayFromViewer.sqrMagnitude > 0.0001f)
+                canvasRect.position =
+                    portalSurface.transform.TransformPoint(localPosition);
+
+                if (viewCamera != null)
                 {
-                    canvasRect.rotation = Quaternion.LookRotation(
-                        awayFromViewer.normalized,
-                        portalSurface.transform.up);
+                    Vector3 awayFromViewer =
+                        canvasRect.position -
+                        viewCamera.transform.position;
+                    if (awayFromViewer.sqrMagnitude > 0.0001f)
+                    {
+                        canvasRect.rotation = Quaternion.LookRotation(
+                            awayFromViewer.normalized,
+                            portalSurface.transform.up);
+                    }
                 }
+                else
+                {
+                    canvasRect.rotation = portalSurface.transform.rotation;
+                }
+            }
 
+            if (viewCamera != null)
                 pitPortalControlsCanvas.worldCamera = viewCamera;
-            }
-            else
-            {
-                canvasRect.rotation = portalSurface.transform.rotation;
-            }
-
-            canvasRect.localScale =
-                Vector3.one * PitPortalControlsScale;
-            canvasRect.sizeDelta = eventControls.sizeDelta;
 
             if (eventControls.parent == canvasRect)
                 return;
@@ -283,6 +316,25 @@ namespace F1XR.RestAPI.UI
             eventControls.anchoredPosition = Vector2.zero;
             eventControls.localRotation = Quaternion.identity;
             eventControls.localScale = Vector3.one;
+        }
+
+        private void LateUpdate()
+        {
+            if (eventControls == null ||
+                player == null ||
+                pitWallPresenter == null ||
+                !pitWallPresenter.IsPortalEditMode)
+            {
+                return;
+            }
+
+            EventPopoutReplay eventReplay = player.EventReplay;
+            if (eventReplay != null &&
+                eventReplay.IsActive &&
+                eventReplay.IsPitStopActive)
+            {
+                UpdateEventControlsPlacement(true);
+            }
         }
 
         private void EnsurePitPortalControlsCanvas()
@@ -301,6 +353,46 @@ namespace F1XR.RestAPI.UI
                 RenderMode.WorldSpace;
             pitPortalControlsCanvas.overrideSorting = true;
             pitPortalControlsCanvas.sortingOrder = 500;
+
+            RectTransform canvasRect =
+                pitPortalControlsCanvas.GetComponent<RectTransform>();
+            canvasRect.sizeDelta = eventControls.sizeDelta;
+
+            Rigidbody body = root.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            body.useGravity = false;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.constraints = RigidbodyConstraints.FreezeRotation;
+
+            BoxCollider panelCollider = root.AddComponent<BoxCollider>();
+            panelCollider.center = Vector3.zero;
+            panelCollider.size = new Vector3(
+                eventControls.sizeDelta.x,
+                eventControls.sizeDelta.y,
+                12f);
+
+            pitPortalControlsGrab =
+                root.AddComponent<XRGrabInteractable>();
+            pitPortalControlsGrab.colliders.Clear();
+            pitPortalControlsGrab.colliders.Add(panelCollider);
+            pitPortalControlsGrab.useDynamicAttach = true;
+            pitPortalControlsGrab.matchAttachPosition = true;
+            pitPortalControlsGrab.matchAttachRotation = false;
+            pitPortalControlsGrab.trackRotation = false;
+            pitPortalControlsGrab.snapToColliderVolume = true;
+            pitPortalControlsGrab.attachEaseInTime = 0.12f;
+            pitPortalControlsGrab.throwOnDetach = false;
+            pitPortalControlsGrab.selectEntered.AddListener(
+                _ => pitPortalControlsManuallyPlaced = true);
+
+            PanelEdgeGrab edgeGrab =
+                root.AddComponent<PanelEdgeGrab>();
+            edgeGrab.Configure(
+                pitPortalControlsGrab,
+                panelCollider,
+                canvasRect,
+                true,
+                true);
         }
 
         private void ReleasePitPortalEventControls()
@@ -322,6 +414,8 @@ namespace F1XR.RestAPI.UI
                 Destroy(pitPortalControlsCanvas.gameObject);
 
             pitPortalControlsCanvas = null;
+            pitPortalControlsGrab = null;
+            pitPortalControlsManuallyPlaced = false;
         }
 
         private void RefreshEventControls()
@@ -343,6 +437,12 @@ namespace F1XR.RestAPI.UI
                 eventReplay.IsCollisionRevealComplete;
             bool collisionTimeLensGrabbed = collisionActive &&
                 eventReplay.IsCollisionTimeLensGrabbed;
+            bool pitActive = active && eventReplay.IsPitStopActive;
+            bool pitEditing = pitActive &&
+                pitWallPresenter != null &&
+                pitWallPresenter.IsPortalEditMode;
+            bool pitManipulating = pitEditing &&
+                pitWallPresenter.IsPortalManipulating;
 
             eventOpenButton.gameObject.SetActive(!active && !loading);
             eventCollisionButton.gameObject.SetActive(
@@ -356,14 +456,22 @@ namespace F1XR.RestAPI.UI
                 (!collisionActive || collisionRevealComplete));
             eventNextButton.gameObject.SetActive(
                 active && !collisionActive);
-            bool pitActive = active && eventReplay.IsPitStopActive;
             eventPitWallButton.gameObject.SetActive(pitActive);
+            eventPitEditButton.gameObject.SetActive(pitActive);
+            eventPitUndoButton.gameObject.SetActive(pitActive);
+            eventPitResetButton.gameObject.SetActive(pitActive);
             eventCloseButton.gameObject.SetActive(active || loading);
             eventSlider.gameObject.SetActive(
                 active && !collisionActive);
             eventControls.sizeDelta = new Vector2(
                 300f,
-                active ? 184f : 184f);
+                pitActive ? 226f : 184f);
+            SetRect(
+                eventSlider.GetComponent<RectTransform>(),
+                12f,
+                pitActive ? -176f : -134f,
+                276f,
+                30f);
             UpdateEventControlsPlacement(pitActive);
 
             if (loading)
@@ -389,8 +497,10 @@ namespace F1XR.RestAPI.UI
                     string.IsNullOrWhiteSpace(collisionFailure))
                     eventReplay.PrepareTestCollision();
                 bool pitWallReady =
-                    roomSetup == null ||
-                    roomSetup.HasPitWallCandidate;
+                    (roomSetup == null ||
+                     roomSetup.HasPitWallCandidate) &&
+                    (pitWallPresenter == null ||
+                     pitWallPresenter.HasSuitablePitWall);
                 eventStatus.text = !string.IsNullOrWhiteSpace(
                         eventLoadMessage)
                     ? eventLoadMessage
@@ -438,11 +548,39 @@ namespace F1XR.RestAPI.UI
 
             string title = FormatEventTitle(
                 eventReplay.CurrentEvent);
-            eventStatus.text = collisionActive
-                ? FormatCollisionStatus(eventReplay)
-                : FormatActiveEventStatus(
-                    eventReplay,
-                    title);
+            eventStatus.text = pitEditing
+                ? "EDIT PIT  /  GRAB TOP  /  TWO-HAND"
+                : pitActive &&
+                               pitWallPresenter != null &&
+                               !string.IsNullOrWhiteSpace(
+                                   pitWallPresenter.LastFailure)
+                ? $"PIT WALL UNAVAILABLE  /  " +
+                  pitWallPresenter.LastFailure
+                : collisionActive
+                    ? FormatCollisionStatus(eventReplay)
+                    : FormatActiveEventStatus(
+                        eventReplay,
+                        title);
+            SetButton(
+                eventPitEditButton,
+                pitEditing ? "Done" : "Edit Pit",
+                pitWallPresenter != null &&
+                pitWallPresenter.CanEditPortal);
+            SetButton(
+                eventPitUndoButton,
+                "Undo",
+                pitEditing &&
+                !pitManipulating &&
+                pitWallPresenter != null &&
+                pitWallPresenter.CanUndoPortalEdit);
+            SetButton(
+                eventPitResetButton,
+                "Reset",
+                pitEditing && !pitManipulating);
+            SetButton(
+                eventPitWallButton,
+                "Change Wall",
+                pitActive && !pitEditing);
             SetButton(
                 eventPlayButton,
                 collisionActive
@@ -482,12 +620,21 @@ namespace F1XR.RestAPI.UI
                 -84f,
                 pitActive ? 182f : 284f,
                 36f);
+            bool pitResultVisible = pitActive &&
+                eventReplay.TryGetPitStopPresentationState(
+                    out PitStopPresentationState pitState) &&
+                pitState.Phase == PitStopPhase.Exit;
             SetButton(
                 eventNextButton,
                 hasNext
-                    ? $"Next {eventName}"
+                    ? pitResultVisible
+                        ? "Watch Next Pit Stop"
+                        : $"Next {eventName}"
                     : noMoreLabel,
-                hasNext);
+                hasNext && !pitEditing);
+            ApplyPitNextButtonStyle(
+                pitResultVisible,
+                eventReplay.CurrentEvent);
 
             refreshingEventSlider = true;
             eventSlider.SetValueWithoutNotify(eventReplay.NormalizedTime);
@@ -627,15 +774,65 @@ namespace F1XR.RestAPI.UI
                           !string.IsNullOrWhiteSpace(info.teamName)
                 ? info.teamName
                 : "TEAM";
-            string timing = eventReplay.PitStopDriveThrough
-                ? "DRIVE THROUGH"
-                : eventReplay.PitStopReconstructed
-                    ? "RECONSTRUCTED STOP"
-                    : eventReplay.CurrentPitStopPhase
-                        .ToString()
-                        .ToUpperInvariant();
+            string timing;
+            if (eventReplay.TryGetPitStopPresentationState(
+                    out PitStopPresentationState state))
+            {
+                string prefix = state.IsReconstructed ? "~" : "";
+                timing = state.IsDriveThrough
+                    ? state.Phase == PitStopPhase.Exit
+                        ? "DRIVE THROUGH COMPLETE"
+                        : "DRIVE THROUGH"
+                    : state.Phase == PitStopPhase.Service
+                        ? $"SERVICE {state.ServiceElapsedSeconds:0.000} s"
+                    : state.Phase == PitStopPhase.Exit
+                        ? $"PIT STOP COMPLETE  {prefix}" +
+                          $"{state.ServiceTotalSeconds:0.000} s"
+                    : state.IsReconstructed
+                        ? $"{state.Phase.ToString().ToUpperInvariant()}  " +
+                          "RECONSTRUCTED"
+                        : state.Phase.ToString().ToUpperInvariant();
+            }
+            else
+            {
+                timing = eventReplay.CurrentPitStopPhase
+                    .ToString()
+                    .ToUpperInvariant();
+            }
             return $"{title} | {team} | L{replayEvent.lapNumber} | " +
                    $"{timing}  {FormatTime(eventReplay.CurrentTime)}";
+        }
+
+        private void ApplyPitNextButtonStyle(
+            bool resultVisible,
+            ReplayEventDto replayEvent)
+        {
+            if (eventNextButton == null)
+                return;
+
+            StyleButton(eventNextButton);
+            if (!resultVisible)
+                return;
+
+            int driver = replayEvent != null &&
+                         replayEvent.driverNumbers != null &&
+                         replayEvent.driverNumbers.Length > 0
+                ? replayEvent.driverNumbers[0]
+                : 0;
+            Color team = player != null
+                ? player.GetDriverColor(driver)
+                : new Color(0.9f, 0.08f, 0.08f, 1f);
+            Color normal = Color.Lerp(team, Color.black, 0.28f);
+            if (eventNextButton.targetGraphic is Image image)
+                image.color = Color.white;
+            ColorBlock colors = eventNextButton.colors;
+            colors.normalColor = normal;
+            colors.highlightedColor =
+                Color.Lerp(team, Color.white, 0.18f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.pressedColor =
+                Color.Lerp(team, Color.black, 0.12f);
+            eventNextButton.colors = colors;
         }
 
         private string ColorizeDriverLabel(int driver)
@@ -853,7 +1050,16 @@ namespace F1XR.RestAPI.UI
                 RefreshEventControls();
                 return;
             }
+            if (pitWallPresenter != null &&
+                !pitWallPresenter.HasSuitablePitWall)
+            {
+                eventLoadMessage =
+                    "PIT WALL NEEDS AT LEAST 1.8 M x 1.3 M";
+                RefreshEventControls();
+                return;
+            }
 
+            eventLoadMessage = null;
             player?.EventReplay?.OpenTestPitStop();
             RefreshEventControls();
         }
@@ -874,6 +1080,25 @@ namespace F1XR.RestAPI.UI
         {
             ResolveRoomSetup();
             pitWallPresenter?.SelectNextPitWall();
+            RefreshEventControls();
+        }
+
+        private void TogglePitPortalEdit()
+        {
+            ResolveRoomSetup();
+            pitWallPresenter?.TogglePortalEditMode();
+            RefreshEventControls();
+        }
+
+        private void UndoPitPortalEdit()
+        {
+            pitWallPresenter?.UndoPortalEdit();
+            RefreshEventControls();
+        }
+
+        private void ResetPitPortalEdit()
+        {
+            pitWallPresenter?.ResetPortalEdit();
             RefreshEventControls();
         }
 

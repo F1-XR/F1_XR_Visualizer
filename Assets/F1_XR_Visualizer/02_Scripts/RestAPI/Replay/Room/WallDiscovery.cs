@@ -289,8 +289,10 @@ namespace F1XR.RestAPI.Replay.Room
             MinVertical = minVertical;
             MaxVertical = maxVertical;
         }
+
     }
 
+    [DefaultExecutionOrder(-900)]
     [DisallowMultipleComponent]
     public sealed class WallDiscovery : MonoBehaviour, IShowcaseWallProvider
     {
@@ -344,8 +346,15 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly Dictionary<TrackableId, WallDebugView> debugViews = new();
         private readonly List<Vector2> containingRoomBoundary = new();
         private readonly List<WallCandidate> boundaryOrderScratch = new();
+        private readonly HashSet<TrackableId> metaCandidateIds = new();
+        private readonly List<TrackableId> candidateIdScratch = new();
         private ReadOnlyCollection<WallCandidate> readOnlyCandidates;
-        private ARPlane containingFloor;
+        private TrackableId? containingFloorId;
+        private Plane containingFloorPlane;
+        private bool hasContainingFloorPlane;
+        private Vector3 containingFloorOrigin;
+        private Vector3 containingFloorAxisX;
+        private Vector3 containingFloorAxisY;
         private int containingRoomBoundarySignature;
         private TrackableId? entryWallId;
         private TrackableId? exitWallId;
@@ -393,7 +402,7 @@ namespace F1XR.RestAPI.Replay.Room
         public TrackableId? ExitSelectedTrackableId =>
             GetDiagnosticTrackableId(exitWallId, exitSelection);
         public bool HasContainingRoomBoundary =>
-            containingFloor != null &&
+            hasContainingFloorPlane &&
             containingRoomBoundary.Count >= 3;
         public int SelectionRevision => selectionRevision;
         public bool BothSelectionsValid =>
@@ -403,22 +412,8 @@ namespace F1XR.RestAPI.Replay.Room
 
         public bool TryGetContainingFloorPlane(out Plane floorPlane)
         {
-            floorPlane = default;
-            if (containingFloor == null)
-                return false;
-
-            Vector3 normal = containingFloor.transform.up;
-            if (normal.sqrMagnitude <= 0.5f)
-                return false;
-
-            normal.Normalize();
-            if (Vector3.Dot(normal, Vector3.up) < 0f)
-                normal = -normal;
-
-            floorPlane = new Plane(
-                normal,
-                containingFloor.transform.position);
-            return true;
+            floorPlane = containingFloorPlane;
+            return hasContainingFloorPlane;
         }
 
         private void Reset()
@@ -434,6 +429,12 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void OnEnable()
         {
+            ResolveReferences();
+            debugWasVisible = showDebug;
+            observedEntryIndex = entryCandidateIndex;
+            observedExitIndex = exitCandidateIndex;
+            RememberRootPose();
+
             if (planeManager == null)
             {
                 Debug.LogError("[WallDiscovery] ARPlaneManager is required.", this);
@@ -444,10 +445,6 @@ namespace F1XR.RestAPI.Replay.Room
             RequestWallAndTablePlanes();
             Subscribe();
             managerWasActive = planeManager.isActiveAndEnabled;
-            debugWasVisible = showDebug;
-            observedEntryIndex = entryCandidateIndex;
-            observedExitIndex = exitCandidateIndex;
-            RememberRootPose();
 
             if (managerWasActive)
             {
@@ -460,9 +457,7 @@ namespace F1XR.RestAPI.Replay.Room
         {
             Unsubscribe();
             ClearCandidates("Wall discovery disabled.");
-            containingFloor = null;
-            containingRoomBoundary.Clear();
-            containingRoomBoundarySignature = 0;
+            ClearContainingFloor();
             DestroyDebugMaterial();
         }
 
@@ -994,7 +989,7 @@ namespace F1XR.RestAPI.Replay.Room
                 planeManager == null ||
                 orientationCamera == null)
             {
-                SetContainingFloor(null);
+                SetContainingFloor((ARPlane)null);
                 return;
             }
 
@@ -1038,26 +1033,36 @@ namespace F1XR.RestAPI.Replay.Room
 
         private void SetContainingFloor(ARPlane floor)
         {
-            var oldFloorId = containingFloor != null
-                ? containingFloor.trackableId
-                : (TrackableId?)null;
+            var oldFloorId = containingFloorId;
             var oldSignature = containingRoomBoundarySignature;
 
-            containingFloor = floor;
             containingRoomBoundary.Clear();
             if (floor != null)
             {
+                containingFloorId = floor.trackableId;
+                containingFloorOrigin = floor.transform.position;
+                containingFloorAxisX = floor.transform.right.normalized;
+                containingFloorAxisY = floor.transform.forward.normalized;
+                Vector3 normal = floor.transform.up.normalized;
+                if (Vector3.Dot(normal, Vector3.up) < 0f)
+                    normal = -normal;
+                containingFloorPlane = new Plane(
+                    normal,
+                    containingFloorOrigin);
+                hasContainingFloorPlane = true;
+
                 var boundary = floor.boundary;
                 for (var i = 0; i < boundary.Length; i++)
                     containingRoomBoundary.Add(boundary[i]);
             }
+            else
+            {
+                ResetContainingFloorState();
+            }
 
             containingRoomBoundarySignature =
                 CalculateBoundarySignature(containingRoomBoundary);
-            var newFloorId = containingFloor != null
-                ? containingFloor.trackableId
-                : (TrackableId?)null;
-            if (oldFloorId == newFloorId &&
+            if (oldFloorId == containingFloorId &&
                 oldSignature == containingRoomBoundarySignature)
             {
                 return;
@@ -1065,6 +1070,31 @@ namespace F1XR.RestAPI.Replay.Room
 
             userFacingOrderFinalized = false;
             IncrementCandidateRevision();
+        }
+
+        private void ClearContainingFloor()
+        {
+            var hadFloor = containingFloorId.HasValue ||
+                containingRoomBoundary.Count > 0 ||
+                hasContainingFloorPlane;
+            ResetContainingFloorState();
+            containingRoomBoundary.Clear();
+            containingRoomBoundarySignature = 0;
+            if (!hadFloor)
+                return;
+
+            userFacingOrderFinalized = false;
+            IncrementCandidateRevision();
+        }
+
+        private void ResetContainingFloorState()
+        {
+            containingFloorId = null;
+            containingFloorPlane = default;
+            hasContainingFloorPlane = false;
+            containingFloorOrigin = Vector3.zero;
+            containingFloorAxisX = Vector3.right;
+            containingFloorAxisY = Vector3.forward;
         }
 
         private bool IsOnContainingRoomBoundary(WallCandidate candidate)
@@ -1086,9 +1116,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (!HasContainingRoomBoundary)
                 return float.PositiveInfinity;
 
-            var local =
-                containingFloor.transform.InverseTransformPoint(worldPoint);
-            var point = new Vector2(local.x, local.z);
+            var point = ToContainingFloorPoint(worldPoint);
             var bestDistance = float.PositiveInfinity;
             for (var i = 0; i < containingRoomBoundary.Count; i++)
             {
@@ -1109,10 +1137,7 @@ namespace F1XR.RestAPI.Replay.Room
             if (!HasContainingRoomBoundary)
                 return candidate.UserFacingNumber;
 
-            var local =
-                containingFloor.transform.InverseTransformPoint(
-                    candidate.Center);
-            var point = new Vector2(local.x, local.z);
+            var point = ToContainingFloorPoint(candidate.Center);
             var bestDistance = float.PositiveInfinity;
             var bestPosition = 0f;
             var traversed = 0f;
@@ -1141,6 +1166,14 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             return bestPosition;
+        }
+
+        private Vector2 ToContainingFloorPoint(Vector3 worldPoint)
+        {
+            Vector3 offset = worldPoint - containingFloorOrigin;
+            return new Vector2(
+                Vector3.Dot(offset, containingFloorAxisX),
+                Vector3.Dot(offset, containingFloorAxisY));
         }
 
         private static bool ContainsPoint(

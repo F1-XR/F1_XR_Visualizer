@@ -183,6 +183,9 @@ namespace F1XR.RestAPI.Replay
 
         private void LogSourceRecovery(string label, AudioSource source, string action)
         {
+            if (!LogSourceRecoveryEnabled)
+                return;
+
             float now = Time.unscaledTime;
             if (sourceRecoveryLogBurst <= 0 && now < nextSourceRecoveryLogTime)
                 return;

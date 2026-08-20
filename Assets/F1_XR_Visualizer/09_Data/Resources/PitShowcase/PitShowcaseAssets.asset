@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e1fc79500844667ab9fca9cd78c0b7d, type: 3}
+  m_Name: PitShowcaseAssets
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.PitShowcaseAssetProfile
+  wheelGunPrefab: {fileID: 1847496310074362810, guid: 8cdb478d3ec24df8aa07724597b9d5fa, type: 3}
+  wheelGunLoopClip: {fileID: 8300000, guid: 602f77b4759acc5458f01611e97694bc, type: 3}
+  suspensionSettleClip: {fileID: 8300000, guid: 04cf8fb9ff9bd574bbfef8c51f800371, type: 3}
+  serviceClunkClip: {fileID: 8300000, guid: 11e2cc9641b46014b874f40b14709d7c, type: 3}
+  launchClip: {fileID: 8300000, guid: 33d0e5a9b73c2dc4386deff4a4cbf263, type: 3}
+  tyreVisualPrefab: {fileID: 7728056378956526327, guid: ba777380f8679924989895475d221c37, type: 3}
+  displayFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}

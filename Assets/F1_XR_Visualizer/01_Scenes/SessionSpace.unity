@@ -746,6 +746,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ff15997fd63e9e409464760203e2558, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Room.WallDiscovery
+  useMetaSceneApi: 0
+  metaSceneSource: {fileID: 0}
   planeManager: {fileID: 1674081569}
   orientationCamera: {fileID: 1674081566}
   allowVerticalFallback: 1
@@ -831,6 +833,8 @@ MonoBehaviour:
   reacquisitionUiDelay: 0.6
   automaticSetupEnabled: 1
   containingRoomWaitDuration: 3
+  planeDiscoveryRetryDelay: 15
+  planeDiscoveryTimeout: 18
   suspendSceneTrackingWhenReady: 1
 --- !u!114 &493722809
 MonoBehaviour:
@@ -2034,7 +2038,7 @@ MonoBehaviour:
     m_Reference: {fileID: 0}
   useControllerTriggerFallback: 1
   inputArmDelay: 0.5
-  placementMode: 0
+  placementMode: 1
   previewMaterial: {fileID: 0}
   previewColor: {r: 0.2, g: 1, b: 0.35, a: 0.35}
   surfaceOffset: 0.005
@@ -2083,6 +2087,7 @@ MonoBehaviour:
   raycastManager: {fileID: 1674081568}
   planeManager: {fileID: 1674081569}
   anchorManager: {fileID: 1674081570}
+  metaSceneSource: {fileID: 0}
   rayOrigin: {fileID: 1674081566}
   cubePrefab: {fileID: 6741167992287166459, guid: 57a3d6ccfeb68a344ac233f74a8ad3a4, type: 3}
   trackMapPrefab: {fileID: 0}
@@ -3117,7 +3122,7 @@ MonoBehaviour:
   restartVisibleLeadSeconds: 15
   minimumRedFlagSkipSeconds: 60
   showCarLabels: 1
-  enableCarLod: 1
+  enableCarLod: 0
   hideLeaderHighlightAfterRaceStart: 1
   leaderHighlightDelaySeconds: 10
   engineSound:

@@ -20,6 +20,14 @@ namespace F1XR.Experience.Fracture
     /// It also does not modify the room proxies. It reads each proxy's mesh to recover the
     /// polygon it was built from, then makes its own fragments alongside.
     /// </summary>
+    public enum RoomShellState
+    {
+        IntactMR,
+        BreakingToVR,
+        BrokenDormantVR,
+        ReassemblingToMR
+    }
+
     [DisallowMultipleComponent]
     public sealed class RoomShellFractureController : MonoBehaviour
     {
@@ -71,10 +79,20 @@ namespace F1XR.Experience.Fracture
             "VR uses the passthrough mask and VR to MR uses spatial alpha reveal.")]
         [SerializeField] bool forceDebugGray;
 
+        [Header("Surface stagger")]
+        [Tooltip("Seconds between each surface starting its fracture. Surfaces are ordered " +
+            "by distance from the camera: nearest cracks first, farthest last.")]
+        [SerializeField, Min(0f)] float surfaceStaggerStep = 0.2f;
+
         [Header("Look")]
         [SerializeField] Color shellColor = new(0.78f, 0.76f, 0.72f, 1f);
 
+        [Tooltip("Extrusion depth for visible fragment meshes. " +
+            "Zero = flat originals. Adds side faces so fragments look solid when rotating.")]
+        [SerializeField, Min(0f)] float fragmentThickness = 0.08f;
+
         readonly List<ShellFractureRig> rigs = new();
+        readonly List<float> surfaceDelays = new();
         readonly List<Transform> planeSpaces = new();
         Material sharedShellMaterial;   // debug gray
         Material maskMaterial;          // MR->VR passthrough mask
@@ -82,7 +100,66 @@ namespace F1XR.Experience.Fracture
         Material shardMaterial;         // solid debris, both directions, after detach
         Coroutine activeRoutine;
 
+        RoomShellState state = RoomShellState.IntactMR;
+        float forwardTotalDuration;
+
         public int RigCount => rigs.Count;
+        public RoomShellState State => state;
+        public bool HasDormantFragments => state == RoomShellState.BrokenDormantVR && rigs.Count > 0;
+
+        /// <summary>
+        /// Fraction of the room that has come away. Counted by pieces released rather than
+        /// pieces finished falling, because what matters to anything waiting on this is how
+        /// much of the real room has stopped covering the incoming world.
+        /// </summary>
+        public float BreakCoverage
+        {
+            get
+            {
+                int total = TotalFragments;
+                return total == 0 ? 0f : (float)ReleasedFragmentCount() / total;
+            }
+        }
+
+        /// <summary>
+        /// Whether there is any real surface to break, checked before a transition commits to
+        /// the room being its carrier. A room that was never scanned reports nothing here, and
+        /// the caller is expected to fall back rather than play a break with no pieces in it.
+        /// </summary>
+        /// <summary>
+        /// During reverse: fraction of fragments that have returned to intact position.
+        /// </summary>
+        public float ReassemblyCoverage
+        {
+            get
+            {
+                int total = TotalFragments;
+                if (total == 0) return 1f;
+                int reattached = 0;
+                foreach (ShellFractureRig rig in rigs)
+                    reattached += rig.ReattachedCount;
+                return (float)reattached / total;
+            }
+        }
+
+        public bool HasBreakableSurfaces
+        {
+            get
+            {
+                EnsureProxiesExist();
+                return proxyGenerator != null && proxyGenerator.Proxies.Count > 0;
+            }
+        }
+
+        /// <summary>
+        /// Throws away the fragments and leaves the proxies hidden, which is the correct end
+        /// state going into VR - the real room is not supposed to come back.
+        /// </summary>
+        public void ClearShellFragments()
+        {
+            ClearRigs();
+            state = RoomShellState.IntactMR;
+        }
 
         public int TotalFragments
         {
@@ -177,6 +254,73 @@ namespace F1XR.Experience.Fracture
         }
 
         /// <summary>
+        /// Reverse of MR→VR: dormant fragments fly back to their intact positions, reality
+        /// reappears through each returning piece. Same geometry, same paths, reversed time.
+        /// </summary>
+        public IEnumerator PlayReverseSequence()
+        {
+            if (state != RoomShellState.BrokenDormantVR || rigs.Count == 0)
+            {
+                Debug.LogWarning(
+                    "[RoomTransition][ReassembleBegin] No dormant fragments to reverse.", this);
+                yield break;
+            }
+
+            state = RoomShellState.ReassemblingToMR;
+
+            Material mask = MaterialFor(ShellVisualMode.MRMask);
+            foreach (ShellFractureRig rig in rigs)
+                rig.WakeForReverse(mask);
+
+            float total = forwardTotalDuration;
+            for (int i = 0; i < rigs.Count; i++)
+                total = Mathf.Max(total, rigs[i].TotalSeconds + surfaceDelays[i]);
+
+            Debug.Log(
+                $"[RoomTransition][ReassembleBegin] fragments={TotalFragments} " +
+                $"reverseDuration={total:F2}s", this);
+
+            float elapsed = 0f;
+            bool loggedHalf = false;
+            while (elapsed < total)
+            {
+                elapsed += Time.deltaTime;
+                for (int i = 0; i < rigs.Count; i++)
+                {
+                    // Reverse stagger: surfaces that cracked last come back first.
+                    float maxDelay = surfaceDelays.Count > 0
+                        ? surfaceDelays[surfaceDelays.Count - 1]
+                        : 0f;
+                    float reverseDelay = maxDelay - (surfaceDelays.Count > i ? surfaceDelays[i] : 0f);
+                    rigs[i].StepReverse(elapsed - reverseDelay);
+                }
+
+                if (!loggedHalf && ReassemblyCoverage >= 0.5f)
+                {
+                    loggedHalf = true;
+                    Debug.Log(
+                        $"[RoomTransition][Reassemble50] elapsed={elapsed:F2}s " +
+                        $"coverage={ReassemblyCoverage:P0}", this);
+                }
+
+                yield return null;
+            }
+
+            // Final snap: all fragments at exact intact position.
+            for (int i = 0; i < rigs.Count; i++)
+                rigs[i].StepReverse(total);
+
+            if (tailSeconds > 0f)
+                yield return new WaitForSeconds(tailSeconds);
+
+            ClearRigs();
+            SetProxyRenderersVisible(true);
+            state = RoomShellState.IntactMR;
+
+            Debug.Log("[RoomTransition][ReassembleComplete]", this);
+        }
+
+        /// <summary>
         /// One break, both directions. The only per-direction differences are which way
         /// passthrough fades and whether the proxy renderers come back at the end, so the
         /// two transitions share this and cannot drift apart.
@@ -213,6 +357,7 @@ namespace F1XR.Experience.Fracture
         IEnumerator RunBreakCore(bool towardVR)
         {
             string tag = towardVR ? "MR2VR" : "VR2MR";
+            state = towardVR ? RoomShellState.BreakingToVR : RoomShellState.ReassemblingToMR;
             Debug.Log($"[{tag}][build] break requested, clearing any previous rigs.", this);
 
             ClearRigs();
@@ -260,11 +405,12 @@ namespace F1XR.Experience.Fracture
             SetProxyRenderersVisible(false);
 
             float total = 0f;
-            foreach (ShellFractureRig rig in rigs)
-                total = Mathf.Max(total, rig.TotalSeconds);
+            for (int i = 0; i < rigs.Count; i++)
+                total = Mathf.Max(total, rigs[i].TotalSeconds + surfaceDelays[i]);
 
             Debug.Log(
-                $"[{tag}][build] {rigs.Count} surfaces, {TotalFragments} fragments, {total:F2}s.",
+                $"[{tag}][build] {rigs.Count} surfaces, {TotalFragments} fragments, " +
+                $"{total:F2}s (stagger {surfaceDelays[surfaceDelays.Count - 1]:F2}s).",
                 this);
 
             // Neither direction fades globally. MR to VR lets the mask fragments fall away
@@ -290,7 +436,7 @@ namespace F1XR.Experience.Fracture
             {
                 elapsed += Time.deltaTime;
                 for (int i = 0; i < rigs.Count; i++)
-                    rigs[i].Step(elapsed);
+                    rigs[i].Step(elapsed - surfaceDelays[i]);
 
                 if (!loggedFirstCrack && elapsed >= rigs[0].MinDelay)
                 {
@@ -360,12 +506,22 @@ namespace F1XR.Experience.Fracture
             if (tailSeconds > 0f)
                 yield return new WaitForSeconds(tailSeconds);
 
-            // Going back to MR, the proxies represent the real room, so restore them. Going
-            // to VR they stay hidden.
-            if (!towardVR)
+            if (towardVR)
+            {
+                // Preserve fragment data for reverse playback. Renderers off, data alive.
+                forwardTotalDuration = total;
+                foreach (ShellFractureRig rig in rigs)
+                    rig.SetDormant();
+                state = RoomShellState.BrokenDormantVR;
+                Debug.Log(
+                    $"[{tag}][dormant] {rigs.Count} rigs preserved, " +
+                    $"forwardDuration={forwardTotalDuration:F2}s.", this);
+            }
+            else
             {
                 ClearRigs();
                 SetProxyRenderersVisible(true);
+                state = RoomShellState.IntactMR;
                 Debug.Log($"[{tag}][cleanup] fragments cleared, proxies restored.", this);
             }
         }
@@ -470,7 +626,7 @@ namespace F1XR.Experience.Fracture
 
                 if (rig.Build(boundary, origin, space.transform, material,
                         SettingsFor(proxy.Type), proxy.GameObject.name + "_Fragments", mode,
-                        detachedShardMaterial))
+                        detachedShardMaterial, thickness: fragmentThickness))
                 {
                     rigs.Add(rig);
                 }
@@ -480,7 +636,48 @@ namespace F1XR.Experience.Fracture
                 }
             }
 
+            ComputeSurfaceDelays();
             return rigs.Count > 0;
+        }
+
+        void ComputeSurfaceDelays()
+        {
+            surfaceDelays.Clear();
+
+            if (rigs.Count == 0 || surfaceStaggerStep <= 0f)
+            {
+                for (int i = 0; i < rigs.Count; i++)
+                    surfaceDelays.Add(0f);
+                return;
+            }
+
+            Camera camera = Camera.main;
+            Vector3 camPos = camera != null
+                ? camera.transform.position
+                : Vector3.zero;
+
+            // Distance from camera per rig, paired with index.
+            var distances = new List<(float dist, int index)>(rigs.Count);
+            for (int i = 0; i < planeSpaces.Count && i < rigs.Count; i++)
+            {
+                float dist = Vector3.Distance(camPos, planeSpaces[i].position);
+                distances.Add((dist, i));
+            }
+
+            distances.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+            // Assign delay by rank: nearest = 0, next = step, next = 2*step, ...
+            float[] delays = new float[rigs.Count];
+            for (int rank = 0; rank < distances.Count; rank++)
+                delays[distances[rank].index] = rank * surfaceStaggerStep;
+
+            for (int i = 0; i < delays.Length; i++)
+                surfaceDelays.Add(delays[i]);
+
+            Debug.Log(
+                $"[MR2VR][stagger] {rigs.Count} surfaces, step={surfaceStaggerStep:F2}s, " +
+                $"maxDelay={surfaceDelays[surfaceDelays.Count - 1]:F2}s.",
+                this);
         }
 
         int ReleasedFragmentCount()
@@ -575,6 +772,7 @@ namespace F1XR.Experience.Fracture
                 rig.Dispose();
 
             rigs.Clear();
+            surfaceDelays.Clear();
 
             foreach (Transform space in planeSpaces)
             {

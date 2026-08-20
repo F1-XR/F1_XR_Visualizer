@@ -25,7 +25,7 @@
 
 **건드리면 안 되는 것**
 - OpenXR / Unity OpenXR Meta / XR Interaction Toolkit / XR Origin — 제거·교체 금지
-- `OVRCameraRig` 추가 금지 (Meta SDK 리그로 갈아타지 말 것)
+- Meta XR SDK(`com.meta.xr.sdk.core` / `com.meta.xr.mrutilitykit`) 재설치 금지. 2026-08-15에 프로젝트에서 완전 제거했다 (아래 5-1 참조). `OVRCameraRig` 추가도 금지 — Meta SDK 리그로 갈아타지 말 것
 - 패키지 업/다운그레이드 금지, Meta XR Simulator 금지
 - 기존 시스템 수정 금지: `Experience`, `ExperienceModeManager`, `PassthroughTransitionController`, `Room Shell`, `RoomSurfaceProvider`, `RoomShellProxyGenerator`, `ReplayPlayer`, Gear 시스템, Vehicle Selection
   - (STEP 1·2가 기기 검증 끝난 상태라 회귀 금지 목적)
@@ -292,7 +292,7 @@ git show HEAD:.../RoomShellProxyDebug.cs  →  debugAlpha = 0.1f
 
 | # | 증상 | 진짜 원인 / 조치 |
 |---|---|---|
-| 1 | MRUK 사용 불가 | `MRUK.Awake()` 가 `OVRCameraRig` 를 강제 요구, 없으면 `Debug.LogError`. → AR Foundation `ARPlaneManager` 경로로 전환 |
+| 1 | MRUK 사용 불가 → **Meta XR SDK 전면 제거 (2026-08-15)** | `MRUK.Awake()` 가 `OVRCameraRig` 를 강제 요구, 없으면 `Debug.LogError`. AR Foundation `ARPlaneManager` 경로로 전환했으나 **롤백이 절반만 되어** Meta 경로 스위치(`WallDiscovery.useMetaSceneApi`)와 `MetaXRFeature` 가 켜진 채 남았다. 켜진 Meta 경로는 씬에 `OVRManager` 가 없어 영원히 타임아웃하면서 `MetaSceneRoomSource.SuspendLegacySceneManagers()` 로 `ARPlaneManager` 를 꺼버렸다 = 공간인식 사망. → 패키지·코드·설정·orphan 에셋까지 전부 제거. 공간인식은 OpenXR(`XR_FB_scene` 등)을 감싼 AR Foundation 단일 경로. 부수기는 자체 `VoronoiShatter`/`ShellFractureRig` 로 이미 구현돼 있어 MRUK 로 얻을 게 없었다 |
 | 2 | `surfaceOffset` 바꿔도 프록시 안 움직임 | 인스펙터가 프로퍼티 setter 를 안 거치고 백킹 필드에 직접 씀. → `SetSurfaceOffset()`/`ApplySurfaceOffset()`/`OnValidate()` 추가 |
 | 3 | 메시 누수 | GameObject 파괴해도 Mesh 는 안 죽음. → `ClearRoomProxies` 가 `sharedMesh` 명시 파괴. (그 뒤 "181개 누수" 측정은 Unity `Destroy()` 지연 때문의 **오탐**. 프레임 지나고 재측정하니 1) |
 | 4 | 기기에서 STEP 1 테스트 불가 | `[ContextMenu]` 는 헤드셋 쓰면 접근 불가. → `ExperienceDebugPanel` 제작 |

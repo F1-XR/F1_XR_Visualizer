@@ -131,7 +131,9 @@ namespace F1XR.RestAPI.UI
                 }
                 else
                 {
-                    placementStatus.text = "Point at a table";
+                    placementStatus.text = automatic
+                        ? "Point at a table"
+                        : "Point at a surface";
                     SetButton(placementPrimaryButton, "Confirm", false);
                 }
 

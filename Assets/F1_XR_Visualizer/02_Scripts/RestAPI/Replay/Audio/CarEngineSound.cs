@@ -71,6 +71,16 @@ namespace F1XR.RestAPI.Replay
         private int sourceRecoveryLogBurst = 8;
         private float nextSourceRecoveryLogTime;
 
+        /// <summary>
+        /// Off. The per-instance burst and interval below were meant to keep the source
+        /// recovery log readable, but they are per car and reset on every Configure, and the
+        /// audio distance LOD toggles this component's enabled flag constantly - so twenty cars
+        /// times ten sources refill their allowance many times a second and bury every other
+        /// message in the console. Flip this on from the debugger or a temporary line when
+        /// engine sources are actually being investigated.
+        /// </summary>
+        public static bool LogSourceRecoveryEnabled;
+
         public void SetVariation(float pitchMultiplier, float volumeMultiplier)
         {
             pitchVariation = Mathf.Clamp(pitchMultiplier, 0.94f, 1.06f);

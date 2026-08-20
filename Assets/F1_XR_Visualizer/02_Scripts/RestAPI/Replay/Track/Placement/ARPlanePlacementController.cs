@@ -6,10 +6,36 @@ using UnityEngine.XR;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using UnityEngine.XR.Hands;
+using Unity.XR.CoreUtils;
 using F1XR.RestAPI.Replay.Track;
+using F1XR.RestAPI.Replay.Room;
 
 namespace F1XR.RestAPI.Replay.Track.Placement
 {
+    internal readonly struct AutomaticTableSurface
+    {
+        public AutomaticTableSurface(
+            Pose pose,
+            ARPlane plane,
+            Vector2 size,
+            Vector3 longAxis,
+            bool canCreateAnchor)
+        {
+            Pose = pose;
+            Plane = plane;
+            Size = size;
+            LongAxis = longAxis;
+            CanCreateAnchor = canCreateAnchor;
+        }
+
+        public Pose Pose { get; }
+        public ARPlane Plane { get; }
+        public Vector2 Size { get; }
+        public Vector3 LongAxis { get; }
+        public bool CanCreateAnchor { get; }
+        public bool HasBounds => Size.x > 0.001f && Size.y > 0.001f;
+    }
+
     public sealed partial class ARPlanePlacementController : MonoBehaviour
     {
         private enum InputSourcePriority
@@ -100,6 +126,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
             if (rayOrigin == null && Camera.main != null)
                 rayOrigin = Camera.main.transform;
+
 
             CreateControllerPointerActions();
         }
@@ -335,19 +362,45 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         public bool TryGetPlacementHit(out Pose pose, out ARPlane plane)
         {
+            if (TryGetPlacementSurface(out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
 
-            if (!TryGetPlacementRay(out var ray))
-                return false;
-
-            return TryGetPlacementHit(ray, out pose, out plane);
+        internal bool TryGetPlacementSurface(
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+            return TryGetPlacementRay(out Ray ray) &&
+                TryGetPlacementSurface(ray, out surface);
         }
 
         public bool TryGetAutomaticTableHit(out Pose pose, out ARPlane plane)
         {
+            if (TryGetAutomaticTableSurface(out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
+
+        internal bool TryGetAutomaticTableSurface(
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
+
 
             if (planeManager == null)
                 return false;
@@ -378,10 +431,19 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 return false;
 
             preferredPlacementPlane = bestPlane;
-            pose = bestPose;
-            plane = bestPlane;
+            Vector2 size = bestPlane.size;
+            Vector3 longAxis = size.x >= size.y
+                ? bestPlane.transform.right
+                : bestPlane.transform.forward;
+            surface = new AutomaticTableSurface(
+                bestPose,
+                bestPlane,
+                size,
+                longAxis,
+                canCreateAnchor: true);
             return true;
         }
+
 
         private static float ScoreAutomaticPlane(ARPlane candidate)
         {
@@ -464,9 +526,25 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         public bool TryGetPlacementHit(Ray ray, out Pose pose, out ARPlane plane)
         {
+            if (TryGetPlacementSurface(
+                    ray,
+                    out AutomaticTableSurface surface))
+            {
+                pose = surface.Pose;
+                plane = surface.Plane;
+                return true;
+            }
+
             pose = default;
             plane = null;
+            return false;
+        }
 
+        private bool TryGetPlacementSurface(
+            Ray ray,
+            out AutomaticTableSurface surface)
+        {
+            surface = default;
             if (raycastManager != null && raycastManager.enabled &&
                 raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
             {
@@ -482,8 +560,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                             continue;
                         }
 
-                        pose = hit.pose;
-                        plane = hitPlane;
+                        surface = CreatePlaneSurface(hit.pose, hitPlane);
                         return true;
                     }
                 }
@@ -494,14 +571,52 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                     if (!ShouldAcceptPlane(hit.pose, hitPlane))
                         continue;
 
-                    pose = hit.pose;
-                    plane = hitPlane;
                     preferredPlacementPlane = hitPlane;
+                    surface = CreatePlaneSurface(hit.pose, hitPlane);
                     return true;
                 }
             }
 
-            return TryGetWorldFloorFallback(ray, out pose);
+
+            if (!TryGetWorldFloorFallback(ray, out Pose fallbackPose))
+                return false;
+
+            surface = new AutomaticTableSurface(
+                fallbackPose,
+                null,
+                Vector2.zero,
+                Vector3.forward,
+                canCreateAnchor: true);
+            return true;
+        }
+
+
+        private Vector3 ResolveFloorReferencePoint()
+        {
+            XROrigin xrOrigin = FindAnyObjectByType<XROrigin>(
+                FindObjectsInactive.Include);
+
+            return xrOrigin != null
+                ? xrOrigin.transform.position
+                : new Vector3(0f, fallbackFloorHeight, 0f);
+        }
+
+        private static AutomaticTableSurface CreatePlaneSurface(
+            Pose pose,
+            ARPlane plane)
+        {
+            Vector2 size = plane != null ? plane.size : Vector2.zero;
+            Vector3 longAxis = plane != null && size.x < size.y
+                ? plane.transform.forward
+                : plane != null
+                    ? plane.transform.right
+                    : Vector3.forward;
+            return new AutomaticTableSurface(
+                pose,
+                plane,
+                size,
+                longAxis,
+                canCreateAnchor: true);
         }
 
         private bool TryGetWorldFloorFallback(Ray ray, out Pose pose)
@@ -608,8 +723,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         private ARAnchor CreateAnchor(Pose pose, ARPlane plane)
         {
-            if (anchorManager == null)
+            if (anchorManager == null ||
+                anchorManager.subsystem == null ||
+                !anchorManager.subsystem.running)
+            {
                 return null;
+            }
 
             if (plane != null)
             {

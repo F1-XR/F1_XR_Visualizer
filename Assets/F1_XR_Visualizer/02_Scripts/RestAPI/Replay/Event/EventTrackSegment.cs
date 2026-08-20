@@ -10,6 +10,12 @@ namespace F1XR.RestAPI.Replay
         Decorative
     }
 
+    internal enum EventTrackSegmentSurfaceMode
+    {
+        Full,
+        TrackContextOnly
+    }
+
     internal readonly struct ShowcaseOcclusionHit
     {
         public ShowcaseOcclusionHit(
@@ -31,6 +37,7 @@ namespace F1XR.RestAPI.Replay
         private const int MaxPathSamples = 48;
         private const float MinimumSurfaceNormalY = 0.35f;
         private const float MinimumReliableEdgeCoverage = 0.7f;
+        private const int MinimumTrackContextPrimaryTriangles = 24;
 
         private readonly List<Mesh> meshes = new();
         private readonly List<RoadTriangle> roadTriangles = new();
@@ -38,6 +45,8 @@ namespace F1XR.RestAPI.Replay
         private readonly List<OcclusionTriangle> occlusionTriangles = new();
         private readonly HashSet<Material> ignoredOcclusionMaterials = new();
         private Transform segmentRoot;
+        private EventTrackSegmentSurfaceMode surfaceMode;
+        private int trackContextPrimaryTriangles;
 
         public bool Build(
             Transform parent,
@@ -48,6 +57,29 @@ namespace F1XR.RestAPI.Replay
             float padding,
             out Bounds stageBounds)
         {
+            return Build(
+                parent,
+                sourceRoot,
+                sourcePath,
+                sourceCenter,
+                sourceToLocalRotation,
+                padding,
+                EventTrackSegmentSurfaceMode.Full,
+                out stageBounds);
+        }
+
+        public bool Build(
+            Transform parent,
+            Transform sourceRoot,
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation,
+            float padding,
+            EventTrackSegmentSurfaceMode requestedSurfaceMode,
+            out Bounds stageBounds)
+        {
+            surfaceMode = requestedSurfaceMode;
+            trackContextPrimaryTriangles = 0;
             stageBounds = BuildStageBounds(
                 sourcePath,
                 sourceCenter,
@@ -70,8 +102,16 @@ namespace F1XR.RestAPI.Replay
                 sourceCenter,
                 sourceToLocalRotation);
             float[] nearestSurfaceY = new float[localPath.Length];
+            float[] nearestPrimarySurfaceY = surfaceMode ==
+                EventTrackSegmentSurfaceMode.TrackContextOnly
+                    ? new float[localPath.Length]
+                    : null;
             for (int i = 0; i < nearestSurfaceY.Length; i++)
+            {
                 nearestSurfaceY[i] = float.NegativeInfinity;
+                if (nearestPrimarySurfaceY != null)
+                    nearestPrimarySurfaceY[i] = float.NegativeInfinity;
+            }
 
             int triangleCount = 0;
             foreach (MeshFilter filter in visualRoot.GetComponentsInChildren<MeshFilter>(true))
@@ -88,10 +128,23 @@ namespace F1XR.RestAPI.Replay
                     stageBounds,
                     localPath,
                     padding,
-                    nearestSurfaceY);
+                    nearestSurfaceY,
+                    nearestPrimarySurfaceY);
             }
 
-            if (triangleCount > 0)
+            int primaryCoverageCount = CountSurfaceCoverage(
+                nearestPrimarySurfaceY);
+            int surfaceCoverageCount = CountSurfaceCoverage(
+                nearestSurfaceY);
+            float surfaceCoverage = nearestSurfaceY.Length > 0
+                ? surfaceCoverageCount / (float)nearestSurfaceY.Length
+                : 0f;
+            bool hasRequiredSurface = triangleCount > 0 &&
+                (surfaceMode !=
+                     EventTrackSegmentSurfaceMode.TrackContextOnly ||
+                 trackContextPrimaryTriangles >=
+                     MinimumTrackContextPrimaryTriangles);
+            if (hasRequiredSurface)
             {
                 float surfaceOffset = FindMedianSurfaceOffset(
                     localPath,
@@ -104,6 +157,10 @@ namespace F1XR.RestAPI.Replay
 
                 Debug.Log(
                     $"[EventTrackSegment] triangles={triangleCount}, " +
+                    $"surfaceCoverage={surfaceCoverageCount}/" +
+                    $"{nearestSurfaceY.Length}, " +
+                    $"primaryCoverage={primaryCoverageCount}/" +
+                    $"{nearestPrimarySurfaceY?.Length ?? 0}, " +
                     $"pathCenter={stageBounds.center:F4}, pathSize={stageBounds.size:F4}, " +
                     $"meshCenter={copiedBounds.center:F4}, meshSize={copiedBounds.size:F4}, " +
                     $"centerDelta={(copiedBounds.center - stageBounds.center):F4}, " +
@@ -111,9 +168,88 @@ namespace F1XR.RestAPI.Replay
                 return true;
             }
 
+            if (surfaceMode ==
+                EventTrackSegmentSurfaceMode.TrackContextOnly)
+            {
+                Debug.LogWarning(
+                    "[EventTrackSegment] Track context rejected: " +
+                    $"triangles={triangleCount}, " +
+                    $"primaryTriangles={trackContextPrimaryTriangles}, " +
+                    $"surfaceCoverage={surfaceCoverageCount}/" +
+                    $"{nearestSurfaceY.Length}, " +
+                    $"primaryCoverage={primaryCoverageCount}/" +
+                    $"{nearestPrimarySurfaceY?.Length ?? 0}.");
+            }
+
             Object.Destroy(segmentObject);
             Clear();
             return false;
+        }
+
+        public bool WarpToPath(
+            IReadOnlyList<Vector3> sourcePath,
+            IReadOnlyList<Vector3> targetPath,
+            float maximumLateralDistance,
+            float maximumLongitudinalDistance,
+            out Bounds warpedBounds)
+        {
+            warpedBounds = default;
+            if (segmentRoot == null ||
+                meshes.Count == 0 ||
+                sourcePath == null ||
+                targetPath == null ||
+                sourcePath.Count < 2 ||
+                sourcePath.Count != targetPath.Count)
+            {
+                return false;
+            }
+
+            float lateralLimit = Mathf.Max(
+                0.0001f,
+                maximumLateralDistance);
+            float longitudinalLimit = Mathf.Max(
+                0.0001f,
+                maximumLongitudinalDistance);
+            bool hasBounds = false;
+            for (int meshIndex = 0; meshIndex < meshes.Count; meshIndex++)
+            {
+                Mesh mesh = meshes[meshIndex];
+                if (mesh == null || !mesh.isReadable)
+                    return false;
+
+                Vector3[] vertices = mesh.vertices;
+                for (int vertexIndex = 0;
+                     vertexIndex < vertices.Length;
+                     vertexIndex++)
+                {
+                    vertices[vertexIndex] = WarpPoint(
+                        vertices[vertexIndex],
+                        sourcePath,
+                        targetPath,
+                        lateralLimit,
+                        longitudinalLimit);
+                }
+
+                mesh.vertices = vertices;
+                mesh.RecalculateNormals();
+                if (mesh.uv != null &&
+                    mesh.uv.Length == vertices.Length)
+                {
+                    mesh.RecalculateTangents();
+                }
+                mesh.RecalculateBounds();
+                if (!hasBounds)
+                {
+                    warpedBounds = mesh.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    warpedBounds.Encapsulate(mesh.bounds);
+                }
+            }
+
+            return hasBounds;
         }
 
         public void Clear()
@@ -130,6 +266,7 @@ namespace F1XR.RestAPI.Replay
             occlusionTriangles.Clear();
             ignoredOcclusionMaterials.Clear();
             segmentRoot = null;
+            trackContextPrimaryTriangles = 0;
         }
 
         public void SetIgnoredOcclusionMaterials(
@@ -497,7 +634,8 @@ namespace F1XR.RestAPI.Replay
             Bounds clipBounds,
             IReadOnlyList<Vector3> localPath,
             float padding,
-            float[] nearestSurfaceY)
+            float[] nearestSurfaceY,
+            float[] nearestPrimarySurfaceY)
         {
             Mesh source = sourceFilter.sharedMesh;
             Vector3[] sourceVertices = source.vertices;
@@ -516,19 +654,33 @@ namespace F1XR.RestAPI.Replay
             bool reverseWinding = sourceToEvent.determinant < 0f;
             MeshRenderer sourceRenderer =
                 sourceFilter.GetComponent<MeshRenderer>();
+            bool trackContextOnly = surfaceMode ==
+                EventTrackSegmentSurfaceMode.TrackContextOnly;
+            Vector3 rotatedSourceCenter =
+                sourceToLocalRotation * sourceCenter;
 
             Vector3[] positions = new Vector3[sourceVertices.Length];
             Vector3[] normals = hasNormals ? new Vector3[sourceVertices.Length] : null;
-            for (int i = 0; i < sourceVertices.Length; i++)
+            bool[] resolvedVertices = trackContextOnly
+                ? new bool[sourceVertices.Length]
+                : null;
+            if (!trackContextOnly)
             {
-                Vector3 world = sourceFilter.transform.TransformPoint(sourceVertices[i]);
-                Vector3 sourceLocal = sourceRoot.InverseTransformPoint(world);
-                positions[i] = sourceToLocalRotation * (sourceLocal - sourceCenter);
-
-                if (!hasNormals)
-                    continue;
-
-                normals[i] = normalMatrix.MultiplyVector(sourceNormals[i]).normalized;
+                for (int i = 0; i < sourceVertices.Length; i++)
+                {
+                    Vector3 world = sourceFilter.transform
+                        .TransformPoint(sourceVertices[i]);
+                    Vector3 sourceLocal = sourceRoot
+                        .InverseTransformPoint(world);
+                    positions[i] = sourceToLocalRotation *
+                        (sourceLocal - sourceCenter);
+                    if (hasNormals)
+                    {
+                        normals[i] = normalMatrix
+                            .MultiplyVector(sourceNormals[i])
+                            .normalized;
+                    }
+                }
             }
 
             List<Vector3> vertices = new();
@@ -551,6 +703,29 @@ namespace F1XR.RestAPI.Replay
                 if (source.GetTopology(submesh) != MeshTopology.Triangles)
                     continue;
 
+                Material sourceMaterial =
+                    sourceMaterials.Length > 0
+                        ? sourceMaterials[
+                            Mathf.Min(
+                                submesh,
+                                sourceMaterials.Length - 1)]
+                        : null;
+                if (surfaceMode ==
+                        EventTrackSegmentSurfaceMode.TrackContextOnly &&
+                    !IsTrackContextSurface(sourceMaterial))
+                {
+                    continue;
+                }
+                if (trackContextOnly &&
+                    !SubmeshBoundsIntersect(
+                        source.GetSubMesh(submesh).bounds,
+                        sourceToEvent,
+                        rotatedSourceCenter,
+                        clipBounds))
+                {
+                    continue;
+                }
+
                 bool isRoadSurface =
                     IsRoadSurfaceSubmesh(
                         sourceRenderer,
@@ -559,13 +734,6 @@ namespace F1XR.RestAPI.Replay
                     IsDrivableSurfaceSubmesh(
                         sourceRenderer,
                         submesh);
-                Material sourceMaterial =
-                    sourceMaterials.Length > 0
-                        ? sourceMaterials[
-                            Mathf.Min(
-                                submesh,
-                                sourceMaterials.Length - 1)]
-                        : null;
                 ShowcaseOccluderKind occluderKind =
                     IsRemovableForegroundOccluder(
                         sourceFilter,
@@ -574,57 +742,71 @@ namespace F1XR.RestAPI.Replay
                         isDrivableSurface)
                         ? ShowcaseOccluderKind.Decorative
                         : ShowcaseOccluderKind.Unknown;
+                bool isPrimaryTrackContext = trackContextOnly &&
+                    IsPrimaryTrackContextSurface(sourceMaterial);
                 int[] indices = source.GetIndices(submesh);
                 for (int index = 0; index + 2 < indices.Length; index += 3)
                 {
                     int a = indices[index];
                     int b = indices[index + 1];
                     int c = indices[index + 2];
+                    Vector3 pointA = ResolveVertex(a);
+                    Vector3 pointB = ResolveVertex(b);
+                    Vector3 pointC = ResolveVertex(c);
                     if (!TriangleIntersects(
-                            positions[a],
-                            positions[b],
-                            positions[c],
+                            pointA,
+                            pointB,
+                            pointC,
                             clipBounds,
                             maximumTriangleSpan,
                             localPath,
                             padding))
                         continue;
 
-                    occlusionTriangles.Add(
-                        new OcclusionTriangle(
-                            positions[a],
-                            positions[b],
-                            positions[c],
-                            sourceMaterial,
-                            occluderKind));
-
                     RecordNearestSurfaceHeights(
-                        positions[a],
-                        positions[b],
-                        positions[c],
+                        pointA,
+                        pointB,
+                        pointC,
                         localPath,
-                        nearestSurfaceY);
-                    if (isRoadSurface)
+                        nearestSurfaceY,
+                        isPrimaryTrackContext
+                            ? nearestPrimarySurfaceY
+                            : null);
+                    if (surfaceMode == EventTrackSegmentSurfaceMode.Full)
                     {
-                        RecordRoadTriangle(
-                            positions[a],
-                            positions[b],
-                            positions[c],
-                            roadTriangles);
-                    }
-                    if (isDrivableSurface)
-                    {
-                        RecordRoadTriangle(
-                            positions[a],
-                            positions[b],
-                            positions[c],
-                            drivableTriangles);
+                        occlusionTriangles.Add(
+                            new OcclusionTriangle(
+                                pointA,
+                                pointB,
+                                pointC,
+                                sourceMaterial,
+                                occluderKind));
+                        if (isRoadSurface)
+                        {
+                            RecordRoadTriangle(
+                                pointA,
+                                pointB,
+                                pointC,
+                                roadTriangles);
+                        }
+                        if (isDrivableSurface)
+                        {
+                            RecordRoadTriangle(
+                                pointA,
+                                pointB,
+                                pointC,
+                                drivableTriangles);
+                        }
                     }
 
                     triangles.Add(CopyVertex(a));
                     triangles.Add(CopyVertex(reverseWinding ? c : b));
                     triangles.Add(CopyVertex(reverseWinding ? b : c));
                     keptTriangles++;
+                    if (isPrimaryTrackContext)
+                    {
+                        trackContextPrimaryTriangles++;
+                    }
                 }
 
                 if (triangles.Count == 0)
@@ -669,12 +851,43 @@ namespace F1XR.RestAPI.Replay
 
             MeshRenderer renderer = copy.GetComponent<MeshRenderer>();
             renderer.sharedMaterials = materials.ToArray();
-            renderer.shadowCastingMode = sourceRenderer.shadowCastingMode;
-            renderer.receiveShadows = sourceRenderer.receiveShadows;
+            renderer.shadowCastingMode = trackContextOnly
+                ? ShadowCastingMode.Off
+                : sourceRenderer.shadowCastingMode;
+            renderer.receiveShadows = !trackContextOnly &&
+                sourceRenderer.receiveShadows;
             renderer.lightProbeUsage = LightProbeUsage.Off;
             renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+            if (trackContextOnly)
+            {
+                renderer.motionVectorGenerationMode =
+                    MotionVectorGenerationMode.ForceNoMotion;
+            }
 
             return keptTriangles;
+
+            Vector3 ResolveVertex(int sourceIndex)
+            {
+                if (!trackContextOnly)
+                    return positions[sourceIndex];
+
+                if (!resolvedVertices[sourceIndex])
+                {
+                    positions[sourceIndex] =
+                        sourceToEvent.MultiplyPoint3x4(
+                            sourceVertices[sourceIndex]) -
+                        rotatedSourceCenter;
+                    if (hasNormals)
+                    {
+                        normals[sourceIndex] = normalMatrix
+                            .MultiplyVector(sourceNormals[sourceIndex])
+                            .normalized;
+                    }
+                    resolvedVertices[sourceIndex] = true;
+                }
+
+                return positions[sourceIndex];
+            }
 
             int CopyVertex(int sourceIndex)
             {
@@ -683,7 +896,7 @@ namespace F1XR.RestAPI.Replay
 
                 int copied = vertices.Count;
                 remap[sourceIndex] = copied;
-                vertices.Add(positions[sourceIndex]);
+                vertices.Add(ResolveVertex(sourceIndex));
                 if (hasNormals)
                     copiedNormals.Add(normals[sourceIndex]);
                 if (hasUv)
@@ -973,6 +1186,70 @@ namespace F1XR.RestAPI.Replay
                 name.StartsWith("line");
         }
 
+        private static bool IsTrackContextSurface(Material material)
+        {
+            if (material == null)
+                return false;
+
+            string name = material.name.ToLowerInvariant();
+            if (name.Contains("pit") ||
+                name.Contains("wall") ||
+                name.Contains("guard") ||
+                name.Contains("fence") ||
+                name.Contains("tree") ||
+                name.Contains("building") ||
+                name.Contains("grandstand") ||
+                name.Contains("gravel") ||
+                name.Contains("grvl") ||
+                name.Contains("terrain") ||
+                name.Contains("ground"))
+            {
+                return false;
+            }
+
+            return name.Contains("road") ||
+                name.Contains("asphalt") ||
+                name.Contains("tarmac") ||
+                name.Contains("curb") ||
+                name.Contains("kerb") ||
+                name.Contains("rumble") ||
+                name.Contains("rmbl") ||
+                name.Contains("rdcp") ||
+                name.Contains("runoff") ||
+                name.Contains("road_rk_green") ||
+                name.Contains("skid") ||
+                name.Contains("groove") ||
+                name == "grid" ||
+                name.StartsWith("line");
+        }
+
+        private static bool IsPrimaryTrackContextSurface(
+            Material material)
+        {
+            if (material == null)
+                return false;
+
+            string name = material.name.ToLowerInvariant();
+            if (name.Contains("green") ||
+                name.Contains("runoff") ||
+                name.Contains("curb") ||
+                name.Contains("kerb") ||
+                name.Contains("rumble") ||
+                name.Contains("rmbl") ||
+                name.Contains("rdcp") ||
+                name.Contains("skid") ||
+                name.Contains("groove") ||
+                name.Contains("line") ||
+                name == "grid")
+            {
+                return false;
+            }
+
+            return name.Contains("road") ||
+                name.Contains("asphalt") ||
+                name.Contains("tarmac");
+        }
+
         private static bool IsDrivableSurfaceSubmesh(
             MeshRenderer renderer,
             int submesh)
@@ -1113,6 +1390,93 @@ namespace F1XR.RestAPI.Replay
             public float Maximum;
         }
 
+        private static Vector3 WarpPoint(
+            Vector3 point,
+            IReadOnlyList<Vector3> sourcePath,
+            IReadOnlyList<Vector3> targetPath,
+            float maximumLateralDistance,
+            float maximumLongitudinalDistance)
+        {
+            int closestSegment = 0;
+            float closestInterpolation = 0f;
+            float closestDistance = float.PositiveInfinity;
+            for (int index = 0;
+                 index < sourcePath.Count - 1;
+                 index++)
+            {
+                Vector3 start = sourcePath[index];
+                Vector3 end = sourcePath[index + 1];
+                Vector3 segment = end - start;
+                segment.y = 0f;
+                float lengthSquared = segment.sqrMagnitude;
+                if (lengthSquared <= 0.00000001f)
+                    continue;
+
+                Vector3 relative = point - start;
+                relative.y = 0f;
+                float interpolation = Mathf.Clamp01(
+                    Vector3.Dot(relative, segment) /
+                    lengthSquared);
+                Vector3 closest = Vector3.Lerp(
+                    start,
+                    end,
+                    interpolation);
+                Vector3 delta = point - closest;
+                delta.y = 0f;
+                float distance = delta.sqrMagnitude;
+                if (distance >= closestDistance)
+                    continue;
+
+                closestDistance = distance;
+                closestSegment = index;
+                closestInterpolation = interpolation;
+            }
+
+            Vector3 sourceStart = sourcePath[closestSegment];
+            Vector3 sourceEnd = sourcePath[closestSegment + 1];
+            Vector3 sourceTangent = sourceEnd - sourceStart;
+            sourceTangent.y = 0f;
+            sourceTangent = sourceTangent.sqrMagnitude > 0.00000001f
+                ? sourceTangent.normalized
+                : Vector3.forward;
+            Vector3 sourceRight = Vector3.Cross(
+                Vector3.up,
+                sourceTangent).normalized;
+            Vector3 sourceCenter = Vector3.Lerp(
+                sourceStart,
+                sourceEnd,
+                closestInterpolation);
+            Vector3 sourceOffset = point - sourceCenter;
+            float lateral = Mathf.Clamp(
+                Vector3.Dot(sourceOffset, sourceRight),
+                -maximumLateralDistance,
+                maximumLateralDistance);
+            float longitudinal = Mathf.Clamp(
+                Vector3.Dot(sourceOffset, sourceTangent),
+                -maximumLongitudinalDistance,
+                maximumLongitudinalDistance);
+            float vertical = sourceOffset.y;
+
+            Vector3 targetStart = targetPath[closestSegment];
+            Vector3 targetEnd = targetPath[closestSegment + 1];
+            Vector3 targetTangent = targetEnd - targetStart;
+            targetTangent.y = 0f;
+            targetTangent = targetTangent.sqrMagnitude > 0.00000001f
+                ? targetTangent.normalized
+                : sourceTangent;
+            Vector3 targetRight = Vector3.Cross(
+                Vector3.up,
+                targetTangent).normalized;
+            Vector3 targetCenter = Vector3.Lerp(
+                targetStart,
+                targetEnd,
+                closestInterpolation);
+            return targetCenter +
+                targetTangent * longitudinal +
+                targetRight * lateral +
+                Vector3.up * vertical;
+        }
+
         private static Bounds BuildStageBounds(
             IReadOnlyList<Vector3> sourcePath,
             Vector3 sourceCenter,
@@ -1166,7 +1530,8 @@ namespace F1XR.RestAPI.Replay
             Vector3 b,
             Vector3 c,
             IReadOnlyList<Vector3> samples,
-            float[] nearestSurfaceY)
+            float[] nearestSurfaceY,
+            float[] nearestPrimarySurfaceY = null)
         {
             Vector3 normal = Vector3.Cross(b - a, c - a);
             if (normal.sqrMagnitude <= 0.00000001f ||
@@ -1185,7 +1550,31 @@ namespace F1XR.RestAPI.Replay
                 {
                     nearestSurfaceY[i] = surfaceY;
                 }
+                if (nearestPrimarySurfaceY != null &&
+                    (float.IsNegativeInfinity(
+                         nearestPrimarySurfaceY[i]) ||
+                     Mathf.Abs(sample.y - surfaceY) <
+                     Mathf.Abs(
+                         sample.y - nearestPrimarySurfaceY[i])))
+                {
+                    nearestPrimarySurfaceY[i] = surfaceY;
+                }
             }
+        }
+
+        private static int CountSurfaceCoverage(
+            IReadOnlyList<float> nearestSurfaceY)
+        {
+            if (nearestSurfaceY == null)
+                return 0;
+
+            int covered = 0;
+            for (int i = 0; i < nearestSurfaceY.Count; i++)
+            {
+                if (!float.IsNegativeInfinity(nearestSurfaceY[i]))
+                    covered++;
+            }
+            return covered;
         }
 
         private static bool TryGetSurfaceY(
@@ -1283,6 +1672,57 @@ namespace F1XR.RestAPI.Replay
                 localBounds.min.x <= clipBounds.max.x &&
                 localBounds.max.z >= clipBounds.min.z &&
                 localBounds.min.z <= clipBounds.max.z;
+        }
+
+        private static bool SubmeshBoundsIntersect(
+            Bounds sourceBounds,
+            Matrix4x4 sourceToEvent,
+            Vector3 rotatedSourceCenter,
+            Bounds clipBounds)
+        {
+            Vector3 center = sourceBounds.center;
+            Vector3 size = sourceBounds.size;
+            if (!float.IsFinite(center.x) ||
+                !float.IsFinite(center.y) ||
+                !float.IsFinite(center.z) ||
+                !float.IsFinite(size.x) ||
+                !float.IsFinite(size.y) ||
+                !float.IsFinite(size.z) ||
+                size.sqrMagnitude <= 0.00000001f)
+            {
+                return true;
+            }
+
+            Vector3 minimum = sourceBounds.min;
+            Vector3 maximum = sourceBounds.max;
+            float minimumX = float.PositiveInfinity;
+            float maximumX = float.NegativeInfinity;
+            float minimumZ = float.PositiveInfinity;
+            float maximumZ = float.NegativeInfinity;
+            for (int x = 0; x < 2; x++)
+            {
+                for (int y = 0; y < 2; y++)
+                {
+                    for (int z = 0; z < 2; z++)
+                    {
+                        Vector3 point = sourceToEvent.MultiplyPoint3x4(
+                            new Vector3(
+                                x == 0 ? minimum.x : maximum.x,
+                                y == 0 ? minimum.y : maximum.y,
+                                z == 0 ? minimum.z : maximum.z)) -
+                            rotatedSourceCenter;
+                        minimumX = Mathf.Min(minimumX, point.x);
+                        maximumX = Mathf.Max(maximumX, point.x);
+                        minimumZ = Mathf.Min(minimumZ, point.z);
+                        maximumZ = Mathf.Max(maximumZ, point.z);
+                    }
+                }
+            }
+
+            return maximumX >= clipBounds.min.x &&
+                minimumX <= clipBounds.max.x &&
+                maximumZ >= clipBounds.min.z &&
+                minimumZ <= clipBounds.max.z;
         }
 
         private static bool TriangleIntersects(

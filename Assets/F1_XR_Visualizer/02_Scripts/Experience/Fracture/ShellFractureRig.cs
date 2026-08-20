@@ -89,7 +89,7 @@ namespace F1XR.Experience.Fracture
 
             public static Settings Default => new()
             {
-                fragmentCount = 30,
+                fragmentCount = 48,
                 randomSeed = 1234,
                 originBias = 0.8f,
 
@@ -172,9 +172,13 @@ namespace F1XR.Experience.Fracture
         /// <summary>Raised once per fragment, at the world position where it lets go.</summary>
         public System.Action<Vector3> FragmentReleased;
 
+        /// <summary>Raised once per fragment during reverse, when it snaps back to intact.</summary>
+        public System.Action<Vector3> FragmentReattached;
+
         public Transform Root { get; private set; }
         public int FragmentCount => fragments != null ? fragments.Length : 0;
         public int OwnedMeshCount => ownedMeshes.Count;
+        public bool IsDormant { get; private set; }
 
         public int ReleasedCount
         {
@@ -213,7 +217,8 @@ namespace F1XR.Experience.Fracture
             string rootName = "ShellFragments",
             ShellVisualMode mode = ShellVisualMode.DebugGray,
             Material detachedShardMaterial = null,
-            Material revealMaterial = null)
+            Material revealMaterial = null,
+            float thickness = 0f)
         {
             Dispose();
             settings = rigSettings;
@@ -265,39 +270,37 @@ namespace F1XR.Experience.Fracture
             for (int i = 0; i < cells.Count; i++)
             {
                 Vector2 centroid = centroids[i];
-                Mesh mesh = BuildCellMesh(cells[i], centroid, inset);
+                Mesh fragmentMesh = BuildCellMesh(cells[i], centroid, inset, thickness);
 
                 var piece = new GameObject($"Fragment_{i:00}");
                 piece.transform.SetParent(Root, false);
                 piece.transform.localPosition = new Vector3(centroid.x, centroid.y, 0f);
 
-                piece.AddComponent<MeshFilter>().sharedMesh = mesh;
+                piece.AddComponent<MeshFilter>().sharedMesh = fragmentMesh;
                 MeshRenderer renderer = piece.AddComponent<MeshRenderer>();
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
                 renderer.receiveShadows = false;
 
                 if (mode == ShellVisualMode.SpatialReveal)
                 {
-                    // VR to MR draws nothing at all until a piece detaches: the live VR
-                    // scene is already on screen and already opaque, so an intact cell needs
-                    // no renderer of its own. It appears only once it becomes solid debris.
                     renderer.sharedMaterial = detachedShardMaterial;
                     renderer.enabled = false;
                 }
                 else
                 {
-                    // Including VirtualSurface: the piece carries the surface's own material
-                    // from the first frame, so a fragment of the garage wall looks like the
-                    // garage wall it was cut out of, all the way down.
                     renderer.sharedMaterial = sharedMaterial;
                 }
 
                 if (leavesHoles)
                 {
+                    Mesh revealMesh = thickness > 0f
+                        ? BuildCellMesh(cells[i], centroid, inset, 0f)
+                        : fragmentMesh;
+
                     var reveal = new GameObject($"Reveal_{i:00}");
                     reveal.transform.SetParent(Root, false);
                     reveal.transform.localPosition = piece.transform.localPosition;
-                    reveal.AddComponent<MeshFilter>().sharedMesh = mesh;
+                    reveal.AddComponent<MeshFilter>().sharedMesh = revealMesh;
 
                     MeshRenderer revealRenderer = reveal.AddComponent<MeshRenderer>();
                     revealRenderer.sharedMaterial = mode == ShellVisualMode.VirtualSurface
@@ -393,45 +396,135 @@ namespace F1XR.Experience.Fracture
         static float NextSigned(System.Random random) =>
             (float)(random.NextDouble() * 2.0 - 1.0);
 
-        Mesh BuildCellMesh(IReadOnlyList<Vector2> polygon, Vector2 pivot, float inset)
+        Mesh BuildCellMesh(IReadOnlyList<Vector2> polygon, Vector2 pivot, float inset,
+            float thickness)
         {
             Vector2 centre = VoronoiShatter.Centroid(polygon);
+            int n = polygon.Count;
 
-            var vertices = new Vector3[polygon.Count];
-            var normals = new Vector3[polygon.Count];
-            var uvs = new Vector2[polygon.Count];
+            var insetLocal = new Vector2[n];
+            var insetWorld = new Vector2[n];
 
-            for (int i = 0; i < polygon.Count; i++)
+            for (int i = 0; i < n; i++)
             {
                 Vector2 point = polygon[i];
                 Vector2 toCentre = centre - point;
                 float length = toCentre.magnitude;
                 if (inset > 0f && length > inset)
                     point += toCentre / length * inset;
-
-                Vector2 local = point - pivot;
-                vertices[i] = new Vector3(local.x, local.y, 0f);
-                normals[i] = Vector3.forward;
-                uvs[i] = point;
+                insetWorld[i] = point;
+                insetLocal[i] = point - pivot;
             }
 
-            // Voronoi cells are convex, so a fan is a correct triangulation.
-            var triangles = new int[(polygon.Count - 2) * 3];
-            for (int i = 0; i < polygon.Count - 2; i++)
+            if (thickness <= 0f)
             {
-                triangles[i * 3] = 0;
-                triangles[i * 3 + 1] = i + 1;
-                triangles[i * 3 + 2] = i + 2;
+                var vertices = new Vector3[n];
+                var normals = new Vector3[n];
+                var uvs = new Vector2[n];
+                for (int i = 0; i < n; i++)
+                {
+                    vertices[i] = new Vector3(insetLocal[i].x, insetLocal[i].y, 0f);
+                    normals[i] = Vector3.forward;
+                    uvs[i] = insetWorld[i];
+                }
+
+                var triangles = new int[(n - 2) * 3];
+                for (int i = 0; i < n - 2; i++)
+                {
+                    triangles[i * 3] = 0;
+                    triangles[i * 3 + 1] = i + 1;
+                    triangles[i * 3 + 2] = i + 2;
+                }
+
+                var mesh = new Mesh { name = "ShellFragment" };
+                mesh.SetVertices(vertices);
+                mesh.SetNormals(normals);
+                mesh.SetUVs(0, uvs);
+                mesh.SetTriangles(triangles, 0, true);
+                ownedMeshes.Add(mesh);
+                return mesh;
             }
 
-            var mesh = new Mesh { name = "ShellFragment" };
-            mesh.SetVertices(vertices);
-            mesh.SetNormals(normals);
-            mesh.SetUVs(0, uvs);
-            mesh.SetTriangles(triangles, 0, true);
+            // Extruded mesh: front face at z=0, back face at z=-thickness, side quads.
+            int frontBase = 0;
+            int backBase = n;
+            int sideBase = n * 2;
+            int vertCount = n * 2 + n * 4;
+            int triIndexCount = ((n - 2) * 2 + n * 2) * 3;
 
-            ownedMeshes.Add(mesh);
-            return mesh;
+            var verts = new Vector3[vertCount];
+            var norms = new Vector3[vertCount];
+            var uv = new Vector2[vertCount];
+
+            for (int i = 0; i < n; i++)
+            {
+                verts[frontBase + i] = new Vector3(insetLocal[i].x, insetLocal[i].y, 0f);
+                norms[frontBase + i] = Vector3.forward;
+                uv[frontBase + i] = insetWorld[i];
+
+                verts[backBase + i] = new Vector3(insetLocal[i].x, insetLocal[i].y, -thickness);
+                norms[backBase + i] = Vector3.back;
+                uv[backBase + i] = insetWorld[i];
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                int next = (i + 1) % n;
+                int vi = sideBase + i * 4;
+
+                verts[vi]     = new Vector3(insetLocal[i].x,    insetLocal[i].y,    0f);
+                verts[vi + 1] = new Vector3(insetLocal[next].x, insetLocal[next].y, 0f);
+                verts[vi + 2] = new Vector3(insetLocal[next].x, insetLocal[next].y, -thickness);
+                verts[vi + 3] = new Vector3(insetLocal[i].x,    insetLocal[i].y,    -thickness);
+
+                Vector2 edge = insetLocal[next] - insetLocal[i];
+                Vector3 sideNormal = new Vector3(edge.y, -edge.x, 0f).normalized;
+                Vector2 mid = (insetLocal[i] + insetLocal[next]) * 0.5f;
+                if (Vector2.Dot(new Vector2(sideNormal.x, sideNormal.y), mid) < 0f)
+                    sideNormal = -sideNormal;
+
+                norms[vi] = norms[vi + 1] = norms[vi + 2] = norms[vi + 3] = sideNormal;
+                uv[vi]     = insetWorld[i];
+                uv[vi + 1] = insetWorld[next];
+                uv[vi + 2] = insetWorld[next];
+                uv[vi + 3] = insetWorld[i];
+            }
+
+            var tris = new int[triIndexCount];
+            int ti = 0;
+
+            for (int i = 0; i < n - 2; i++)
+            {
+                tris[ti++] = frontBase;
+                tris[ti++] = frontBase + i + 1;
+                tris[ti++] = frontBase + i + 2;
+            }
+
+            for (int i = 0; i < n - 2; i++)
+            {
+                tris[ti++] = backBase;
+                tris[ti++] = backBase + i + 2;
+                tris[ti++] = backBase + i + 1;
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                int vi = sideBase + i * 4;
+                tris[ti++] = vi;
+                tris[ti++] = vi + 1;
+                tris[ti++] = vi + 2;
+                tris[ti++] = vi;
+                tris[ti++] = vi + 2;
+                tris[ti++] = vi + 3;
+            }
+
+            var extruded = new Mesh { name = "ShellFragment" };
+            extruded.SetVertices(verts);
+            extruded.SetNormals(norms);
+            extruded.SetUVs(0, uv);
+            extruded.SetTriangles(tris, 0, true);
+            ownedMeshes.Add(extruded);
+            return extruded;
         }
 
         /// <summary>Places every fragment for the given time since the break began.</summary>
@@ -462,18 +555,118 @@ namespace F1XR.Experience.Fracture
             }
         }
 
-        void ApplyPose(int index, Transform piece, FragmentAnim anim, float time)
+        public int ReattachedCount
+        {
+            get
+            {
+                if (anims == null) return 0;
+                int count = 0;
+                for (int i = 0; i < anims.Length; i++)
+                    if (!anims[i].Released) count++;
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// All renderers off, data preserved. The rig costs nothing per frame in this
+        /// state and can be woken for the reverse playback later.
+        /// </summary>
+        public void SetDormant()
+        {
+            IsDormant = true;
+            if (fragments == null) return;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null) renderers[i].enabled = false;
+                if (revealRenderers != null && i < revealRenderers.Length &&
+                    revealRenderers[i] != null)
+                    revealRenderers[i].enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// Prepares all fragments for reverse playback: each starts at its final fallen
+        /// pose with renderer enabled, using the mask material so reality shows through.
+        /// </summary>
+        public void WakeForReverse(Material maskMaterial)
+        {
+            IsDormant = false;
+            if (fragments == null) return;
+
+            for (int i = 0; i < fragments.Length; i++)
+            {
+                if (renderers[i] != null)
+                {
+                    renderers[i].sharedMaterial = maskMaterial;
+                    renderers[i].enabled = true;
+                }
+
+                // Position at full-fall end state so first frame is seamless.
+                float endTime = TotalSeconds - anims[i].CrackTime;
+                ApplyPoseOnly(i, fragments[i], anims[i], endTime);
+
+                // Mark released so ReattachedCount starts at 0.
+                anims[i].Released = true;
+            }
+        }
+
+        /// <summary>
+        /// Drives fragments backwards. reverseElapsed goes from 0 (fully broken) to
+        /// TotalSeconds (fully intact). Uses the exact same pose math as forward.
+        /// </summary>
+        public void StepReverse(float reverseElapsed)
+        {
+            if (fragments == null) return;
+
+            for (int i = 0; i < fragments.Length; i++)
+            {
+                Transform piece = fragments[i];
+                if (piece == null) continue;
+
+                float forwardEquivalent = TotalSeconds - reverseElapsed;
+                float time = forwardEquivalent - anims[i].CrackTime;
+                float detachStart = settings.liftDuration + settings.holdDuration;
+
+                // Reattach: was released, now back in lift/hold or intact phase.
+                if (anims[i].Released && time < detachStart)
+                {
+                    anims[i].Released = false;
+                    if (renderers[i] != null) renderers[i].enabled = true;
+                    FragmentReattached?.Invoke(piece.position);
+                }
+
+                // In forward, renderer disables at progress>=1. In reverse, re-enable
+                // when progress drops below 1.
+                float progress = (time - detachStart) / settings.breakDuration;
+                if (progress < 1f && renderers[i] != null && !renderers[i].enabled)
+                    renderers[i].enabled = true;
+
+                ApplyPoseOnly(i, piece, anims[i], time);
+
+                // Close reveal holes as fragments return.
+                if (revealRenderers != null && i < revealRenderers.Length)
+                {
+                    bool shouldReveal = time >= detachStart;
+                    if (revealRenderers[i] != null)
+                        revealRenderers[i].enabled = shouldReveal;
+                }
+            }
+        }
+
+        void ApplyPoseOnly(int index, Transform piece, FragmentAnim anim, float time)
         {
             if (time <= 0f)
-                return;   // Phase 0: intact, still part of the surface.
+            {
+                piece.localPosition = anim.StartPosition;
+                piece.localRotation = Quaternion.identity;
+                piece.localScale = Vector3.one;
+                return;
+            }
 
             float detachStart = settings.liftDuration + settings.holdDuration;
 
             if (time < detachStart)
             {
-                // Phase 1-2: cracked and loose. The piece nudges off the surface by the lift
-                // amount and tilts a little, then holds there until its detach time. It does
-                // not fall yet, which is what separates 'it cracked' from 'it fell'.
                 float u = settings.liftCurve.Evaluate(
                     Mathf.Clamp01(time / settings.liftDuration));
                 piece.localPosition = Vector3.LerpUnclamped(
@@ -484,12 +677,8 @@ namespace F1XR.Experience.Fracture
                 return;
             }
 
-            // Phase 3: detach.
             float progress = Mathf.Clamp01(
                 (time - detachStart) / settings.breakDuration);
-
-            // Every surface drops. No blast term, which is what threw pieces at the viewer
-            // before.
             float fallen = settings.breakCurve.Evaluate(progress);
             piece.localPosition = anim.LiftPosition
                 + anim.FallDirection * (settings.fallDistance * fallen)
@@ -498,11 +687,20 @@ namespace F1XR.Experience.Fracture
             piece.localRotation = Quaternion.SlerpUnclamped(
                 Quaternion.identity, anim.EndRotation, Mathf.Lerp(0.15f, 1f, progress));
             piece.localScale = Vector3.one * Mathf.Lerp(1f, settings.endScale, progress);
+        }
 
-            // Fragments stay fully visible for their entire fall. Nothing in the break
-            // fades: a fragment that dissolves in place reads as the incoming world waiting
-            // behind the old one rather than being uncovered by it.
-            if (progress >= 1f)
+        void ApplyPose(int index, Transform piece, FragmentAnim anim, float time)
+        {
+            if (time <= 0f)
+                return;   // Phase 0: intact, still part of the surface.
+
+            ApplyPoseOnly(index, piece, anim, time);
+
+            float detachStart = settings.liftDuration + settings.holdDuration;
+            float progress = Mathf.Clamp01(
+                (time - detachStart) / settings.breakDuration);
+
+            if (time >= detachStart && progress >= 1f)
                 DisableMovingRenderer(index);
 
             if (visualMode == ShellVisualMode.SpatialReveal ||

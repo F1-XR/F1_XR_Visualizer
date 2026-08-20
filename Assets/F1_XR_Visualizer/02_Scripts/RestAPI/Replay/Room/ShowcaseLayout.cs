@@ -69,6 +69,8 @@ namespace F1XR.RestAPI.Replay.Room
         private ShowcaseWallFrame frozenEntryWall;
         private ShowcaseWallFrame frozenExitWall;
         private readonly List<ShowcaseWallFrame> frozenWallFrames = new();
+        private Plane frozenFloorPlane;
+        private bool frozenFloorPlaneValid;
         private bool wallFramesFrozen;
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation;
@@ -312,6 +314,12 @@ namespace F1XR.RestAPI.Replay.Room
 
         public bool TryGetDetectedFloorPlane(out Plane floorPlane)
         {
+            if (wallFramesFrozen)
+            {
+                floorPlane = frozenFloorPlane;
+                return frozenFloorPlaneValid;
+            }
+
             floorPlane = default;
             return wallDiscovery != null &&
                 wallDiscovery.TryGetContainingFloorPlane(out floorPlane);
@@ -480,6 +488,9 @@ namespace F1XR.RestAPI.Replay.Room
             CaptureFrozenWallFrames(entry, exit);
             frozenEntryWall = entry;
             frozenExitWall = exit;
+            frozenFloorPlaneValid = wallDiscovery != null &&
+                wallDiscovery.TryGetContainingFloorPlane(
+                    out frozenFloorPlane);
             wallFramesFrozen = true;
             rebuildRequested = true;
             RebuildLayout();
@@ -488,13 +499,17 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void ClearFrozenWallFrames()
         {
-            if (!wallFramesFrozen && frozenWallFrames.Count == 0)
+            if (!wallFramesFrozen &&
+                frozenWallFrames.Count == 0 &&
+                !frozenFloorPlaneValid)
                 return;
 
             wallFramesFrozen = false;
             frozenEntryWall = default;
             frozenExitWall = default;
             frozenWallFrames.Clear();
+            frozenFloorPlane = default;
+            frozenFloorPlaneValid = false;
             rebuildRequested = true;
             RebuildLayout();
         }
