@@ -166,7 +166,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -1994,6 +1994,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1113257132}
   - component: {fileID: 1113257130}
+  - component: {fileID: 1113257133}
   - component: {fileID: 1113257131}
   - component: {fileID: 1113257129}
   m_Layer: 0
@@ -2122,6 +2123,23 @@ MonoBehaviour:
   pinchReleaseThreshold: 0.55
   pinchDistancePressThreshold: 0.025
   pinchDistanceReleaseThreshold: 0.04
+--- !u!114 &1113257133
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113257128}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2852aca04aeec44ca6a4ae071ded794, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.Placement.AutomaticTableCandidatePreview
+  placementController: {fileID: 1113257130}
+  showCandidates: 0
+  candidateColor: {r: 0.25, g: 0.85, b: 1, a: 0.28}
+  refreshInterval: 0.25
+  heightOffset: 0.01
 --- !u!114 &1113257131
 MonoBehaviour:
   m_ObjectHideFlags: 0

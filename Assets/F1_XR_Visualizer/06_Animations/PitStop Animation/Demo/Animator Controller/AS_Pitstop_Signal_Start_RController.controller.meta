@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 50707b12b83a5dd46af9b4751c0b1a31
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Pitstop_Signal_Start_RController.controller
+  uploadId: 906384

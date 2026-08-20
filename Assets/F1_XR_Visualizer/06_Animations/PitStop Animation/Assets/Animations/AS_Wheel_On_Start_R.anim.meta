@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: bcc8ba665c517b84ba260a1682d2b621
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 7400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Assets/Animations/AS_Wheel_On_Start_R.anim
+  uploadId: 906384

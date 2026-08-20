@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 51b5197093c14054d83fe23858ae9c6d
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 7400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Assets/Animations/AS_Wheel_Off_Idle_02.anim
+  uploadId: 906384

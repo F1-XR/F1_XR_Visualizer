@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 049d5bb4571f56c4ca65c0351ebc7a53
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Rear_Jack_Loop_RController.controller
+  uploadId: 906384

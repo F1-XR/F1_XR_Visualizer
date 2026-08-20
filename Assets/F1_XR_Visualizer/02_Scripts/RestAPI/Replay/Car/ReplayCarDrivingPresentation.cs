@@ -68,6 +68,10 @@ namespace F1XR.RestAPI.Replay
         private bool speedStreakVisible;
         private int updatePhase;
 
+        public float CurrentSpeedKph => currentSpeedKph;
+
+        public int CurrentBrake => currentBrake;
+
         public void Configure()
         {
             if (configured)
@@ -851,6 +855,20 @@ namespace F1XR.RestAPI.Replay
                 replayTime,
                 speedKph,
                 brake);
+        }
+
+        public bool TryGetDrivingTelemetry(
+            out float speedKph,
+            out int brake)
+        {
+            speedKph = 0f;
+            brake = 0;
+            if (drivingPresentation == null)
+                return false;
+
+            speedKph = drivingPresentation.CurrentSpeedKph;
+            brake = drivingPresentation.CurrentBrake;
+            return true;
         }
 
         public void SetDrivingPresentationEmphasis(
