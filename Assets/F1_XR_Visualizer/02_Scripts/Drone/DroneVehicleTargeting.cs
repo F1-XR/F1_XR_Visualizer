@@ -290,6 +290,7 @@ namespace F1XR.Drone
         const float FrameMinimumAngularWidth = 0.007f;
         const float CardCanvasWidth = 430f;
         const float CardCanvasHeight = 290f;
+        const float CardHoldSeconds = 1f;
 
         [Header("Depth Offset")]
         [SerializeField, Min(0f)] float minimumDepthOffset = 0.3f;
@@ -307,6 +308,9 @@ namespace F1XR.Drone
         WorldTargetCard card;
         LineRenderer leaderLine;
         bool isVisible;
+        int primaryCardDriverNumber = -1;
+        float primaryCardLastVisibleTime;
+        float primaryCardSide;
 
         public void Configure(Camera camera, TMP_FontAsset targetFont)
         {
@@ -328,6 +332,7 @@ namespace F1XR.Drone
         public void Hide()
         {
             isVisible = false;
+            ClearPrimaryCard();
             if (root != null)
                 root.SetActive(false);
         }
@@ -354,14 +359,59 @@ namespace F1XR.Drone
                 }
             }
 
-            if (count == 0)
+            int primaryIndex = FindPrimaryCardTarget(targets);
+            if (primaryIndex >= 0)
             {
-                card?.SetActive(false);
+                primaryCardLastVisibleTime = Time.unscaledTime;
+                SetPrimaryCard(
+                    targets[primaryIndex],
+                    frames[primaryIndex],
+                    primaryCardSide);
+                return;
+            }
+
+            if (primaryCardDriverNumber >= 0 &&
+                Time.unscaledTime < primaryCardLastVisibleTime + CardHoldSeconds)
+            {
+                card?.SetActive(true);
                 leaderLine.enabled = false;
                 return;
             }
 
-            SetPrimaryCard(targets[0], frames[0]);
+            if (count == 0)
+            {
+                ClearPrimaryCard();
+                return;
+            }
+
+            primaryCardDriverNumber = targets[0].driverNumber;
+            primaryCardLastVisibleTime = Time.unscaledTime;
+            primaryCardSide = targets[0].viewportRect.center.x > 0.5f ? -1f : 1f;
+            SetPrimaryCard(targets[0], frames[0], primaryCardSide);
+        }
+
+        int FindPrimaryCardTarget(IReadOnlyList<DroneVehicleTarget> targets)
+        {
+            if (primaryCardDriverNumber < 0 || targets == null)
+                return -1;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                if (targets[i].driverNumber == primaryCardDriverNumber)
+                    return i;
+            }
+
+            return -1;
+        }
+
+        void ClearPrimaryCard()
+        {
+            primaryCardDriverNumber = -1;
+            primaryCardLastVisibleTime = 0f;
+            primaryCardSide = 0f;
+            card?.SetActive(false);
+            if (leaderLine != null)
+                leaderLine.enabled = false;
         }
 
         float ResolveDepthOffset(Vector3 vehicleCenter)
@@ -400,7 +450,8 @@ namespace F1XR.Drone
 
         void SetPrimaryCard(
             DroneVehicleTarget target,
-            WorldTargetFrame frame)
+            WorldTargetFrame frame,
+            float side)
         {
             card ??= new WorldTargetCard(
                 root.transform,
@@ -412,7 +463,6 @@ namespace F1XR.Drone
                 xrCamera.transform.position,
                 frame.Center);
             float cardWidth = Mathf.Clamp(distance * 0.27f, 2.4f, 39f);
-            float side = target.viewportRect.center.x > 0.5f ? -1f : 1f;
             Vector3 cardPosition = frame.Center +
                 xrCamera.transform.right * side *
                     (frame.Width * 0.5f + cardWidth * 0.85f) +
@@ -420,7 +470,11 @@ namespace F1XR.Drone
             Quaternion rotation = Quaternion.LookRotation(
                 cardPosition - xrCamera.transform.position,
                 xrCamera.transform.up);
-            card.SetTarget(target, cardPosition, rotation, cardWidth);
+            card.SetTarget(
+                target,
+                cardPosition,
+                rotation,
+                cardWidth);
 
             SetLineColor(leaderMaterial, target.teamColor);
             leaderLine.startColor = Color.white;

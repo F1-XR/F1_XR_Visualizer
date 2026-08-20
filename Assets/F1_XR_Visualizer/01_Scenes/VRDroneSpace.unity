@@ -283,7 +283,7 @@ MonoBehaviour:
   mapShrinkDuration: 1
   skyFractureCommitTimeout: 4
   showGrabRange: 1
-  debugSkipPlacementAndEnterDrone: 0
+  debugSkipPlacementAndEnterDrone: 1
   debugDroneEntryLocalPoint: {x: 0, y: 0, z: 0}
 --- !u!114 &2003
 MonoBehaviour:
