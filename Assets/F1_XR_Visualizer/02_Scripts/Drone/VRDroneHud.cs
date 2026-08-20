@@ -50,6 +50,8 @@ namespace F1XR.Drone
         int activeSpeedMarkers = -1;
         bool isVisible;
 
+        public TMP_FontAsset NumberFont => f1NumberFont;
+
         public void Configure(Transform environmentTransform)
         {
             if (canvas != null || environmentTransform == null)
@@ -212,7 +214,7 @@ namespace F1XR.Drone
         TargetCard CreateTargetCard(Transform parent)
         {
             RectTransform root = CreateRect("Vehicle Target Card", parent);
-            root.sizeDelta = new Vector2(300f, 170f);
+            root.sizeDelta = new Vector2(300f, 240f);
             Image background = CreateImage("Background", root,
                 new Color(0.02f, 0.05f, 0.08f, 0.9f));
             background.rectTransform.anchorMin = Vector2.zero;
@@ -227,15 +229,30 @@ namespace F1XR.Drone
             TextMeshProUGUI driver = CreateText("Driver", root, "", 38f);
             TextMeshProUGUI team = CreateText("Team", root, "", 23f);
             TextMeshProUGUI rank = CreateText("Rank", root, "", 28f);
+            TextMeshProUGUI speed = CreateText("Speed", root, "", 26f);
+            Image brakeBadge = CreateImage("Brake Badge", root,
+                new Color(0.8f, 0.04f, 0.02f, 0.95f));
+            TextMeshProUGUI brake = CreateText("Brake", brakeBadge.transform,
+                "BRAKE", 20f);
             SetCardTextRect(number.rectTransform, new Vector2(26f, -26f), new Vector2(240f, 34f));
             SetCardTextRect(driver.rectTransform, new Vector2(26f, -64f), new Vector2(250f, 46f));
             SetCardTextRect(team.rectTransform, new Vector2(26f, -108f), new Vector2(250f, 30f));
             SetCardTextRect(rank.rectTransform, new Vector2(26f, -140f), new Vector2(180f, 28f));
+            SetCardTextRect(speed.rectTransform, new Vector2(26f, -172f), new Vector2(220f, 28f));
+            SetCardTextRect(brakeBadge.rectTransform, new Vector2(26f, -206f), new Vector2(115f, 26f));
+            brake.rectTransform.anchorMin = Vector2.zero;
+            brake.rectTransform.anchorMax = Vector2.one;
+            brake.rectTransform.offsetMin = Vector2.zero;
+            brake.rectTransform.offsetMax = Vector2.zero;
+            brake.alignment = TextAlignmentOptions.Center;
             number.font = f1NumberFont;
             driver.font = f1NumberFont;
             rank.font = f1NumberFont;
+            speed.font = f1NumberFont;
+            brake.font = f1NumberFont;
             root.gameObject.SetActive(false);
-            return new TargetCard(root, accent, number, driver, team, rank);
+            return new TargetCard(root, accent, number, driver, team, rank, speed,
+                brakeBadge);
         }
 
         static void SetCardTextRect(RectTransform rect, Vector2 position, Vector2 size)
@@ -558,6 +575,8 @@ namespace F1XR.Drone
             readonly TextMeshProUGUI driver;
             readonly TextMeshProUGUI team;
             readonly TextMeshProUGUI rank;
+            readonly TextMeshProUGUI speed;
+            readonly Image brakeBadge;
 
             public TargetCard(
                 RectTransform root,
@@ -565,7 +584,9 @@ namespace F1XR.Drone
                 TextMeshProUGUI number,
                 TextMeshProUGUI driver,
                 TextMeshProUGUI team,
-                TextMeshProUGUI rank)
+                TextMeshProUGUI rank,
+                TextMeshProUGUI speed,
+                Image brakeBadge)
             {
                 this.root = root;
                 this.accent = accent;
@@ -573,6 +594,8 @@ namespace F1XR.Drone
                 this.driver = driver;
                 this.team = team;
                 this.rank = rank;
+                this.speed = speed;
+                this.brakeBadge = brakeBadge;
             }
 
             public void SetActive(bool active)
@@ -602,6 +625,10 @@ namespace F1XR.Drone
                 driver.text = target.driverLabel;
                 team.text = target.teamName;
                 rank.text = target.rank > 0 ? $"P{target.rank}" : string.Empty;
+                speed.text = target.hasTelemetry
+                    ? $"{Mathf.RoundToInt(target.speedKph)} KM/H"
+                    : "-- KM/H";
+                brakeBadge.gameObject.SetActive(target.isBraking);
                 root.gameObject.SetActive(true);
             }
         }
