@@ -190,6 +190,14 @@ namespace F1XR.Drone
         [SerializeField, FormerlySerializedAs("showGrabVolumeVisual")]
         bool showGrabRange;
 
+        [Tooltip("Skips manual track and drone-cube placement. The map is created at the " +
+            "TrackRevealPlacer fixed pose, then Drone mode starts automatically.")]
+        [SerializeField] bool debugSkipPlacementAndEnterDrone;
+
+        [Tooltip("Drone entry point in the track's local space when debug auto-entry is on. " +
+            "(0, 0, 0) uses the map origin.")]
+        [SerializeField] Vector3 debugDroneEntryLocalPoint;
+
         TrackRevealPlacer trackPlacer;
         XROrigin xrOrigin;
         Camera xrCamera;
@@ -315,17 +323,20 @@ namespace F1XR.Drone
             while (!TryResolveReferences())
                 yield return null;
 
-            cubeSpawner = trackPlacer.GetComponent<DroneViewCubeSpawner>();
-            if (cubeSpawner == null)
-                cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
+            if (!debugSkipPlacementAndEnterDrone)
+            {
+                cubeSpawner = trackPlacer.GetComponent<DroneViewCubeSpawner>();
+                if (cubeSpawner == null)
+                    cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
 
-            cubeSpawner.Configure(
-                trackPlacer,
-                xrCamera.transform,
-                showGrabRange);
-            appliedShowGrabVolumeVisual = showGrabRange;
-            cubeSpawner.CubeReleased -= EnterVr;
-            cubeSpawner.CubeReleased += EnterVr;
+                cubeSpawner.Configure(
+                    trackPlacer,
+                    xrCamera.transform,
+                    showGrabRange);
+                appliedShowGrabVolumeVisual = showGrabRange;
+                cubeSpawner.CubeReleased -= EnterVr;
+                cubeSpawner.CubeReleased += EnterVr;
+            }
 
             audioDistanceScaler = GetComponent<VRDroneAudioDistanceScaler>();
             if (audioDistanceScaler == null)
@@ -369,6 +380,9 @@ namespace F1XR.Drone
                 worldTargetPresenter,
                 xrCamera);
 
+            if (debugSkipPlacementAndEnterDrone)
+                StartCoroutine(EnterDroneDebugWhenReady());
+
         }
 
         bool TryResolveReferences()
@@ -411,6 +425,36 @@ namespace F1XR.Drone
             }
 
             Transform placement = trackPlacer.PlacementTransform;
+            if (placement == null)
+                return;
+
+            BeginEnterVr(
+                placement.InverseTransformPoint(cubeTransform.position),
+                cubeTransform);
+        }
+
+        IEnumerator EnterDroneDebugWhenReady()
+        {
+            trackPlacer.SetPlacementMode(TrackPlacementMode.Fixed);
+
+            while (!trackPlacer.HasPlacement)
+            {
+                trackPlacer.TryPlaceFixed();
+                yield return null;
+            }
+
+            BeginEnterVr(debugDroneEntryLocalPoint, null);
+        }
+
+        void BeginEnterVr(Vector3 entryLocal, Transform sourceCube)
+        {
+            if (isVrActive || isTransitioning || trackPlacer == null ||
+                !trackPlacer.HasPlacement)
+            {
+                return;
+            }
+
+            Transform placement = trackPlacer.PlacementTransform;
             placementRoot = placement;
             visualRoot = placementRoot != null
                 ? placementRoot.Find("Visual") ?? placementRoot
@@ -419,23 +463,20 @@ namespace F1XR.Drone
             if (visualRoot == null)
                 return;
 
+            entryPointLocal = entryLocal;
             isTransitioning = true;
-            transitionRoutine = StartCoroutine(EnterVrRoutine(cubeTransform));
+            transitionRoutine = StartCoroutine(EnterVrRoutine(sourceCube));
         }
 
         IEnumerator EnterVrRoutine(Transform cubeTransform)
         {
-            // The chosen spot, in the map's own coordinates. Held for the whole transition:
-            // the map is being scaled underneath it, so the world position it corresponds to
-            // changes, and only the local one stays meaningful.
-            entryPointLocal = placementRoot.InverseTransformPoint(cubeTransform.position);
-
             SaveMrState();
             SuspendPlaneVisualizers();
             LockTrackInteraction();
 
             hiddenCube = cubeTransform;
-            hiddenCube.gameObject.SetActive(false);
+            if (hiddenCube != null)
+                hiddenCube.gameObject.SetActive(false);
 
             Debug.Log(
                 $"[DroneTransition][EnterStart] entryLocal={entryPointLocal} " +
