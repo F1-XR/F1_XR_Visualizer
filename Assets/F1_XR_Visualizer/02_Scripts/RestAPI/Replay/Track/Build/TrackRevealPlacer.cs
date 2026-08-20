@@ -1,3 +1,4 @@
+using System;
 using F1XR.RestAPI.Replay.Track.Placement;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -81,6 +82,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField] bool logPlacementDiagnostics;
         [SerializeField, Min(0.5f)] float placementDiagnosticInterval = 2f;
 
+        public event Action PlacementRevealed;
         public bool HasPlacement => spawnedInstance != null;
         public bool IsPlacementActive => placementActive;
         public bool HasValidSurface =>
@@ -347,6 +349,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             placementActive = false;
             ConfigureEditState(target);
             ObserveCurrentTransform();
+            PlacementRevealed?.Invoke();
         }
 
         bool IsPlacementVisualReady()
