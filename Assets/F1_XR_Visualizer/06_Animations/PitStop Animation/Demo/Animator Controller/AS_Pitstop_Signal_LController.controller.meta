@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b6e53a552b17f7f4f8404ae53f0fbb2c
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Pitstop_Signal_LController.controller
+  uploadId: 906384

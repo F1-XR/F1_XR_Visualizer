@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 24df128ee24f03c4ca7d4d65392f9d15
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Wheel_Gunner_Loop_02Controller.controller
+  uploadId: 906384

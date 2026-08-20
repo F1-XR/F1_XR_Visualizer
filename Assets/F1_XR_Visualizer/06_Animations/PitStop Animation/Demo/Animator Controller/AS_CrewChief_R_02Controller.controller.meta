@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 6b4752fd6e818af4188c1fad94dc51aa
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_CrewChief_R_02Controller.controller
+  uploadId: 906384

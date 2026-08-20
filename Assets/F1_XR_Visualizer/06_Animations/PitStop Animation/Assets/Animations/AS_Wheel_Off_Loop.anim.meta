@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: dfc010c20ddaa324fbec29e4d5f5f771
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 7400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Assets/Animations/AS_Wheel_Off_Loop.anim
+  uploadId: 906384
