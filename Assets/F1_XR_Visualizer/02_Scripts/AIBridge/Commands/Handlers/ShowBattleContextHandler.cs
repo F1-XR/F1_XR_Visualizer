@@ -74,13 +74,13 @@ namespace F1XR.AIBridge.Commands
         int subjectDriver, targetDriver;
         float activeUntil = -1f;
         ReplayCarView subjectView, targetView;
-        float curGap, predGap = -1f, horizon = 3f, confidence;
+        float curGap, predGap = -1f, predGapStd = -1f, horizon = 3f, confidence;
         bool isClosing, hasDrs;
         string badgeText = "";
         Color accentColor = Color.white;   // closing=주황 / 그 외=앰버
 
         // ── 런타임 생성 리소스 ──
-        LineRenderer _line, _glow, _dash, _arrow;
+        LineRenderer _line, _glow, _dash, _arrow, _bracket;   // _bracket = 예측 불확실성 브래킷(±σ)
         Transform _badgeRoot;
         TextMeshPro _badge;
         SpriteRenderer _panel, _rim, _confBg, _confFill, _ghost;
@@ -88,11 +88,13 @@ namespace F1XR.AIBridge.Commands
         static Texture2D _dashTex;
         float _dashOffset;
 
-        /// <summary>showBattleContext 진입점. (dispatcher가 호출하는 시그니처 — 변경 금지)</summary>
+        /// <summary>showBattleContext 진입점. (dispatcher가 호출하는 시그니처)</summary>
         /// <param name="predictedGap">3초 뒤 예측 갭(초). 없으면 음수(-1) 전달.</param>
         /// <param name="horizonSec">예측 지평(초, 기본 3).</param>
+        /// <param name="predictedGapStd">예측 불확실성 ±σ(초). 없으면 음수(-1) → 브래킷 생략.</param>
         public void Handle(int subject, int target, float gapSeconds, float predictedGap, float horizonSec,
-                           string trend, bool drs, float confidence, string reason)
+                           string trend, bool drs, float confidence, string reason,
+                           float predictedGapStd = -1f)
         {
             if (subject <= 0 || target <= 0) return;
             subjectDriver = subject;
@@ -102,16 +104,22 @@ namespace F1XR.AIBridge.Commands
 
             curGap = gapSeconds;
             predGap = predictedGap;
+            predGapStd = predictedGapStd;
             horizon = horizonSec > 0f ? horizonSec : 3f;
             this.confidence = Mathf.Clamp01(confidence);
             hasDrs = drs;
             isClosing = (trend == "closing");
             accentColor = isClosing ? closingColor : amberColor;
 
-            // 배지: "0.8s → 0.4s (3s) · Closing · DRS"
+            // 배지: "0.8s → 0.4±0.1s (3s) · Closing · DRS"  (±σ는 있을 때만)
             string t = string.IsNullOrEmpty(trend) ? "" : char.ToUpper(trend[0]) + trend.Substring(1);
             string label = $"{gapSeconds:0.0}s";
-            if (predictedGap >= 0f) label += $"  →  {predictedGap:0.0}s ({horizon:0}s)";
+            if (predictedGap >= 0f)
+            {
+                label += $"  →  {predictedGap:0.0}";
+                if (predictedGapStd > 0f) label += $"±{predictedGapStd:0.1}";
+                label += $"s ({horizon:0}s)";
+            }
             if (!string.IsNullOrEmpty(t)) label += $"  ·  {t}";
             if (drs) label += "  ·  DRS";
             badgeText = label;
@@ -124,6 +132,7 @@ namespace F1XR.AIBridge.Commands
         {
             activeUntil = -1f;
             SetActive(_line, false); SetActive(_glow, false); SetActive(_dash, false); SetActive(_arrow, false);
+            SetActive(_bracket, false);
             if (_ghost) _ghost.gameObject.SetActive(false);
             if (_badgeRoot) _badgeRoot.gameObject.SetActive(false);
         }
@@ -231,6 +240,43 @@ namespace F1XR.AIBridge.Commands
             _ghost.transform.position = tip;
             _ghost.transform.localScale = Vector3.one * (hw * 0.7f);
             BillboardTo(_ghost.transform);
+
+            UpdateBracket(pa, dir, dist, side, frac, hw, carScale);
+        }
+
+        // ── 예측 불확실성 브래킷(⊣ ⊢): 예측 갭 ±σ 범위를 갭 라인 위에 에러바로 표시 ──
+        //   갭 값 g → 라인 위 위치 비율 f(g) = (curGap - g)/curGap (subject=0, target=1).
+        //   좁을수록(σ 작음) 확신, 넓을수록 불확실. predGapStd<=0 이면 생략.
+        void UpdateBracket(Vector3 pa, Vector3 dir, float dist, Vector3 side,
+                           float frac, float hw, float carScale)
+        {
+            EnsureBracket();
+            if (predGapStd <= 0f || curGap <= 0.001f)
+            {
+                _bracket.gameObject.SetActive(false);
+                return;
+            }
+            float sigmaFrac = predGapStd / curGap;                 // ±σ 를 라인 비율로 환산
+            float fHi = Mathf.Clamp01(frac - sigmaFrac);           // predGap+σ (subject 쪽)
+            float fLo = Mathf.Clamp01(frac + sigmaFrac);           // predGap−σ (target 쪽)
+            if (fLo - fHi < 1e-3f) { _bracket.gameObject.SetActive(false); return; }
+
+            Vector3 pHi = pa + dir * (dist * fHi);
+            Vector3 pLo = pa + dir * (dist * fLo);
+            float capHalf = hw * 0.8f;
+
+            _bracket.gameObject.SetActive(true);
+            Color bc = closingColor; bc.a = 0.85f;
+            _bracket.startColor = _bracket.endColor = bc;
+            _bracket.startWidth = _bracket.endWidth = lineWidth * carScale * 0.6f;
+            // I-빔 폴리라인: 위 캡 → 위스커 → 아래 캡
+            _bracket.positionCount = 6;
+            _bracket.SetPosition(0, pHi + side * capHalf);
+            _bracket.SetPosition(1, pHi - side * capHalf);
+            _bracket.SetPosition(2, pHi);
+            _bracket.SetPosition(3, pLo);
+            _bracket.SetPosition(4, pLo + side * capHalf);
+            _bracket.SetPosition(5, pLo - side * capHalf);
         }
 
         // ── 근사 글래스 배지: 라운드 패널 + 앰버 림 + F1 폰트 텍스트 + 게이지 ──
@@ -312,6 +358,8 @@ namespace F1XR.AIBridge.Commands
         }
 
         void EnsureArrow() { if (_arrow == null) { _arrow = MakeLine("BattlePredictArrow"); _arrow.positionCount = 5; } }
+
+        void EnsureBracket() { if (_bracket == null) { _bracket = MakeLine("BattleUncertaintyBracket"); _bracket.positionCount = 6; } }
 
         LineRenderer MakeLine(string goName)
         {
@@ -432,7 +480,7 @@ namespace F1XR.AIBridge.Commands
 
         [ContextMenu("Test Show Battle")]
         void TestShowBattle()
-            => Handle(testSubject, testTarget, 0.8f, 0.4f, 3f, "closing", true, 0.76f, "test");
+            => Handle(testSubject, testTarget, 0.8f, 0.4f, 3f, "closing", true, 0.76f, "test", 0.15f);
     }
 }
 #endif

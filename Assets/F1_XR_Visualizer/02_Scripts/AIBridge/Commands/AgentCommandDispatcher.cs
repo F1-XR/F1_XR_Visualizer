@@ -76,7 +76,11 @@ namespace F1XR.AIBridge.Commands
                         (string)args["trend"],
                         args["drs"] != null && (bool)args["drs"],
                         args["confidence"] != null ? (float)args["confidence"] : 0f,
-                        (string)args["reason"]);
+                        (string)args["reason"],
+                        // 예측 불확실성 ±σ(초). 없거나 null이면 -1 전달 → 브래킷 생략.
+                        (args["predicted_gap_std_seconds"] != null
+                            && args["predicted_gap_std_seconds"].Type != JTokenType.Null)
+                            ? (float)args["predicted_gap_std_seconds"] : -1f);
                     break;
                 default:
                     Debug.LogWarning($"[AIBridge] 미지원 명령: {name}");
