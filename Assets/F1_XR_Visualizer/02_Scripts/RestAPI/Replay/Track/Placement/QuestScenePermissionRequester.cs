@@ -1,7 +1,10 @@
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 using Unity.VisualScripting;
+using F1XR.Experience.Fracture;
+using F1XR.Experience.Room;
 using F1XR.RestAPI.Replay.Room;
+using F1XR.RestAPI.Replay.Track.Build;
 #if UNITY_ANDROID
 using UnityEngine.Android;
 #endif
@@ -13,6 +16,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
     public sealed class QuestScenePermissionRequester : MonoBehaviour
     {
         const string ScenePermission = "com.oculus.permission.USE_SCENE";
+        const string FitinSceneName = "SessionSpace_fitin";
 
         [SerializeField] ARPlaneManager planeManager;
         [SerializeField] ARRaycastManager raycastManager;
@@ -29,6 +33,12 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void Awake()
         {
+            if (IsFitinScene())
+            {
+                DisableFitinSpatialSystems();
+                return;
+            }
+
             scenePermissionGranted = !disableManagersUntilPermissionGranted;
             ResolveReferences();
             ApplySceneManagerState();
@@ -36,11 +46,17 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void OnEnable()
         {
+            if (IsFitinScene())
+                return;
+
             ResolveReferences();
         }
 
         void Start()
         {
+            if (IsFitinScene())
+                return;
+
             ResolveReferences();
 #if UNITY_ANDROID && !UNITY_EDITOR
             if (Permission.HasUserAuthorizedPermission(ScenePermission))
@@ -124,6 +140,69 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
             if (raycastManager != null)
                 raycastManager.enabled = enabled;
+        }
+
+        bool IsFitinScene() =>
+            gameObject.scene.name == FitinSceneName;
+
+        void DisableFitinSpatialSystems()
+        {
+            ResolveReferences();
+            if (planeManager != null)
+                planeManager.enabled = false;
+            if (raycastManager != null)
+                raycastManager.enabled = false;
+            if (anchorManager != null)
+                anchorManager.enabled = false;
+
+            DisableInFitinScene<ARSession>();
+            DisableInFitinScene<WallDiscovery>();
+            DisableInFitinScene<RoomShowcaseSetupController>();
+            HideAndDisableInFitinScene<RoomShowcaseSetupView>();
+            DisableInFitinScene<RoomSurfaceProvider>();
+            DisableInFitinScene<RoomShellProxyGenerator>();
+            DisableInFitinScene<RoomShellFractureController>();
+            DisableInFitinScene<ARPlanePlacementController>();
+            DisableInFitinScene<TrackRevealPlacer>();
+            DisableInFitinScene<AutomaticTableCandidatePreview>();
+
+            Debug.Log(
+                "[Fitin] Quest scene permission, spatial tracking, room shell, and table placement are bypassed.",
+                this);
+        }
+
+        void DisableInFitinScene<T>() where T : Behaviour
+        {
+            T[] components = FindObjectsByType<T>(
+                FindObjectsInactive.Include);
+            for (int i = 0; i < components.Length; i++)
+            {
+                T component = components[i];
+                if (component != null &&
+                    component.gameObject.scene.name == FitinSceneName)
+                {
+                    component.enabled = false;
+                }
+            }
+        }
+
+        void HideAndDisableInFitinScene<T>() where T : Behaviour
+        {
+            T[] components = FindObjectsByType<T>(
+                FindObjectsInactive.Include);
+            for (int i = 0; i < components.Length; i++)
+            {
+                T component = components[i];
+                if (component == null ||
+                    component.gameObject.scene.name != FitinSceneName)
+                {
+                    continue;
+                }
+
+                if (component is RoomShowcaseSetupView setupView)
+                    setupView.SetVisible(false);
+                component.enabled = false;
+            }
         }
     }
 }

@@ -969,6 +969,48 @@ namespace F1XR.RestAPI.Replay
             }
         }
 
+        internal bool TryOpenFirstPitStop()
+        {
+            if (isLoading ||
+                isActive ||
+                player == null ||
+                !player.HasDataset ||
+                player.Events == null)
+            {
+                return false;
+            }
+
+            ReplayEventDto first = null;
+            ReplayEventDto[] events = player.Events;
+            for (int i = 0; i < events.Length; i++)
+            {
+                ReplayEventDto candidate = events[i];
+                if (!IsUsablePitStop(candidate) ||
+                    candidate.endTime > player.ReadyUntilTime)
+                {
+                    continue;
+                }
+
+                if (first == null ||
+                    candidate.anchorTime < first.anchorTime ||
+                    Mathf.Approximately(
+                        candidate.anchorTime,
+                        first.anchorTime) &&
+                    string.CompareOrdinal(
+                        candidate.eventId,
+                        first.eventId) < 0)
+                {
+                    first = candidate;
+                }
+            }
+
+            if (first == null)
+                return false;
+
+            Open(first);
+            return true;
+        }
+
         public void Open(ReplayEventDto definition)
         {
             if (IsPitStopDefinition(definition) &&
