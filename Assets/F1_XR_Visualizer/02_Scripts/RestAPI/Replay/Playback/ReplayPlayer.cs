@@ -15,6 +15,7 @@ namespace F1XR.RestAPI.Replay
 {
     public class ReplayPlayer : MonoBehaviour
     {
+        private const string FitinSceneName = "SessionSpace_fitin";
         private static readonly ProfilerMarker AudioStateMarker =
             new("F1XR.Replay.AudioState");
         private static readonly ProfilerMarker ShowCarsMarker =
@@ -79,6 +80,7 @@ namespace F1XR.RestAPI.Replay
         private Coroutine _seekCoroutine;
         private Coroutine _trackAlignmentCoroutine;
         private bool trackAlignmentReady = true;
+        private bool fitinAutoPitStopRequested;
 
         private ReplayChunkLoader replayChunks;
         private ReplayManifestPoller manifestPoller;
@@ -200,6 +202,12 @@ namespace F1XR.RestAPI.Replay
                 eventReplay = gameObject.AddComponent<EventPopoutReplay>();
             eventReplay.Configure(this);
             ConfigureFallbackOvertakeCorridor();
+
+            if (IsFitinScene)
+            {
+                waitForTrackPlacementBeforeStart = false;
+                playStartingLightsBeforeStart = false;
+            }
         }
     
         public void LoadDataset(DatasetManifestDto manifest, bool playOnReady = true)
@@ -228,6 +236,7 @@ namespace F1XR.RestAPI.Replay
             ConfigureTimelineCompression();
             timeline.Reset(manifest);
             readyStart.Reset(playOnReady);
+            fitinAutoPitStopRequested = false;
             _hasDriverMetadata = false;
             if (_replayStartingLights == null)
                 _replayStartingLights = new ReplayStartingLights(startingLights, startingLightsPrefab);
@@ -250,6 +259,7 @@ namespace F1XR.RestAPI.Replay
             replayCars.SetCalibration(trackCalibration);
             ConfigureFallbackOvertakeCorridor();
             trackAlignmentReady =
+                IsFitinScene ||
                 trackCalibration == null ||
                 !trackCalibration.RequiresRuntimeSourceAlignment(
                     manifest.sessionKey);
@@ -273,6 +283,10 @@ namespace F1XR.RestAPI.Replay
             {
                 _trackAlignmentCoroutine =
                     StartCoroutine(PrepareTrackAlignment());
+            }
+            else if (IsFitinScene)
+            {
+                LoadNearChunks();
             }
         }
 
@@ -507,6 +521,14 @@ namespace F1XR.RestAPI.Replay
 
             if (_manifest == null)
                 return;
+
+            if (IsFitinScene &&
+                !fitinAutoPitStopRequested &&
+                eventReplay != null &&
+                eventReplay.TryOpenFirstPitStop())
+            {
+                fitinAutoPitStopRequested = true;
+            }
 
             if (eventPresentationSuppressed)
                 return;
@@ -918,6 +940,9 @@ namespace F1XR.RestAPI.Replay
 
             return placement != null && placement.HasPlacement;
         }
+
+        private bool IsFitinScene =>
+            gameObject.scene.name == FitinSceneName;
 
         private void OnDestroy()
         {

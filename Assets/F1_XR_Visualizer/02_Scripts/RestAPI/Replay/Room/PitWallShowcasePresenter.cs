@@ -8,6 +8,10 @@ namespace F1XR.RestAPI.Replay.Room
     [DisallowMultipleComponent]
     public sealed class PitWallShowcasePresenter : MonoBehaviour
     {
+        private const string FitinSceneName = "SessionSpace_fitin";
+        private const float FitinWallDistanceMeters = 3f;
+        private const float FitinWallWidthMeters = 4.2f;
+        private const float FitinWallHeightMeters = 2.4f;
         private const float TargetVehicleLengthMeters = 5.6f;
         private const float PitDepthBehindWallMeters = 6f;
         private const float VehicleGroundClearanceMeters = 0.04f;
@@ -31,6 +35,8 @@ namespace F1XR.RestAPI.Replay.Room
         private int suitabilityCandidateRevision = int.MinValue;
         private float nextSuitabilityCheckTime;
         private bool hasSuitablePitWall;
+        private bool fitinWallLocked;
+        private ShowcaseWallFrame fitinWall;
         private string lastFailure = "";
 
         public string LastFailure => lastFailure;
@@ -119,6 +125,8 @@ namespace F1XR.RestAPI.Replay.Room
             if (eventReplay == null ||
                 !eventReplay.IsPitStopActive)
             {
+                fitinWallLocked = false;
+                fitinWall = default;
                 ReleaseBinding();
                 return;
             }
@@ -408,6 +416,9 @@ namespace F1XR.RestAPI.Replay.Room
 
         private bool TrySelectWall(out ShowcaseWallFrame selected)
         {
+            if (IsFitinScene)
+                return TryGetFitinWall(out selected);
+
             selected = default;
             walls.Clear();
             showcaseLayout.CopyAvailableWallFrames(walls);
@@ -486,6 +497,9 @@ namespace F1XR.RestAPI.Replay.Room
 
         private bool EvaluateSuitablePitWall()
         {
+            if (IsFitinScene)
+                return Camera.main != null;
+
             walls.Clear();
             showcaseLayout.CopyAvailableWallFrames(walls);
             for (int i = 0; i < walls.Count; i++)
@@ -506,6 +520,54 @@ namespace F1XR.RestAPI.Replay.Room
                        entryWall.Height) !=
                    PitWallOverlayLayout.None;
         }
+
+        private bool TryGetFitinWall(out ShowcaseWallFrame wall)
+        {
+            if (fitinWallLocked)
+            {
+                wall = fitinWall;
+                return wall.IsValid;
+            }
+
+            Camera viewer = Camera.main;
+            if (viewer == null)
+            {
+                wall = default;
+                return false;
+            }
+
+            Vector3 forward = Vector3.ProjectOnPlane(
+                viewer.transform.forward,
+                Vector3.up);
+            if (forward.sqrMagnitude <= 0.0001f)
+                forward = Vector3.forward;
+            forward.Normalize();
+
+            Vector3 inward = -forward;
+            Vector3 horizontal = Vector3.Cross(
+                Vector3.up,
+                inward).normalized;
+            Vector3 center = viewer.transform.position +
+                forward * FitinWallDistanceMeters;
+            fitinWall = new ShowcaseWallFrame(
+                default,
+                center,
+                inward,
+                horizontal,
+                Vector3.up,
+                FitinWallWidthMeters,
+                FitinWallHeightMeters,
+                -FitinWallWidthMeters * 0.5f,
+                FitinWallWidthMeters * 0.5f,
+                -FitinWallHeightMeters * 0.5f,
+                FitinWallHeightMeters * 0.5f);
+            fitinWallLocked = fitinWall.IsValid;
+            wall = fitinWall;
+            return fitinWallLocked;
+        }
+
+        private bool IsFitinScene =>
+            gameObject.scene.name == FitinSceneName;
 
         private static float ScoreWall(
             ShowcaseWallFrame wall,
