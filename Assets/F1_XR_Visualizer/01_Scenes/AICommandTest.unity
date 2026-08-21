@@ -1722,6 +1722,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1247387148}
+    - targetCorrespondingSourceObject: {fileID: 3195421536832648194, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1247387158}
   m_SourcePrefab: {fileID: 100100000, guid: cdb6bbca41ef1e644b82d4c046634f56, type: 3}
 --- !u!114 &1226495041 stripped
 MonoBehaviour:
@@ -1791,6 +1794,24 @@ MonoBehaviour:
   labelFontSize: 12
   pingClip: {fileID: 0}
   pingVolume: 0.9
+--- !u!114 &1247387158
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1247387126}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9d9e5f96df2f4f84aa221b60e58ed2e3, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.OvertakeGaugeHud
+  hudScale: 0.0009
+  holdSeconds: 4.5
+  formulaFont: {fileID: 0}
+  red: {r: 0.882, g: 0.024, b: 0, a: 0.95}
+  blue: {r: 0.17, g: 0.78, b: 1, a: 0.92}
+  green: {r: 0.28, g: 0.95, b: 0.61, a: 0.92}
 --- !u!1 &1304137257
 GameObject:
   m_ObjectHideFlags: 0
@@ -2525,6 +2546,10 @@ MonoBehaviour:
   playbackSpeed: 2
   preloadChunksAhead: 3
   manifestPollSeconds: 1
+  compressRedFlagDowntime: 1
+  redFlagVisibleTailSeconds: 15
+  restartVisibleLeadSeconds: 15
+  minimumRedFlagSkipSeconds: 60
   showCarLabels: 1
   enableCarLod: 1
   hideLeaderHighlightAfterRaceStart: 1

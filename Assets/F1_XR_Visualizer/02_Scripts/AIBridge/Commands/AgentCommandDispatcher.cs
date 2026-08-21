@@ -63,7 +63,13 @@ namespace F1XR.AIBridge.Commands
                         predictOvertake.Handle(
                             (int)args["driver_number"],
                             args["probability"] != null ? (float)args["probability"] : 0f,
-                            args["risk_label"] != null ? (string)args["risk_label"] : null);
+                            args["risk_label"] != null ? (string)args["risk_label"] : null,
+                            (args["gap_seconds"] != null && args["gap_seconds"].Type != JTokenType.Null)
+                                ? (float?)(float)args["gap_seconds"] : null,
+                            (args["gap_trend"] != null && args["gap_trend"].Type != JTokenType.Null)
+                                ? (float?)(float)args["gap_trend"] : null,
+                            (args["window_seconds"] != null && args["window_seconds"].Type != JTokenType.Null)
+                                ? (float?)(float)args["window_seconds"] : null);
                     }
                     break;
                 case "droneView":
@@ -91,8 +97,33 @@ namespace F1XR.AIBridge.Commands
                         // 예측 불확실성 ±σ(초). 없거나 null이면 -1 전달 → 브래킷 생략.
                         (args["predicted_gap_std_seconds"] != null
                             && args["predicted_gap_std_seconds"].Type != JTokenType.Null)
-                            ? (float)args["predicted_gap_std_seconds"] : -1f);
+                            ? (float)args["predicted_gap_std_seconds"] : -1f,
+                        args["driver_name"] != null ? (string)args["driver_name"] : null,
+                        args["team_name"] != null ? (string)args["team_name"] : null,
+                        (args["air_temperature"] != null
+                            && args["air_temperature"].Type != JTokenType.Null)
+                            ? (float?)((float)args["air_temperature"]) : null,
+                        (args["track_temperature"] != null
+                            && args["track_temperature"].Type != JTokenType.Null)
+                            ? (float?)((float)args["track_temperature"]) : null);
                     break;
+                case "updateOvertakeGauge":
+                {
+                    // 서버가 하트비트마다 스트리밍하는 실시간 gap → 게이지 표시만(계산 X).
+                    var hud = GetComponent<OvertakeGaugeHud>() ?? FindFirstObjectByType<OvertakeGaugeHud>();
+                    if (hud != null)
+                        hud.UpdateLiveForDriver(
+                            args["driver_number"] != null ? (int)args["driver_number"] : -1,
+                            (args["gap_seconds"] != null && args["gap_seconds"].Type != JTokenType.Null)
+                                ? (float?)(float)args["gap_seconds"] : null,
+                            (args["gap_trend"] != null && args["gap_trend"].Type != JTokenType.Null)
+                                ? (float?)(float)args["gap_trend"] : null,
+                            (args["window_seconds"] != null && args["window_seconds"].Type != JTokenType.Null)
+                                ? (float?)(float)args["window_seconds"] : null);
+                    // 같은 배틀이 이어지는 동안 predict 핸들러 표시 시간도 갱신 → HUD가 안 꺼지고 유지(팝인/핑 없이).
+                    predictOvertake?.KeepAlive(args["driver_number"] != null ? (int)args["driver_number"] : -1);
+                    break;
+                }
                 default:
                     Debug.LogWarning($"[AIBridge] 미지원 명령: {name}");
                     break;

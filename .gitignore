@@ -44,6 +44,15 @@
 # Local Unity MCP tooling
 Tools/UnityMcpServer/
 
+# Meta/Oculus local generated settings
+/[Aa]ssets/[Oo]culus/
+/[Aa]ssets/[Oo]culus.meta
+/[Aa]ssets/[Rr]esources/DevAgentSettings.asset*
+/[Aa]ssets/[Rr]esources/ImmersiveDebuggerSettings.asset*
+/[Aa]ssets/[Rr]esources/InputActions.asset*
+/[Aa]ssets/[Rr]esources/OVRPlatformToolSettings.asset*
+/[Aa]ssets/[Rr]esources/OculusRuntimeSettings.asset*
+
 # Unity recovery files
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta

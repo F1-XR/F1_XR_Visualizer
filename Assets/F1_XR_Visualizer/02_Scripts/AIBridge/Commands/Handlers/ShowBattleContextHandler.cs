@@ -87,6 +87,7 @@ namespace F1XR.AIBridge.Commands
         static Sprite _whiteSprite, _roundedSprite;
         static Texture2D _dashTex;
         float _dashOffset;
+        OvertakeGaugeHud _gaugeHud;
 
         /// <summary>showBattleContext 진입점. (dispatcher가 호출하는 시그니처)</summary>
         /// <param name="predictedGap">3초 뒤 예측 갭(초). 없으면 음수(-1) 전달.</param>
@@ -94,7 +95,11 @@ namespace F1XR.AIBridge.Commands
         /// <param name="predictedGapStd">예측 불확실성 ±σ(초). 없으면 음수(-1) → 브래킷 생략.</param>
         public void Handle(int subject, int target, float gapSeconds, float predictedGap, float horizonSec,
                            string trend, bool drs, float confidence, string reason,
-                           float predictedGapStd = -1f)
+                           float predictedGapStd = -1f,
+                           string driverName = null,
+                           string teamName = null,
+                           float? airTempC = null,
+                           float? trackTempC = null)
         {
             if (subject <= 0 || target <= 0) return;
             subjectDriver = subject;
@@ -124,6 +129,14 @@ namespace F1XR.AIBridge.Commands
             if (drs) label += "  ·  DRS";
             badgeText = label;
 
+            float? closingRate = null;
+            if (predictedGap >= 0f && horizon > 0.001f)
+                closingRate = (predictedGap - gapSeconds) / horizon;
+
+            if (_gaugeHud == null)
+                _gaugeHud = FindFirstObjectByType<OvertakeGaugeHud>() ?? GetComponent<OvertakeGaugeHud>() ?? gameObject.AddComponent<OvertakeGaugeHud>();
+            _gaugeHud.Show(subject, driverName, teamName, gapSeconds, closingRate, horizon, confidence, airTempC, trackTempC);
+
             activeUntil = Time.time + holdSeconds;
         }
 
@@ -135,6 +148,7 @@ namespace F1XR.AIBridge.Commands
             SetActive(_bracket, false);
             if (_ghost) _ghost.gameObject.SetActive(false);
             if (_badgeRoot) _badgeRoot.gameObject.SetActive(false);
+            if (_gaugeHud != null) _gaugeHud.Clear();
         }
 
         void SetActive(Component c, bool on) { if (c) c.gameObject.SetActive(on); }

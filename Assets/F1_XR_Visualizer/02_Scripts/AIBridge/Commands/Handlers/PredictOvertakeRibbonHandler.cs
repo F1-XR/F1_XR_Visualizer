@@ -24,7 +24,7 @@ namespace F1XR.AIBridge.Commands
         public Color predictionGlowColor = new Color(1f, 0.82f, 0.08f, 0.85f);
 
         [Header("확률 라벨")]
-        public bool showLabel = true;
+        public bool showLabel = false;   // HUD가 정보를 다 보여주므로 큰 월드 텍스트는 기본 끔(인스펙터에서 켤 수 있음)
         [Tooltip("{0}=확률%. 한글 쓰면 폰트 필요 → 기본은 숫자만")]
         public string labelFormat = "Overtake Risk High";
         [Tooltip("차 위로 띄우는 높이(차 스케일 배수). 트랙이 작아도 비율 유지 — 너무 높으면 낮추기")]
@@ -38,6 +38,8 @@ namespace F1XR.AIBridge.Commands
         [Range(0f, 1f)] public float pingVolume = 0.9f;
 
         ReplayPlayer Player => player != null ? player : (player = FindFirstObjectByType<ReplayPlayer>());
+        // 씬에 직접 배치한 인스턴스가 있으면 그걸 우선 사용(인스펙터로 위치 조절 가능) → 없으면 자동 생성.
+        OvertakeGaugeHud gaugeHud => _gaugeHud != null ? _gaugeHud : (_gaugeHud = FindFirstObjectByType<OvertakeGaugeHud>() ?? GetComponent<OvertakeGaugeHud>() ?? gameObject.AddComponent<OvertakeGaugeHud>());
 
         int targetDriver;
         float baseIntensity;
@@ -49,6 +51,7 @@ namespace F1XR.AIBridge.Commands
         OvertakeApproachRibbonSettings _ribbon;   // 예측 전용(노랑). 공유설정 안 씀
         TextMeshPro _label;
         AudioSource _audio;
+        OvertakeGaugeHud _gaugeHud;
         float _diagTimer;
 
         void Awake()
@@ -57,9 +60,11 @@ namespace F1XR.AIBridge.Commands
             _ribbon.overtakerGlowColor = predictionGlowColor;  // 색만 노랑으로
         }
 
-        public void Handle(int driverNumber, float probability, string label = null)
+        public void Handle(int driverNumber, float probability, string label = null,
+                           float? gapSeconds = null, float? gapTrend = null, float? windowSeconds = null)
         {
             if (driverNumber <= 0) return;
+            bool newBattle = (driverNumber != targetDriver) || (Time.time >= activeUntil);   // 같은 배틀 이어짐 판별
             if (targetView != null && targetDriver != driverNumber)
                 targetView.ClearOvertakeApproachRibbon();
 
@@ -70,14 +75,25 @@ namespace F1XR.AIBridge.Commands
             activeUntil = Time.time + Mathf.Max(0.5f, holdSeconds);
             targetView = null;
 
-            Debug.Log($"[AIBridge] predictOvertake handle driver={targetDriver} probability={lastProbability:0.00} hold={holdSeconds:0.##}s");
-            PlayPing();   // 명령 도착 즉시 방향 효과음
+            Debug.Log($"[AIBridge] predictOvertake handle driver={targetDriver} probability={lastProbability:0.00} gap={(gapSeconds.HasValue ? gapSeconds.Value.ToString("0.00") : "--")} hold={holdSeconds:0.##}s");
+            // gap이 오면 그 드라이버의 실제 gap을 바로 표시(gapTrend=closing 슬롯, windowSeconds=추월까지 남은 시간).
+            gaugeHud.Show(targetDriver, null, null, gapSeconds, gapTrend, windowSeconds, lastProbability);
+            if (newBattle) PlayPing();   // 새 배틀일 때만 방향 효과음(같은 배틀 반복 재생 X → 덜 거슬림)
+        }
+
+        /// <summary>배틀이 이어지는 동안 스트림이 호출 — 같은 드라이버면 표시 시간만 갱신(팝인/핑 없이 유지).</summary>
+        public void KeepAlive(int driverNumber)
+        {
+            if (activeUntil < 0f) return;                                   // 안 떠 있으면 무시
+            if (driverNumber > 0 && driverNumber != targetDriver) return;  // 다른 드라이버면 무시
+            activeUntil = Time.time + Mathf.Max(0.5f, holdSeconds);
         }
 
         public void Clear()
         {
             if (targetView != null) targetView.ClearOvertakeApproachRibbon();
             if (_label != null) _label.gameObject.SetActive(false);
+            if (_gaugeHud != null) _gaugeHud.Clear();
             targetView = null;
             targetDriver = 0;
             riskLabel = null;
@@ -145,33 +161,11 @@ namespace F1XR.AIBridge.Commands
 
         void UpdateLabel()
         {
-            if (!showLabel) { if (_label != null) _label.gameObject.SetActive(false); return; }
-            if (_label == null)
-            {
-                var go = new GameObject("PredictProbabilityLabel");
-                _label = go.AddComponent<TextMeshPro>();
-                _label.alignment = TextAlignmentOptions.Center;
-            }
-            _label.gameObject.SetActive(true);
-            _label.color = predictionGlowColor;
-            _label.fontSize = labelFontSize;
-            _label.text = string.IsNullOrWhiteSpace(riskLabel)
-                ? "Overtake Risk High"
-                : riskLabel;
-
-            // 라벨을 대상 차의 월드 스케일에 맞춘다 → 테이블탑/실물 어느 배율에서도 비율 일정.
-            // (전엔 절대 크기라 작은 트랙에서 글자가 거대해지고 너무 높이(천장) 떴다.)
-            float carScale = targetView.transform.lossyScale.y;
-            if (carScale <= 0f) carScale = 1f;
-            _label.transform.localScale = Vector3.one * carScale;
-            _label.transform.position =
-                targetView.transform.position + Vector3.up * (labelHeight * carScale);
-            Camera cam = Camera.main;
-            if (cam != null)
-                _label.transform.rotation = Quaternion.LookRotation(
-                    _label.transform.position - cam.transform.position, Vector3.up);   // 빌보드
-
-            if (_audio != null) _audio.transform.position = targetView.transform.position;
+            // 큰 월드 텍스트('Overtake Risk High')는 제거 — HUD가 정보를 다 보여주므로 시야만 가림.
+            // showLabel(인스펙터 저장값)과 무관하게 항상 끔. 방향 사운드 위치만 갱신.
+            if (_label != null) _label.gameObject.SetActive(false);
+            if (_audio != null && targetView != null)
+                _audio.transform.position = targetView.transform.position;
         }
 
         ReplayCarView FindCarView(int number)
