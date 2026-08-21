@@ -3,6 +3,7 @@
 // 수신 JSON을 type별로 라우팅하고, 텍스트/음성 발화 전송을 노출.
 #if AIBRIDGE_READY
 using UnityEngine;
+using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using F1XR.AIBridge.Net;
@@ -19,6 +20,8 @@ namespace F1XR.AIBridge
         public AgentWebSocketClient client;
         public AgentCommandDispatcher dispatcher;
         public TtsAudioPlayer ttsPlayer;
+        public event Action<string> OnTranscript;
+        public event Action<string> OnAssistantText;
 
         [Tooltip("현재 재생 시각(at_time)을 뽑을 ReplayPlayer. 비우면 자동 탐색")]
         public ReplayPlayer player;
@@ -108,9 +111,11 @@ namespace F1XR.AIBridge
             {
                 case "transcript":
                     Debug.Log($"[STT] {o["text"]}");
+                    OnTranscript?.Invoke((string)o["text"]);
                     break;
                 case "assistant_text":
                     Debug.Log($"[답변] {o["text"]}");
+                    OnAssistantText?.Invoke((string)o["text"]);
                     break;
                 case "tts_audio":
                     ttsPlayer?.Play((string)o["data"]);          // 답변: 최신 우선(이전 끊음)
