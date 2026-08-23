@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 987474a71dea9b64588fce83c418e242
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Stabiliser_LController.controller
+  uploadId: 906384

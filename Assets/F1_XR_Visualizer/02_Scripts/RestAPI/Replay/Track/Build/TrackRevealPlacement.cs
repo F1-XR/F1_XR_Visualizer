@@ -137,6 +137,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             Transform carsRoot = CarsTransform;
             if (carsRoot != null)
                 carsRoot.gameObject.SetActive(true);
+            PlacementRevealed?.Invoke();
         }
 
         Quaternion CalculatePlacementRotation(GameObject target)

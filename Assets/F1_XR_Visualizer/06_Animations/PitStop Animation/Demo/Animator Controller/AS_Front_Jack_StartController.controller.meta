@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e9001c789f352ab42aca5204c146550b
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Front_Jack_StartController.controller
+  uploadId: 906384

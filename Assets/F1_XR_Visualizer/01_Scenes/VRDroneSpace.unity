@@ -199,6 +199,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Drone.VRDroneCoordinator
   vrScaleMultiplier: 1000
+  droneFarClipPlane: 5000
+  useAerialGround: 1
+  aerialLocalPosition: {x: -64.9576, y: 26.56, z: 40.0006}
+  aerialLocalYaw: 39
+  aerialLocalSize: {x: 11304.42, y: 7118.6}
+  plateRendererNames:
+  - suzuka_rect_fill
+  - suzuka_rect_walls
+  - Cube
   visibleScaleMultiplier: 10
   visibleScaleDurationEnter: 0.7
   visibleScaleDurationExit: 0.7
@@ -261,8 +270,7 @@ MonoBehaviour:
   useSkyShellExit: 1
   useRoomShellEnter: 1
   useRoomShellExit: 1
-  earlyShrinkStartCoverage: 0
-  earlyShrinkEndCoverage: 0.15
+  earlyShrinkDuration: 0.5
   earlyShrinkTargetMultiplier: 5
   tabletopShrinkEndCoverage: 0.85
   minFractureLeadTime: 1
@@ -275,6 +283,8 @@ MonoBehaviour:
   mapShrinkDuration: 1
   skyFractureCommitTimeout: 4
   showGrabRange: 1
+  debugSkipPlacementAndEnterDrone: 1
+  debugDroneEntryLocalPoint: {x: 0, y: 0, z: 0}
 --- !u!114 &2003
 MonoBehaviour:
   m_ObjectHideFlags: 0

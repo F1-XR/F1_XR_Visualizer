@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: a113b0caa920aa04a91ae63f81fce08f
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Tool_WingAdjust_Start_LController.controller
+  uploadId: 906384

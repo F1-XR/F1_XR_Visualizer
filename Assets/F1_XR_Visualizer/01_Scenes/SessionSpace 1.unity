@@ -1540,6 +1540,7 @@ MonoBehaviour:
     rotationStrength: 1
     rotationRange: {x: 10, y: 10, z: 8}
     endScale: 0.95
+    seamCloseStart: 0.65
   wallFallDistance: 1.4
   ceilingFallDistance: 1.8
   floorFallDistance: 0.35
@@ -2798,6 +2799,8 @@ MonoBehaviour:
   restoreSavedPlacement: 0
   persistenceKey: F1XR.TrackPlacement.v1
   persistenceSaveDelay: 0.4
+  logPlacementDiagnostics: 0
+  placementDiagnosticInterval: 2
 --- !u!114 &1113257130
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2826,6 +2829,13 @@ MonoBehaviour:
   minimumPlacementHeight: 0.35
   verticalOffset: 0.04
   defaultCubeSize: 0.08
+  logAutomaticTableDiagnostics: 0
+  automaticTableDiagnosticInterval: 2
+  automaticTableSlowScanSeconds: 0.02
+  showAutomaticTableCandidates: 0
+  automaticTableCandidateColor: {r: 0.25, g: 0.85, b: 1, a: 0.28}
+  automaticTablePreviewInterval: 0.25
+  automaticTablePreviewHeightOffset: 0.01
   allowWorldFloorFallback: 0
   fallbackFloorHeight: 0
   fallbackMaximumDistance: 8
@@ -4073,6 +4083,7 @@ MonoBehaviour:
     rotationStrength: 1
     rotationRange: {x: 20, y: 20, z: 12}
     endScale: 0.9
+    seamCloseStart: 0.65
   wallFallDistance: 1.4
   ceilingFallDistance: 1.8
   floorFallDistance: 0.35
@@ -4084,7 +4095,19 @@ MonoBehaviour:
   forceDebugGray: 0
   surfaceStaggerStep: 0.2
   shellColor: {r: 0.78, g: 0.76, b: 0.72, a: 0.55}
-  fragmentThickness: 0.08
+  wallFragmentThickness: 0.06
+  ceilingFragmentThickness: 0.05
+  floorFragmentThickness: 0.1
+  wallFragmentCount: 0
+  ceilingFragmentCount: 0
+  floorFragmentCount: 0
+  wallReverseOutwardDistance: 0.6
+  ceilingReverseOutwardDistance: 0.5
+  floorReverseOutwardDistance: 0.4
+  reverseScatterFactor: 0.15
+  reverseMaxScatter: 0.3
+  sideColor: {r: 0.93, g: 0.04, b: 0.12, a: 1}
+  sideEmissionIntensity: 0.5
 --- !u!114 &1510071738
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4166,6 +4189,7 @@ MonoBehaviour:
     rotationStrength: 1
     rotationRange: {x: 10, y: 10, z: 8}
     endScale: 0.95
+    seamCloseStart: 0.65
   originDistance: 4
   originHeight: 1.5
   crackSpeed: 5
@@ -4608,6 +4632,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 347346111352918431, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1203198283124479178, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1473409034299224219, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_Name
       value: XR Origin (VR)
@@ -4652,6 +4684,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3664281703862286721, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4405907895061535674, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_SelectInput.m_InputActionReferenceValue
       value: 
@@ -4676,6 +4712,10 @@ PrefabInstance:
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 10306, guid: 0000000000000000f000000000000000, type: 0}
+    - target: {fileID: 8758587121800840445, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -5843,7 +5883,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &2042791791
 MonoBehaviour:
   m_ObjectHideFlags: 0

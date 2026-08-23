@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
@@ -38,6 +39,8 @@ namespace F1XR.RestAPI.Replay.Room
         [SerializeField, Min(1f)] private float planeDiscoveryRetryDelay = 15f;
         [SerializeField, Min(2f)] private float planeDiscoveryTimeout = 18f;
 
+        private const float PlaneDiscoveryRetryGracePeriod = 8f;
+
         [Header("Runtime Performance")]
         [SerializeField] private bool suspendSceneTrackingWhenReady = true;
 
@@ -58,6 +61,7 @@ namespace F1XR.RestAPI.Replay.Room
         private float automaticSetupWaitUntil;
         private float roomWaitStartedAt;
         private bool planeDiscoveryRetried;
+        private Coroutine planeDiscoveryRetryRoutine;
         private float reacquisitionStartedAt = -1f;
         private bool sessionConfirmed;
         private bool initialized;
@@ -108,7 +112,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void OnDisable()
         {
             wallProvider?.ClearPreview();
-            SetSceneTrackingSuspended(false);
+            // Do not restart Meta plane subsystems while OpenXR is tearing down.
         }
 
         private void Update()
@@ -471,13 +475,31 @@ namespace F1XR.RestAPI.Replay.Room
                 elapsed >= planeDiscoveryRetryDelay)
             {
                 planeDiscoveryRetried = true;
+                ResolveSceneManagers();
+                if (planeManager != null &&
+                    planeManager.trackables.count > 0)
+                {
+                    Debug.LogWarning(
+                        $"[RoomSetupRecovery] Skipped the plane restart: " +
+                        $"Quest Link returned {planeManager.trackables.count} " +
+                        "plane(s), but none produced usable wall candidates.",
+                        this);
+                    SetUserMessage(
+                        "Quest Link returned room planes, but no usable " +
+                        "wall candidates were found.");
+                    return;
+                }
+
+                planeDiscoveryRetryRoutine =
+                    StartCoroutine(RestartPlaneDiscovery());
                 SetUserMessage("Waiting for the Quest Link room plane retry.");
                 return;
             }
 
             if (elapsed >= Mathf.Max(
                     planeDiscoveryTimeout,
-                    planeDiscoveryRetryDelay + 2f))
+                    planeDiscoveryRetryDelay +
+                    PlaneDiscoveryRetryGracePeriod))
             {
                 SetState(
                     RoomShowcaseSetupState.Error,
@@ -486,6 +508,49 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             SetUserMessage(ResolveRoomLoadingMessage());
+        }
+
+        private IEnumerator RestartPlaneDiscovery()
+        {
+            ResolveSceneManagers();
+            if (planeManager == null)
+            {
+                Debug.LogWarning(
+                    "[RoomSetupRecovery] ARPlaneManager was not found; " +
+                    "the Quest Link plane retry could not run.",
+                    this);
+                planeDiscoveryRetryRoutine = null;
+                yield break;
+            }
+
+            if (planeManager.trackables.count > 0)
+            {
+                Debug.Log(
+                    "[RoomSetupRecovery] Plane data arrived before the " +
+                    "restart; leaving the active plane query untouched.",
+                    this);
+                planeDiscoveryRetryRoutine = null;
+                yield break;
+            }
+
+            if (planeManager.enabled)
+                planeManager.enabled = false;
+
+            // Let AR Foundation finish Stop before issuing a fresh scene query.
+            yield return null;
+
+            if (!isActiveAndEnabled)
+            {
+                planeDiscoveryRetryRoutine = null;
+                yield break;
+            }
+
+            planeManager.enabled = true;
+            planeDiscoveryRetryRoutine = null;
+            Debug.Log(
+                "[RoomSetupRecovery] Restarted ARPlaneManager after the " +
+                "initial Quest Link plane query returned no planes.",
+                this);
         }
 
         private void ObserveCandidates()

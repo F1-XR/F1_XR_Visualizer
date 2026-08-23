@@ -87,17 +87,42 @@ namespace F1XR.Experience.Fracture
         [Header("Look")]
         [SerializeField] Color shellColor = new(0.78f, 0.76f, 0.72f, 1f);
 
-        [Tooltip("Extrusion depth for visible fragment meshes. " +
-            "Zero = flat originals. Adds side faces so fragments look solid when rotating.")]
-        [SerializeField, Min(0f)] float fragmentThickness = 0.08f;
+        [Header("Fragment thickness")]
+        [SerializeField, Min(0f)] float wallFragmentThickness = 0.06f;
+        [SerializeField, Min(0f)] float ceilingFragmentThickness = 0.05f;
+        [SerializeField, Min(0f)] float floorFragmentThickness = 0.10f;
+
+        [Header("Per-surface fragment count (0 = use shared)")]
+        [SerializeField, Range(0, 120)] int wallFragmentCount;
+        [SerializeField, Range(0, 120)] int ceilingFragmentCount;
+        [SerializeField, Range(0, 120)] int floorFragmentCount;
+
+        [Header("Reverse reassembly (VR to MR)")]
+        [Tooltip("Distance outside each wall where fragments begin their return.")]
+        [SerializeField, Min(0f)] float wallReverseOutwardDistance = 0.6f;
+        [Tooltip("Distance above the ceiling where fragments begin.")]
+        [SerializeField, Min(0f)] float ceilingReverseOutwardDistance = 0.5f;
+        [Tooltip("Distance below the floor where fragments begin.")]
+        [SerializeField, Min(0f)] float floorReverseOutwardDistance = 0.4f;
+        [Tooltip("Fraction of forward tangential displacement kept as scatter.")]
+        [SerializeField, Range(0f, 1f)] float reverseScatterFactor = 0.15f;
+        [Tooltip("Maximum scatter distance in metres.")]
+        [SerializeField, Min(0f)] float reverseMaxScatter = 0.3f;
+
+        [Header("Side faces")]
+        [SerializeField] Color sideColor = new(0.93f, 0.04f, 0.12f, 1f);
+        [SerializeField, Range(0f, 1f)] float sideEmissionIntensity = 0.5f;
 
         readonly List<ShellFractureRig> rigs = new();
         readonly List<float> surfaceDelays = new();
         readonly List<Transform> planeSpaces = new();
+        readonly List<Vector3> rigOutwardNormals = new();
+        readonly List<RoomSurfaceType> rigSurfaceTypes = new();
         Material sharedShellMaterial;   // debug gray
         Material maskMaterial;          // MR->VR passthrough mask
         Material revealMaterial;        // VR->MR spatial alpha holes
         Material shardMaterial;         // solid debris, both directions, after detach
+        Material sideMaterial;          // F1 red for extruded side faces
         Coroutine activeRoutine;
 
         RoomShellState state = RoomShellState.IntactMR;
@@ -173,6 +198,14 @@ namespace F1XR.Experience.Fracture
             }
         }
 
+        int VisibleFragmentCount()
+        {
+            int count = 0;
+            foreach (ShellFractureRig rig in rigs)
+                count += rig.VisibleFragmentCount;
+            return count;
+        }
+
         void Awake()
         {
             if (experienceManager == null)
@@ -233,6 +266,7 @@ namespace F1XR.Experience.Fracture
             DestroySafely(maskMaterial);
             DestroySafely(revealMaterial);
             DestroySafely(shardMaterial);
+            DestroySafely(sideMaterial);
         }
 
         // ---------------------------------------------------------------- hooks
@@ -268,9 +302,17 @@ namespace F1XR.Experience.Fracture
 
             state = RoomShellState.ReassemblingToMR;
 
-            Material mask = MaterialFor(ShellVisualMode.MRMask);
-            foreach (ShellFractureRig rig in rigs)
-                rig.WakeForReverse(mask);
+            Material flight = MaterialFor(ShellVisualMode.MRMask);
+            for (int i = 0; i < rigs.Count; i++)
+            {
+                Vector3 outward = i < rigOutwardNormals.Count
+                    ? rigOutwardNormals[i] : Vector3.up;
+                RoomSurfaceType surfType = i < rigSurfaceTypes.Count
+                    ? rigSurfaceTypes[i] : RoomSurfaceType.Wall;
+                rigs[i].WakeForReverse(flight, outward,
+                    ReverseOutwardDistanceFor(surfType),
+                    reverseScatterFactor, reverseMaxScatter);
+            }
 
             float total = forwardTotalDuration;
             for (int i = 0; i < rigs.Count; i++)
@@ -282,17 +324,26 @@ namespace F1XR.Experience.Fracture
 
             float elapsed = 0f;
             bool loggedHalf = false;
+            bool loggedVisibility = false;
             while (elapsed < total)
             {
                 elapsed += Time.deltaTime;
                 for (int i = 0; i < rigs.Count; i++)
                 {
-                    // Reverse stagger: surfaces that cracked last come back first.
                     float maxDelay = surfaceDelays.Count > 0
                         ? surfaceDelays[surfaceDelays.Count - 1]
                         : 0f;
                     float reverseDelay = maxDelay - (surfaceDelays.Count > i ? surfaceDelays[i] : 0f);
                     rigs[i].StepReverse(elapsed - reverseDelay);
+                }
+
+                if (!loggedVisibility && elapsed > 0.02f)
+                {
+                    loggedVisibility = true;
+                    int visible = VisibleFragmentCount();
+                    Debug.Log(
+                        $"[RoomReverse][Visibility] T={elapsed:F2}s " +
+                        $"visible={visible}/{TotalFragments}", this);
                 }
 
                 if (!loggedHalf && ReassemblyCoverage >= 0.5f)
@@ -626,9 +677,12 @@ namespace F1XR.Experience.Fracture
 
                 if (rig.Build(boundary, origin, space.transform, material,
                         SettingsFor(proxy.Type), proxy.GameObject.name + "_Fragments", mode,
-                        detachedShardMaterial, thickness: fragmentThickness))
+                        detachedShardMaterial, sideMaterial: GetSideMaterial(),
+                        thickness: ThicknessFor(proxy.Type)))
                 {
                     rigs.Add(rig);
+                    rigOutwardNormals.Add(-proxy.InwardNormal);
+                    rigSurfaceTypes.Add(proxy.Type);
                 }
                 else
                 {
@@ -721,7 +775,58 @@ namespace F1XR.Experience.Fracture
                     break;
             }
 
+            int count = type switch
+            {
+                RoomSurfaceType.Ceiling => ceilingFragmentCount,
+                RoomSurfaceType.Floor => floorFragmentCount,
+                _ => wallFragmentCount
+            };
+            if (count > 0)
+                settings.fragmentCount = count;
+
             return settings;
+        }
+
+        float ThicknessFor(RoomSurfaceType type) => type switch
+        {
+            RoomSurfaceType.Ceiling => ceilingFragmentThickness,
+            RoomSurfaceType.Floor => floorFragmentThickness,
+            _ => wallFragmentThickness
+        };
+
+        float ReverseOutwardDistanceFor(RoomSurfaceType type) => type switch
+        {
+            RoomSurfaceType.Ceiling => ceilingReverseOutwardDistance,
+            RoomSurfaceType.Floor => floorReverseOutwardDistance,
+            _ => wallReverseOutwardDistance
+        };
+
+        Material GetSideMaterial()
+        {
+            if (sideMaterial != null)
+                return sideMaterial;
+
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+                return null;
+
+            sideMaterial = new Material(shader) { name = "FragmentSide_NeonRed" };
+            sideMaterial.SetColor("_BaseColor", sideColor);
+            sideMaterial.color = sideColor;
+
+            if (sideMaterial.HasProperty("_Cull"))
+                sideMaterial.SetFloat("_Cull", 0f);
+            if (sideMaterial.HasProperty("_Smoothness"))
+                sideMaterial.SetFloat("_Smoothness", 0.4f);
+
+            if (sideEmissionIntensity > 0f)
+            {
+                sideMaterial.EnableKeyword("_EMISSION");
+                sideMaterial.SetColor("_EmissionColor", sideColor * sideEmissionIntensity);
+                sideMaterial.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            }
+
+            return sideMaterial;
         }
 
         ShellDustEmitter GetDust()
@@ -773,6 +878,8 @@ namespace F1XR.Experience.Fracture
 
             rigs.Clear();
             surfaceDelays.Clear();
+            rigOutwardNormals.Clear();
+            rigSurfaceTypes.Clear();
 
             foreach (Transform space in planeSpaces)
             {

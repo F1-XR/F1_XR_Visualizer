@@ -2,11 +2,14 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using F1XR.Experience;
+using F1XR.RestAPI.Replay;
 using F1XR.RestAPI.Replay.Track.Build;
+using F1XR.RestAPI.Replay.Track.Placement;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
+using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace F1XR.Drone
@@ -20,16 +23,14 @@ namespace F1XR.Drone
         [SerializeField, Min(1f)] float vrScaleMultiplier = 1000f;
 
         [Header("Drone Camera")]
+        [Tooltip("Far clip while flying. The aerial ground is 11.3 km across, so the rig's " +
+            "default of a kilometre would cut most of it off mid-air.")]
         [SerializeField, Min(1f)] float droneFarClipPlane = 5000f;
 
-        [Header("Drone Ground")]
-        [SerializeField, Min(1f)] float groundPlaneScale = 250f;
-        [SerializeField, Min(0f)] float groundOffsetAboveTrack = 0.1f;
-
         [Header("Aerial Ground")]
-        [Tooltip("Replaces the fixed-size plate with the aerial photo, placed in the " +
+        [Tooltip("Textures the drone ground with the aerial photo, placed in the " +
             "track's own metric space so it rides the placement scale. Off falls back " +
-            "to the old plate, so the previous look is one checkbox away.")]
+            "to the plain dark slab, so the previous look is one checkbox away.")]
         [SerializeField] bool useAerialGround = true;
 
         [Tooltip("Photo centre in the circuit's own metres, read off the Blender scene. " +
@@ -159,7 +160,7 @@ namespace F1XR.Drone
         [SerializeField, Min(0.1f)] float mapGrowDuration = 1.6f;
 
         [Tooltip("Map scale at which the drone's ground plane is placed and switched on. The " +
-            "ground sits just below the track and is held back until it is clear of the room, " +
+            "ground is ten kilometres across and sits about half a metre under the real floor, " +
             "so bringing it up early puts it in a depth fight with the room across the whole " +
             "view. By this scale it is nowhere near anything real.")]
         [SerializeField, Range(10f, 300f)] float groundEnableScaleMultiplier = 75f;
@@ -189,6 +190,14 @@ namespace F1XR.Drone
         [SerializeField, FormerlySerializedAs("showGrabVolumeVisual")]
         bool showGrabRange;
 
+        [Tooltip("Skips manual track and drone-cube placement. The map is created at the " +
+            "TrackRevealPlacer fixed pose, then Drone mode starts automatically.")]
+        [SerializeField] bool debugSkipPlacementAndEnterDrone;
+
+        [Tooltip("Drone entry point in the track's local space when debug auto-entry is on. " +
+            "(0, 0, 0) uses the map origin.")]
+        [SerializeField] Vector3 debugDroneEntryLocalPoint;
+
         TrackRevealPlacer trackPlacer;
         XROrigin xrOrigin;
         Camera xrCamera;
@@ -214,7 +223,14 @@ namespace F1XR.Drone
         bool plateRenderersScanned;
         bool warnedMissingPlates;
         VRDroneHud droneHud;
+        DroneVehicleTargeting vehicleTargeting;
+        DroneVehicleWorldTargetPresenter worldTargetPresenter;
+        ReplayPlayer replayPlayer;
         readonly List<XRBaseInteractable> disabledInteractables = new();
+        readonly List<ARPlaneMeshVisualizer> hiddenPlaneVisualizers = new();
+        readonly List<ARPlaneManager> subscribedPlaneManagers = new();
+        readonly List<AutomaticTableCandidatePreview>
+            hiddenCandidatePreviews = new();
 
         // Host-scene UI switched off for the flight. Only the ones this turned off are
         // recorded, so a panel the user had already closed stays closed on the way back.
@@ -298,6 +314,8 @@ namespace F1XR.Drone
         {
             if (cubeSpawner != null)
                 cubeSpawner.CubeReleased -= EnterVr;
+
+            RestorePlaneVisualizers();
         }
 
         IEnumerator Initialize()
@@ -305,17 +323,20 @@ namespace F1XR.Drone
             while (!TryResolveReferences())
                 yield return null;
 
-            cubeSpawner = trackPlacer.GetComponent<DroneViewCubeSpawner>();
-            if (cubeSpawner == null)
-                cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
+            if (!debugSkipPlacementAndEnterDrone)
+            {
+                cubeSpawner = trackPlacer.GetComponent<DroneViewCubeSpawner>();
+                if (cubeSpawner == null)
+                    cubeSpawner = trackPlacer.gameObject.AddComponent<DroneViewCubeSpawner>();
 
-            cubeSpawner.Configure(
-                trackPlacer,
-                xrCamera.transform,
-                showGrabRange);
-            appliedShowGrabVolumeVisual = showGrabRange;
-            cubeSpawner.CubeReleased -= EnterVr;
-            cubeSpawner.CubeReleased += EnterVr;
+                cubeSpawner.Configure(
+                    trackPlacer,
+                    xrCamera.transform,
+                    showGrabRange);
+                appliedShowGrabVolumeVisual = showGrabRange;
+                cubeSpawner.CubeReleased -= EnterVr;
+                cubeSpawner.CubeReleased += EnterVr;
+            }
 
             audioDistanceScaler = GetComponent<VRDroneAudioDistanceScaler>();
             if (audioDistanceScaler == null)
@@ -340,6 +361,27 @@ namespace F1XR.Drone
             if (droneHud == null)
                 droneHud = gameObject.AddComponent<VRDroneHud>();
             droneHud.Configure(environment.transform);
+
+            replayPlayer = FindInScene<ReplayPlayer>(hostScene);
+            worldTargetPresenter =
+                GetComponent<DroneVehicleWorldTargetPresenter>();
+            if (worldTargetPresenter == null)
+            {
+                worldTargetPresenter =
+                    gameObject.AddComponent<DroneVehicleWorldTargetPresenter>();
+            }
+
+            worldTargetPresenter.Configure(xrCamera, droneHud.NumberFont);
+            vehicleTargeting = GetComponent<DroneVehicleTargeting>();
+            if (vehicleTargeting == null)
+                vehicleTargeting = gameObject.AddComponent<DroneVehicleTargeting>();
+            vehicleTargeting.Configure(
+                replayPlayer,
+                worldTargetPresenter,
+                xrCamera);
+
+            if (debugSkipPlacementAndEnterDrone)
+                StartCoroutine(EnterDroneDebugWhenReady());
 
         }
 
@@ -391,18 +433,17 @@ namespace F1XR.Drone
                 cubeTransform);
         }
 
-        // ─────────────────────────── AI 명령 진입 (핸즈프리) ───────────────────────────
-        // 큐브 진입과 동일한 BeginEnterVr 경로를 사용하되, 트랙 중심 상공을
-        // 진입 지점으로 전달한다. DroneViewHandler.onEnterDrone에서 호출된다.
-
-        /// <summary>AIBridge droneView 명령 진입점 — 잡을 큐브 없이 트랙 상공으로 드론 진입.</summary>
+        // AI 명령 진입(핸즈프리): 큐브 진입과 같은 전환 경로를 사용하되
+        // 트랙 중심 상공을 기본 진입 지점으로 사용한다.
         public void EnterVrFromCommand()
         {
             if (isVrActive || isTransitioning)
                 return;
             if (trackPlacer == null || !trackPlacer.HasPlacement)
             {
-                Debug.LogWarning("[VRDrone] 트랙 배치가 없어 드론 명령 진입을 건너뜀.", this);
+                Debug.LogWarning(
+                    "[VRDrone] 트랙 배치가 없어 드론 명령 진입을 건너뜀.",
+                    this);
                 return;
             }
 
@@ -412,11 +453,26 @@ namespace F1XR.Drone
                 : null;
             if (visualRoot == null)
             {
-                Debug.LogWarning("[VRDrone] 트랙 Visual이 없어 드론 명령 진입을 건너뜀.", this);
+                Debug.LogWarning(
+                    "[VRDrone] 트랙 Visual이 없어 드론 명령 진입을 건너뜀.",
+                    this);
                 return;
             }
 
             BeginEnterVr(GetDefaultEntryLocal(), null);
+        }
+
+        IEnumerator EnterDroneDebugWhenReady()
+        {
+            trackPlacer.SetPlacementMode(TrackPlacementMode.Fixed);
+
+            while (!trackPlacer.HasPlacement)
+            {
+                trackPlacer.TryPlaceFixed();
+                yield return null;
+            }
+
+            BeginEnterVr(debugDroneEntryLocalPoint, null);
         }
 
         void BeginEnterVr(Vector3 entryLocal, Transform sourceCube)
@@ -427,7 +483,8 @@ namespace F1XR.Drone
                 return;
             }
 
-            placementRoot = trackPlacer.PlacementTransform;
+            Transform placement = trackPlacer.PlacementTransform;
+            placementRoot = placement;
             visualRoot = placementRoot != null
                 ? placementRoot.Find("Visual") ?? placementRoot
                 : null;
@@ -475,7 +532,8 @@ namespace F1XR.Drone
                         for (int z = -1; z <= 1; z += 2)
                         {
                             Vector3 worldPoint = world.center +
-                                Vector3.Scale(world.extents,
+                                Vector3.Scale(
+                                    world.extents,
                                     new Vector3(x, y, z));
                             Vector3 localPoint =
                                 placementRoot.InverseTransformPoint(worldPoint);
@@ -502,6 +560,7 @@ namespace F1XR.Drone
         IEnumerator EnterVrRoutine(Transform cubeTransform)
         {
             SaveMrState();
+            SuspendPlaneVisualizers();
             LockTrackInteraction();
 
             hiddenCube = cubeTransform;
@@ -622,13 +681,13 @@ namespace F1XR.Drone
 
             // The drone world comes up now, while the room still covers it completely, so that
             // the first hole has something waiting behind it instead of opening onto a frame of
-            // nothing. The ground is held back - it would otherwise be fighting
+            // nothing. The ground is held back - it is ten kilometres wide and would be fighting
             // the real floor for the depth buffer across the entire room.
             SetDroneWorldActive(true);
             if (ground != null)
                 ground.SetActive(false);
 
-            droneHud?.Hide();
+            HideDroneHud();
 
             // One frame with everything up and nothing yet broken. Shaders compile and the
             // renderers register here rather than in the middle of the break.
@@ -682,7 +741,7 @@ namespace F1XR.Drone
             HideHostUi();
 
             isVrActive = true;
-            droneHud?.Show(xrCamera);
+            ShowDroneHud();
             flightController?.ResetFlight();
 
             Debug.Log(
@@ -767,7 +826,7 @@ namespace F1XR.Drone
 
             audioDistanceScaler?.Apply(vrScaleMultiplier);
 
-            // Switched on here rather than before Phase A: its ground plane is large enough
+            // Switched on here rather than before Phase A: its ground plane is a kilometre
             // across and would otherwise be sitting in the middle of the real room while the
             // map is still on the table.
             SetDroneWorldActive(true);
@@ -776,7 +835,7 @@ namespace F1XR.Drone
             HideHostUi();
 
             isVrActive = true;
-            droneHud?.Show(xrCamera);
+            ShowDroneHud();
             flightController?.ResetFlight();
         }
 
@@ -1086,7 +1145,7 @@ namespace F1XR.Drone
         {
             float beganAt = Time.realtimeSinceStartup;
 
-            droneHud?.Hide();
+            HideDroneHud();
             SetAnchorStabilizerPaused(true);
 
             // SkyShell to transition depth mode so mask fragments (queue 1999) can
@@ -1212,8 +1271,15 @@ namespace F1XR.Drone
             if (reassembling != null)
                 roomShell.StopCoroutine(reassembling);
 
-            // VR environment off only after room is mostly restored.
             SetDroneWorldActive(false);
+
+            Debug.Log(
+                $"[RoomReverse][PreFinalize] " +
+                $"placementRoot={(placementRoot != null ? placementRoot.position.ToString("F3") : "null")} " +
+                $"placementScale={(placementRoot != null ? placementRoot.localScale.ToString("F3") : "null")} " +
+                $"visualRoot={(visualRoot != null ? visualRoot.gameObject.activeSelf : false)} " +
+                $"visualScale={(visualRoot != null ? visualRoot.localScale.ToString("F3") : "null")} " +
+                $"cameraAlpha={(xrCamera != null ? xrCamera.backgroundColor.a : -1f):F2}", this);
 
             RestoreExitBookkeeping();
             ApplyMrScreenEndpoint();
@@ -1226,7 +1292,12 @@ namespace F1XR.Drone
 
             Debug.Log(
                 $"[RoomReverse][Complete] total={Time.realtimeSinceStartup - beganAt:F2}s " +
-                $"origin={xrOrigin.transform.position}", this);
+                $"origin={xrOrigin.transform.position} " +
+                $"placementPos={(placementRoot != null ? placementRoot.position.ToString("F3") : "null")} " +
+                $"placementScale={(placementRoot != null ? placementRoot.localScale.ToString("F3") : "null")} " +
+                $"visualActive={(visualRoot != null ? visualRoot.gameObject.activeSelf : false)} " +
+                $"visualActiveInHierarchy={(visualRoot != null ? visualRoot.gameObject.activeInHierarchy : false)} " +
+                $"cameraAlpha={(xrCamera != null ? xrCamera.backgroundColor.a : -1f):F2}", this);
         }
 
         /// <summary>
@@ -1273,7 +1344,7 @@ namespace F1XR.Drone
                 // Only the drone's own furniture goes. The circuit stays exactly as it is - it
                 // is the thing that is about to shrink, and switching it off for even a frame
                 // turns the whole transition back into "VR ended, then a map appeared".
-                droneHud?.Hide();
+                HideDroneHud();
                 SetDroneWorldActive(false);
 
                 yield return MapShrinkRoutine();
@@ -1597,7 +1668,7 @@ namespace F1XR.Drone
                 savedOriginRotation);
             ApplyMrScreenEndpoint();
 
-            droneHud?.Hide();
+            HideDroneHud();
             SetDroneWorldActive(false);
             RestoreHostUi();
 
@@ -1644,7 +1715,94 @@ namespace F1XR.Drone
                 hiddenCube.gameObject.SetActive(true);
 
             RestoreTrackInteraction();
+            RestorePlaneVisualizers();
             isVrActive = false;
+        }
+
+        void SuspendPlaneVisualizers()
+        {
+            RestorePlaneVisualizers();
+
+            ARPlaneMeshVisualizer[] visualizers =
+                FindObjectsByType<ARPlaneMeshVisualizer>(
+                    FindObjectsInactive.Include);
+            foreach (ARPlaneMeshVisualizer visualizer in visualizers)
+                HidePlaneVisualizer(visualizer);
+
+            AutomaticTableCandidatePreview[] candidatePreviews =
+                FindObjectsByType<AutomaticTableCandidatePreview>(
+                    FindObjectsInactive.Include);
+            foreach (AutomaticTableCandidatePreview candidatePreview in
+                candidatePreviews)
+            {
+                if (candidatePreview == null)
+                    continue;
+
+                candidatePreview.SetRuntimeVisible(false);
+                hiddenCandidatePreviews.Add(candidatePreview);
+            }
+
+            ARPlaneManager[] planeManagers =
+                FindObjectsByType<ARPlaneManager>(
+                    FindObjectsInactive.Include);
+            foreach (ARPlaneManager planeManager in planeManagers)
+            {
+                if (planeManager == null || !planeManager.isActiveAndEnabled)
+                    continue;
+
+                planeManager.trackablesChanged.AddListener(
+                    OnPlaneTrackablesChanged);
+                subscribedPlaneManagers.Add(planeManager);
+            }
+        }
+
+        void OnPlaneTrackablesChanged(
+            ARTrackablesChangedEventArgs<ARPlane> changes)
+        {
+            foreach (ARPlane plane in changes.added)
+                HidePlaneVisualizer(plane?.GetComponent<ARPlaneMeshVisualizer>());
+
+            foreach (ARPlane plane in changes.updated)
+                HidePlaneVisualizer(plane?.GetComponent<ARPlaneMeshVisualizer>());
+        }
+
+        void HidePlaneVisualizer(ARPlaneMeshVisualizer visualizer)
+        {
+            if (visualizer == null || !visualizer.enabled)
+                return;
+
+            hiddenPlaneVisualizers.Add(visualizer);
+            visualizer.enabled = false;
+        }
+
+        void RestorePlaneVisualizers()
+        {
+            foreach (ARPlaneManager planeManager in subscribedPlaneManagers)
+            {
+                if (planeManager != null)
+                {
+                    planeManager.trackablesChanged.RemoveListener(
+                        OnPlaneTrackablesChanged);
+                }
+            }
+
+            subscribedPlaneManagers.Clear();
+
+            foreach (AutomaticTableCandidatePreview candidatePreview in
+                hiddenCandidatePreviews)
+            {
+                candidatePreview?.SetRuntimeVisible(true);
+            }
+
+            hiddenCandidatePreviews.Clear();
+
+            foreach (ARPlaneMeshVisualizer visualizer in hiddenPlaneVisualizers)
+            {
+                if (visualizer != null)
+                    visualizer.enabled = true;
+            }
+
+            hiddenPlaneVisualizers.Clear();
         }
 
         public void ApplyDroneMotion(Vector3 movement, float yaw)
@@ -1671,6 +1829,18 @@ namespace F1XR.Drone
         public void SetDroneSpeed(float speedKph)
         {
             droneHud?.SetSpeedKph(speedKph);
+        }
+
+        void ShowDroneHud()
+        {
+            droneHud?.Show(xrCamera);
+            vehicleTargeting?.Show(xrCamera);
+        }
+
+        void HideDroneHud()
+        {
+            vehicleTargeting?.Hide();
+            droneHud?.Hide();
         }
 
         void SaveMrState()
@@ -1820,38 +1990,35 @@ namespace F1XR.Drone
                 ground.name = "VR Drone Ground";
                 ground.transform.SetParent(environment.transform, false);
                 Renderer renderer = ground.GetComponent<Renderer>();
-                Texture2D terrainTexture = Resources.Load<Texture2D>(
-                    GroundTextureResourcePath);
 
-                if (terrainTexture == null)
-                {
-                    ground.transform.localScale = Vector3.one * groundPlaneScale;
-                    Debug.LogWarning(
-                        $"[VRDrone] Missing ground texture at Resources/{GroundTextureResourcePath}.",
-                        this);
-                    return;
-                }
-
-                if (!useAerialGround)
-                {
-                    float aspect = (float)terrainTexture.width / terrainTexture.height;
-                    ground.transform.localScale = new Vector3(
-                        groundPlaneScale * aspect,
-                        1f,
-                        groundPlaneScale);
-                }
-                // In aerial mode PlaceGround owns the scale: it is track-relative and is
-                // rewritten on every call, including mid-growth.
-
-                Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ??
+                Texture2D terrainTexture = useAerialGround
+                    ? Resources.Load<Texture2D>(GroundTextureResourcePath)
+                    : null;
+                Shader unlit = Shader.Find("Universal Render Pipeline/Unlit") ??
                     Shader.Find("Unlit/Texture");
-                if (shader == null)
+
+                if (terrainTexture == null || unlit == null)
                 {
-                    Debug.LogWarning("[VRDrone] No unlit shader was found for the ground texture.", this);
+                    // The plain dark slab: either aerial mode is off, or the photo or
+                    // shader is missing and a solid plate beats a magenta one.
+                    if (useAerialGround)
+                    {
+                        Debug.LogWarning(
+                            "[VRDrone] Aerial ground fell back to the plain slab " +
+                            $"(texture at Resources/{GroundTextureResourcePath}: " +
+                            $"{terrainTexture != null}, unlit shader: {unlit != null}).",
+                            this);
+                    }
+
+                    ground.transform.localScale = Vector3.one * 1000f;
+                    if (renderer != null)
+                        renderer.material.color = new Color(0.025f, 0.035f, 0.06f, 1f);
                     return;
                 }
 
-                groundMaterial = new Material(shader)
+                // No scale here: in aerial mode PlaceGround owns it. It is
+                // track-relative and rewritten on every call, including mid-growth.
+                groundMaterial = new Material(unlit)
                 {
                     name = "VR Drone Ground Terrain"
                 };
@@ -1860,22 +2027,19 @@ namespace F1XR.Drone
                     groundMaterial.SetTexture("_BaseMap", terrainTexture);
                 if (groundMaterial.HasProperty("_BaseColor"))
                     groundMaterial.SetColor("_BaseColor", Color.white);
+                MakeTransparent(groundMaterial);
                 renderer.sharedMaterial = groundMaterial;
-
-                if (useAerialGround)
-                    MakeTransparent(groundMaterial);
             }
 
         }
 
         void PlaceGround(Vector3 up)
         {
-            if (!useAerialGround)
+            if (!useAerialGround || groundMaterial == null)
             {
-                Vector3 trackBase = placementRoot.TransformPoint(
-                    new Vector3(0f, GetTrackBaseLocalY(), 0f));
-                ground.transform.position =
-                    trackBase + up.normalized * groundOffsetAboveTrack;
+                float localY = GetTrackBaseLocalY() - 1f;
+                ground.transform.position = placementRoot.TransformPoint(
+                    new Vector3(0f, localY, 0f));
                 ground.transform.rotation = Quaternion.FromToRotation(
                     Vector3.up,
                     up);
@@ -1886,17 +2050,14 @@ namespace F1XR.Drone
             // the instantiated map itself, not placementRoot: the circuit arrives through
             // TrackMapView with its own shrink factor (the prefab is authored at 0.001,
             // and Show() then overwrites the instance scale), so a metre of circuit is
-            // nowhere near one placementRoot unit. The calibration asset says as much -
-            // its target positions span about one unit for a 2.2 km circuit. Reading the
-            // map's own transform folds the table fit, that shrink factor and the x1000
-            // growth into one number, and PlaceGround already reruns mid-growth and at
-            // the end, which is exactly the resync this needs.
+            // nowhere near one placementRoot unit. Reading the map's own transform folds
+            // the table fit, that shrink factor and the x1000 growth into one number, and
+            // PlaceGround already reruns mid-growth and at the end, which is exactly the
+            // resync this needs.
             Transform anchor = FindAerialAnchor();
             float metresToWorld = anchor.lossyScale.x;
 
-            ground.transform.position =
-                anchor.TransformPoint(aerialLocalPosition) +
-                up.normalized * groundOffsetAboveTrack;
+            ground.transform.position = anchor.TransformPoint(aerialLocalPosition);
 
             // The anchor already carries the surface orientation; the photo only adds
             // its own yaw. FromToRotation would throw that yaw away.

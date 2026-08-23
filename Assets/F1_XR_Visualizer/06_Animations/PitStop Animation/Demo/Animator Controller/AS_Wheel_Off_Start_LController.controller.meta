@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e53c99a1c333a9d468e53d799ec59aa3
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371750
+  packageName: PitStop Animation
+  packageVersion: 1.0
+  assetPath: Assets/PitStop Animation/Demo/Animator Controller/AS_Wheel_Off_Start_LController.controller
+  uploadId: 906384
