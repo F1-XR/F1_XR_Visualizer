@@ -383,23 +383,17 @@ namespace F1XR.Drone
             }
 
             Transform placement = trackPlacer.PlacementTransform;
-            placementRoot = placement;
-            visualRoot = placementRoot != null
-                ? placementRoot.Find("Visual") ?? placementRoot
-                : null;
-            plateRenderersScanned = false;
-            if (visualRoot == null)
+            if (placement == null)
                 return;
 
-            isTransitioning = true;
-            transitionRoutine = StartCoroutine(EnterVrRoutine(cubeTransform));
+            BeginEnterVr(
+                placement.InverseTransformPoint(cubeTransform.position),
+                cubeTransform);
         }
 
         // ─────────────────────────── AI 명령 진입 (핸즈프리) ───────────────────────────
-        // develop의 큐브 기반 진입(EnterVr/EnterVrRoutine)을 전혀 건드리지 않고,
-        // 트랙 중심 상공에 '보이지 않는 임시 큐브'를 두어 같은 경로로 진입한다.
-        // 사용자는 큐브를 만지지 않으며, DroneViewHandler.onEnterDrone(UnityEvent)에서 호출된다.
-        [SerializeField] Transform commandEntryCube;
+        // 큐브 진입과 동일한 BeginEnterVr 경로를 사용하되, 트랙 중심 상공을
+        // 진입 지점으로 전달한다. DroneViewHandler.onEnterDrone에서 호출된다.
 
         /// <summary>AIBridge droneView 명령 진입점 — 잡을 큐브 없이 트랙 상공으로 드론 진입.</summary>
         public void EnterVrFromCommand()
@@ -417,24 +411,33 @@ namespace F1XR.Drone
                 ? placementRoot.Find("Visual") ?? placementRoot
                 : null;
             if (visualRoot == null)
+            {
+                Debug.LogWarning("[VRDrone] 트랙 Visual이 없어 드론 명령 진입을 건너뜀.", this);
                 return;
+            }
 
-            Transform cube = EnsureCommandEntryCube();
-            cube.position = placementRoot.TransformPoint(GetDefaultEntryLocal());
-            cube.gameObject.SetActive(true);
-
-            EnterVr(cube);
+            BeginEnterVr(GetDefaultEntryLocal(), null);
         }
 
-        Transform EnsureCommandEntryCube()
+        void BeginEnterVr(Vector3 entryLocal, Transform sourceCube)
         {
-            if (commandEntryCube == null)
+            if (isVrActive || isTransitioning || trackPlacer == null ||
+                !trackPlacer.HasPlacement)
             {
-                var go = new GameObject("CommandEntryCube (AI)");
-                go.transform.SetParent(transform, false);
-                commandEntryCube = go.transform;
+                return;
             }
-            return commandEntryCube;
+
+            placementRoot = trackPlacer.PlacementTransform;
+            visualRoot = placementRoot != null
+                ? placementRoot.Find("Visual") ?? placementRoot
+                : null;
+            plateRenderersScanned = false;
+            if (visualRoot == null)
+                return;
+
+            entryPointLocal = entryLocal;
+            isTransitioning = true;
+            transitionRoutine = StartCoroutine(EnterVrRoutine(sourceCube));
         }
 
         Vector3 GetDefaultEntryLocal()
@@ -498,16 +501,12 @@ namespace F1XR.Drone
 
         IEnumerator EnterVrRoutine(Transform cubeTransform)
         {
-            // The chosen spot, in the map's own coordinates. Held for the whole transition:
-            // the map is being scaled underneath it, so the world position it corresponds to
-            // changes, and only the local one stays meaningful.
-            entryPointLocal = placementRoot.InverseTransformPoint(cubeTransform.position);
-
             SaveMrState();
             LockTrackInteraction();
 
             hiddenCube = cubeTransform;
-            hiddenCube.gameObject.SetActive(false);
+            if (hiddenCube != null)
+                hiddenCube.gameObject.SetActive(false);
 
             Debug.Log(
                 $"[DroneTransition][EnterStart] entryLocal={entryPointLocal} " +

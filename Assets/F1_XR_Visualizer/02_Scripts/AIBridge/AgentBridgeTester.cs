@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 using TMPro;
 using F1XR.AIBridge.Voice;
 
@@ -232,7 +234,7 @@ namespace F1XR.AIBridge
                 typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGO.transform.SetParent(transform, false);
             var canvas = canvasGO.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            ConfigureCanvas(canvas, canvasGO);
             canvas.sortingOrder = 1000;
             var scaler = canvasGO.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -263,30 +265,64 @@ namespace F1XR.AIBridge
             BuildPanelChrome(panel);
         }
 
+        void ConfigureCanvas(Canvas canvas, GameObject canvasGO)
+        {
+            Camera viewCamera = Camera.main;
+            if (!HasRunningXrDisplay() || viewCamera == null)
+            {
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                return;
+            }
+
+            // Screen-space camera preserves the Editor HUD anchors while also
+            // rendering the canvas through the Quest stereo camera.
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = viewCamera;
+            canvas.planeDistance = 1.25f;
+            canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
+        }
+
+        static bool HasRunningXrDisplay()
+        {
+            var displays = new List<XRDisplaySubsystem>();
+            SubsystemManager.GetSubsystems(displays);
+            for (int i = 0; i < displays.Count; i++)
+            {
+                if (displays[i] != null && displays[i].running)
+                    return true;
+            }
+
+            return Application.platform == RuntimePlatform.Android;
+        }
+
         void BuildHeader(Transform parent)
         {
             var header = NewRect("RadioHeader", parent);
             Bg(header.gameObject, new Color(1f, 1f, 1f, 0.025f));
             SetHeight(header.gameObject, HeaderHeight);
 
-            var name = Text("RaumDeuter", header, "RaumDeuter", 31, FontStyles.Italic | FontStyles.Bold, TextAlignmentOptions.Left);
+            // Keep the two-part radio wordmark on one shared right edge.  Using
+            // individual left offsets made the second line drift as the font or
+            // resolution changed.
+            var name = Text("RaumDeuter", header, "RaumDeuter", 31, FontStyles.Italic | FontStyles.Bold, TextAlignmentOptions.Right);
             name.color = accent;
             name.enableWordWrapping = false;
             name.overflowMode = TextOverflowModes.Ellipsis;
-            Place(name.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(18, -5), new Vector2(260, 40));
+            Place(name.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-16, -5), new Vector2(360, 40));
 
-            var radio = Text("Radio", header, "RADIO", 33, FontStyles.Italic | FontStyles.Bold, TextAlignmentOptions.Left);
+            var radio = Text("Radio", header, "RADIO", 33, FontStyles.Italic | FontStyles.Bold, TextAlignmentOptions.Right);
             radio.color = Color.white;
             radio.enableWordWrapping = false;
-            Place(radio.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(176, -44), new Vector2(150, 38));
+            radio.overflowMode = TextOverflowModes.Ellipsis;
+            Place(radio.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-16, -44), new Vector2(360, 38));
 
             _statusText = Text("Status", header, "AGENT READY", 10, FontStyles.Bold, TextAlignmentOptions.Right);
             _statusText.color = new Color(1f, 1f, 1f, 0.72f);
-            Place(_statusText.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, -14), new Vector2(112, 18));
+            Place(_statusText.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, -84), new Vector2(112, 18));
 
             var dot = NewRect("StatusDot", header);
             _statusDot = Bg(dot.gameObject, new Color(1f, 1f, 1f, 0.28f));
-            Place(dot, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-126, -18), new Vector2(8, 8));
+            Place(dot, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-126, -88), new Vector2(8, 8));
 
             BuildWaveform(header);
             BuildTransport(header);
