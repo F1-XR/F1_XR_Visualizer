@@ -19,3 +19,11 @@ MonoBehaviour:
   launchClip: {fileID: 8300000, guid: 33d0e5a9b73c2dc4386deff4a4cbf263, type: 3}
   tyreVisualPrefab: {fileID: 7728056378956526327, guid: ba777380f8679924989895475d221c37, type: 3}
   displayFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+  pitCrewPrefab: {fileID: 1829216968837268331, guid: 1cf5dea4b3f451049bb606f1ce701656, type: 3}
+  choreographyBaseController: {fileID: 9100000, guid: 0d596734953ddc349928db331c05b7c8, type: 2}
+  wheelGunnerFull: {fileID: 8993902097722301239, guid: bfd0038285bbb1241866f012c7e3618b, type: 3}
+  wheelOffFullL: {fileID: 8993902097722301239, guid: ecf266f191797f543ad9d3fe5ca3fdb5, type: 3}
+  wheelOnFullL: {fileID: 8993902097722301239, guid: 6f0a200a98b2e0f47b5c48c788ca2d44, type: 3}
+  frontJackFullL: {fileID: 8993902097722301239, guid: 74eef150a2898974193672bb7ab14de2, type: 3}
+  rearJackFullR: {fileID: 8993902097722301239, guid: 0af686b6f6821e1469114bff29a562b2, type: 3}
+  pitSignalFullR: {fileID: 8993902097722301239, guid: 0f1ad8566bd10f34aa7c6e13dc3cf9ae, type: 3}

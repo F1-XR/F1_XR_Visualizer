@@ -10,6 +10,7 @@ namespace F1XR.Bootstrap
     public sealed class BootstrapLoader : MonoBehaviour
     {
         const string DroneHostScenePrefix = "SessionSpace";
+        const string FitinSceneName = "SessionSpace_fitin";
 
         [SerializeField] string initialSceneName = "HomeSpace";
         [SerializeField] string vrDroneSceneName = "VRDroneSpace";
@@ -118,14 +119,22 @@ namespace F1XR.Bootstrap
 
         bool IsDroneHostScene(string sceneName)
         {
-            return sceneName.StartsWith(
+            return !string.Equals(
+                    sceneName,
+                    FitinSceneName,
+                    StringComparison.Ordinal) &&
+                sceneName.StartsWith(
                 DroneHostScenePrefix,
                 StringComparison.Ordinal);
         }
 
         static bool IsDirectPlayHostScene(string sceneName)
         {
-            return sceneName.StartsWith(
+            return !string.Equals(
+                    sceneName,
+                    FitinSceneName,
+                    StringComparison.Ordinal) &&
+                sceneName.StartsWith(
                 DroneHostScenePrefix,
                 StringComparison.Ordinal);
         }

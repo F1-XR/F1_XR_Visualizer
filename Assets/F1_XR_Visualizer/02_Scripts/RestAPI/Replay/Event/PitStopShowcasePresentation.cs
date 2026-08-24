@@ -21,17 +21,7 @@ namespace F1XR.RestAPI.Replay
         private readonly List<Vector3> crewWaitingPositions = new();
         private readonly List<Vector3> crewServicePositions = new();
         private readonly List<GameObject> wheelGuns = new();
-        private readonly List<Renderer> wheelZoneRenderers = new();
-        private readonly MaterialPropertyBlock presentationProperties =
-            new();
-
         private GameObject root;
-        private GameObject serviceBeacon;
-        private GameObject stopTarget;
-        private GameObject releaseSweep;
-        private Renderer serviceBeaconRenderer;
-        private Renderer releaseSweepRenderer;
-        private Renderer teamHeaderRenderer;
         private TextMeshPro phaseText;
         private TextMeshPro timerText;
         private AudioSource wheelGunAudio;
@@ -40,6 +30,7 @@ namespace F1XR.RestAPI.Replay
         private AudioClip serviceClunkClip;
         private AudioClip launchClip;
         private PitStopSequence sequence;
+        private PitStopFirstMilestoneChoreography firstMilestoneChoreography;
         private Color teamColor;
         private float carLength;
         private float lastReplayTime = float.NaN;
@@ -49,7 +40,11 @@ namespace F1XR.RestAPI.Replay
         private int displayedTimerTick = int.MinValue;
         private bool displayedReconstructed;
         private bool displayedDriveThrough;
+        private bool displayedReleaseReady;
         private bool displayCacheValid;
+#if UNITY_EDITOR
+        private float firstMilestoneCalibrationTime = float.NaN;
+#endif
 
         private readonly struct PitBoxSpec
         {
@@ -102,7 +97,6 @@ namespace F1XR.RestAPI.Replay
             launchClip = assetProfile != null
                 ? assetProfile.LaunchClip
                 : null;
-            Color dark = new(0.025f, 0.03f, 0.04f, 1f);
             Color floor = new(0.075f, 0.08f, 0.09f, 1f);
             float vehicleGroundOffset = 0f;
             if (vehicle != null &&
@@ -123,77 +117,29 @@ namespace F1XR.RestAPI.Replay
             CreateEnvironmentModules(
                 carLength,
                 environmentProfile,
-                floor,
-                dark,
-                teamColor);
-            GameObject header = CreateBox(
-                "TeamHeader",
-                root.transform,
-                new Vector3(carLength * 0.99f, carLength * 0.78f, 0f),
-                new Vector3(carLength * 0.04f, carLength * 0.06f, carLength * 3.8f),
-                teamColor);
-            teamHeaderRenderer = header.GetComponent<Renderer>();
-
-            float line = carLength * 0.025f;
-            CreateBox(
-                "BoxLeftLine",
-                root.transform,
-                new Vector3(-carLength * 0.48f, line, 0f),
-                new Vector3(line, line, carLength * 1.55f),
-                teamColor);
-            CreateBox(
-                "BoxRightLine",
-                root.transform,
-                new Vector3(carLength * 0.48f, line, 0f),
-                new Vector3(line, line, carLength * 1.55f),
-                teamColor);
-            CreateBox(
-                "BoxFrontLine",
-                root.transform,
-                new Vector3(0f, line, carLength * 0.76f),
-                new Vector3(carLength, line, line),
-                teamColor);
-            CreateBox(
-                "BoxRearLine",
-                root.transform,
-                new Vector3(0f, line, -carLength * 0.76f),
-                new Vector3(carLength, line, line),
-                teamColor);
-
-            CreateStopTarget(carLength, teamColor);
-            CreateCrew(carLength, teamColor, wheelGunPrefab);
+                floor);
+            PitStopFirstMilestoneChoreography choreography = new();
+            if (choreography.TryBuild(
+                    root.transform,
+                    vehicle,
+                    carLength,
+                    assetProfile))
+            {
+                firstMilestoneChoreography = choreography;
+            }
+            else
+            {
+                choreography.Clear();
+                CreateCrew(carLength, teamColor, wheelGunPrefab);
+                Debug.LogWarning(
+                    "[PitChoreography] First milestone assets or FL_Tire binding are unavailable; using the existing fallback crew presentation.");
+            }
             CreateSign(
                 carLength,
-                driver,
-                replayEvent,
                 teamColor,
                 assetProfile != null
                     ? assetProfile.DisplayFont
                     : null);
-
-            serviceBeacon = CreatePrimitive(
-                PrimitiveType.Sphere,
-                "ServiceBeacon",
-                root.transform,
-                new Vector3(
-                    carLength * 0.88f,
-                    carLength * 0.72f,
-                    carLength * 1.45f),
-                Vector3.one * carLength * 0.13f,
-                teamColor);
-            serviceBeaconRenderer =
-                serviceBeacon.GetComponent<Renderer>();
-            serviceBeacon.SetActive(false);
-
-            releaseSweep = CreateBox(
-                "PitReleaseSweep",
-                root.transform,
-                new Vector3(0f, line * 1.4f, -carLength * 0.72f),
-                new Vector3(carLength * 1.32f, line * 0.7f, line * 2.2f),
-                new Color(0.24f, 1f, 0.42f, 1f));
-            releaseSweepRenderer =
-                releaseSweep.GetComponent<Renderer>();
-            releaseSweep.SetActive(false);
 
             if (wheelGunClip != null)
             {
@@ -272,6 +218,33 @@ namespace F1XR.RestAPI.Replay
                 replayTime,
                 phase);
 
+#if UNITY_EDITOR
+            if (float.IsFinite(firstMilestoneCalibrationTime))
+            {
+                firstMilestoneChoreography?.ApplyChoreographyTime(
+                    firstMilestoneCalibrationTime);
+            }
+            else if (firstMilestoneStaticCalibrationPose)
+            {
+                firstMilestoneChoreography?
+                    .ApplyStaticServiceComposition();
+            }
+            else
+#endif
+            {
+                firstMilestoneChoreography?.Apply(
+                    replayTime,
+                    sequence);
+            }
+            bool releaseReady = firstMilestoneChoreography == null ||
+                firstMilestoneChoreography.ReleaseReady;
+            float serviceCueTime = firstMilestoneChoreography != null
+                ? PitStopFirstMilestoneChoreography.ResolveReplayStart(sequence)
+                : sequence.ServiceStartTime;
+            float releaseCueTime = firstMilestoneChoreography != null
+                ? PitStopFirstMilestoneChoreography.ResolveReplayEnd(sequence)
+                : sequence.ServiceEndTime;
+
             for (int i = 0; i < crew.Count; i++)
             {
                 if (crew[i] == null)
@@ -294,22 +267,25 @@ namespace F1XR.RestAPI.Replay
 
             bool servicing =
                 !sequence.IsDriveThrough &&
-                phase == PitStopPhase.Service;
+                (firstMilestoneChoreography != null
+                    ? replayTime >= serviceCueTime && !releaseReady
+                    : phase == PitStopPhase.Service);
             for (int i = 0; i < wheelGuns.Count; i++)
             {
                 if (wheelGuns[i] != null)
                     wheelGuns[i].SetActive(servicing);
             }
-            if (serviceBeacon != null)
-                serviceBeacon.SetActive(servicing);
-
-            UpdateWheelZones(state);
-            UpdateBroadcastDisplay(state);
-            UpdateReleaseEffects(state);
+            UpdateBroadcastDisplay(
+                state,
+                releaseReady,
+                replayTime,
+                firstMilestoneChoreography != null);
             UpdateTransitionAudio(
                 replayTime,
                 playing,
-                timelineDiscontinuity);
+                timelineDiscontinuity,
+                serviceCueTime,
+                releaseCueTime);
 
             ApplyAudio(
                 replayTime,
@@ -322,6 +298,8 @@ namespace F1XR.RestAPI.Replay
 
         public void Clear()
         {
+            firstMilestoneChoreography?.Clear();
+            firstMilestoneChoreography = null;
             if (wheelGunAudio != null)
                 wheelGunAudio.Stop();
             if (transitionAudio != null)
@@ -331,12 +309,6 @@ namespace F1XR.RestAPI.Replay
             if (root != null)
                 Object.Destroy(root);
             root = null;
-            serviceBeacon = null;
-            stopTarget = null;
-            releaseSweep = null;
-            serviceBeaconRenderer = null;
-            releaseSweepRenderer = null;
-            teamHeaderRenderer = null;
             phaseText = null;
             timerText = null;
             suspensionSettleClip = null;
@@ -351,12 +323,15 @@ namespace F1XR.RestAPI.Replay
             displayedTimerTick = int.MinValue;
             displayedReconstructed = false;
             displayedDriveThrough = false;
+            displayedReleaseReady = false;
             displayCacheValid = false;
             crew.Clear();
             crewWaitingPositions.Clear();
             crewServicePositions.Clear();
             wheelGuns.Clear();
-            wheelZoneRenderers.Clear();
+#if UNITY_EDITOR
+            firstMilestoneCalibrationTime = float.NaN;
+#endif
             for (int i = 0; i < materials.Count; i++)
             {
                 if (materials[i] != null)
@@ -472,49 +447,15 @@ namespace F1XR.RestAPI.Replay
 
         private void CreateSign(
             float carLength,
-            DriverInfoDto driver,
-            ReplayEventDto replayEvent,
             Color teamColor,
             TMP_FontAsset displayFont)
         {
-            GameObject sign = new GameObject(
-                "PitBoxSign",
-                typeof(TextMeshPro));
-            sign.transform.SetParent(root.transform, false);
-            sign.transform.localPosition = new Vector3(
-                carLength * 0.94f,
-                carLength * 0.48f,
-                0f);
-            sign.transform.localRotation =
-                Quaternion.LookRotation(Vector3.right, Vector3.up);
-            sign.transform.localScale = Vector3.one * carLength * 0.08f;
-            TextMeshPro text = sign.GetComponent<TextMeshPro>();
-            if (displayFont != null)
-                text.font = displayFont;
-            string team = driver != null &&
-                          !string.IsNullOrWhiteSpace(driver.teamName)
-                ? driver.teamName
-                : "PIT BOX";
-            string name = driver != null &&
-                          !string.IsNullOrWhiteSpace(driver.nameAcronym)
-                ? driver.nameAcronym
-                : replayEvent.driverNumbers[0].ToString();
-            text.text = $"{team}\n{name}  LAP {replayEvent.lapNumber}";
-            text.isRightToLeftText = false;
-            text.alignment = TextAlignmentOptions.Center;
-            text.color = teamColor;
-            text.fontSize = 5f;
-            text.enableAutoSizing = false;
-            text.rectTransform.sizeDelta = new Vector2(12f, 4f);
-            text.renderer.shadowCastingMode = ShadowCastingMode.Off;
-            text.renderer.receiveShadows = false;
-
             phaseText = CreateDisplayText(
                 "PitPhaseDisplay",
                 new Vector3(
                     carLength * 0.93f,
-                    carLength * 0.82f,
-                    carLength * 0.72f),
+                    carLength * 0.46f,
+                    carLength * 0.66f),
                 carLength,
                 displayFont,
                 TextAlignmentOptions.Center,
@@ -523,54 +464,12 @@ namespace F1XR.RestAPI.Replay
                 "PitServiceTimer",
                 new Vector3(
                     carLength * 0.93f,
-                    carLength * 0.82f,
-                    -carLength * 0.72f),
+                    carLength * 0.46f,
+                    -carLength * 0.66f),
                 carLength,
                 displayFont,
                 TextAlignmentOptions.Center,
                 Color.white);
-        }
-
-        private void CreateStopTarget(
-            float vehicleLength,
-            Color accent)
-        {
-            stopTarget = new GameObject("PitStopTarget");
-            stopTarget.transform.SetParent(root.transform, false);
-
-            float line = vehicleLength * 0.018f;
-            CreateBox(
-                "TargetStopLine",
-                stopTarget.transform,
-                new Vector3(0f, line, vehicleLength * 0.61f),
-                new Vector3(vehicleLength * 1.12f, line, line),
-                Color.Lerp(accent, Color.white, 0.42f));
-
-            Vector3[] wheelPositions =
-            {
-                new(vehicleLength * 0.48f, line, vehicleLength * 0.42f),
-                new(vehicleLength * 0.48f, line, -vehicleLength * 0.42f),
-                new(-vehicleLength * 0.48f, line, vehicleLength * 0.42f),
-                new(-vehicleLength * 0.48f, line, -vehicleLength * 0.42f)
-            };
-            for (int i = 0; i < wheelPositions.Length; i++)
-            {
-                GameObject zone = CreatePrimitive(
-                    PrimitiveType.Cylinder,
-                    $"WheelServiceZone_{i + 1}",
-                    stopTarget.transform,
-                    wheelPositions[i],
-                    new Vector3(
-                        vehicleLength * 0.23f,
-                        line * 0.65f,
-                        vehicleLength * 0.23f),
-                    Color.Lerp(accent, Color.black, 0.2f));
-                if (zone.TryGetComponent(
-                        out Renderer zoneRenderer))
-                {
-                    wheelZoneRenderers.Add(zoneRenderer);
-                }
-            }
         }
 
         private TextMeshPro CreateDisplayText(
@@ -587,9 +486,9 @@ namespace F1XR.RestAPI.Replay
             display.transform.SetParent(root.transform, false);
             display.transform.localPosition = localPosition;
             display.transform.localRotation =
-                Quaternion.LookRotation(Vector3.left, Vector3.up);
+                Quaternion.LookRotation(Vector3.right, Vector3.up);
             display.transform.localScale =
-                Vector3.one * vehicleLength * 0.055f;
+                Vector3.one * vehicleLength * 0.045f;
             TextMeshPro text = display.GetComponent<TextMeshPro>();
             if (displayFont != null)
                 text.font = displayFont;
@@ -604,47 +503,39 @@ namespace F1XR.RestAPI.Replay
             return text;
         }
 
-        private void UpdateWheelZones(
-            PitStopPresentationState state)
-        {
-            if (stopTarget == null)
-                return;
-
-            stopTarget.SetActive(!state.IsDriveThrough);
-            if (state.IsDriveThrough)
-                return;
-
-            Color color = state.Phase switch
-            {
-                PitStopPhase.Approach =>
-                    Color.Lerp(teamColor, Color.black, 0.48f),
-                PitStopPhase.Brake =>
-                    Color.Lerp(teamColor, Color.white, state.PhaseProgress),
-                PitStopPhase.Service =>
-                    Color.Lerp(
-                        teamColor,
-                        Color.white,
-                        0.35f +
-                        0.35f * Mathf.Sin(
-                            state.ServiceProgress * Mathf.PI * 8f)),
-                PitStopPhase.Release =>
-                    Color.Lerp(
-                        Color.white,
-                        new Color(0.18f, 1f, 0.36f, 1f),
-                        state.PhaseProgress),
-                _ => new Color(0.08f, 0.48f, 0.16f, 1f)
-            };
-            for (int i = 0; i < wheelZoneRenderers.Count; i++)
-                SetRendererColor(wheelZoneRenderers[i], color);
-        }
-
         private void UpdateBroadcastDisplay(
-            PitStopPresentationState state)
+            PitStopPresentationState state,
+            bool releaseReady,
+            float replayTime,
+            bool choreographyActive)
         {
-            int timerTick = !state.IsDriveThrough &&
-                            state.Phase == PitStopPhase.Service
+            float displayedServiceTotal = choreographyActive
+                ? PitStopFirstMilestoneChoreography.ReleaseReadyTime
+                : state.ServiceTotalSeconds;
+            float choreographyStart = choreographyActive && sequence != null
+                ? PitStopFirstMilestoneChoreography.ResolveReplayStart(sequence)
+                : 0f;
+            float choreographyEnd = choreographyActive && sequence != null
+                ? PitStopFirstMilestoneChoreography.ResolveReplayEnd(sequence)
+                : 0f;
+            float displayedServiceElapsed = choreographyActive &&
+                                            sequence != null
+                ? Mathf.Clamp(
+                    (replayTime - choreographyStart) *
+                    (displayedServiceTotal /
+                     Mathf.Max(
+                         0.05f,
+                         choreographyEnd - choreographyStart)),
+                    0f,
+                    displayedServiceTotal)
+                : state.ServiceElapsedSeconds;
+            bool serviceTiming = !state.IsDriveThrough &&
+                (choreographyActive && sequence != null
+                    ? replayTime >= choreographyStart && !releaseReady
+                    : state.Phase == PitStopPhase.Service);
+            int timerTick = serviceTiming
                 ? Mathf.FloorToInt(
-                    state.ServiceElapsedSeconds *
+                    displayedServiceElapsed *
                     TimerUpdatesPerSecond + 0.0001f)
                 : 0;
             bool contentChanged =
@@ -652,11 +543,17 @@ namespace F1XR.RestAPI.Replay
                 displayedPhase != state.Phase ||
                 displayedTimerTick != timerTick ||
                 displayedReconstructed != state.IsReconstructed ||
-                displayedDriveThrough != state.IsDriveThrough;
+                displayedDriveThrough != state.IsDriveThrough ||
+                displayedReleaseReady != releaseReady;
 
             if (contentChanged && phaseText != null)
             {
-                phaseText.text = state.IsDriveThrough
+                phaseText.text = !state.IsDriveThrough &&
+                                 !releaseReady &&
+                                 (state.Phase == PitStopPhase.Release ||
+                                  state.Phase == PitStopPhase.Exit)
+                    ? "HOLD"
+                    : state.IsDriveThrough
                     ? state.Phase == PitStopPhase.Exit
                         ? "PIT LANE CLEAR"
                         : "DRIVE THROUGH"
@@ -668,9 +565,9 @@ namespace F1XR.RestAPI.Replay
                         PitStopPhase.Release => "RELEASE",
                         _ => "PIT STOP COMPLETE"
                     };
-                phaseText.color =
-                    state.Phase == PitStopPhase.Release ||
-                    state.Phase == PitStopPhase.Exit
+                phaseText.color = releaseReady &&
+                    (state.Phase == PitStopPhase.Release ||
+                     state.Phase == PitStopPhase.Exit)
                     ? new Color(0.22f, 1f, 0.4f, 1f)
                     : teamColor;
             }
@@ -682,6 +579,7 @@ namespace F1XR.RestAPI.Replay
                 displayedTimerTick = timerTick;
                 displayedReconstructed = state.IsReconstructed;
                 displayedDriveThrough = state.IsDriveThrough;
+                displayedReleaseReady = releaseReady;
                 return;
             }
 
@@ -699,23 +597,25 @@ namespace F1XR.RestAPI.Replay
             {
                 timerText.text = "STOP TARGET";
             }
-            else if (contentChanged && state.Phase == PitStopPhase.Service)
+            else if (contentChanged && serviceTiming)
             {
                 timerText.SetText(
                     "{0:0.000} s",
                     timerTick / TimerUpdatesPerSecond);
             }
-            else if (contentChanged && state.IsReconstructed)
+            else if (contentChanged &&
+                     state.IsReconstructed &&
+                     !choreographyActive)
             {
                 timerText.SetText(
                     "~{0:0.000} s  RECONSTRUCTED",
-                    state.ServiceTotalSeconds);
+                    displayedServiceTotal);
             }
             else if (contentChanged)
             {
                 timerText.SetText(
                     "{0:0.000} s",
-                    state.ServiceTotalSeconds);
+                    displayedServiceTotal);
             }
 
             if (contentChanged)
@@ -725,74 +625,49 @@ namespace F1XR.RestAPI.Replay
                 displayedTimerTick = timerTick;
                 displayedReconstructed = state.IsReconstructed;
                 displayedDriveThrough = state.IsDriveThrough;
+                displayedReleaseReady = releaseReady;
             }
         }
 
-        private void UpdateReleaseEffects(
-            PitStopPresentationState state)
+#if UNITY_EDITOR
+        private bool firstMilestoneStaticCalibrationPose;
+
+        public bool SetFirstMilestoneCalibrationTime(float time)
         {
-            bool releasing =
-                !state.IsDriveThrough &&
-                (state.Phase == PitStopPhase.Release ||
-                 state.Phase == PitStopPhase.Exit);
-            if (releaseSweep != null)
-            {
-                releaseSweep.SetActive(releasing);
-                float progress = state.Phase == PitStopPhase.Release
-                    ? state.PhaseProgress
-                    : 1f;
-                releaseSweep.transform.localPosition = new Vector3(
-                    0f,
-                    carLength * 0.027f,
-                    Mathf.Lerp(
-                        -carLength * 0.72f,
-                        carLength * 1.42f,
-                        progress));
-                SetRendererColor(
-                    releaseSweepRenderer,
-                    Color.Lerp(
-                        Color.white,
-                        new Color(0.18f, 1f, 0.36f, 1f),
-                        Mathf.Clamp01(progress * 2f)));
-            }
+            if (firstMilestoneChoreography == null)
+                return false;
 
-            if (serviceBeacon != null && serviceBeacon.activeSelf)
-            {
-                float pulse = 1f +
-                    Mathf.Sin(state.ServiceProgress * Mathf.PI * 10f) *
-                    0.18f;
-                serviceBeacon.transform.localScale =
-                    Vector3.one * carLength * 0.13f * pulse;
-                SetRendererColor(
-                    serviceBeaconRenderer,
-                    Color.Lerp(teamColor, Color.white, pulse - 0.82f));
-            }
-
-            Color headerColor = teamColor;
-            if (state.Phase == PitStopPhase.Release)
-            {
-                float progress = state.PhaseProgress;
-                headerColor = progress < 0.18f
-                    ? Color.Lerp(
-                        Color.white,
-                        teamColor,
-                        progress / 0.18f)
-                    : Color.Lerp(
-                        teamColor,
-                        new Color(0.16f, 0.9f, 0.32f, 1f),
-                        (progress - 0.18f) / 0.82f);
-            }
-            else if (state.Phase == PitStopPhase.Exit)
-            {
-                headerColor = new Color(0.16f, 0.72f, 0.28f, 1f);
-            }
-            SetRendererColor(teamHeaderRenderer, headerColor);
+            firstMilestoneStaticCalibrationPose = false;
+            firstMilestoneCalibrationTime = Mathf.Clamp(
+                time,
+                0f,
+                PitStopFirstMilestoneChoreography.ReleaseReadyTime);
+            return true;
         }
+
+        public bool SetFirstMilestoneStaticCalibrationPose()
+        {
+            if (firstMilestoneChoreography == null)
+                return false;
+
+            firstMilestoneCalibrationTime = float.NaN;
+            firstMilestoneStaticCalibrationPose = true;
+            return true;
+        }
+
+        public void ClearFirstMilestoneCalibrationTime()
+        {
+            firstMilestoneCalibrationTime = float.NaN;
+            firstMilestoneStaticCalibrationPose = false;
+        }
+#endif
 
         private void UpdateTransitionAudio(
             float replayTime,
             bool playing,
-            bool timelineDiscontinuity)
+            bool timelineDiscontinuity,
+            float serviceCueTime,
+            float releaseCueTime)
         {
             if (transitionAudio == null ||
                 sequence == null ||
@@ -814,10 +689,10 @@ namespace F1XR.RestAPI.Replay
             if (CrossedForward(
                     lastReplayTime,
                     replayTime,
-                    sequence.ServiceStartTime))
+                    serviceCueTime))
             {
                 transitionAudio.Stop();
-                stopCueEndTime = sequence.ServiceStartTime +
+                stopCueEndTime = serviceCueTime +
                     StopCueDurationSeconds;
                 PlayLoadedOneShot(
                     transitionAudio,
@@ -838,7 +713,7 @@ namespace F1XR.RestAPI.Replay
             if (CrossedForward(
                     lastReplayTime,
                     replayTime,
-                    sequence.ServiceEndTime))
+                    releaseCueTime))
             {
                 transitionAudio.Stop();
                 stopCueEndTime = float.NaN;
@@ -852,8 +727,8 @@ namespace F1XR.RestAPI.Replay
                 LaunchCueDelaySeconds,
                 Mathf.Max(
                     0f,
-                    sequence.EndTime - sequence.ServiceEndTime) * 0.5f);
-            float launchTime = sequence.ServiceEndTime + launchDelay;
+                    sequence.EndTime - releaseCueTime) * 0.5f);
+            float launchTime = releaseCueTime + launchDelay;
             if (CrossedForward(
                     lastReplayTime,
                     replayTime,
@@ -890,20 +765,6 @@ namespace F1XR.RestAPI.Replay
             source.PlayOneShot(
                 clip,
                 Mathf.Clamp01(volumeScale));
-        }
-
-        private void SetRendererColor(
-            Renderer renderer,
-            Color color)
-        {
-            if (renderer == null)
-                return;
-
-            renderer.GetPropertyBlock(presentationProperties);
-            presentationProperties.SetColor("_BaseColor", color);
-            presentationProperties.SetColor("_Color", color);
-            renderer.SetPropertyBlock(presentationProperties);
-            presentationProperties.Clear();
         }
 
         private static void DisablePresentationPhysics(
@@ -989,9 +850,7 @@ namespace F1XR.RestAPI.Replay
         private void CreateEnvironmentModules(
             float carLength,
             PitEnvironmentProfile environmentProfile,
-            Color floorColor,
-            Color darkColor,
-            Color teamColor)
+            Color floorColor)
         {
             Transform trackModule = new GameObject(
                 "PitTrackModule").transform;
@@ -1028,14 +887,6 @@ namespace F1XR.RestAPI.Replay
                     environmentProfile.pitBuildingLocalPosition,
                     environmentProfile.pitBuildingLocalEulerAngles,
                     environmentProfile.pitBuildingLocalScale);
-            }
-            else
-            {
-                CreateFallbackPitBuilding(
-                    buildingModule,
-                    carLength,
-                    darkColor,
-                    teamColor);
             }
 
             if (environmentProfile != null &&
@@ -1205,7 +1056,6 @@ namespace F1XR.RestAPI.Replay
                 floorColor,
                 Color.white,
                 0.08f);
-            Color barrierColor = new(0.035f, 0.045f, 0.06f, 1f);
             float trackLength = carLength * 15f;
 
             CreateCombinedBoxes(
@@ -1241,42 +1091,6 @@ namespace F1XR.RestAPI.Replay
                             trackLength * 0.98f))
                 });
 
-            List<PitBoxSpec> barriers = new()
-            {
-                new(
-                    new Vector3(
-                        -carLength * 0.98f,
-                        carLength * 0.09f,
-                        0f),
-                    new Vector3(
-                        carLength * 0.08f,
-                        carLength * 0.18f,
-                        trackLength)),
-                new(
-                    new Vector3(
-                        carLength * 0.15f,
-                        carLength * 0.7f,
-                        -trackLength * 0.5f),
-                    new Vector3(
-                        carLength * 2.2f,
-                        carLength * 1.5f,
-                        carLength * 0.08f)),
-                new(
-                    new Vector3(
-                        carLength * 0.15f,
-                        carLength * 0.7f,
-                        trackLength * 0.5f),
-                    new Vector3(
-                        carLength * 2.2f,
-                        carLength * 1.5f,
-                        carLength * 0.08f))
-            };
-
-            CreateCombinedBoxes(
-                "PitTrackBarriers",
-                parent,
-                barrierColor,
-                barriers);
         }
 
         private void CreateFallbackPitBuilding(
@@ -1460,7 +1274,11 @@ namespace F1XR.RestAPI.Replay
             float offset = Mathf.Repeat(
                 Mathf.Max(
                     0f,
-                    replayTime - sequence.ServiceStartTime),
+                    replayTime -
+                    (firstMilestoneChoreography != null
+                        ? PitStopFirstMilestoneChoreography
+                            .ResolveReplayStart(sequence)
+                        : sequence.ServiceStartTime)),
                 wheelGunAudio.clip.length);
             if (!wheelGunAudio.isPlaying || timelineDiscontinuity)
             {

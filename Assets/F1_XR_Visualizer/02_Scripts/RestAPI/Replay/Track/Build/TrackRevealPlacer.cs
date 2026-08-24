@@ -162,6 +162,9 @@ namespace F1XR.RestAPI.Replay.Track.Build
             trackMapScale = mapScale > 0f ? mapScale : 1f;
             fitTrackMapToBounds = fitMapToBounds;
             trackMapTargetXZSize = mapTargetXZSize;
+            if (gameObject.scene.name == "SessionSpace_fitin")
+                return;
+
             ClearPreview();
             if (HasSavedPlacement && !SavedGeometryMatches())
                 ClearSavedPlacement();

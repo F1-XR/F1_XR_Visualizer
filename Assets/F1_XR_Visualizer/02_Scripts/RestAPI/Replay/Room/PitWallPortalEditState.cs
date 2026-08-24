@@ -34,6 +34,7 @@ namespace F1XR.RestAPI.Replay.Room
         private Snapshot undoSnapshot;
         private bool hasUndo;
         private bool eventsBound;
+        private bool freePlacement;
 
         public bool IsEditMode { get; private set; }
         public bool CanUndo => hasUndo;
@@ -48,7 +49,8 @@ namespace F1XR.RestAPI.Replay.Room
             XRGrabInteractable portalGrab,
             ScaleController portalScale,
             WorldGrabPolicy portalGrabPolicy,
-            BoxCollider portalCollider)
+            BoxCollider portalCollider,
+            bool allowFreePlacement)
         {
             owner = presentation;
             wall = wallFrame;
@@ -60,6 +62,7 @@ namespace F1XR.RestAPI.Replay.Room
             scaleController = portalScale;
             grabPolicy = portalGrabPolicy;
             editCollider = portalCollider;
+            freePlacement = allowFreePlacement;
             presentationLayer = gameObject.layer;
 
             Vector3 wallRight = wall.HorizontalAxis.normalized;
@@ -89,17 +92,19 @@ namespace F1XR.RestAPI.Replay.Room
                 maximumHorizontal - minimumHorizontal;
             float availableHeight =
                 maximumVertical - minimumVertical;
-            maximumScale = Mathf.Clamp(
-                Mathf.Min(
-                    availableWidth / Mathf.Max(0.001f, baseSize.x),
-                    availableHeight / Mathf.Max(0.001f, baseSize.y)),
-                MinimumPortalScale,
-                MaximumPortalScale);
+            maximumScale = freePlacement
+                ? MaximumPortalScale
+                : Mathf.Clamp(
+                    Mathf.Min(
+                        availableWidth / Mathf.Max(0.001f, baseSize.x),
+                        availableHeight / Mathf.Max(0.001f, baseSize.y)),
+                    MinimumPortalScale,
+                    MaximumPortalScale);
 
             BindEvents();
             hasUndo = false;
             SetEditMode(false);
-            ApplyConstrainedTransform();
+            ApplyEditedTransform();
         }
 
         public void SetEditMode(bool enabled)
@@ -108,6 +113,7 @@ namespace F1XR.RestAPI.Replay.Room
                 enabled = false;
 
             IsEditMode = enabled;
+            owner?.SetPitWallEditOutlineVisible(enabled);
             if (enabled)
             {
                 gameObject.layer = EditInteractionLayer;
@@ -132,7 +138,7 @@ namespace F1XR.RestAPI.Replay.Room
                     editCollider.enabled = false;
                 gameObject.layer = presentationLayer;
             }
-            ApplyConstrainedTransform();
+            ApplyEditedTransform();
         }
 
         public void Undo()
@@ -141,11 +147,13 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
 
             transform.position = undoSnapshot.Position;
-            transform.rotation = baseRotation;
+            transform.rotation = freePlacement
+                ? undoSnapshot.Rotation
+                : baseRotation;
             transform.localScale =
                 presentationLocalScale * undoSnapshot.Scale;
             hasUndo = false;
-            ApplyConstrainedTransform();
+            ApplyEditedTransform();
         }
 
         public void ResetToAutomatic()
@@ -154,7 +162,7 @@ namespace F1XR.RestAPI.Replay.Room
             transform.position = basePosition;
             transform.rotation = baseRotation;
             transform.localScale = presentationLocalScale;
-            ApplyConstrainedTransform();
+            ApplyEditedTransform();
         }
 
         internal void Release()
@@ -168,7 +176,7 @@ namespace F1XR.RestAPI.Replay.Room
         private void LateUpdate()
         {
             if (owner != null)
-                ApplyConstrainedTransform();
+                ApplyEditedTransform();
         }
 
         private void BindEvents()
@@ -214,19 +222,35 @@ namespace F1XR.RestAPI.Replay.Room
 
             undoSnapshot = new Snapshot(
                 transform.position,
+                transform.rotation,
                 ResolveUniformScale());
             hasUndo = true;
         }
 
-        private void ApplyConstrainedTransform()
+        private void ApplyEditedTransform()
         {
-            if (owner == null || !wall.IsValid)
+            if (owner == null)
                 return;
 
             float uniformScale = Mathf.Clamp(
                 ResolveUniformScale(),
                 MinimumPortalScale,
                 maximumScale);
+            if (freePlacement)
+            {
+                transform.localScale =
+                    presentationLocalScale * uniformScale;
+                UpdateColliderGeometry(uniformScale);
+                owner.UpdatePitWallEditedPortal(
+                    transform.position,
+                    transform.rotation,
+                    baseSize * uniformScale);
+                return;
+            }
+
+            if (!wall.IsValid)
+                return;
+
             float halfWidth = baseSize.x * uniformScale * 0.5f;
             float halfHeight = baseSize.y * uniformScale * 0.5f;
             Vector3 requestedOffset =
@@ -252,6 +276,7 @@ namespace F1XR.RestAPI.Replay.Room
             UpdateColliderGeometry(uniformScale);
             owner.UpdatePitWallEditedPortal(
                 transform.position,
+                baseRotation,
                 baseSize * uniformScale);
         }
 
@@ -310,13 +335,18 @@ namespace F1XR.RestAPI.Replay.Room
 
         private readonly struct Snapshot
         {
-            public Snapshot(Vector3 position, float scale)
+            public Snapshot(
+                Vector3 position,
+                Quaternion rotation,
+                float scale)
             {
                 Position = position;
+                Rotation = rotation;
                 Scale = scale;
             }
 
             public Vector3 Position { get; }
+            public Quaternion Rotation { get; }
             public float Scale { get; }
         }
     }
