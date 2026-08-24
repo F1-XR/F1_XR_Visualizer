@@ -1,30 +1,10 @@
 Shader "F1XR/SkyShellIntact"
 {
-    // The black of virtual space, as geometry rather than as a clear colour.
-    //
-    // Drawn in the Background queue with depth writes off, so it behaves exactly like a
-    // skybox: everything else in the scene paints over it no matter how far away that
-    // something actually is. That is the whole point. The shell is a twenty metre sphere
-    // around the viewer's head while the circuit around it is a kilometre across, so if this
-    // were ordinary opaque geometry the sphere would cut through the track and read as a
-    // curtain being drawn in front of the world - which is exactly what it did.
-    //
-    // Alpha is forced to 1. The camera clears to alpha 0 so the Meta passthrough underlay is
-    // live underneath the whole time; this surface is the only thing hiding the real room.
-    // Remove a piece of it and the room is simply there, with no state to change and no
-    // composition layer to bring back at the moment it is needed.
-    //
-    // Unlit on purpose. Intact, this must be indistinguishable from the flat background it
-    // replaces; a lit surface picks up ambient and a light direction and immediately reads as
-    // a large object surrounding the viewer.
     Properties
     {
-        // Plain Color, never [HDR]. An HDR colour property skips the gamma to linear
-        // conversion, while Camera.backgroundColor does not - so the same three numbers came
-        // out about thirteen times brighter here than in the clear they were copied from, and
-        // the sky read as navy against a near-black background instead of being invisible
-        // against it.
-        _BaseColor ("Base Color", Color) = (0.015, 0.02, 0.04, 1)
+        _BaseColor ("Fallback Color", Color) = (0.29, 0.37, 0.53, 1)
+        _SkyTex ("Baked Sky", CUBE) = "" {}
+        [Toggle] _UseSkyTex ("Use Baked Sky", Float) = 0
     }
 
     SubShader
@@ -40,8 +20,6 @@ Shader "F1XR/SkyShellIntact"
         {
             Name "SkyShellIntact"
 
-            // Off, so the track and everything else passes its own depth test against a
-            // cleared buffer and draws on top.
             ZWrite Off
             ZTest LEqual
             Cull Back
@@ -52,6 +30,7 @@ Shader "F1XR/SkyShellIntact"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
+            #pragma multi_compile_local _ _USESKYTEX_ON
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             struct Attributes
@@ -63,6 +42,9 @@ Shader "F1XR/SkyShellIntact"
             struct Varyings
             {
                 float4 positionHCS : SV_POSITION;
+#if defined(_USESKYTEX_ON)
+                float3 viewDirWS  : TEXCOORD0;
+#endif
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -70,12 +52,21 @@ Shader "F1XR/SkyShellIntact"
                 half4 _BaseColor;
             CBUFFER_END
 
+#if defined(_USESKYTEX_ON)
+            TEXTURECUBE(_SkyTex);
+            SAMPLER(sampler_SkyTex);
+#endif
+
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
                 UNITY_SETUP_INSTANCE_ID(IN);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
+#if defined(_USESKYTEX_ON)
+                float3 posWS = TransformObjectToWorld(IN.positionOS.xyz);
+                OUT.viewDirWS = posWS - _WorldSpaceCameraPos.xyz;
+#endif
                 return OUT;
             }
 
@@ -83,10 +74,13 @@ Shader "F1XR/SkyShellIntact"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                // Alpha 1, always. This is what keeps the real room hidden while the shell is
-                // whole, and dropping it to anything less lets passthrough bleed through the
-                // sky in the middle of the flight.
+#if defined(_USESKYTEX_ON)
+                float3 dir = normalize(IN.viewDirWS);
+                half4 sky = SAMPLE_TEXTURECUBE_LOD(_SkyTex, sampler_SkyTex, dir, 0);
+                return half4(sky.rgb, 1);
+#else
                 return half4(_BaseColor.rgb, 1);
+#endif
             }
             ENDHLSL
         }
