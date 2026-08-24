@@ -9,16 +9,17 @@ namespace F1XR.Editor
 {
     public sealed class PitStopFirstMilestoneCalibrationWindow : EditorWindow
     {
-        private const float ServiceDuration = 2.8f;
+        private const float ServiceDuration = 3.2f;
 
         private static readonly CalibrationFrame[] Frames =
         {
             new("Ready", 0f),
-            new("Gun / jack contact", 0.7f),
-            new("Wheel Off takes old tyre", 1.1f),
-            new("Old tyre clears hub", 1.5f),
-            new("Wheel On reaches hub", 1.68f),
-            new("Gunner tighten", 1.96f),
+            new("Gunner first contact", 0.4f),
+            new("Gunner clear / Wheel Off starts", 0.8f),
+            new("Wheel Off takes old tyre", 1.3f),
+            new("Old tyre clears hub / Wheel On starts", 1.7f),
+            new("Wheel On reaches hub", 2.35f),
+            new("Gunner final tighten", 2.7f),
             new("Crew clear", ServiceDuration),
         };
 
