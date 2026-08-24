@@ -1,12 +1,14 @@
+using System.Collections.Generic;
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 namespace F1XR.Showroom
 {
     /// <summary>
-    /// Grab/select the pull-tab collider to "pop" a beer can open:
+    /// Aim at the pull-tab collider and pull the trigger to "pop" a beer can open:
     /// the tab flips up at its hinge, a CO2 mist sprays, and a hiss plays.
     /// Lives on the CanTab child (its transform origin is the tab hinge).
     /// </summary>
@@ -41,6 +43,13 @@ namespace F1XR.Showroom
         [Tooltip("If true, selecting again re-closes the tab. Off = opens once.")]
         [SerializeField] bool toggle = true;
 
+        [Header("Input")]
+        [Tooltip("Pop on the trigger while the tab is hovered. Select stays on the grip scene-wide (world " +
+                 "grabs), so the trigger is read straight off the hovering interactor; grip must not pop " +
+                 "the can or grabbing it by the body would open it by accident.")]
+        [SerializeField] bool triggerWhileHovering = true;
+
+        readonly List<IXRHoverInteractor> hovering = new();
         XRSimpleInteractable interactable;
         Tween tween;
         Quaternion baseRot;
@@ -61,15 +70,47 @@ namespace F1XR.Showroom
             SetRevealed(false);
         }
 
-        void OnEnable() => interactable.selectEntered.AddListener(OnSelect);
+        void OnEnable()
+        {
+            interactable.hoverEntered.AddListener(OnHoverEntered);
+            interactable.hoverExited.AddListener(OnHoverExited);
+        }
 
         void OnDisable()
         {
-            interactable.selectEntered.RemoveListener(OnSelect);
+            interactable.hoverEntered.RemoveListener(OnHoverEntered);
+            interactable.hoverExited.RemoveListener(OnHoverExited);
+            hovering.Clear();
             tween?.Kill();
         }
 
-        void OnSelect(SelectEnterEventArgs _)
+        void Update()
+        {
+            if (!triggerWhileHovering || hovering.Count == 0)
+                return;
+
+            for (int i = 0; i < hovering.Count; i++)
+            {
+                // Hand-tracking interactors carry no button reader: they keep their pinch-select.
+                if (hovering[i] is XRBaseInputInteractor input &&
+                    input.activateInput != null &&
+                    input.activateInput.ReadWasPerformedThisFrame())
+                {
+                    Toggle();
+                    return;
+                }
+            }
+        }
+
+        void OnHoverEntered(HoverEnterEventArgs args)
+        {
+            if (!hovering.Contains(args.interactorObject))
+                hovering.Add(args.interactorObject);
+        }
+
+        void OnHoverExited(HoverExitEventArgs args) => hovering.Remove(args.interactorObject);
+
+        void Toggle()
         {
             if (opened && !toggle)
                 return;
