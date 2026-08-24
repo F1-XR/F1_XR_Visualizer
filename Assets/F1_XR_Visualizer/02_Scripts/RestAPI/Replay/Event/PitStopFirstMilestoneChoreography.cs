@@ -9,14 +9,22 @@ namespace F1XR.RestAPI.Replay
         private static readonly int BaseStateHash =
             Animator.StringToHash("Base Layer.AS_Wheel_Gunner_Idle");
 
-        internal const float ReleaseReadyTime = 2.8f;
+        internal const float ReleaseReadyTime = 3.2f;
         private const float FullScaleVehicleLengthMeters = 5.6f;
         private const float FullScaleCrewHeightMeters = 1.78f;
         private const float FallbackTyreDiameterMeters = 0.72f;
-        private const float WheelOffStartTime = 0.15f;
-        private const float WheelOffDuration = 2.25f;
-        private const float WheelOnStartTime = 0.1f;
-        private const float WheelOnDuration = 2.55f;
+        private const float JackDuration = 2.8f;
+        private const float GunnerLoosenEndTime = 0.8f;
+        private const float GunnerTightenStartTime = 2.35f;
+        private const float GunnerLoosenEndNormalized = 0.5f;
+        private const float WheelOffStartTime = 0.8f;
+        private const float WheelOffOwnershipTime = 1.3f;
+        private const float WheelOffClearTime = 1.7f;
+        private const float WheelOffEndTime = 2.25f;
+        private const float WheelOffClearNormalized = 0.7f;
+        private const float WheelOnStartTime = 1.7f;
+        private const float WheelOnHandoffTime = 2.35f;
+        private const float WheelOnEndTime = 3f;
         private const float SignalLeadTime = 0.3f;
         private const float SignalDuration = 3.1f;
         private const float GunnerContactNormalized = 0.25f;
@@ -480,22 +488,13 @@ namespace F1XR.RestAPI.Replay
 
             origin.gameObject.SetActive(true);
             time = Mathf.Clamp(time, 0f, ReleaseReadyTime);
-            float gunnerProgress = ResolveProgress(
-                time,
-                0f,
-                ReleaseReadyTime);
-            float wheelOffProgress = ResolveProgress(
-                time,
-                WheelOffStartTime,
-                WheelOffDuration);
-            float wheelOnProgress = ResolveProgress(
-                time,
-                WheelOnStartTime,
-                WheelOnDuration);
+            float gunnerProgress = ResolveGunnerProgress(time);
+            float wheelOffProgress = ResolveWheelOffProgress(time);
+            float wheelOnProgress = ResolveWheelOnProgress(time);
             float jackProgress = ResolveProgress(
                 time,
                 0f,
-                ReleaseReadyTime);
+                JackDuration);
             float signalProgress = ResolveProgress(
                 time,
                 -SignalLeadTime,
@@ -575,6 +574,102 @@ namespace F1XR.RestAPI.Replay
             return Mathf.Clamp01(
                 (time - startTime) /
                 Mathf.Max(0.001f, duration));
+        }
+
+        private static float ResolveGunnerProgress(float time)
+        {
+            if (time <= GunnerLoosenEndTime)
+            {
+                return RemapProgress(
+                    time,
+                    0f,
+                    GunnerLoosenEndTime,
+                    0f,
+                    GunnerLoosenEndNormalized);
+            }
+
+            if (time < GunnerTightenStartTime)
+                return GunnerLoosenEndNormalized;
+
+            return RemapProgress(
+                time,
+                GunnerTightenStartTime,
+                ReleaseReadyTime,
+                GunnerLoosenEndNormalized,
+                1f);
+        }
+
+        private static float ResolveWheelOffProgress(float time)
+        {
+            if (time <= WheelOffStartTime)
+                return 0f;
+
+            if (time <= WheelOffOwnershipTime)
+            {
+                return RemapProgress(
+                    time,
+                    WheelOffStartTime,
+                    WheelOffOwnershipTime,
+                    0f,
+                    WheelOffOwnershipNormalized);
+            }
+
+            if (time <= WheelOffClearTime)
+            {
+                return RemapProgress(
+                    time,
+                    WheelOffOwnershipTime,
+                    WheelOffClearTime,
+                    WheelOffOwnershipNormalized,
+                    WheelOffClearNormalized);
+            }
+
+            return RemapProgress(
+                time,
+                WheelOffClearTime,
+                WheelOffEndTime,
+                WheelOffClearNormalized,
+                1f);
+        }
+
+        private static float ResolveWheelOnProgress(float time)
+        {
+            if (time <= WheelOnStartTime)
+                return 0f;
+
+            if (time <= WheelOnHandoffTime)
+            {
+                return RemapProgress(
+                    time,
+                    WheelOnStartTime,
+                    WheelOnHandoffTime,
+                    0f,
+                    WheelOnHandoffNormalized);
+            }
+
+            return RemapProgress(
+                time,
+                WheelOnHandoffTime,
+                WheelOnEndTime,
+                WheelOnHandoffNormalized,
+                1f);
+        }
+
+        private static float RemapProgress(
+            float time,
+            float startTime,
+            float endTime,
+            float startProgress,
+            float endProgress)
+        {
+            float progress = Mathf.InverseLerp(
+                startTime,
+                endTime,
+                time);
+            return Mathf.Lerp(
+                startProgress,
+                endProgress,
+                progress);
         }
 
         public void Clear()
