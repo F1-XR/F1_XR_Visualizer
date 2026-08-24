@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace F1XR.Drone.SkyShell
 {
@@ -43,7 +45,7 @@ namespace F1XR.Drone.SkyShell
         [Tooltip("Exactly the VR background colour. Intact, the shell has to be the " +
             "background, not a large dark object in front of it - and it is drawn unlit for " +
             "the same reason, so no light direction or ambient term can give it away.")]
-        [SerializeField] Color shellColor = new(0.015f, 0.02f, 0.04f, 1f);
+        [SerializeField] Color shellColor = new(0.29f, 0.37f, 0.53f, 1f);
 
         [Header("Fracture test")]
         [Tooltip("Breaks the shell by itself a few seconds after arriving, with no input at " +
@@ -99,6 +101,12 @@ namespace F1XR.Drone.SkyShell
         Material intactMaterial;
         Material transitionMaterial;
         bool transitionDepthMode;
+        const int BakeResolution = 256;
+
+        RenderTexture bakedSkyCubemap;
+        Material pendingSkyboxSource;
+        Coroutine bakeRoutine;
+        bool skyBaked;
         Light shellLight;
 
         F1XR.Experience.PassthroughTransitionController passthrough;
@@ -188,11 +196,14 @@ namespace F1XR.Drone.SkyShell
         /// </summary>
         public void Prepare(
             Transform viewerTransform,
-            F1XR.Experience.PassthroughTransitionController passthroughController = null)
+            F1XR.Experience.PassthroughTransitionController passthroughController = null,
+            Material skyboxSource = null)
         {
             Cleanup();
 
             passthrough = passthroughController;
+            if (skyboxSource != null)
+                SetSkyboxSource(skyboxSource);
 
             Material material = transitionDepthMode
                 ? ResolveTransitionMaterial()
@@ -798,6 +809,13 @@ namespace F1XR.Drone.SkyShell
             DestroySafely(detachedMaterial);
             DestroySafely(alphaSealMaterial);
             DestroySafely(revealMaterial);
+            if (bakedSkyCubemap != null)
+            {
+                bakedSkyCubemap.Release();
+                DestroySafely(bakedSkyCubemap);
+                bakedSkyCubemap = null;
+                skyBaked = false;
+            }
         }
 
         // ------------------------------------------------------------------ helpers
@@ -824,7 +842,238 @@ namespace F1XR.Drone.SkyShell
 
             intactMaterial = new Material(shader) { name = "SkyShell Intact (Runtime)" };
             intactMaterial.SetColor("_BaseColor", shellColor);
+            BakeSkybox(intactMaterial);
             return intactMaterial;
+        }
+
+        /// <summary>
+        /// Which skybox the intact shell should look like. Must be handed over before the
+        /// shell materials are first resolved - SetTransitionDepthMode resolves them, and it
+        /// runs before Prepare on the way into VR, so relying on Prepare's argument alone left
+        /// the bake reading a skybox that was still the MR one.
+        /// </summary>
+        public void SetSkyboxSource(Material skyboxSource)
+        {
+            if (skyboxSource == null || (pendingSkyboxSource == skyboxSource && skyBaked))
+                return;
+
+            pendingSkyboxSource = skyboxSource;
+            TryStartBake();
+        }
+
+        /// <summary>
+        /// Picks the bake up if it could not start when the sky was first handed over - the
+        /// component may still have been switched off then, and a bake that waits until the
+        /// transition costs six camera renders on the very frame the room starts breaking.
+        /// </summary>
+        void OnEnable() => TryStartBake();
+
+        void TryStartBake()
+        {
+            if (skyBaked || bakeRoutine != null ||
+                pendingSkyboxSource == null || !isActiveAndEnabled)
+            {
+                return;
+            }
+
+            bakeRoutine = StartCoroutine(BakeSkyRoutine());
+        }
+
+        /// <summary>
+        /// Renders the VR skybox into a cubemap once, so the intact shell can sample the real
+        /// sky by view direction instead of standing in for it with one flat colour. A flat
+        /// colour can never match a gradient, and the mismatch is exactly the pop that shows
+        /// up when the camera finally switches to the skybox at the end of the entry.
+        ///
+        /// A coroutine only so it can wait a frame for the pipeline to be up. The render
+        /// itself is a render request, which URP runs on the spot.
+        ///
+        /// Two other routes were tried and neither draws anything under URP. Camera
+        /// RenderToCubemap is the legacy per-face Camera.Render path, which the scriptable
+        /// pipeline never runs: it reports success and leaves six faces of the camera's clear
+        /// colour, Unity's default editor blue. A realtime reflection probe refresh never
+        /// reported itself finished at all and left the cube empty.
+        /// </summary>
+        IEnumerator BakeSkyRoutine()
+        {
+            // One frame, so the render pipeline is alive before a request is handed to it.
+            yield return null;
+
+            Material skyMat = pendingSkyboxSource;
+            if (skyMat == null)
+            {
+                bakeRoutine = null;
+                yield break;
+            }
+
+            if (bakedSkyCubemap == null)
+            {
+                // Built from a descriptor rather than the plain constructor. The render graph
+                // reads depthStencilFormat, and neither the constructor's depth-bits argument
+                // nor assigning the property afterwards puts anything there - it stays None,
+                // the target is refused, and the cube comes back with the sky half drawn.
+                var descriptor = new RenderTextureDescriptor(BakeResolution, BakeResolution)
+                {
+                    dimension = TextureDimension.Cube,
+
+                    // UNorm, not SRGB. The pipeline writes its own linear colour straight into
+                    // this target, so flagging it sRGB makes the sampler decode values that
+                    // were never encoded - the sky came out roughly a stop and a half dark,
+                    // a flat navy against the real skybox's blue.
+                    graphicsFormat =
+                        UnityEngine.Experimental.Rendering.GraphicsFormat.R8G8B8A8_UNorm,
+                    depthStencilFormat =
+                        UnityEngine.Experimental.Rendering.GraphicsFormat.D32_SFloat,
+                    msaaSamples = 1,
+                    volumeDepth = 1,
+                    useMipMap = false,
+                    autoGenerateMips = false
+                };
+
+                bakedSkyCubemap = new RenderTexture(descriptor)
+                {
+                    name = "SkyShell Baked Sky"
+                };
+                bakedSkyCubemap.Create();
+            }
+
+            var tempObject = new GameObject("SkyShellBake")
+            {
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            // Parked far above the scene rather than culled down to nothing. A culling mask of
+            // zero does keep the geometry out, but it takes the lights with it: the procedural
+            // skybox reads the main light for its sun direction and its scattering, and with no
+            // light set up the horizon came out green. Everything is in the mask here and the
+            // far plane is a hundred metres, so the circuit and the ground are simply too far
+            // away to draw, while the directional light - which is never frustum culled - is
+            // present exactly as it is for the real camera.
+            //
+            // A per-camera Skybox component rather than RenderSettings, so the global sky -
+            // still the MR one at this point - is never touched.
+            tempObject.transform.position = new Vector3(0f, 100000f, 0f);
+
+            Camera camera = tempObject.AddComponent<Camera>();
+            camera.enabled = false;
+            camera.clearFlags = CameraClearFlags.Skybox;
+            camera.cullingMask = ~0;
+            camera.fieldOfView = 90f;
+            camera.aspect = 1f;
+            camera.nearClipPlane = 0.1f;
+            camera.farClipPlane = 100f;
+            tempObject.AddComponent<Skybox>().material = skyMat;
+
+            Debug.Log($"[SkyShell][Bake] starting at t={Time.timeSinceLevelLoad:F2}s.", this);
+
+            var request = new UniversalRenderPipeline.SingleCameraRequest();
+            bool supported = RenderPipeline.SupportsRenderRequest(camera, request);
+
+            if (supported)
+            {
+                // One face per frame. Six camera renders in a single frame is a visible hitch
+                // - a click, felt rather than seen - and if the bake ever has to fall back to
+                // running at the transition, that hitch lands on the frame the room starts
+                // coming apart.
+                for (int face = 0; face < 6; face++)
+                {
+                    tempObject.transform.rotation = FaceRotation((CubemapFace)face);
+                    request.destination = bakedSkyCubemap;
+                    request.mipLevel = 0;
+                    request.slice = 0;
+                    request.face = (CubemapFace)face;
+                    RenderPipeline.SubmitRenderRequest(camera, request);
+
+                    yield return null;
+                }
+            }
+
+            DestroySafely(tempObject);
+
+            if (!supported)
+            {
+                bakeRoutine = null;
+                Debug.LogWarning(
+                    "[SkyShell][Bake] The pipeline refused a single-camera render request, so " +
+                    "the shell stays on its flat colour.", this);
+                yield break;
+            }
+
+            skyBaked = true;
+            ApplyBakedSky(intactMaterial);
+            ApplyBakedSky(transitionMaterial);
+            bakeRoutine = null;
+
+            Debug.Log(
+                $"[SkyShell][Bake] sky baked from {skyMat.name} ({BakeResolution}px cube) " +
+                $"+Y={SampleBakedFace(CubemapFace.PositiveY)} " +
+                $"-Y={SampleBakedFace(CubemapFace.NegativeY)} " +
+                $"+X={SampleBakedFace(CubemapFace.PositiveX)} " +
+                $"-X={SampleBakedFace(CubemapFace.NegativeX)} " +
+                $"+Z={SampleBakedFace(CubemapFace.PositiveZ)} " +
+                $"-Z={SampleBakedFace(CubemapFace.NegativeZ)}", this);
+        }
+
+        /// <summary>Where the bake camera has to look to fill one cubemap face.</summary>
+        static Quaternion FaceRotation(CubemapFace face) => face switch
+        {
+            CubemapFace.PositiveX => Quaternion.LookRotation(Vector3.right, Vector3.down),
+            CubemapFace.NegativeX => Quaternion.LookRotation(Vector3.left, Vector3.down),
+            CubemapFace.PositiveY => Quaternion.LookRotation(Vector3.up, Vector3.forward),
+            CubemapFace.NegativeY => Quaternion.LookRotation(Vector3.down, Vector3.back),
+            CubemapFace.PositiveZ => Quaternion.LookRotation(Vector3.forward, Vector3.down),
+            _ => Quaternion.LookRotation(Vector3.back, Vector3.down)
+        };
+
+        /// <summary>
+        /// Binds whatever the bake has produced so far. Before it finishes this does nothing
+        /// and the material keeps its flat fallback, which is only ever on screen behind an
+        /// intact room.
+        /// </summary>
+        void BakeSkybox(Material target)
+        {
+            if (skyBaked)
+            {
+                // Copying a material does not carry shader keywords across, so a transition
+                // material cloned from a baked intact one still renders the flat fallback
+                // until this runs on it.
+                ApplyBakedSky(target);
+                return;
+            }
+
+            if (bakeRoutine == null && pendingSkyboxSource != null && isActiveAndEnabled)
+                bakeRoutine = StartCoroutine(BakeSkyRoutine());
+        }
+
+        /// <summary>
+        /// One pixel back off a baked face, so the log can say whether the cube actually holds
+        /// a sky or six faces of one flat colour.
+        /// </summary>
+        string SampleBakedFace(CubemapFace face)
+        {
+            if (bakedSkyCubemap == null)
+                return "none";
+
+            RenderTexture previous = RenderTexture.active;
+            var readback = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+
+            Graphics.SetRenderTarget(bakedSkyCubemap, 0, face);
+            readback.ReadPixels(new Rect(BakeResolution / 2, BakeResolution / 2, 1, 1), 0, 0);
+            readback.Apply();
+            Color sample = readback.GetPixel(0, 0);
+
+            RenderTexture.active = previous;
+            DestroySafely(readback);
+
+            return $"({sample.r:F2},{sample.g:F2},{sample.b:F2})";
+        }
+
+        void ApplyBakedSky(Material target)
+        {
+            if (target == null || bakedSkyCubemap == null || !skyBaked)
+                return;
+
+            target.SetTexture("_SkyTex", bakedSkyCubemap);
+            target.EnableKeyword("_USESKYTEX_ON");
         }
 
         /// <summary>
@@ -845,9 +1094,6 @@ namespace F1XR.Drone.SkyShell
         /// </summary>
         public void SetTransitionDepthMode(bool transition)
         {
-            if (transitionDepthMode == transition && built != null)
-                return;
-
             transitionDepthMode = transition;
 
             Material material = transition ? ResolveTransitionMaterial() : ResolveIntactMaterial();
@@ -867,7 +1113,9 @@ namespace F1XR.Drone.SkyShell
             }
 
             Debug.Log(
-                $"[SkyShell] depth mode = {(transition ? "transition (queue 2050)" : "background (queue 1000)")}",
+                $"[SkyShell] depth mode = {(transition ? "transition (queue 2050)" : "background (queue 1000)")} " +
+                $"material={material.name} skyKeyword={material.IsKeywordEnabled("_USESKYTEX_ON")} " +
+                $"skyTex={(material.GetTexture("_SkyTex") != null)}",
                 this);
         }
 
@@ -888,6 +1136,8 @@ namespace F1XR.Drone.SkyShell
                 // fails against it wherever a piece of the real room is still standing.
                 renderQueue = 2050
             };
+
+            BakeSkybox(transitionMaterial);
 
             return transitionMaterial;
         }
