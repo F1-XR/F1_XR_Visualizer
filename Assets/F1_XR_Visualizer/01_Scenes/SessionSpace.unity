@@ -166,7 +166,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -1370,7 +1370,15 @@ MonoBehaviour:
   raceFlagAnchor: {fileID: 0}
   raceFlagAlert: {fileID: 0}
   raceFlagPrefab: {fileID: 4318770943564186492, guid: 6e2e556728f643644a93941bf4c5c1a3, type: 3}
+  yellowFlagLogoPrefab: {fileID: 704318091584810959, guid: 559d6e90bd1a4894814f07c91cad1639, type: 3}
+  redFlagLogoPrefab: {fileID: 260393054333835408, guid: 366188ccdf3949418ebb66d23e03dbde, type: 3}
+  logoPivotLocalPosition: {x: 0, y: -0.35, z: 0}
+  yellowFlagLogoLocalPosition: {x: 0.381, y: 0, z: 0}
+  redFlagLogoLocalPosition: {x: 0.257, y: 0, z: 0}
+  logoLocalScale: {x: 0.1, y: 0.1, z: 0.1}
+  logoRotationDegreesPerSecond: 12
   anchorLocalPosition: {x: 0, y: 0.5, z: 0}
+  flagLocalPosition: {x: 0, y: -0.45, z: 0}
   checkeredDisplayDuration: 5
   fallbackRaceEndTimeForTesting: 0
   missingEndFallbackDuration: 5
@@ -2071,6 +2079,8 @@ MonoBehaviour:
   restoreSavedPlacement: 0
   persistenceKey: F1XR.TrackPlacement.v1
   persistenceSaveDelay: 0.4
+  logPlacementDiagnostics: 0
+  placementDiagnosticInterval: 2
 --- !u!114 &1113257130
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2099,6 +2109,9 @@ MonoBehaviour:
   minimumPlacementHeight: 0.35
   verticalOffset: 0.04
   defaultCubeSize: 0.08
+  logAutomaticTableDiagnostics: 0
+  automaticTableDiagnosticInterval: 2
+  automaticTableSlowScanSeconds: 0.02
   allowWorldFloorFallback: 0
   fallbackFloorHeight: 0
   fallbackMaximumDistance: 8
@@ -2123,23 +2136,6 @@ MonoBehaviour:
   pinchReleaseThreshold: 0.55
   pinchDistancePressThreshold: 0.025
   pinchDistanceReleaseThreshold: 0.04
---- !u!114 &1113257133
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1113257128}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c2852aca04aeec44ca6a4ae071ded794, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.Placement.AutomaticTableCandidatePreview
-  placementController: {fileID: 1113257130}
-  showCandidates: 0
-  candidateColor: {r: 0.25, g: 0.85, b: 1, a: 0.28}
-  refreshInterval: 0.25
-  heightOffset: 0.01
 --- !u!114 &1113257131
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2178,6 +2174,23 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1113257133
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113257128}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2852aca04aeec44ca6a4ae071ded794, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.Placement.AutomaticTableCandidatePreview
+  placementController: {fileID: 1113257130}
+  showCandidates: 0
+  candidateColor: {r: 0.25, g: 0.85, b: 1, a: 0.28}
+  refreshInterval: 0.25
+  heightOffset: 0.01
 --- !u!1 &1127476781
 GameObject:
   m_ObjectHideFlags: 0
