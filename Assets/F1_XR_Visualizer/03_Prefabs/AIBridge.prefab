@@ -248,6 +248,7 @@ MonoBehaviour:
   mic: {fileID: 2599781216080018502}
   question: "DRS\uAC00 \uBB50\uC57C?"
   sessionKey: 9839
+  uiFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
 --- !u!114 &2599781216080018502
 MonoBehaviour:
   m_ObjectHideFlags: 0

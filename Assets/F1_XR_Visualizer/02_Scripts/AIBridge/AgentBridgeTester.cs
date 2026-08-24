@@ -83,20 +83,35 @@ namespace F1XR.AIBridge
         void Update()
         {
             float t = Time.unscaledTime;
+            bool active = _recording || _processing;
             for (int i = 0; i < _bars.Count; i++)
             {
                 float normalized = _bars.Count <= 1 ? 0f : i / (float)(_bars.Count - 1);
-                float centerBoost = 1f - Mathf.Abs(normalized * 2f - 1f);
-                float liveNoise = Mathf.PerlinNoise(i * 0.37f + Mathf.Sin(t * 0.9f) * 0.18f, t * (_recording ? 6.7f : 2.9f));
-                float flicker = Mathf.Abs(Mathf.Sin(t * (3.2f + i * 0.09f) + i * 0.71f));
-                float amp = _recording || _processing
-                    ? Mathf.Clamp01(liveNoise * 0.72f + flicker * 0.28f)
-                    : 0.12f + liveNoise * 0.18f;
-                amp *= Mathf.Lerp(0.42f, 1f, centerBoost);
-                float height = Mathf.Lerp(7f, _recording ? 62f : 34f, amp);
+                // Soft, slightly plateaued envelope (fuller in the middle).
+                float centerBoost = 1f - Mathf.Pow(Mathf.Abs(normalized * 2f - 1f), 1.6f);
+
+                // Two noise octaves: a slow body wave + a fast fine detail wave,
+                // so the trace reads like a real audio signal rather than a comb.
+                float body = Mathf.PerlinNoise(i * 0.22f + Mathf.Sin(t * 0.9f) * 0.18f, t * (_recording ? 5.6f : 2.4f));
+                float detail = Mathf.PerlinNoise(i * 0.85f + 13.3f, t * (_recording ? 11.5f : 5.0f));
+                float flicker = Mathf.Abs(Mathf.Sin(t * (3.2f + i * 0.11f) + i * 0.71f));
+
+                float amp;
+                if (active)
+                {
+                    amp = Mathf.Clamp01(body * 0.52f + detail * 0.34f + flicker * 0.14f);
+                    amp = Mathf.Pow(amp, 0.82f);           // lift peaks for punch
+                }
+                else
+                {
+                    amp = 0.08f + body * 0.14f + detail * 0.05f;   // quiet idle shimmer
+                }
+                amp *= Mathf.Lerp(0.34f, 1f, centerBoost);
+
+                float height = Mathf.Lerp(5f, _recording ? 64f : 30f, amp);
                 RectTransform rt = _bars[i].rectTransform;
-                rt.sizeDelta = new Vector2(Mathf.Lerp(2.4f, 4.4f, amp), height);
-                Color c = Color.Lerp(new Color(0.35f, 0.015f, 0.01f, 0.62f), accent, Mathf.Clamp01(amp + 0.16f));
+                rt.sizeDelta = new Vector2(Mathf.Lerp(1.6f, 3.2f, amp), height);
+                Color c = Color.Lerp(new Color(0.35f, 0.015f, 0.01f, 0.55f), accent, Mathf.Clamp01(amp + 0.18f));
                 _bars[i].color = c;
             }
         }
@@ -241,13 +256,45 @@ namespace F1XR.AIBridge
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
 
-            var panel = NewRect("RaumDeuterRadioPanel", canvasGO.transform);
-            panel.anchorMin = panel.anchorMax = new Vector2(0, 1);
-            panel.pivot = new Vector2(0, 1);
-            panel.anchoredPosition = new Vector2(32, -32);
-            panel.sizeDelta = new Vector2(PanelWidth, 350);
-            Bg(panel.gameObject, panelColor);
-            panel.gameObject.AddComponent<RectMask2D>();
+            // Die-cut sticker: a thin white outer frame with ONLY the
+            // bottom-right corner rounded (TL/TR/BL are exact 90°). The white
+            // frame is the parent; the dark carbon panel is inset by the border
+            // thickness so the white reads as a clean, even rim. Concentric
+            // radii (outer = inner + border) keep the rim thickness constant
+            // around the rounded corner. The frame's ContentSizeFitter tracks
+            // the panel's dynamic height + the border padding.
+            const float Border = 1f;
+            const float InnerBR = 52f;   // bottom-right radius of the dark panel
+
+            var frame = NewGraphicRect("RaumDeuterFrame", canvasGO.transform);
+            frame.anchorMin = frame.anchorMax = new Vector2(0, 1);
+            frame.pivot = new Vector2(0, 1);
+            frame.anchoredPosition = new Vector2(32, -32);
+            frame.sizeDelta = new Vector2(PanelWidth, 350);
+            var frameBg = frame.gameObject.AddComponent<RoundedRectGraphic>();
+            frameBg.color = new Color(0.93f, 0.93f, 0.94f, 1f);          // die-cut white
+            frameBg.Radii = new Vector4(0, 0, InnerBR + Border, 0);      // only BR rounded
+
+            var frameVlg = frame.gameObject.AddComponent<VerticalLayoutGroup>();
+            frameVlg.padding = new RectOffset((int)Border, (int)Border, (int)Border, (int)Border);
+            frameVlg.childControlWidth = true;
+            frameVlg.childControlHeight = true;
+            frameVlg.childForceExpandWidth = true;
+            frameVlg.childForceExpandHeight = false;
+            var frameFitter = frame.gameObject.AddComponent<ContentSizeFitter>();
+            frameFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            // Carbon panel — dark inner, only the bottom-right corner rounded.
+            // A rounded stencil Mask clips every child (header wash, bottom red
+            // gradient, …) to the silhouette, so the bottom gradient follows the
+            // rounded corner instead of overhanging it. Size/height are driven by
+            // the frame's layout, so no ContentSizeFitter here.
+            var panel = NewGraphicRect("RaumDeuterRadioPanel", frame.transform);
+            var panelBg = panel.gameObject.AddComponent<RoundedRectGraphic>();
+            panelBg.color = panelColor;
+            panelBg.Radii = new Vector4(0, 0, InnerBR, 0);   // only BR rounded
+            var panelMask = panel.gameObject.AddComponent<Mask>();
+            panelMask.showMaskGraphic = true;
 
             var vlg = panel.gameObject.AddComponent<VerticalLayoutGroup>();
             vlg.padding = new RectOffset(18, 18, 16, 16);
@@ -255,8 +302,6 @@ namespace F1XR.AIBridge
             vlg.childForceExpandWidth = true;
             vlg.childControlWidth = true;
             vlg.childControlHeight = true;
-            var fitter = panel.gameObject.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             BuildHeader(panel);
             BuildTranscript(panel);
@@ -370,23 +415,24 @@ namespace F1XR.AIBridge
             var bars = NewRect("Bars", rail);
             Stretch(bars);
             var hlg = bars.gameObject.AddComponent<HorizontalLayoutGroup>();
-            hlg.padding = new RectOffset(18, 18, 6, 8);
-            hlg.spacing = 3;
+            hlg.padding = new RectOffset(14, 14, 6, 8);
+            hlg.spacing = 1.6f;
             hlg.childAlignment = TextAnchor.MiddleCenter;
             hlg.childForceExpandWidth = false;
             hlg.childControlWidth = false;
             hlg.childControlHeight = false;
 
-            for (int i = 0; i < 58; i++)
+            // Denser, finer bars for a more detailed waveform.
+            for (int i = 0; i < 96; i++)
             {
                 var bar = NewGraphicRect("WaveBar", bars);
-                bar.sizeDelta = new Vector2(3.2f, 18);
+                bar.sizeDelta = new Vector2(2.2f, 12);
                 var img = bar.gameObject.AddComponent<WaveBarGraphic>();
                 img.color = accent;
                 img.raycastTarget = false;
                 var le = bar.gameObject.AddComponent<LayoutElement>();
-                le.preferredWidth = 3.2f;
-                le.preferredHeight = 18;
+                le.preferredWidth = 2.2f;
+                le.preferredHeight = 12;
                 _bars.Add(img);
             }
 
@@ -400,20 +446,17 @@ namespace F1XR.AIBridge
             Stretch(chrome);
             IgnoreLayout(chrome.gameObject);
 
-            AddEdge(chrome, "TopHairline", new Vector2(0, 1), new Vector2(1, 1), Vector2.zero, new Vector2(0, 1.2f), new Color(1f, 1f, 1f, 0.11f));
-            AddEdge(chrome, "LeftHairline", new Vector2(0, 0), new Vector2(0, 1), Vector2.zero, new Vector2(1.2f, 0), new Color(1f, 1f, 1f, 0.06f));
-            AddEdge(chrome, "RightHairline", new Vector2(1, 0), new Vector2(1, 1), Vector2.zero, new Vector2(1.2f, 0), new Color(1f, 1f, 1f, 0.08f));
-
-            var bottom = NewGraphicRect("BottomGradientBorder", chrome);
-            Place(bottom, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1.5f), new Vector2(0, 3));
-            var gradient = bottom.gameObject.AddComponent<GradientLineGraphic>();
+            // Clean die-cut look: the white outer frame supplies the rim, so the
+            // inner white hairlines are dropped. The thick red gradient now runs
+            // along the TOP edge — all top corners are square, so it spans the
+            // full width cleanly.
+            var topBar = NewGraphicRect("TopGradientBorder", chrome);
+            Place(topBar, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -3f), new Vector2(0, 6));
+            var gradient = topBar.gameObject.AddComponent<GradientLineGraphic>();
             gradient.Left = new Color(0.24f, 0f, 0f, 0.45f);
             gradient.Middle = accent;
             gradient.Right = new Color(0.55f, 0f, 0f, 0.6f);
             gradient.raycastTarget = false;
-
-            AddCornerCut(chrome, "TopRightCut", new Vector2(1, 1), new Vector2(1, 1), new Vector2(-11, -11), true);
-            AddCornerCut(chrome, "BottomLeftCut", new Vector2(0, 0), new Vector2(0, 0), new Vector2(11, 11), false);
         }
 
         void BuildWaveformChrome(RectTransform rail)
@@ -768,6 +811,56 @@ namespace F1XR.AIBridge
                 vh.AddVert(new Vector2(r.xMax, r.yMin), color, Vector2.zero);
             }
             vh.AddTriangle(start, start + 1, start + 2);
+        }
+    }
+
+    // Filled rounded rectangle with independent per-corner radii
+    // (x=TL, y=TR, z=BR, w=BL). Maskable so it can drive a UI Mask that clips
+    // children to the rounded silhouette — including the big bottom-right sweep.
+    public sealed class RoundedRectGraphic : MaskableGraphic
+    {
+        public Vector4 Radii = new Vector4(8f, 8f, 8f, 8f);
+        public int SegmentsPerCorner = 6;
+
+        readonly List<Vector2> _pts = new List<Vector2>();
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = rectTransform.rect;
+            if (r.width <= 0f || r.height <= 0f) return;
+
+            float maxR = Mathf.Min(r.width, r.height) * 0.5f;
+            float tl = Mathf.Clamp(Radii.x, 0f, maxR);
+            float tr = Mathf.Clamp(Radii.y, 0f, maxR);
+            float br = Mathf.Clamp(Radii.z, 0f, maxR);
+            float bl = Mathf.Clamp(Radii.w, 0f, maxR);
+
+            _pts.Clear();
+            // walk the outline CCW so consecutive points stay adjacent
+            AddArc(new Vector2(r.xMin + tl, r.yMax - tl), tl, 90f, 180f);   // TL
+            AddArc(new Vector2(r.xMin + bl, r.yMin + bl), bl, 180f, 270f);  // BL
+            AddArc(new Vector2(r.xMax - br, r.yMin + br), br, 270f, 360f);  // BR
+            AddArc(new Vector2(r.xMax - tr, r.yMax - tr), tr, 0f, 90f);     // TR
+
+            int c = vh.currentVertCount;
+            vh.AddVert(r.center, color, Vector2.zero);
+            for (int i = 0; i < _pts.Count; i++)
+                vh.AddVert(_pts[i], color, Vector2.zero);
+
+            int n = _pts.Count;
+            for (int i = 0; i < n; i++)
+                vh.AddTriangle(c, c + 1 + i, c + 1 + (i + 1) % n);
+        }
+
+        void AddArc(Vector2 center, float radius, float aStart, float aEnd)
+        {
+            if (radius <= 0.01f) { _pts.Add(center); return; }
+            for (int i = 0; i <= SegmentsPerCorner; i++)
+            {
+                float a = Mathf.Deg2Rad * Mathf.Lerp(aStart, aEnd, i / (float)SegmentsPerCorner);
+                _pts.Add(center + new Vector2(Mathf.Cos(a) * radius, Mathf.Sin(a) * radius));
+            }
         }
     }
 
