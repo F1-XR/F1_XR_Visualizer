@@ -498,10 +498,9 @@ namespace F1XR.RestAPI.Replay.Room
                 Clear();
                 return false;
             }
-            CreatePitWallOverlay(
-                entrySurface,
-                entryPortalSize,
-                wallLayout);
+            // Keep the pit wall aperture visually clean. The former gantry,
+            // scan line, accent rails, floor ribbon, and broadcast header were
+            // decorative overlays and competed with the pit-stop choreography.
             CreatePitWallEditor(wall, stage);
 
             originalViewerMask = viewerCamera.cullingMask;
@@ -1829,11 +1828,17 @@ namespace F1XR.RestAPI.Replay.Room
             renderer.shadowCastingMode =
                 ShadowCastingMode.Off;
             renderer.receiveShadows = false;
-            CreatePersistentPortalFrame(
-                name,
-                size,
-                surface.transform,
-                rectangular);
+            // The rectangular pit wall is a clean opening into the pit scene.
+            // The persistent glow/core frame reads as a TV border at room scale,
+            // so keep that treatment only for the other portal presentations.
+            if (!rectangular)
+            {
+                CreatePersistentPortalFrame(
+                    name,
+                    size,
+                    surface.transform,
+                    false);
+            }
 
             GameObject cameraObject =
                 new GameObject($"{name}Camera");

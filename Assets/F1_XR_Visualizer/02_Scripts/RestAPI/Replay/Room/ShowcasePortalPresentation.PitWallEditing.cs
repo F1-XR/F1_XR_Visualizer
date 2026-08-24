@@ -13,12 +13,14 @@ namespace F1XR.RestAPI.Replay.Room
         private const float PitEditHandleHeight = 0.18f;
 
         private PitWallPortalEditState pitWallEditState;
+        private GameObject pitWallEditOutline;
         private Transform pitWallEditedStage;
         private Vector3 pitWallEditBasePortalPosition;
         private Vector2 pitWallEditBasePortalSize;
         private Vector3 pitWallEditBaseStagePosition;
         private Quaternion pitWallEditBaseStageRotation;
         private Vector3 pitWallEditBaseStageScale;
+        private Quaternion pitWallEditBasePortalRotation;
 
         public bool IsPitWallEditMode =>
             pitWallEditState != null &&
@@ -40,6 +42,12 @@ namespace F1XR.RestAPI.Replay.Room
             pitWallEditState.SetEditMode(
                 !pitWallEditState.IsEditMode);
             return true;
+        }
+
+        internal void SetPitWallEditOutlineVisible(bool visible)
+        {
+            if (pitWallEditOutline != null)
+                pitWallEditOutline.SetActive(visible);
         }
 
         internal bool UndoPitWallEdit()
@@ -66,6 +74,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         internal void UpdatePitWallEditedPortal(
             Vector3 position,
+            Quaternion rotation,
             Vector2 effectiveSize)
         {
             if (entrySurface == null ||
@@ -76,6 +85,8 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             entryPosition = position;
+            entryInward = rotation * Vector3.forward;
+            entryPortalRight = rotation * Vector3.right;
             entryPortalSize = effectiveSize;
             if (pitWallEditedStage == null ||
                 pitWallEditBasePortalSize.x <= 0.0001f)
@@ -90,9 +101,13 @@ namespace F1XR.RestAPI.Replay.Room
             Vector3 stageOffset =
                 pitWallEditBaseStagePosition -
                 pitWallEditBasePortalPosition;
+            Quaternion rotationDelta =
+                rotation *
+                Quaternion.Inverse(pitWallEditBasePortalRotation);
             pitWallEditedStage.SetPositionAndRotation(
-                position + stageOffset * uniformScale,
-                pitWallEditBaseStageRotation);
+                position +
+                rotationDelta * stageOffset * uniformScale,
+                rotationDelta * pitWallEditBaseStageRotation);
             pitWallEditedStage.localScale =
                 pitWallEditBaseStageScale * uniformScale;
         }
@@ -109,12 +124,16 @@ namespace F1XR.RestAPI.Replay.Room
 
             pitWallEditedStage = stage;
             pitWallEditBasePortalPosition = entrySurface.position;
+            pitWallEditBasePortalRotation = entrySurface.rotation;
             pitWallEditBasePortalSize = entryPortalSize;
             pitWallEditBaseStagePosition = stage.position;
             pitWallEditBaseStageRotation = stage.rotation;
             pitWallEditBaseStageScale = stage.localScale;
 
             GameObject surface = entrySurface.gameObject;
+            CreatePitWallEditOutline(
+                entrySurface,
+                entryPortalSize);
             BoxCollider editCollider =
                 surface.AddComponent<BoxCollider>();
             editCollider.center = Vector3.zero;
@@ -136,8 +155,11 @@ namespace F1XR.RestAPI.Replay.Room
             grab.selectMode = InteractableSelectMode.Single;
             grab.useDynamicAttach = true;
             grab.matchAttachPosition = true;
-            grab.matchAttachRotation = false;
-            grab.trackRotation = false;
+            bool freePlacement =
+                entrySurface.gameObject.scene.name ==
+                "SessionSpace_fitin";
+            grab.matchAttachRotation = freePlacement;
+            grab.trackRotation = freePlacement;
             grab.trackScale = false;
             grab.snapToColliderVolume = false;
             grab.attachEaseInTime = 0f;
@@ -166,20 +188,61 @@ namespace F1XR.RestAPI.Replay.Room
                 grab,
                 scaleController,
                 grabPolicy,
-                editCollider);
+                editCollider,
+                freePlacement);
+        }
+
+        private void CreatePitWallEditOutline(
+            Transform parent,
+            Vector2 size)
+        {
+            float width = Mathf.Clamp(
+                Mathf.Min(size.x, size.y) * 0.012f,
+                0.018f,
+                0.035f);
+            Material material = CreatePortalFrameMaterial(
+                "PitStopEditOutline",
+                new Color(0.16f, 0.82f, 1f, 0.9f),
+                3140);
+            if (material == null)
+                return;
+
+            pitWallEditOutline = new GameObject(
+                "PitStopEditOutline");
+            pitWallEditOutline.layer = PortalSurfaceLayer;
+            pitWallEditOutline.transform.SetParent(parent, false);
+            pitWallEditOutline.transform.localPosition =
+                new Vector3(0f, 0f, -0.02f);
+            MeshFilter filter =
+                pitWallEditOutline.AddComponent<MeshFilter>();
+            filter.sharedMesh = CreateRectangularPitPortalFrameMesh(
+                size,
+                width,
+                "Runtime_PitStopEditOutline");
+            MeshRenderer renderer =
+                pitWallEditOutline.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode =
+                UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.sortingOrder = 22;
+            pitWallEditOutline.SetActive(false);
         }
 
         private void ClearPitWallEditor()
         {
+            SetPitWallEditOutlineVisible(false);
             if (pitWallEditState != null)
                 pitWallEditState.Release();
             pitWallEditState = null;
+            pitWallEditOutline = null;
             pitWallEditedStage = null;
             pitWallEditBasePortalPosition = Vector3.zero;
             pitWallEditBasePortalSize = Vector2.zero;
             pitWallEditBaseStagePosition = Vector3.zero;
             pitWallEditBaseStageRotation = Quaternion.identity;
             pitWallEditBaseStageScale = Vector3.one;
+            pitWallEditBasePortalRotation = Quaternion.identity;
         }
     }
 }

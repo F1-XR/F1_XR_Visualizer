@@ -1063,6 +1063,9 @@ namespace F1XR.RestAPI.Replay
             if (!isActive)
                 return;
 
+#if UNITY_EDITOR
+            pitStopPresentation?.ClearFirstMilestoneCalibrationTime();
+#endif
             timeline.Play();
             eventAudio?.SetPlaying(!showcaseTransitionHeld);
         }
@@ -1210,6 +1213,9 @@ namespace F1XR.RestAPI.Replay
             if (!isActive)
                 return;
 
+#if UNITY_EDITOR
+            pitStopPresentation?.ClearFirstMilestoneCalibrationTime();
+#endif
             timeline.SetTime(timeline.StartTime);
             showcaseTimelineRevision++;
             ResetIndices();
@@ -1222,11 +1228,103 @@ namespace F1XR.RestAPI.Replay
             if (!isActive)
                 return;
 
+#if UNITY_EDITOR
+            pitStopPresentation?.ClearFirstMilestoneCalibrationTime();
+#endif
             timeline.SetTime(timeline.FromNormalized(normalized));
             showcaseTimelineRevision++;
             ResetIndices();
             ApplyCars();
         }
+
+#if UNITY_EDITOR
+        public bool TryPauseAtPitStopCalibrationTime(
+            float choreographyTime)
+        {
+            if (!isActive ||
+                pitStopSequence == null ||
+                pitStopPresentation == null ||
+                !IsPitStopDefinition(currentEvent))
+            {
+                return false;
+            }
+
+            if (!pitStopPresentation.SetFirstMilestoneCalibrationTime(
+                    choreographyTime))
+            {
+                return false;
+            }
+
+            timeline.Pause();
+            eventAudio?.SetPlaying(false);
+            timeline.SetTime(pitStopSequence.FocusTime);
+            showcaseTimelineRevision++;
+            ResetIndices();
+            ApplyCars();
+            return true;
+        }
+
+        public void ClearPitStopCalibrationTime()
+        {
+            pitStopPresentation?.ClearFirstMilestoneCalibrationTime();
+            if (isActive)
+                ApplyCars();
+        }
+
+        public bool TryGetPitStopCalibrationRange(
+            out float serviceStartTime,
+            out float focusTime,
+            out float serviceEndTime,
+            out float pitStopDuration,
+            out float pitLaneDuration)
+        {
+            serviceStartTime = 0f;
+            focusTime = 0f;
+            serviceEndTime = 0f;
+            pitStopDuration = -1f;
+            pitLaneDuration = -1f;
+            if (!isActive ||
+                pitStopSequence == null ||
+                !IsPitStopDefinition(currentEvent))
+            {
+                return false;
+            }
+
+            serviceStartTime = pitStopSequence.ServiceStartTime;
+            focusTime = pitStopSequence.FocusTime;
+            serviceEndTime = pitStopSequence.ServiceEndTime;
+            pitStopDuration = currentEvent != null
+                ? currentEvent.pitStopDuration
+                : -1f;
+            pitLaneDuration = currentEvent != null
+                ? currentEvent.pitLaneDuration
+                : -1f;
+            return true;
+        }
+
+        public bool TryPauseAtPitStopReplayTime(float replayTime)
+        {
+            if (!isActive ||
+                pitStopSequence == null ||
+                pitStopPresentation == null ||
+                !IsPitStopDefinition(currentEvent))
+            {
+                return false;
+            }
+
+            pitStopPresentation.ClearFirstMilestoneCalibrationTime();
+            timeline.Pause();
+            eventAudio?.SetPlaying(false);
+            timeline.SetTime(Mathf.Clamp(
+                replayTime,
+                timeline.StartTime,
+                timeline.EndTime));
+            showcaseTimelineRevision++;
+            ResetIndices();
+            ApplyCars();
+            return true;
+        }
+#endif
 
         public void Close()
         {
@@ -1769,7 +1867,10 @@ namespace F1XR.RestAPI.Replay
             }
             else if (pitStop)
             {
-                CreateRoad(center, sourceToLocalRotation);
+                CreateRoad(
+                    center,
+                    sourceToLocalRotation,
+                    createEdges: false);
                 stageBounds = roadMesh.bounds;
             }
             else if (!CreateActualTrackRegion(
@@ -1777,7 +1878,10 @@ namespace F1XR.RestAPI.Replay
                          sourceToLocalRotation,
                          out stageBounds))
             {
-                CreateRoad(center, sourceToLocalRotation);
+                CreateRoad(
+                    center,
+                    sourceToLocalRotation,
+                    createEdges: true);
                 stageBounds = roadMesh.bounds;
             }
 
@@ -2438,7 +2542,8 @@ namespace F1XR.RestAPI.Replay
 
         private void CreateRoad(
             Vector3 center,
-            Quaternion sourceToLocalRotation)
+            Quaternion sourceToLocalRotation,
+            bool createEdges)
         {
             int count = presentationPath.Count;
             Vector3[] vertices = new Vector3[count * 2];
@@ -2498,19 +2603,23 @@ namespace F1XR.RestAPI.Replay
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            edgeMaterial = CreateMaterial(new Color(0.8f, 0.08f, 0.04f, 1f));
-            leftRoadEdge =
-                CreateEdge(
-                    "LeftEdge",
-                    vertices,
-                    0,
-                    edgeMaterial);
-            rightRoadEdge =
-                CreateEdge(
-                    "RightEdge",
-                    vertices,
-                    1,
-                    edgeMaterial);
+            if (createEdges)
+            {
+                edgeMaterial = CreateMaterial(
+                    new Color(0.8f, 0.08f, 0.04f, 1f));
+                leftRoadEdge =
+                    CreateEdge(
+                        "LeftEdge",
+                        vertices,
+                        0,
+                        edgeMaterial);
+                rightRoadEdge =
+                    CreateEdge(
+                        "RightEdge",
+                        vertices,
+                        1,
+                        edgeMaterial);
+            }
 
         }
 
