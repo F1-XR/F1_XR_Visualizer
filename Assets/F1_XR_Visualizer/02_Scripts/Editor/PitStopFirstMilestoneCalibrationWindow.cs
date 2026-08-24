@@ -94,6 +94,9 @@ namespace F1XR.Editor
             if (EditorGUI.EndChangeCheck())
                 ApplyFrame(choreographyTime);
 
+            if (GUILayout.Button("Reference static service composition"))
+                ApplyStaticServiceComposition();
+
             for (int i = 0; i < Frames.Length; i++)
             {
                 CalibrationFrame frame = Frames[i];
@@ -146,6 +149,25 @@ namespace F1XR.Editor
                 return;
             }
 
+            SceneView.RepaintAll();
+            Repaint();
+        }
+
+        private void ApplyStaticServiceComposition()
+        {
+            if (replay == null)
+                TryFindReplay();
+
+            if (replay == null ||
+                !replay.TryPauseAtPitStopStaticServicePose())
+            {
+                Debug.LogWarning(
+                    "[PitChoreography] Active Pit Stop first milestone " +
+                    "was not found. Open the Pit Stop event in Play Mode first.");
+                return;
+            }
+
+            FrameFlCluster();
             SceneView.RepaintAll();
             Repaint();
         }
@@ -204,10 +226,10 @@ namespace F1XR.Editor
             Repaint();
         }
 
-        internal static void FrameFlCluster()
+        internal static void FrameFlCluster(SceneView sceneView = null)
         {
             Transform hub = FindRuntimeTransform("FL_Hub");
-            SceneView sceneView = SceneView.lastActiveSceneView;
+            sceneView ??= SceneView.lastActiveSceneView;
             if (hub == null || sceneView == null)
                 return;
 
@@ -219,14 +241,59 @@ namespace F1XR.Editor
             Vector3 cameraForward =
                 vehicleAlignedRotation *
                 new Vector3(-1f, -0.32f, -1f).normalized;
-            sceneView.LookAt(
+            sceneView.orthographic = false;
+            sceneView.LookAtDirect(
                 hub.position,
                 Quaternion.LookRotation(
                     cameraForward,
                     vehicleAlignedRotation * Vector3.up),
-                size,
-                false,
-                true);
+                size);
+            sceneView.Repaint();
+        }
+
+        internal static void FrameFlClusterTopDown(
+            SceneView sceneView = null)
+        {
+            Transform hub = FindRuntimeTransform("FL_Hub");
+            sceneView ??= SceneView.lastActiveSceneView;
+            if (hub == null || sceneView == null)
+                return;
+
+            float size = ResolveFlClusterViewSize(hub) * 1.12f;
+            Transform origin = FindRuntimeTransform(
+                "PitChoreographyOrigin");
+            Quaternion vehicleAlignedRotation =
+                origin != null ? origin.rotation : Quaternion.identity;
+            sceneView.orthographic = true;
+            sceneView.LookAtDirect(
+                hub.position,
+                Quaternion.LookRotation(
+                    vehicleAlignedRotation * Vector3.down,
+                    vehicleAlignedRotation * Vector3.forward),
+                size);
+            sceneView.Repaint();
+        }
+
+        internal static void FrameStaticServiceOverview(
+            SceneView sceneView = null)
+        {
+            Transform origin = FindRuntimeTransform(
+                "PitChoreographyOrigin");
+            Transform hub = FindRuntimeTransform("FL_Hub");
+            sceneView ??= SceneView.lastActiveSceneView;
+            if (origin == null || hub == null || sceneView == null)
+                return;
+
+            float size = ResolveFlClusterViewSize(hub) * 2.45f;
+            Vector3 cameraForward = origin.rotation *
+                new Vector3(-1f, -0.42f, -1f).normalized;
+            sceneView.orthographic = false;
+            sceneView.LookAtDirect(
+                origin.position,
+                Quaternion.LookRotation(
+                    cameraForward,
+                    origin.up),
+                size);
             sceneView.Repaint();
         }
 
@@ -412,6 +479,8 @@ namespace F1XR.Editor
     {
         private const string RequestFileName = "run-audit.request";
         private const string PathRequestFileName = "run-path-audit.request";
+        private const string StaticRequestFileName =
+            "run-static-audit.request";
 
         private static readonly (string Label, float Time)[] AuditFrames =
         {
@@ -429,6 +498,7 @@ namespace F1XR.Editor
         private static int auditFrameIndex = -1;
         private static bool waitingForRender;
         private static double nextAuditStepTime;
+        private static int staticAuditViewIndex = -1;
 
         static PitStopFirstMilestoneCalibrationAutomation()
         {
@@ -437,9 +507,48 @@ namespace F1XR.Editor
 
         private static void PollForAuditRequest()
         {
+            if (staticAuditViewIndex >= 0)
+            {
+                AdvanceStaticAudit();
+                return;
+            }
+
             if (auditFrameIndex >= 0)
             {
                 AdvanceAudit();
+                return;
+            }
+
+            string staticRequestPath = GetOutputPath(
+                StaticRequestFileName);
+            if (File.Exists(staticRequestPath))
+            {
+                if (!EditorApplication.isPlaying)
+                {
+                    if (!EditorApplication.isPlayingOrWillChangePlaymode)
+                        EditorApplication.EnterPlaymode();
+                    return;
+                }
+
+                auditReplay = Object.FindAnyObjectByType<EventPopoutReplay>(
+                    FindObjectsInactive.Include);
+                auditSceneView = SceneView.lastActiveSceneView;
+                if (auditReplay == null ||
+                    auditSceneView == null ||
+                    !auditReplay.TryPauseAtPitStopStaticServicePose())
+                {
+                    return;
+                }
+
+                File.Delete(staticRequestPath);
+                Directory.CreateDirectory(GetOutputPath(string.Empty));
+                DeleteIfPresent(GetOutputPath("static_45.png"));
+                DeleteIfPresent(GetOutputPath("static_top.png"));
+                DeleteIfPresent(GetOutputPath("static_overview.png"));
+                DeleteIfPresent(GetOutputPath("static_service.txt"));
+                staticAuditViewIndex = 0;
+                waitingForRender = false;
+                nextAuditStepTime = EditorApplication.timeSinceStartup;
                 return;
             }
 
@@ -549,6 +658,378 @@ namespace F1XR.Editor
                 EditorApplication.timeSinceStartup + 0.04d;
         }
 
+
+        private static void AdvanceStaticAudit()
+        {
+            if (!EditorApplication.isPlaying ||
+                auditReplay == null ||
+                auditSceneView == null)
+            {
+                AbortStaticAudit(
+                    "Play Mode or static audit target was lost.");
+                return;
+            }
+
+            if (EditorApplication.timeSinceStartup < nextAuditStepTime)
+                return;
+
+            if (staticAuditViewIndex >= 3)
+            {
+                WriteFrameSnapshot(
+                    GetOutputPath("static_service.txt"),
+                    -1f);
+                Debug.Log(
+                    "[PitChoreography] Static service audit captured.");
+                auditReplay = null;
+                auditSceneView = null;
+                staticAuditViewIndex = -1;
+                waitingForRender = false;
+                return;
+            }
+
+            if (!waitingForRender)
+            {
+                switch (staticAuditViewIndex)
+                {
+                    case 0:
+                        PitStopFirstMilestoneCalibrationWindow
+                            .FrameFlCluster(auditSceneView);
+                        break;
+                    case 1:
+                        PitStopFirstMilestoneCalibrationWindow
+                            .FrameFlClusterTopDown(auditSceneView);
+                        break;
+                    default:
+                        PitStopFirstMilestoneCalibrationWindow
+                            .FrameStaticServiceOverview(auditSceneView);
+                        break;
+                }
+
+                SceneView.RepaintAll();
+                EditorApplication.QueuePlayerLoopUpdate();
+                waitingForRender = true;
+                nextAuditStepTime =
+                    EditorApplication.timeSinceStartup + 0.14d;
+                return;
+            }
+
+            string fileName = staticAuditViewIndex switch
+            {
+                0 => "static_45.png",
+                1 => "static_top.png",
+                _ => "static_overview.png",
+            };
+            CaptureStaticView(
+                auditSceneView,
+                staticAuditViewIndex,
+                GetOutputPath(fileName));
+            staticAuditViewIndex++;
+            waitingForRender = false;
+            nextAuditStepTime =
+                EditorApplication.timeSinceStartup + 0.05d;
+        }
+
+        private static void AbortStaticAudit(string reason)
+        {
+            Debug.LogError(
+                "[PitChoreography] Static audit aborted: " + reason);
+            auditReplay = null;
+            auditSceneView = null;
+            staticAuditViewIndex = -1;
+            waitingForRender = false;
+        }
+
+        private static void ConfigureStaticCaptureCamera(
+            Camera camera,
+            int viewIndex)
+        {
+            Transform origin =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("PitChoreographyOrigin");
+            Transform hub =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("FL_Hub");
+            Transform tyre =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("FL_Tire");
+            Transform frontAnchor =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("FrontJack_Service");
+            Transform rearAnchor =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("RearJack_Service");
+            if (camera == null || hub == null)
+                return;
+
+            float tyreDiameter = ResolveVisualDiameter(tyre, 0.72f);
+            Vector3 vehicleUp = origin != null
+                ? origin.up
+                : Vector3.up;
+            Vector3 vehicleForward = origin != null
+                ? origin.forward
+                : ResolveVehicleForward(frontAnchor, rearAnchor);
+            Vector3 vehicleOutward = origin != null
+                ? ResolveHubOutward(origin, hub)
+                : Vector3.Cross(vehicleUp, vehicleForward).normalized;
+            Vector3 target;
+            Vector3 forward;
+            Vector3 up;
+            float halfHeight;
+
+            if (viewIndex == 1)
+            {
+                target = hub.position +
+                    vehicleOutward * tyreDiameter * 0.65f;
+                forward = -vehicleUp;
+                up = vehicleForward;
+                halfHeight = tyreDiameter * 3f;
+                camera.orthographic = true;
+                camera.orthographicSize = halfHeight;
+                camera.transform.SetPositionAndRotation(
+                    target - forward * 10f,
+                    Quaternion.LookRotation(forward, up));
+                return;
+            }
+
+            camera.orthographic = false;
+            camera.fieldOfView = viewIndex == 0 ? 48f : 52f;
+            if (viewIndex == 0)
+            {
+                target = hub.position +
+                    vehicleOutward * tyreDiameter * 0.72f +
+                    vehicleUp * tyreDiameter * 0.42f;
+                forward = (
+                    -vehicleOutward * 1.15f -
+                    vehicleForward * 0.55f -
+                    vehicleUp * 0.38f).normalized;
+                halfHeight = tyreDiameter * 1.82f;
+            }
+            else
+            {
+                target = ResolveVehicleCenter(
+                    origin,
+                    frontAnchor,
+                    rearAnchor) +
+                    vehicleUp * tyreDiameter * 0.45f;
+                forward = (
+                    -vehicleOutward -
+                    vehicleForward -
+                    vehicleUp * 0.34f).normalized;
+                halfHeight = tyreDiameter * 5.1f;
+            }
+
+            up = vehicleUp;
+            float distance = halfHeight /
+                Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            camera.transform.SetPositionAndRotation(
+                target - forward * distance,
+                Quaternion.LookRotation(forward, up));
+        }
+
+
+        private static Vector3 ResolveVehicleForward(
+            Transform frontAnchor,
+            Transform rearAnchor)
+        {
+            if (frontAnchor == null || rearAnchor == null)
+                return Vector3.forward;
+
+            Vector3 direction =
+                frontAnchor.position - rearAnchor.position;
+            direction.y = 0f;
+            return direction.sqrMagnitude > 0.000001f
+                ? direction.normalized
+                : Vector3.forward;
+        }
+
+        private static Vector3 ResolveHubOutward(
+            Transform origin,
+            Transform hub)
+        {
+            Vector3 localHub = origin.InverseTransformPoint(hub.position);
+            float side = Mathf.Abs(localHub.x) > 0.0001f
+                ? Mathf.Sign(localHub.x)
+                : 1f;
+            return origin.TransformDirection(Vector3.right * side);
+        }
+
+        private static Vector3 ResolveVehicleCenter(
+            Transform origin,
+            Transform frontAnchor,
+            Transform rearAnchor)
+        {
+            if (origin != null)
+                return origin.position;
+            if (frontAnchor != null && rearAnchor != null)
+            {
+                return Vector3.Lerp(
+                    frontAnchor.position,
+                    rearAnchor.position,
+                    0.5f);
+            }
+            return Vector3.zero;
+        }
+
+        private static float ResolveVisualDiameter(
+            Transform target,
+            float fallback)
+        {
+            if (target == null)
+                return fallback;
+
+            Renderer[] renderers =
+                target.GetComponentsInChildren<Renderer>(true);
+            bool hasBounds = false;
+            Bounds bounds = default;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null)
+                    continue;
+
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            return hasBounds
+                ? Mathf.Max(
+                    bounds.size.x,
+                    Mathf.Max(bounds.size.y, bounds.size.z))
+                : fallback;
+        }
+
+        private static void CaptureStaticView(
+            SceneView sourceSceneView,
+            int viewIndex,
+            string path)
+        {
+            GameObject cameraObject = new(
+                "PitStaticAuditCamera",
+                typeof(Camera));
+            cameraObject.hideFlags = HideFlags.HideAndDontSave;
+            Camera captureCamera = cameraObject.GetComponent<Camera>();
+            captureCamera.CopyFrom(sourceSceneView.camera);
+            ConfigureStaticCaptureCamera(captureCamera, viewIndex);
+            List<Renderer> hiddenRenderers = new();
+            List<bool> rendererStates = new();
+            List<Canvas> hiddenCanvases = new();
+            HideStaticEvaluationClutter(hiddenRenderers, rendererStates);
+            HideStaticEvaluationCanvases(hiddenCanvases);
+            try
+            {
+                CaptureCamera(captureCamera, path);
+            }
+            finally
+            {
+                RestoreCanvases(hiddenCanvases);
+                RestoreRendererStates(hiddenRenderers, rendererStates);
+                Object.DestroyImmediate(cameraObject);
+            }
+        }
+
+        private static void HideStaticEvaluationCanvases(
+            List<Canvas> hiddenCanvases)
+        {
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(
+                FindObjectsInactive.Include);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (canvas == null || !canvas.enabled)
+                    continue;
+
+                hiddenCanvases.Add(canvas);
+                canvas.enabled = false;
+            }
+        }
+
+        private static void RestoreCanvases(List<Canvas> canvases)
+        {
+            for (int i = 0; i < canvases.Count; i++)
+            {
+                if (canvases[i] != null)
+                    canvases[i].enabled = true;
+            }
+        }
+
+        private static void HideStaticEvaluationClutter(
+            List<Renderer> hiddenRenderers,
+            List<bool> rendererStates)
+        {
+            Transform origin =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("PitChoreographyOrigin");
+            Transform tyre =
+                PitStopFirstMilestoneCalibrationWindow
+                    .FindRuntimeTransform("FL_Tire");
+            Transform vehicleVisual = tyre != null ? tyre.parent : null;
+            Renderer[] renderers = Object.FindObjectsByType<Renderer>(
+                FindObjectsInactive.Include);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null ||
+                    !renderer.enabled ||
+                    !IsStaticEvaluationClutter(
+                        renderer,
+                        origin,
+                        vehicleVisual))
+                {
+                    continue;
+                }
+
+                hiddenRenderers.Add(renderer);
+                rendererStates.Add(renderer.enabled);
+                renderer.enabled = false;
+            }
+        }
+
+        private static bool IsStaticEvaluationClutter(
+            Renderer renderer,
+            Transform origin,
+            Transform vehicleVisual)
+        {
+            Transform target = renderer.transform;
+            if ((origin != null && target.IsChildOf(origin)) ||
+                (vehicleVisual != null &&
+                 target.IsChildOf(vehicleVisual)))
+            {
+                return false;
+            }
+
+            for (Transform current = target;
+                 current != null;
+                 current = current.parent)
+            {
+                string name = current.name;
+                if (name.Contains("Floor") ||
+                    name.Contains("Ground"))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static void RestoreRendererStates(
+            List<Renderer> renderers,
+            List<bool> states)
+        {
+            int count = Mathf.Min(renderers.Count, states.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] != null)
+                    renderers[i].enabled = states[i];
+            }
+        }
+
         private static void AbortAudit(string reason)
         {
             Debug.LogError(
@@ -563,9 +1044,20 @@ namespace F1XR.Editor
             SceneView sceneView,
             string path)
         {
-            const int width = 1440;
-            const int height = 900;
-            Camera camera = sceneView.camera;
+            CaptureCamera(sceneView.camera, path);
+        }
+
+        private static void CaptureCamera(Camera camera, string path)
+        {
+            CaptureCamera(camera, path, 1440, 900);
+        }
+
+        private static void CaptureCamera(
+            Camera camera,
+            string path,
+            int width,
+            int height)
+        {
             RenderTexture target = new(
                 width,
                 height,
@@ -616,6 +1108,7 @@ namespace F1XR.Editor
             text.AppendLine($"time={time:0.000}");
             string[] names =
             {
+                "PitChoreographyOrigin",
                 "FL_Hub",
                 "FL_Tire",
                 "FL_OldLooseTyre",
@@ -743,10 +1236,14 @@ namespace F1XR.Editor
             }
 
             Vector3 position = target.position;
+            Vector3 localPosition = target.localPosition;
             destination.Append(
                 $"{name}|active={target.gameObject.activeInHierarchy}" +
                 $"|position=({position.x:0.0000}," +
-                $"{position.y:0.0000},{position.z:0.0000})");
+                $"{position.y:0.0000},{position.z:0.0000})" +
+                $"|localPosition=({localPosition.x:0.0000}," +
+                $"{localPosition.y:0.0000},{localPosition.z:0.0000})" +
+                $"|parent={target.parent?.name ?? "<none>"}");
 
             Renderer[] renderers =
                 target.GetComponentsInChildren<Renderer>(true);

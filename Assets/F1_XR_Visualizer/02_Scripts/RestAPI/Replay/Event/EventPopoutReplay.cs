@@ -1238,6 +1238,31 @@ namespace F1XR.RestAPI.Replay
         }
 
 #if UNITY_EDITOR
+        public bool TryPauseAtPitStopStaticServicePose()
+        {
+            if (!isActive ||
+                pitStopSequence == null ||
+                pitStopPresentation == null ||
+                !IsPitStopDefinition(currentEvent))
+            {
+                return false;
+            }
+
+            if (!pitStopPresentation
+                    .SetFirstMilestoneStaticCalibrationPose())
+            {
+                return false;
+            }
+
+            timeline.Pause();
+            eventAudio?.SetPlaying(false);
+            timeline.SetTime(pitStopSequence.FocusTime);
+            showcaseTimelineRevision++;
+            ResetIndices();
+            ApplyCars();
+            return true;
+        }
+
         public bool TryPauseAtPitStopCalibrationTime(
             float choreographyTime)
         {

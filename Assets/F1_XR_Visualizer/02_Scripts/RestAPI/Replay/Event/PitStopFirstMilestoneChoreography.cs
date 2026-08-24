@@ -22,6 +22,10 @@ namespace F1XR.RestAPI.Replay
         private const float GunnerContactNormalized = 0.25f;
         private const float WheelOffOwnershipNormalized = 0.42f;
         private const float WheelOnHandoffNormalized = 0.62f;
+        private const float StaticWheelOffPoseNormalized = 0.34f;
+        private const float StaticWheelOnPoseNormalized = 0.18f;
+        private const float StaticJackPoseNormalized = 0.42f;
+        private const float StaticSignalPoseNormalized = 0.38f;
         private static readonly Vector3 FallbackFlHub =
             new(0.92f, 0.39f, 2f);
         private static readonly Vector3 FallbackRearHub =
@@ -34,22 +38,25 @@ namespace F1XR.RestAPI.Replay
             private readonly Transform motionRoot;
             private readonly Vector3 motionRootLocalPosition;
             private readonly Quaternion motionRootLocalRotation;
+            private readonly bool lockMotionRoot;
             private AnimationClip activeClip;
             private float sampledNormalizedTime = -1f;
 
             public SampledActor(
                 Transform root,
                 Animator animator,
-                RuntimeAnimatorController baseController)
+                RuntimeAnimatorController baseController,
+                bool lockMotionRoot)
             {
                 Root = root;
                 this.animator = animator;
+                this.lockMotionRoot = lockMotionRoot;
                 motionRoot = animator.transform;
                 motionRootLocalPosition = motionRoot.localPosition;
                 motionRootLocalRotation = motionRoot.localRotation;
                 controller = new AnimatorOverrideController(baseController);
                 animator.runtimeAnimatorController = controller;
-                animator.applyRootMotion = true;
+                animator.applyRootMotion = !lockMotionRoot;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
                 animator.updateMode = AnimatorUpdateMode.Normal;
                 animator.speed = 0f;
@@ -103,6 +110,7 @@ namespace F1XR.RestAPI.Replay
                     animator.speed = 0f;
                 }
 
+                RestoreMotionRoot();
                 sampledNormalizedTime = normalizedTime;
             }
 
@@ -113,10 +121,21 @@ namespace F1XR.RestAPI.Replay
                 animator.Rebind();
                 animator.Play(BaseStateHash, 0, 0f);
                 animator.Update(0f);
+                RestoreMotionRoot();
                 sampledNormalizedTime = 0f;
+            }
+
+            private void RestoreMotionRoot()
+            {
+                if (!lockMotionRoot || motionRoot == null)
+                    return;
+
+                motionRoot.localPosition = motionRootLocalPosition;
+                motionRoot.localRotation = motionRootLocalRotation;
             }
         }
         private Vector3 flHub = FallbackFlHub;
+        private Vector3 flOutward = Vector3.right;
         private Quaternion flHubRotation = Quaternion.identity;
         private float tyreDiameterMeters = FallbackTyreDiameterMeters;
 
@@ -138,8 +157,6 @@ namespace F1XR.RestAPI.Replay
         private Transform wheelOffRightHand;
         private Transform wheelOnLeftHand;
         private Transform wheelOnRightHand;
-        private Vector3 wheelOffTyreGripOffset;
-        private Vector3 wheelOnTyreGripOffset;
         private GameObject oldLooseTyre;
         private GameObject newLooseTyre;
         private Vector3 oldLooseTyreVisualCenter;
@@ -210,6 +227,9 @@ namespace F1XR.RestAPI.Replay
                 flHub = FallbackFlHub;
                 tyreDiameterMeters = FallbackTyreDiameterMeters;
             }
+            flOutward = Mathf.Abs(flHub.x) > 0.0001f
+                ? Vector3.right * Mathf.Sign(flHub.x)
+                : Vector3.right;
 
             float vehicleFront = hasVehicleBounds
                 ? vehicleBounds.max.z * localToPhysical
@@ -249,31 +269,48 @@ namespace F1XR.RestAPI.Replay
             CreateAnchor("VehicleStopAnchor", Vector3.zero);
             CreateAnchor("FL_Hub", flHub);
 
-            Vector3 wheelOffFacing =
-                new Vector3(-0.82f, 0f, 0.57f).normalized;
-            Vector3 wheelOnFacing =
-                new Vector3(-0.82f, 0f, -0.57f).normalized;
+            float gunnerOutward = tyreDiameterMeters * 1.05f;
+            float wheelOffOutward = tyreDiameterMeters * 1.18f;
+            float wheelOffForward = tyreDiameterMeters * 1.26f;
+            float wheelOnOutward = tyreDiameterMeters * 1.62f;
+            float wheelOnRearward = tyreDiameterMeters * 1.08f;
+            float frontJackClearance = tyreDiameterMeters * 0.18f;
+            float rearJackClearance = tyreDiameterMeters * 0.62f;
+            float signalClearance = Mathf.Max(
+                tyreDiameterMeters * 3.4f,
+                2.35f);
             Vector3 frontJackPosition =
-                new(0f, 0f, vehicleFront + 0.28f);
+                new(0f, 0f, vehicleFront + frontJackClearance);
             Vector3 rearJackPosition =
-                new(0f, 0f, vehicleRear - 0.28f);
+                new(0f, 0f, vehicleRear - rearJackClearance);
             Vector3 signalPosition =
-                new(-1.55f, 0f, vehicleFront + 0.48f);
+                new(0f, 0f, vehicleFront + signalClearance);
 
             Vector3 flGround =
                 new(flHub.x, 0f, flHub.z);
+            Vector3 gunnerPosition = flGround +
+                flOutward * gunnerOutward;
+            Vector3 wheelOffPosition = flGround +
+                flOutward * wheelOffOutward +
+                Vector3.forward * wheelOffForward;
+            Vector3 wheelOnPosition = flGround +
+                flOutward * wheelOnOutward +
+                Vector3.back * wheelOnRearward;
             gunner = CreateActor(
                 "FL_WheelGunner",
-                flGround + Vector3.right * 0.45f,
-                Vector3.left);
+                gunnerPosition,
+                ResolveGroundFacing(gunnerPosition, flGround),
+                lockMotionRoot: true);
             wheelOff = CreateActor(
                 "FL_WheelOff_L",
-                flGround - wheelOffFacing * 0.72f,
-                wheelOffFacing);
+                wheelOffPosition,
+                ResolveGroundFacing(wheelOffPosition, flGround),
+                lockMotionRoot: true);
             wheelOn = CreateActor(
                 "FL_WheelOn_L",
-                flGround - wheelOnFacing * 0.85f,
-                wheelOnFacing);
+                wheelOnPosition,
+                ResolveGroundFacing(wheelOnPosition, flGround),
+                lockMotionRoot: true);
             frontJack = CreateActor(
                 "FrontJack",
                 frontJackPosition,
@@ -285,7 +322,7 @@ namespace F1XR.RestAPI.Replay
             pitSignal = CreateActor(
                 "PitSignal_R",
                 signalPosition,
-                -signalPosition);
+                Vector3.back);
             if (gunner == null ||
                 wheelOff == null ||
                 wheelOn == null ||
@@ -349,19 +386,9 @@ namespace F1XR.RestAPI.Replay
                 ResolveRendererCenterInObjectSpace(oldLooseTyre);
             newLooseTyreVisualCenter =
                 ResolveRendererCenterInObjectSpace(newLooseTyre);
-            wheelOffTyreGripOffset = ResolveWheelCarrierGripOffset(
-                wheelOff,
-                assets.WheelOffFullL,
-                WheelOffOwnershipNormalized,
-                wheelOffLeftHand,
-                wheelOffRightHand);
-            wheelOnTyreGripOffset = ResolveWheelCarrierGripOffset(
-                wheelOn,
-                assets.WheelOnFullL,
-                WheelOnHandoffNormalized,
-                wheelOnLeftHand,
-                wheelOnRightHand);
             CalibrateGunner();
+            CalibrateWheelOffContact();
+            CalibrateWheelOnContact();
 
             CreateAnchor(
                 "FL_WheelGunner_Service",
@@ -383,6 +410,45 @@ namespace F1XR.RestAPI.Replay
                 pitSignal.Root.localPosition);
             ApplyReadyPose();
             return true;
+        }
+
+        public void ApplyStaticServiceComposition()
+        {
+            if (origin == null)
+                return;
+
+            origin.gameObject.SetActive(true);
+            gunner.SampleNormalized(
+                assets.WheelGunnerFull,
+                GunnerContactNormalized);
+            wheelOff.SampleNormalized(
+                assets.WheelOffFullL,
+                StaticWheelOffPoseNormalized);
+            wheelOn.SampleNormalized(
+                assets.WheelOnFullL,
+                StaticWheelOnPoseNormalized);
+            frontJack.SampleNormalized(
+                assets.FrontJackFullL,
+                StaticJackPoseNormalized);
+            rearJack.SampleNormalized(
+                assets.RearJackFullR,
+                StaticJackPoseNormalized);
+            pitSignal.SampleNormalized(
+                assets.PitSignalFullR,
+                StaticSignalPoseNormalized);
+
+            SetOriginalFlWheelVisible(true);
+            oldLooseTyre.SetActive(false);
+            newLooseTyre.SetActive(true);
+            SetTyreVisualCenter(
+                newLooseTyre,
+                newLooseTyreVisualCenter,
+                ResolveHandMidpoint(
+                    wheelOnLeftHand,
+                    wheelOnRightHand,
+                    flHub));
+            ApplyWheelGun();
+            ReleaseReady = false;
         }
 
         public void Apply(float replayTime, PitStopSequence sequence)
@@ -541,8 +607,6 @@ namespace F1XR.RestAPI.Replay
             wheelOffRightHand = null;
             wheelOnLeftHand = null;
             wheelOnRightHand = null;
-            wheelOffTyreGripOffset = Vector3.zero;
-            wheelOnTyreGripOffset = Vector3.zero;
             oldLooseTyre = null;
             newLooseTyre = null;
             oldLooseTyreVisualCenter = Vector3.zero;
@@ -550,6 +614,7 @@ namespace F1XR.RestAPI.Replay
             originalFlWheelRenderers = null;
             originalFlWheelRendererStates = null;
             flHub = FallbackFlHub;
+            flOutward = Vector3.right;
             flHubRotation = Quaternion.identity;
             tyreDiameterMeters = FallbackTyreDiameterMeters;
             ReleaseReady = false;
@@ -558,7 +623,8 @@ namespace F1XR.RestAPI.Replay
         private SampledActor CreateActor(
             string name,
             Vector3 position,
-            Vector3 lookDirection)
+            Vector3 lookDirection,
+            bool lockMotionRoot = false)
         {
             Transform actorRoot = CreateRoot(name, crewRoot);
             actorRoot.localPosition = position;
@@ -582,7 +648,8 @@ namespace F1XR.RestAPI.Replay
                 ? new SampledActor(
                     actorRoot,
                     animator,
-                    assets.ChoreographyBaseController)
+                    assets.ChoreographyBaseController,
+                    lockMotionRoot)
                 : null;
         }
 
@@ -595,22 +662,6 @@ namespace F1XR.RestAPI.Replay
             instance.name = name;
             DisablePhysics(instance, keepAnimator: false);
             return instance;
-        }
-
-        private Vector3 ResolveWheelCarrierGripOffset(
-            SampledActor actor,
-            AnimationClip clip,
-            float contactNormalized,
-            Transform leftHand,
-            Transform rightHand)
-        {
-            actor.SampleNormalized(clip, 0f);
-            actor.SampleNormalized(clip, contactNormalized);
-            Vector3 handMidpoint = ResolveHandMidpoint(
-                leftHand,
-                rightHand,
-                flHub);
-            return flHub - handMidpoint;
         }
 
         private void CalibrateGunner()
@@ -627,6 +678,45 @@ namespace F1XR.RestAPI.Replay
             Vector3 correction = target - hand;
             correction.y = 0f;
             gunner.Root.localPosition += correction;
+        }
+
+        private void CalibrateWheelOffContact()
+        {
+            wheelOff.SampleNormalized(
+                assets.WheelOffFullL,
+                WheelOffOwnershipNormalized);
+            Vector3 hands = ResolveHandMidpoint(
+                wheelOffLeftHand,
+                wheelOffRightHand,
+                flHub);
+            Vector3 correction = flHub - hands;
+            correction.y = 0f;
+            wheelOff.Root.localPosition += correction;
+        }
+
+        private void CalibrateWheelOnContact()
+        {
+            wheelOn.SampleNormalized(
+                assets.WheelOnFullL,
+                WheelOnHandoffNormalized);
+            Vector3 hands = ResolveHandMidpoint(
+                wheelOnLeftHand,
+                wheelOnRightHand,
+                flHub);
+            Vector3 correction = flHub - hands;
+            correction.y = 0f;
+            wheelOn.Root.localPosition += correction;
+        }
+
+        private static Vector3 ResolveGroundFacing(
+            Vector3 position,
+            Vector3 target)
+        {
+            Vector3 direction = target - position;
+            direction.y = 0f;
+            return direction.sqrMagnitude > 0.000001f
+                ? direction.normalized
+                : Vector3.forward;
         }
 
         private float EstimateWheelGunReach()
@@ -687,7 +777,6 @@ namespace F1XR.RestAPI.Replay
                     ResolveTyreGripCenter(
                         wheelOffLeftHand,
                         wheelOffRightHand,
-                        wheelOffTyreGripOffset,
                         flHub));
             }
 
@@ -699,7 +788,6 @@ namespace F1XR.RestAPI.Replay
                     ResolveTyreGripCenter(
                         wheelOnLeftHand,
                         wheelOnRightHand,
-                        wheelOnTyreGripOffset,
                         flHub));
             }
         }
@@ -736,14 +824,12 @@ namespace F1XR.RestAPI.Replay
         private Vector3 ResolveTyreGripCenter(
             Transform leftHand,
             Transform rightHand,
-            Vector3 gripOffset,
             Vector3 fallback)
         {
             return ResolveHandMidpoint(
-                    leftHand,
-                    rightHand,
-                    fallback) +
-                gripOffset;
+                leftHand,
+                rightHand,
+                fallback);
         }
 
         private Vector3 ResolveHandMidpoint(
