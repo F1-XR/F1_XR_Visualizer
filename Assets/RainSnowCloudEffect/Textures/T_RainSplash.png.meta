@@ -1,5 +1,13 @@
 fileFormatVersion: 2
 guid: cddfaf5b79757124686fcdf6f478d8b7
+AssetOrigin:
+  serializedVersion: 1
+  productId: 382428
+  packageName: "[FREE] Cinematic Weather VFX Bundle \u2014 Rain, Snow & Fog | URP
+    | Particle Systems"
+  packageVersion: 1.0
+  assetPath: Assets/RainSnowCloudEffect/Textures/T_RainSplash.png
+  uploadId: 936630
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -154,11 +162,3 @@ TextureImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 382428
-  packageName: "[FREE] Cinematic Weather VFX Bundle \u2014 Rain, Snow & Fog | URP
-    | Particle Systems"
-  packageVersion: 1.0
-  assetPath: Assets/RainSnowCloudEffect/Textures/T_RainSplash.png
-  uploadId: 936630
