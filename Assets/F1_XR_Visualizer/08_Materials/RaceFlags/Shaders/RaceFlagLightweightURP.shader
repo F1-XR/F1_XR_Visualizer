@@ -4,6 +4,8 @@ Shader "F1XR/RaceFlagLightweightURP"
     {
         _FlagMode ("Flag Mode", Float) = 0
         _FlagColor ("Flag Color", Color) = (1, 0.75, 0.03, 1)
+        _Metallic ("Metallic", Range(0, 1)) = 0.65
+        _Smoothness ("Smoothness", Range(0, 1)) = 0.7
         _WaveAmplitude ("Wave Amplitude", Float) = 0.04
         _WaveFrequency ("Wave Frequency", Float) = 10
         _WaveSpeed ("Wave Speed", Float) = 6
@@ -39,6 +41,8 @@ Shader "F1XR/RaceFlagLightweightURP"
             CBUFFER_START(UnityPerMaterial)
                 float _FlagMode;
                 half4 _FlagColor;
+                float _Metallic;
+                float _Smoothness;
                 float _WaveAmplitude;
                 float _WaveFrequency;
                 float _WaveSpeed;
@@ -147,10 +151,18 @@ Shader "F1XR/RaceFlagLightweightURP"
                 float3 lightDirWS = normalize(float3(0.35, 0.75, 0.45));
                 float diffuse = saturate(dot(normalWS, lightDirWS));
                 float rim = pow(1.0 - saturate(dot(normalWS, viewDirWS)), 2.0);
+                float3 halfDirWS = normalize(lightDirWS + viewDirWS);
+                float metallic = saturate(_Metallic);
+                float specularPower = lerp(16.0, 128.0, saturate(_Smoothness));
+                float specular = pow(saturate(dot(normalWS, halfDirWS)), specularPower);
 
                 half3 baseColor = GetFlagBaseColor(input.uv);
-                half lighting = (half)(0.50 + diffuse * 0.42);
-                half3 color = baseColor * lighting + baseColor * (half)(rim * 0.10);
+                half diffuseLighting = (half)(0.42 + diffuse * lerp(0.42, 0.18, metallic));
+                half3 specularColor = lerp(half3(0.04, 0.04, 0.04), baseColor, metallic);
+                half3 color =
+                    baseColor * diffuseLighting +
+                    specularColor * (half)(specular * lerp(0.25, 1.0, metallic)) +
+                    baseColor * (half)(rim * 0.10);
 
                 return half4(saturate(color), 1.0);
             }

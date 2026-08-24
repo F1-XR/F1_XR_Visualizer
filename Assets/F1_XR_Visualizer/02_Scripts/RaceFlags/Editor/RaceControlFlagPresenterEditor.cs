@@ -75,6 +75,8 @@ namespace F1XR.RaceFlags.Editor
     public sealed class RaceControlFlagPresenterEditor : UnityEditor.Editor
     {
         private const string FlagPrefabPath = "Assets/F1_XR_Visualizer/03_Prefabs/RaceFlags/RaceFlagAlert.prefab";
+        private const string YellowFlagLogoPrefabPath = "Assets/F1_XR_Visualizer/03_Prefabs/Logo/Logo_YellowFlag.prefab";
+        private const string RedFlagLogoPrefabPath = "Assets/F1_XR_Visualizer/03_Prefabs/Logo/Logo_RedFlag.prefab";
         private const string PresenterObjectName = "RaceControlFlagPresenter_TEST";
 
         [MenuItem("Tools/F1 XR/Race Flags/Place Runtime Presenter in Active Test Scene")]
@@ -91,11 +93,13 @@ namespace F1XR.RaceFlags.Editor
             }
 
             GameObject flagPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(FlagPrefabPath);
-            if (flagPrefab == null)
+            GameObject yellowFlagLogoPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(YellowFlagLogoPrefabPath);
+            GameObject redFlagLogoPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RedFlagLogoPrefabPath);
+            if (flagPrefab == null || yellowFlagLogoPrefab == null || redFlagLogoPrefab == null)
             {
                 EditorUtility.DisplayDialog(
                     "Race Flag Presenter",
-                    "Create the race flag prefab first with Tools > F1 XR > Race Flags > Create or Update Prefab.",
+                    "The race flag or status logo prefabs could not be found.",
                     "OK");
                 return;
             }
@@ -133,6 +137,8 @@ namespace F1XR.RaceFlags.Editor
             serializedPresenter.FindProperty("replayPlayer").objectReferenceValue = Object.FindAnyObjectByType<ReplayPlayer>();
             serializedPresenter.FindProperty("mapRootOverride").objectReferenceValue = null;
             serializedPresenter.FindProperty("raceFlagPrefab").objectReferenceValue = flagPrefab;
+            serializedPresenter.FindProperty("yellowFlagLogoPrefab").objectReferenceValue = yellowFlagLogoPrefab;
+            serializedPresenter.FindProperty("redFlagLogoPrefab").objectReferenceValue = redFlagLogoPrefab;
             serializedPresenter.FindProperty("missingEndFallbackDuration").floatValue = 5.0f;
             serializedPresenter.ApplyModifiedPropertiesWithoutUndo();
 

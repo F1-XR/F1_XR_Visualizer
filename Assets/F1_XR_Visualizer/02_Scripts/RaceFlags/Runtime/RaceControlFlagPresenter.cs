@@ -23,8 +23,18 @@ namespace F1XR.RaceFlags
         [SerializeField] private RaceFlagAlert raceFlagAlert;
         [SerializeField] private GameObject raceFlagPrefab;
 
+        [Header("Status Logos")]
+        [SerializeField] private GameObject yellowFlagLogoPrefab;
+        [SerializeField] private GameObject redFlagLogoPrefab;
+        [SerializeField] private Vector3 logoPivotLocalPosition = new Vector3(0.0f, -0.35f, 0.0f);
+        [SerializeField] private Vector3 yellowFlagLogoLocalPosition = new Vector3(0.381f, 0.0f, 0.0f);
+        [SerializeField] private Vector3 redFlagLogoLocalPosition = new Vector3(0.257f, 0.0f, 0.0f);
+        [SerializeField] private Vector3 logoLocalScale = new Vector3(0.1f, 0.1f, 0.1f);
+        [Min(0.0f)] [SerializeField] private float logoRotationDegreesPerSecond = 12.0f;
+
         [Header("Placement")]
         [SerializeField] private Vector3 anchorLocalPosition = new Vector3(0.0f, 0.5f, 0.0f);
+        [SerializeField] private Vector3 flagLocalPosition = new Vector3(0.0f, -0.45f, 0.0f);
 
         [Header("Timing")]
         [SerializeField] private float checkeredDisplayDuration = 5.0f;
@@ -62,6 +72,10 @@ namespace F1XR.RaceFlags
         private bool warnedMissingFlag;
         private bool incidentYellowOverride;
         private Transform incidentPresentationRoot;
+        private GameObject yellowFlagLogoInstance;
+        private GameObject redFlagLogoInstance;
+        private Transform yellowFlagLogoPivot;
+        private Transform redFlagLogoPivot;
 
         public event Action CheckeredFlagShown;
         public bool IncidentYellowOverrideActive =>
@@ -126,6 +140,9 @@ namespace F1XR.RaceFlags
             if (raceFlagAlert != null)
                 raceFlagAlert.HideImmediately();
 
+            SetStatusLogoVisible(yellowFlagLogoInstance, yellowFlagLogoPivot, false);
+            SetStatusLogoVisible(redFlagLogoInstance, redFlagLogoPivot, false);
+
             incidentYellowOverride = false;
             incidentPresentationRoot = null;
             previousState = RaceFlagRuntimeState.Hidden;
@@ -135,6 +152,7 @@ namespace F1XR.RaceFlags
         {
             EnsureAnchorAndFlag();
             EvaluateAndApply();
+            RotateVisibleStatusLogos();
         }
 
         public void SimulateYellowFlag()
@@ -261,10 +279,17 @@ namespace F1XR.RaceFlags
             if (raceFlagAlert != null && raceFlagAlert.transform.parent != raceFlagAnchor)
             {
                 raceFlagAlert.transform.SetParent(raceFlagAnchor, worldPositionStays: false);
-                raceFlagAlert.transform.localPosition = Vector3.zero;
+            }
+
+            if (raceFlagAlert != null)
+            {
+                raceFlagAlert.transform.localPosition = flagLocalPosition;
                 raceFlagAlert.transform.localRotation = Quaternion.identity;
                 raceFlagAlert.transform.localScale = Vector3.one;
             }
+
+            EnsureStatusLogo(ref yellowFlagLogoInstance, ref yellowFlagLogoPivot, yellowFlagLogoPrefab, yellowFlagLogoLocalPosition);
+            EnsureStatusLogo(ref redFlagLogoInstance, ref redFlagLogoPivot, redFlagLogoPrefab, redFlagLogoLocalPosition);
 
             hasFlagInstance = raceFlagAlert != null;
 
@@ -314,6 +339,61 @@ namespace F1XR.RaceFlags
             GameObject anchorObject = new GameObject(AnchorName);
             anchorObject.transform.SetParent(mapRoot, worldPositionStays: false);
             return anchorObject.transform;
+        }
+
+        private void EnsureStatusLogo(
+            ref GameObject instance,
+            ref Transform pivot,
+            GameObject prefab,
+            Vector3 localPosition)
+        {
+            if (prefab == null || raceFlagAnchor == null)
+                return;
+
+            if (pivot == null)
+            {
+                GameObject pivotObject = new GameObject(prefab.name + "Pivot");
+                pivotObject.transform.SetParent(raceFlagAnchor, worldPositionStays: false);
+                pivot = pivotObject.transform;
+            }
+            else if (pivot.parent != raceFlagAnchor)
+            {
+                pivot.SetParent(raceFlagAnchor, worldPositionStays: false);
+            }
+
+            pivot.localPosition = logoPivotLocalPosition;
+
+            if (instance == null)
+            {
+                instance = Instantiate(prefab, pivot);
+                instance.name = prefab.name;
+                instance.SetActive(false);
+            }
+            else if (instance.transform.parent != pivot)
+            {
+                instance.transform.SetParent(pivot, worldPositionStays: false);
+            }
+
+            instance.transform.localPosition = localPosition;
+            instance.transform.localRotation = Quaternion.identity;
+            instance.transform.localScale = logoLocalScale;
+        }
+
+        private void RotateVisibleStatusLogos()
+        {
+            if (logoRotationDegreesPerSecond <= 0.0f)
+                return;
+
+            RotateStatusLogo(yellowFlagLogoInstance, yellowFlagLogoPivot);
+            RotateStatusLogo(redFlagLogoInstance, redFlagLogoPivot);
+        }
+
+        private void RotateStatusLogo(GameObject logo, Transform pivot)
+        {
+            if (logo == null || !logo.activeSelf || pivot == null)
+                return;
+
+            pivot.Rotate(0.0f, logoRotationDegreesPerSecond * Time.deltaTime, 0.0f, Space.Self);
         }
 
         private void EvaluateAndApply(bool forceTransition = false)
@@ -429,6 +509,9 @@ namespace F1XR.RaceFlags
             if (raceFlagAlert == null)
                 return;
 
+            SetStatusLogoVisible(yellowFlagLogoInstance, yellowFlagLogoPivot, newState == RaceFlagRuntimeState.Yellow);
+            SetStatusLogoVisible(redFlagLogoInstance, redFlagLogoPivot, newState == RaceFlagRuntimeState.Red);
+
             switch (newState)
             {
                 case RaceFlagRuntimeState.Checkered:
@@ -447,6 +530,17 @@ namespace F1XR.RaceFlags
                         raceFlagAlert.HideWithExit();
                     break;
             }
+        }
+
+        private static void SetStatusLogoVisible(GameObject logo, Transform pivot, bool visible)
+        {
+            if (logo == null || logo.activeSelf == visible)
+                return;
+
+            if (visible && pivot != null)
+                pivot.localRotation = Quaternion.identity;
+
+            logo.SetActive(visible);
         }
 
         private void HandleRaceFinished()

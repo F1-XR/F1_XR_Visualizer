@@ -261,6 +261,8 @@ namespace F1XR.RaceFlags.Editor
 
             material.SetFloat("_FlagMode", 0.0f);
             material.SetColor("_FlagColor", new Color(1.0f, 0.75f, 0.03f, 1.0f));
+            material.SetFloat("_Metallic", 0.65f);
+            material.SetFloat("_Smoothness", 0.7f);
             material.SetFloat("_WaveAmplitude", 0.04f);
             material.SetFloat("_WaveFrequency", 10.0f);
             material.SetFloat("_WaveSpeed", 6.0f);
@@ -273,18 +275,22 @@ namespace F1XR.RaceFlags.Editor
 
         private static Material LoadOrCreatePoleMaterial()
         {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+                shader = Shader.Find("Standard");
+
             Material material = AssetDatabase.LoadAssetAtPath<Material>(PoleMaterialPath);
             if (material == null)
             {
-                Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null)
-                    shader = Shader.Find("Unlit/Color");
-
                 material = new Material(shader)
                 {
                     name = "RaceFlagPole"
                 };
                 AssetDatabase.CreateAsset(material, PoleMaterialPath);
+            }
+            else if (shader != null && material.shader != shader)
+            {
+                material.shader = shader;
             }
 
             Color poleColor = new Color(0.045f, 0.045f, 0.05f, 1.0f);
@@ -293,6 +299,10 @@ namespace F1XR.RaceFlags.Editor
                 material.SetColor("_BaseColor", poleColor);
             if (material.HasProperty("_Color"))
                 material.SetColor("_Color", poleColor);
+            if (material.HasProperty("_Metallic"))
+                material.SetFloat("_Metallic", 0.8f);
+            if (material.HasProperty("_Smoothness"))
+                material.SetFloat("_Smoothness", 0.7f);
             EditorUtility.SetDirty(material);
             return material;
         }
