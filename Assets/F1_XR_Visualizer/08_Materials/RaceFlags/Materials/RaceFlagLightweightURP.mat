@@ -26,8 +26,10 @@ Material:
     m_Ints: []
     m_Floats:
     - _FlagMode: 0
+    - _Metallic: 0.65
     - _MotionPhase: 0
     - _SecondaryWave: 0.35
+    - _Smoothness: 0.7
     - _WaveAmplitude: 0.04
     - _WaveFrequency: 10
     - _WaveSpeed: 6
