@@ -224,6 +224,11 @@ namespace F1XR.RestAPI.Replay
                 firstMilestoneChoreography?.ApplyChoreographyTime(
                     firstMilestoneCalibrationTime);
             }
+            else if (firstMilestoneStaticCalibrationPose)
+            {
+                firstMilestoneChoreography?
+                    .ApplyStaticServiceComposition();
+            }
             else
 #endif
             {
@@ -625,11 +630,14 @@ namespace F1XR.RestAPI.Replay
         }
 
 #if UNITY_EDITOR
+        private bool firstMilestoneStaticCalibrationPose;
+
         public bool SetFirstMilestoneCalibrationTime(float time)
         {
             if (firstMilestoneChoreography == null)
                 return false;
 
+            firstMilestoneStaticCalibrationPose = false;
             firstMilestoneCalibrationTime = Mathf.Clamp(
                 time,
                 0f,
@@ -637,9 +645,20 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        public bool SetFirstMilestoneStaticCalibrationPose()
+        {
+            if (firstMilestoneChoreography == null)
+                return false;
+
+            firstMilestoneCalibrationTime = float.NaN;
+            firstMilestoneStaticCalibrationPose = true;
+            return true;
+        }
+
         public void ClearFirstMilestoneCalibrationTime()
         {
             firstMilestoneCalibrationTime = float.NaN;
+            firstMilestoneStaticCalibrationPose = false;
         }
 #endif
 
