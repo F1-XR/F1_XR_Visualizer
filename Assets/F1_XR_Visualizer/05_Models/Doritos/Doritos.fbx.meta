@@ -3,7 +3,27 @@ guid: 9ee8409dcee7d0746a6af578fe0fd715
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Doritos
+    second: {fileID: 2100000, guid: 0a332fd3221a4a80a1030f3a27e17fb6, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Doritos_Baginside
+    second: {fileID: 2100000, guid: f6fae970ceb3463b8ec34c869c221114, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Doritos_ChipFull
+    second: {fileID: 2100000, guid: a22f11b8ca6b4ea19193a9c77fa71b8f, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Doritos_ChipTex
+    second: {fileID: 2100000, guid: faaef8e514a741a6bb0973590a6760d3, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
