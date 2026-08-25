@@ -1839,6 +1839,13 @@ namespace F1XR.RestAPI.Replay.Room
                     surface.transform,
                     false);
             }
+            else
+            {
+                CreateArchitecturalPitPortalFrame(
+                    name,
+                    size,
+                    surface.transform);
+            }
 
             GameObject cameraObject =
                 new GameObject($"{name}Camera");
@@ -1856,7 +1863,9 @@ namespace F1XR.RestAPI.Replay.Room
             portalCamera.clearFlags =
                 CameraClearFlags.SolidColor;
             portalCamera.backgroundColor =
-                new Color(0.015f, 0.025f, 0.04f, 0f);
+                rectangular
+                    ? new Color(0.34f, 0.4f, 0.47f, 1f)
+                    : new Color(0.015f, 0.025f, 0.04f, 0f);
             portalCamera.allowHDR = false;
             portalCamera.allowMSAA = highQuality;
             portalCamera.allowDynamicResolution = false;
@@ -1876,6 +1885,96 @@ namespace F1XR.RestAPI.Replay.Room
             cameraData.allowXRRendering = false;
 
             return surface.transform;
+        }
+
+        private void CreateArchitecturalPitPortalFrame(
+            string name,
+            Vector2 size,
+            Transform parent)
+        {
+            float frameWidth = Mathf.Clamp(
+                Mathf.Min(size.x, size.y) * 0.026f,
+                0.045f,
+                0.07f);
+            Material material = CreateArchitecturalPitMaterial(
+                $"{name}ArchitecturalFrame",
+                new Color(0.075f, 0.085f, 0.1f, 1f));
+            if (material == null)
+                return;
+
+            CreatePersistentPortalFrameRenderer(
+                $"{name}ArchitecturalFrame",
+                CreateRectangularPitPortalFrameMesh(
+                    size,
+                    frameWidth,
+                    $"Runtime_{name}ArchitecturalFrame"),
+                material,
+                parent,
+                -0.018f,
+                20);
+
+            GameObject threshold =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            threshold.name = $"{name}FloorThreshold";
+            threshold.layer = PortalSurfaceLayer;
+            threshold.transform.SetParent(parent, false);
+            float thresholdHeight = Mathf.Clamp(
+                size.y * 0.024f,
+                0.045f,
+                0.065f);
+            threshold.transform.localPosition = new Vector3(
+                0f,
+                -size.y * 0.5f + thresholdHeight * 0.5f,
+                -0.012f);
+            threshold.transform.localScale = new Vector3(
+                size.x + frameWidth * 0.5f,
+                thresholdHeight,
+                0.085f);
+            Collider thresholdCollider =
+                threshold.GetComponent<Collider>();
+            if (thresholdCollider != null)
+                Destroy(thresholdCollider);
+            MeshRenderer thresholdRenderer =
+                threshold.GetComponent<MeshRenderer>();
+            thresholdRenderer.sharedMaterial = material;
+            thresholdRenderer.shadowCastingMode =
+                ShadowCastingMode.Off;
+            thresholdRenderer.receiveShadows = false;
+            thresholdRenderer.lightProbeUsage = LightProbeUsage.Off;
+            thresholdRenderer.reflectionProbeUsage =
+                ReflectionProbeUsage.Off;
+            thresholdRenderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
+            thresholdRenderer.sortingOrder = 20;
+        }
+
+        private Material CreateArchitecturalPitMaterial(
+            string name,
+            Color color)
+        {
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Unlit/Color");
+            if (shader == null)
+                return null;
+
+            Material material = new(shader)
+            {
+                name = $"{name}Material",
+                color = color
+            };
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", color);
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 1f);
+            material.renderQueue = (int)RenderQueue.Geometry;
+            runtimeMaterials.Add(material);
+            return material;
         }
 
         private void CreatePersistentPortalFrame(
