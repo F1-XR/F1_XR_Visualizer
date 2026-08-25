@@ -13,8 +13,8 @@ MonoBehaviour:
   m_Name: SuzukaPitEnvironmentProfile
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.PitEnvironmentProfile
   circuit: Suzuka
-  pitTrackPrefab: {fileID: 7028633671579663044, guid: f431f2308b8576745bc31b07f9ce9178, type: 3}
-  pitTrackLocalPosition: {x: 0, y: 0.00003, z: 0}
+  pitTrackPrefab: {fileID: 1028550933846851703, guid: af854b9dd3086f24f8d2c2dd72463221, type: 3}
+  pitTrackLocalPosition: {x: -0.005815128, y: -0.0000010140163, z: 0}
   pitTrackLocalEulerAngles: {x: 0, y: 0, z: 0}
   pitTrackLocalScale: {x: 0.00176216, y: 0.00176216, z: 0.00176216}
   pitBuildingPrefab: {fileID: 0}
