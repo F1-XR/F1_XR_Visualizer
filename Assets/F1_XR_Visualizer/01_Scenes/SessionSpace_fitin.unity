@@ -3445,12 +3445,12 @@ MonoBehaviour:
   preferredYear: 2024
   preferredCircuitShortName: Suzuka
   preferredSessionName: Race
-  replayMinutes: 45
+  replayMinutes: 60
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
   useCachedDatasetFastStart: 1
-  cachedDatasetId: 2024_suzuka_race_9496_c2_o2_m45
+  cachedDatasetId: 2024_suzuka_race_9496_c2_o2_m60
   cachedCircuitKey: 46
   useEventReplayTestSession: 0
 --- !u!4 &1705380157
