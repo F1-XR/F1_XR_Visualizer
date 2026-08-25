@@ -85,6 +85,10 @@ namespace F1XR.RestAPI.Replay
         private const float MinimumTrackRegionPadding = 0.00005f;
         private const float MaximumConventionalPitLaneSeconds = 120f;
         private const float MinimumRedFlagPitOverlapSeconds = 5f;
+        private const float PitApproachEntrySpeedMultiplier = 3.2f;
+        private const float PitApproachBrakeReplaySeconds = 0.65f;
+        private const float PitDepartureMaximumSpeedMultiplier = 4f;
+        private const float PitDepartureAccelerationReplaySeconds = 0.8f;
         private const string PitShowcaseAssetResourcePath =
             "PitShowcase/PitShowcaseAssets";
 
@@ -1510,6 +1514,8 @@ namespace F1XR.RestAPI.Replay
                     Time.deltaTime,
                     eventPlaybackSpeed *
                     showcasePlaybackSpeedMultiplier *
+                    ResolvePitShowcaseMotionSpeedMultiplier(
+                        timeline.CurrentTime) *
                     ResolveBattleCruiseSpeedMultiplier(
                         timeline.CurrentTime) *
                     ResolveCollisionPlaybackSpeedMultiplier(
@@ -1534,6 +1540,51 @@ namespace F1XR.RestAPI.Replay
                 !collisionHitStop,
                 null);
             ApplyCars();
+        }
+
+        private float ResolvePitShowcaseMotionSpeedMultiplier(
+            float replayTime)
+        {
+            if (!IsPitStopDefinition(currentEvent) ||
+                pitStopSequence == null ||
+                pitStopSequence.IsDriveThrough)
+            {
+                return 1f;
+            }
+
+            float releaseTime =
+                PitStopFirstMilestoneChoreography.ResolveReplayEnd(
+                    pitStopSequence);
+            if (replayTime >= releaseTime)
+            {
+                float launchProgress = Mathf.Clamp01(
+                    (replayTime - releaseTime) /
+                    PitDepartureAccelerationReplaySeconds);
+                float launchAcceleration = 1f - Mathf.Pow(
+                    1f - launchProgress,
+                    3f);
+                return Mathf.Lerp(
+                    1f,
+                    PitDepartureMaximumSpeedMultiplier,
+                    launchAcceleration);
+            }
+
+            if (replayTime >= pitStopSequence.ServiceStartTime)
+                return 1f;
+
+            float brakeStart = Mathf.Max(
+                pitStopSequence.BrakeTime,
+                pitStopSequence.ServiceStartTime -
+                PitApproachBrakeReplaySeconds);
+            float brakeProgress = Mathf.InverseLerp(
+                brakeStart,
+                pitStopSequence.ServiceStartTime,
+                replayTime);
+            float hardBrakeProgress = brakeProgress * brakeProgress;
+            return Mathf.Lerp(
+                PitApproachEntrySpeedMultiplier,
+                1f,
+                hardBrakeProgress);
         }
 
         private float ResolveBattleCruiseSpeedMultiplier(
