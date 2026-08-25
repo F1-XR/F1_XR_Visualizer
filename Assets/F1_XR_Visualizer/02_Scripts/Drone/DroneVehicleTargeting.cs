@@ -12,6 +12,8 @@ namespace F1XR.Drone
     {
         public readonly Rect viewportRect;
         public readonly Bounds worldBounds;
+        public readonly Transform carTransform;
+        public readonly Vector3 carLocalBoundsCenter;
         public readonly int driverNumber;
         public readonly int rank;
         public readonly string driverLabel;
@@ -24,6 +26,8 @@ namespace F1XR.Drone
         public DroneVehicleTarget(
             Rect viewportRect,
             Bounds worldBounds,
+            Transform carTransform,
+            Vector3 carLocalBoundsCenter,
             int driverNumber,
             int rank,
             string driverLabel,
@@ -35,6 +39,8 @@ namespace F1XR.Drone
         {
             this.viewportRect = viewportRect;
             this.worldBounds = worldBounds;
+            this.carTransform = carTransform;
+            this.carLocalBoundsCenter = carLocalBoundsCenter;
             this.driverNumber = driverNumber;
             this.rank = rank;
             this.driverLabel = driverLabel;
@@ -55,7 +61,6 @@ namespace F1XR.Drone
         [SerializeField, Min(1)] int maximumVisibleTargets = 8;
 
         readonly List<DroneVehicleTarget> visibleTargets = new();
-        readonly List<Renderer> renderers = new();
 
         ReplayPlayer replayPlayer;
         DroneVehicleWorldTargetPresenter presenter;
@@ -139,6 +144,8 @@ namespace F1XR.Drone
                 visibleTargets.Add(new DroneVehicleTarget(
                     rect,
                     worldBounds,
+                    carTransform,
+                    carTransform.InverseTransformPoint(worldBounds.center),
                     position.driverNumber,
                     position.position,
                     label,
@@ -173,30 +180,9 @@ namespace F1XR.Drone
             if (carTransform == null)
                 return false;
 
-            renderers.Clear();
-            carTransform.GetComponentsInChildren(renderers);
-            if (renderers.Count == 0)
-                return false;
-
-            bool hasBounds = false;
-            Bounds bounds = default;
-            foreach (Renderer renderer in renderers)
-            {
-                if (!IsVehicleRenderer(renderer))
-                    continue;
-
-                if (!hasBounds)
-                {
-                    bounds = renderer.bounds;
-                    hasBounds = true;
-                }
-                else
-                {
-                    bounds.Encapsulate(renderer.bounds);
-                }
-            }
-
-            if (!hasBounds)
+            ReplayCarView carView =
+                carTransform.GetComponentInParent<ReplayCarView>();
+            if (carView == null || !carView.TryGetBodyBounds(out Bounds bounds))
                 return false;
 
             worldBounds = bounds;
@@ -238,40 +224,6 @@ namespace F1XR.Drone
                 rect.height >= minimumViewportSize;
         }
 
-        static bool IsVehicleRenderer(Renderer renderer)
-        {
-            if (renderer == null || !renderer.enabled ||
-                !renderer.gameObject.activeInHierarchy ||
-                renderer is LineRenderer ||
-                renderer.GetComponent<TextMesh>() != null ||
-                renderer.GetComponent<TextMeshPro>() != null ||
-                renderer.GetComponentInParent<Canvas>() != null)
-            {
-                return false;
-            }
-
-            Transform current = renderer.transform;
-            while (current != null)
-            {
-                string objectName = current.name;
-                if (objectName.StartsWith("DriverLabel") ||
-                    objectName.StartsWith("SelectionFx") ||
-                    objectName.StartsWith("GroundRing") ||
-                    objectName.StartsWith("SelectionPulse") ||
-                    objectName.StartsWith("SelectedCar"))
-                {
-                    return false;
-                }
-
-                if (current.GetComponent<ReplayCarView>() != null)
-                    break;
-
-                current = current.parent;
-            }
-
-            return true;
-        }
-
         static int CompareTargets(
             DroneVehicleTarget first,
             DroneVehicleTarget second)
@@ -291,6 +243,7 @@ namespace F1XR.Drone
         const float CardCanvasWidth = 430f;
         const float CardCanvasHeight = 290f;
         const float CardHoldSeconds = 1f;
+        const float CardFadeOutSeconds = 0.25f;
 
         [Header("Depth Offset")]
         [SerializeField, Min(0f)] float minimumDepthOffset = 0.3f;
@@ -311,6 +264,9 @@ namespace F1XR.Drone
         int primaryCardDriverNumber = -1;
         float primaryCardLastVisibleTime;
         float primaryCardSide;
+        WorldTargetFrame primaryCardFrame;
+        WorldTargetFrame heldPrimaryFrame;
+        DroneVehicleTarget primaryCardTarget;
 
         public void Configure(Camera camera, TMP_FontAsset targetFont)
         {
@@ -343,14 +299,17 @@ namespace F1XR.Drone
                 return;
 
             int count = targets != null ? targets.Count : 0;
+            int primaryIndex = FindPrimaryCardTarget(targets);
+            bool isHoldingPrimary = primaryIndex < 0 &&
+                primaryCardDriverNumber >= 0 &&
+                Time.unscaledTime < primaryCardLastVisibleTime + CardHoldSeconds;
             while (frames.Count < count)
                 frames.Add(new WorldTargetFrame(root.transform, lineMaterial));
 
             for (int i = 0; i < frames.Count; i++)
             {
-                bool active = i < count;
-                frames[i].SetActive(active);
-                if (active)
+                frames[i].SetActive(i < count);
+                if (i < count)
                 {
                     frames[i].SetTarget(
                         targets[i],
@@ -359,22 +318,38 @@ namespace F1XR.Drone
                 }
             }
 
-            int primaryIndex = FindPrimaryCardTarget(targets);
             if (primaryIndex >= 0)
             {
                 primaryCardLastVisibleTime = Time.unscaledTime;
+                primaryCardFrame = frames[primaryIndex];
+                primaryCardTarget = targets[primaryIndex];
+                heldPrimaryFrame?.SetActive(false);
                 SetPrimaryCard(
-                    targets[primaryIndex],
-                    frames[primaryIndex],
-                    primaryCardSide);
+                    primaryCardTarget,
+                    primaryCardFrame,
+                    primaryCardSide,
+                    1f);
                 return;
             }
 
-            if (primaryCardDriverNumber >= 0 &&
-                Time.unscaledTime < primaryCardLastVisibleTime + CardHoldSeconds)
+            if (isHoldingPrimary && primaryCardFrame != null)
             {
-                card?.SetActive(true);
-                leaderLine.enabled = false;
+                float remainingTime = primaryCardLastVisibleTime +
+                    CardHoldSeconds - Time.unscaledTime;
+                float opacity = Mathf.Clamp01(
+                    remainingTime / CardFadeOutSeconds);
+                heldPrimaryFrame ??= new WorldTargetFrame(
+                    root.transform,
+                    lineMaterial);
+                heldPrimaryFrame.SetTarget(
+                    primaryCardTarget,
+                    xrCamera,
+                    ResolveDepthOffset(primaryCardTarget.worldBounds.center));
+                SetPrimaryCard(
+                    primaryCardTarget,
+                    heldPrimaryFrame,
+                    primaryCardSide,
+                    opacity);
                 return;
             }
 
@@ -387,7 +362,10 @@ namespace F1XR.Drone
             primaryCardDriverNumber = targets[0].driverNumber;
             primaryCardLastVisibleTime = Time.unscaledTime;
             primaryCardSide = targets[0].viewportRect.center.x > 0.5f ? -1f : 1f;
-            SetPrimaryCard(targets[0], frames[0], primaryCardSide);
+            primaryCardFrame = frames[0];
+            primaryCardTarget = targets[0];
+            heldPrimaryFrame?.SetActive(false);
+            SetPrimaryCard(primaryCardTarget, primaryCardFrame, primaryCardSide, 1f);
         }
 
         int FindPrimaryCardTarget(IReadOnlyList<DroneVehicleTarget> targets)
@@ -409,6 +387,9 @@ namespace F1XR.Drone
             primaryCardDriverNumber = -1;
             primaryCardLastVisibleTime = 0f;
             primaryCardSide = 0f;
+            primaryCardFrame = null;
+            heldPrimaryFrame?.SetActive(false);
+            primaryCardTarget = default;
             card?.SetActive(false);
             if (leaderLine != null)
                 leaderLine.enabled = false;
@@ -451,7 +432,8 @@ namespace F1XR.Drone
         void SetPrimaryCard(
             DroneVehicleTarget target,
             WorldTargetFrame frame,
-            float side)
+            float side,
+            float opacity)
         {
             card ??= new WorldTargetCard(
                 root.transform,
@@ -474,11 +456,12 @@ namespace F1XR.Drone
                 target,
                 cardPosition,
                 rotation,
-                cardWidth);
+                cardWidth,
+                opacity);
 
-            SetLineColor(leaderMaterial, target.teamColor);
-            leaderLine.startColor = Color.white;
-            leaderLine.endColor = Color.white;
+            SetLineColor(leaderMaterial, WithOpacity(target.teamColor, opacity));
+            leaderLine.startColor = WithOpacity(Color.white, opacity);
+            leaderLine.endColor = WithOpacity(Color.white, opacity);
             leaderLine.widthMultiplier = Mathf.Clamp(
                 distance * 0.0024f,
                 0.035f,
@@ -486,6 +469,12 @@ namespace F1XR.Drone
             leaderLine.SetPosition(0, frame.GetSidePoint(side));
             leaderLine.SetPosition(1, card.GetSidePoint(-side));
             leaderLine.enabled = true;
+        }
+
+        static Color WithOpacity(Color color, float opacity)
+        {
+            color.a *= opacity;
+            return color;
         }
 
         void OnDestroy()
@@ -598,8 +587,11 @@ namespace F1XR.Drone
             readonly LineRenderer line;
             readonly Material material;
             readonly Vector3[] positions = new Vector3[5];
+            Transform targetTransform;
+            Vector3 localBoundsCenter;
 
             public Vector3 Center { get; private set; }
+            public Vector3 VehicleCenter { get; private set; }
             public float Width { get; private set; }
             public float Height { get; private set; }
 
@@ -633,9 +625,13 @@ namespace F1XR.Drone
                 Camera camera,
                 float depthOffset)
             {
-                Vector3 toCamera = camera.transform.position -
-                    target.worldBounds.center;
-                Center = target.worldBounds.center +
+                targetTransform = target.carTransform;
+                localBoundsCenter = target.carLocalBoundsCenter;
+                VehicleCenter = target.carTransform != null
+                    ? target.carTransform.TransformPoint(target.carLocalBoundsCenter)
+                    : target.worldBounds.center;
+                Vector3 toCamera = camera.transform.position - VehicleCenter;
+                Center = VehicleCenter +
                     (toCamera.sqrMagnitude > Mathf.Epsilon
                         ? toCamera.normalized * depthOffset
                         : Vector3.zero);
@@ -680,6 +676,27 @@ namespace F1XR.Drone
                 line.SetPositions(positions);
             }
 
+            public bool FollowTarget(Camera camera, float depthOffset)
+            {
+                if (camera == null || targetTransform == null ||
+                    !targetTransform.gameObject.activeInHierarchy)
+                {
+                    return false;
+                }
+
+                VehicleCenter = targetTransform.TransformPoint(localBoundsCenter);
+                Vector3 toCamera = camera.transform.position - VehicleCenter;
+                Center = VehicleCenter + (toCamera.sqrMagnitude > Mathf.Epsilon
+                    ? toCamera.normalized * depthOffset
+                    : Vector3.zero);
+                root.SetPositionAndRotation(
+                    Center,
+                    Quaternion.LookRotation(
+                        Center - camera.transform.position,
+                        camera.transform.up));
+                return true;
+            }
+
             public void Dispose()
             {
                 if (material != null)
@@ -705,6 +722,7 @@ namespace F1XR.Drone
             readonly TextMeshProUGUI rank;
             readonly TextMeshProUGUI speed;
             readonly Image brakeBadge;
+            readonly CanvasGroup canvasGroup;
 
             public WorldTargetCard(
                 Transform parent,
@@ -716,13 +734,15 @@ namespace F1XR.Drone
                     "Vehicle Target Info",
                     typeof(RectTransform),
                     typeof(Canvas),
-                    typeof(CanvasScaler));
+                    typeof(CanvasScaler),
+                    typeof(CanvasGroup));
                 cardObject.transform.SetParent(parent, false);
                 Canvas canvas = cardObject.GetComponent<Canvas>();
                 canvas.renderMode = RenderMode.WorldSpace;
                 canvas.overrideSorting = true;
                 canvas.sortingOrder = 30000;
                 root = cardObject.GetComponent<RectTransform>();
+                canvasGroup = cardObject.GetComponent<CanvasGroup>();
                 root.sizeDelta = new Vector2(CardCanvasWidth, CardCanvasHeight);
 
                 Image background = CreateImage("Background", root,
@@ -765,10 +785,12 @@ namespace F1XR.Drone
                 DroneVehicleTarget target,
                 Vector3 position,
                 Quaternion rotation,
-                float worldWidth)
+                float worldWidth,
+                float opacity)
             {
                 root.SetPositionAndRotation(position, rotation);
                 root.localScale = Vector3.one * (worldWidth / CardCanvasWidth);
+                canvasGroup.alpha = opacity;
                 accent.color = target.teamColor;
                 number.text = $"#{target.driverNumber}";
                 driver.text = target.driverLabel;
