@@ -5,6 +5,7 @@ using F1XR.Experience.Fracture;
 using F1XR.Experience.Room;
 using F1XR.RestAPI.Replay.Room;
 using F1XR.RestAPI.Replay.Track.Build;
+using F1XR.Debugging;
 #if UNITY_ANDROID
 using UnityEngine.Android;
 #endif
@@ -24,6 +25,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         [SerializeField] bool disableManagersUntilPermissionGranted = true;
 
         bool scenePermissionGranted;
+        bool spatialSetupBypassed;
         void Reset()
         {
             planeManager = GetComponentInParent<ARPlaneManager>();
@@ -33,9 +35,10 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void Awake()
         {
-            if (IsFitinScene())
+            spatialSetupBypassed = IsFitinScene() || IsSpatialSetupSkippedForDebug();
+            if (spatialSetupBypassed)
             {
-                DisableFitinSpatialSystems();
+                DisableSpatialSystems(IsFitinScene());
                 return;
             }
 
@@ -46,7 +49,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void OnEnable()
         {
-            if (IsFitinScene())
+            if (spatialSetupBypassed || IsFitinScene() || IsSpatialSetupSkippedForDebug())
                 return;
 
             ResolveReferences();
@@ -54,7 +57,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
 
         void Start()
         {
-            if (IsFitinScene())
+            if (spatialSetupBypassed || IsFitinScene() || IsSpatialSetupSkippedForDebug())
                 return;
 
             ResolveReferences();
@@ -145,7 +148,32 @@ namespace F1XR.RestAPI.Replay.Track.Placement
         bool IsFitinScene() =>
             gameObject.scene.name == FitinSceneName;
 
-        void DisableFitinSpatialSystems()
+        public void DisableSpatialSystemsForDebug(
+            bool disableAutomaticRoomSetup = false)
+        {
+            spatialSetupBypassed = true;
+            DisableSpatialSystems(false, disableAutomaticRoomSetup);
+        }
+
+        bool IsSpatialSetupSkippedForDebug()
+        {
+            foreach (var debugger in FindObjectsByType<SessionSpaceDebugger>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None))
+            {
+                if (debugger.gameObject.scene == gameObject.scene &&
+                    debugger.SkipSpatialSetupOnPlay)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        void DisableSpatialSystems(
+            bool disableTrackRevealPlacer,
+            bool disableAutomaticRoomSetup = false)
         {
             ResolveReferences();
             if (planeManager != null)
@@ -155,23 +183,30 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             if (anchorManager != null)
                 anchorManager.enabled = false;
 
-            DisableInFitinScene<ARSession>();
-            DisableInFitinScene<WallDiscovery>();
-            DisableInFitinScene<RoomShowcaseSetupController>();
-            HideAndDisableInFitinScene<RoomShowcaseSetupView>();
-            DisableInFitinScene<RoomSurfaceProvider>();
-            DisableInFitinScene<RoomShellProxyGenerator>();
-            DisableInFitinScene<RoomShellFractureController>();
-            DisableInFitinScene<ARPlanePlacementController>();
-            DisableInFitinScene<TrackRevealPlacer>();
-            DisableInFitinScene<AutomaticTableCandidatePreview>();
+            DisableInScene<ARSession>();
+            DisableInScene<WallDiscovery>();
+            DisableInScene<RoomSurfaceProvider>();
+            if (disableTrackRevealPlacer || disableAutomaticRoomSetup)
+            {
+                DisableInScene<RoomShowcaseSetupController>();
+                HideAndDisableInScene<RoomShowcaseSetupView>();
+                DisableInScene<RoomShellProxyGenerator>();
+                DisableInScene<RoomShellFractureController>();
+            }
+            if (disableTrackRevealPlacer)
+            {
+                DisableInScene<TrackRevealPlacer>();
+            }
+            if (disableTrackRevealPlacer || disableAutomaticRoomSetup)
+                DisableInScene<ARPlanePlacementController>();
+            DisableInScene<AutomaticTableCandidatePreview>();
 
             Debug.Log(
-                "[Fitin] Quest scene permission, spatial tracking, room shell, and table placement are bypassed.",
+                "[QuestScene] Plane tracking, wall discovery, and automatic table placement are bypassed.",
                 this);
         }
 
-        void DisableInFitinScene<T>() where T : Behaviour
+        void DisableInScene<T>() where T : Behaviour
         {
             T[] components = FindObjectsByType<T>(
                 FindObjectsInactive.Include);
@@ -179,14 +214,14 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             {
                 T component = components[i];
                 if (component != null &&
-                    component.gameObject.scene.name == FitinSceneName)
+                    component.gameObject.scene == gameObject.scene)
                 {
                     component.enabled = false;
                 }
             }
         }
 
-        void HideAndDisableInFitinScene<T>() where T : Behaviour
+        void HideAndDisableInScene<T>() where T : Behaviour
         {
             T[] components = FindObjectsByType<T>(
                 FindObjectsInactive.Include);
@@ -194,7 +229,7 @@ namespace F1XR.RestAPI.Replay.Track.Placement
             {
                 T component = components[i];
                 if (component == null ||
-                    component.gameObject.scene.name != FitinSceneName)
+                    component.gameObject.scene != gameObject.scene)
                 {
                     continue;
                 }
@@ -204,5 +239,6 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 component.enabled = false;
             }
         }
+
     }
 }

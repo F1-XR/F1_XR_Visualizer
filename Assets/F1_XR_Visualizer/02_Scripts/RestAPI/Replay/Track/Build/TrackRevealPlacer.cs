@@ -92,6 +92,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         public bool CanUndo => editState != null && editState.CanUndo;
         public TrackPlacementMode PlacementMode => placementMode;
         public bool HasSavedPlacement => PlayerPrefs.GetInt(PersistenceName("Valid"), 0) == 1;
+        public bool HasTrackMapPrefab => trackMapPrefab != null;
         public Transform PlacementTransform => spawnedInstance != null ? spawnedInstance.transform : null;
         public Transform CarsTransform => spawnedInstance != null ? EnsureCarsRoot(spawnedInstance.transform) : null;
 
@@ -134,6 +135,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         Vector3 observedScale;
         float persistenceSaveTime;
         bool persistenceDirty;
+        bool runtimeDebugPlacement;
 
         static Transform EnsureCarsRoot(Transform placementRoot)
         {
@@ -377,7 +379,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         void UpdatePlacementPersistence()
         {
-            if (spawnedInstance == null)
+            if (runtimeDebugPlacement || spawnedInstance == null)
                 return;
 
             Transform placement = spawnedInstance.transform;
