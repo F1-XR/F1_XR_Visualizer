@@ -1804,14 +1804,25 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9d9e5f96df2f4f84aa221b60e58ed2e3, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.OvertakeGaugeHud
   hudScale: 0.0009
   holdSeconds: 4.5
+  dockDistance: 1.35
+  dockHeightOffset: -0.35
+  dockFollow: 5
+  dockAnchor: {fileID: 0}
+  dockLocalOffset: {x: 0, y: 0, z: 0}
+  dockLocalEuler: {x: 0, y: 0, z: 0}
+  useThisTransform: 0
   formulaFont: {fileID: 0}
   red: {r: 0.882, g: 0.024, b: 0, a: 0.95}
   blue: {r: 0.17, g: 0.78, b: 1, a: 0.92}
   green: {r: 0.28, g: 0.95, b: 0.61, a: 0.92}
+  displayMode: 2
+  overlayScale: 1.1
+  overlayPosition: {x: 0, y: -200}
+  needleResponse: 9
 --- !u!1 &1304137257
 GameObject:
   m_ObjectHideFlags: 0
@@ -2856,7 +2867,7 @@ MonoBehaviour:
   preferredYear: 2025
   preferredCircuitShortName: Suzuka
   preferredSessionName: Race
-  replayMinutes: 20
+  replayMinutes: 45
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
@@ -3808,6 +3819,8 @@ MonoBehaviour:
   restoreSavedPlacement: 0
   persistenceKey: F1XR.TrackPlacement.v1
   persistenceSaveDelay: 0.4
+  logPlacementDiagnostics: 0
+  placementDiagnosticInterval: 2
 --- !u!4 &2086967207
 Transform:
   m_ObjectHideFlags: 0
