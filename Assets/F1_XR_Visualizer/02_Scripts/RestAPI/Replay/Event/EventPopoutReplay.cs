@@ -85,6 +85,10 @@ namespace F1XR.RestAPI.Replay
         private const float MinimumTrackRegionPadding = 0.00005f;
         private const float MaximumConventionalPitLaneSeconds = 120f;
         private const float MinimumRedFlagPitOverlapSeconds = 5f;
+        private const float PitApproachEntrySpeedMultiplier = 3.2f;
+        private const float PitApproachBrakeReplaySeconds = 0.65f;
+        private const float PitDepartureMaximumSpeedMultiplier = 4f;
+        private const float PitDepartureAccelerationReplaySeconds = 0.8f;
         private const string PitShowcaseAssetResourcePath =
             "PitShowcase/PitShowcaseAssets";
 
@@ -980,32 +984,18 @@ namespace F1XR.RestAPI.Replay
                 return false;
             }
 
-            ReplayEventDto first = null;
-            ReplayEventDto[] events = player.Events;
-            for (int i = 0; i < events.Length; i++)
+            ReplayEventDto first =
+                PitStopShowcaseSelector.SelectInitial(
+                    player.Events,
+                    IsUsablePitStop,
+                    driverNumber =>
+                        player.GetDriverInfo(driverNumber)?.teamName,
+                    PitStopShowcaseSelector.PreferredTeam);
+            if (first == null ||
+                first.endTime > player.ReadyUntilTime)
             {
-                ReplayEventDto candidate = events[i];
-                if (!IsUsablePitStop(candidate) ||
-                    candidate.endTime > player.ReadyUntilTime)
-                {
-                    continue;
-                }
-
-                if (first == null ||
-                    candidate.anchorTime < first.anchorTime ||
-                    Mathf.Approximately(
-                        candidate.anchorTime,
-                        first.anchorTime) &&
-                    string.CompareOrdinal(
-                        candidate.eventId,
-                        first.eventId) < 0)
-                {
-                    first = candidate;
-                }
-            }
-
-            if (first == null)
                 return false;
+            }
 
             Open(first);
             return true;
@@ -1524,6 +1514,8 @@ namespace F1XR.RestAPI.Replay
                     Time.deltaTime,
                     eventPlaybackSpeed *
                     showcasePlaybackSpeedMultiplier *
+                    ResolvePitShowcaseMotionSpeedMultiplier(
+                        timeline.CurrentTime) *
                     ResolveBattleCruiseSpeedMultiplier(
                         timeline.CurrentTime) *
                     ResolveCollisionPlaybackSpeedMultiplier(
@@ -1548,6 +1540,51 @@ namespace F1XR.RestAPI.Replay
                 !collisionHitStop,
                 null);
             ApplyCars();
+        }
+
+        private float ResolvePitShowcaseMotionSpeedMultiplier(
+            float replayTime)
+        {
+            if (!IsPitStopDefinition(currentEvent) ||
+                pitStopSequence == null ||
+                pitStopSequence.IsDriveThrough)
+            {
+                return 1f;
+            }
+
+            float releaseTime =
+                PitStopFirstMilestoneChoreography.ResolveReplayEnd(
+                    pitStopSequence);
+            if (replayTime >= releaseTime)
+            {
+                float launchProgress = Mathf.Clamp01(
+                    (replayTime - releaseTime) /
+                    PitDepartureAccelerationReplaySeconds);
+                float launchAcceleration = 1f - Mathf.Pow(
+                    1f - launchProgress,
+                    3f);
+                return Mathf.Lerp(
+                    1f,
+                    PitDepartureMaximumSpeedMultiplier,
+                    launchAcceleration);
+            }
+
+            if (replayTime >= pitStopSequence.ServiceStartTime)
+                return 1f;
+
+            float brakeStart = Mathf.Max(
+                pitStopSequence.BrakeTime,
+                pitStopSequence.ServiceStartTime -
+                PitApproachBrakeReplaySeconds);
+            float brakeProgress = Mathf.InverseLerp(
+                brakeStart,
+                pitStopSequence.ServiceStartTime,
+                replayTime);
+            float hardBrakeProgress = brakeProgress * brakeProgress;
+            return Mathf.Lerp(
+                PitApproachEntrySpeedMultiplier,
+                1f,
+                hardBrakeProgress);
         }
 
         private float ResolveBattleCruiseSpeedMultiplier(
@@ -1860,6 +1897,10 @@ namespace F1XR.RestAPI.Replay
                 roadWidth,
                 fallbackCorridorLoops);
             CreateStageRoot();
+            PitEnvironmentProfile pitEnvironmentProfile =
+                pitStop
+                    ? ResolvePitEnvironmentProfile()
+                    : null;
 
             TryGetMappedPosition(
                 referenceSamples,
@@ -1895,7 +1936,10 @@ namespace F1XR.RestAPI.Replay
                 CreateRoad(
                     center,
                     sourceToLocalRotation,
-                    createEdges: false);
+                    createEdges: false,
+                    rendererEnabled:
+                        pitEnvironmentProfile == null ||
+                        pitEnvironmentProfile.pitTrackPrefab == null);
                 stageBounds = roadMesh.bounds;
             }
             else if (!CreateActualTrackRegion(
@@ -1938,7 +1982,7 @@ namespace F1XR.RestAPI.Replay
                     pitStopSequence,
                     pitWheelGunPrefab,
                     pitWheelGunClip,
-                    ResolvePitEnvironmentProfile(),
+                    pitEnvironmentProfile,
                     pitShowcaseAssets);
                 stageBounds.Encapsulate(
                     pitStopPresentation.LocalBounds);
@@ -2568,7 +2612,8 @@ namespace F1XR.RestAPI.Replay
         private void CreateRoad(
             Vector3 center,
             Quaternion sourceToLocalRotation,
-            bool createEdges)
+            bool createEdges,
+            bool rendererEnabled = true)
         {
             int count = presentationPath.Count;
             Vector3[] vertices = new Vector3[count * 2];
@@ -2625,6 +2670,7 @@ namespace F1XR.RestAPI.Replay
             roadMaterial = CreateMaterial(new Color(0.12f, 0.13f, 0.15f, 1f));
             MeshRenderer renderer = road.GetComponent<MeshRenderer>();
             renderer.sharedMaterial = roadMaterial;
+            renderer.enabled = rendererEnabled;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
@@ -4035,17 +4081,24 @@ namespace F1XR.RestAPI.Replay
 
         private PitEnvironmentProfile ResolvePitEnvironmentProfile()
         {
-            if (pitEnvironmentProfiles == null ||
-                player == null ||
+            if (player == null ||
                 player.Manifest == null)
             {
                 return null;
             }
 
-            for (int i = 0; i < pitEnvironmentProfiles.Length; i++)
+            PitEnvironmentProfile[] profiles =
+                pitEnvironmentProfiles;
+            if (profiles == null || profiles.Length == 0)
+            {
+                profiles = Resources.LoadAll<PitEnvironmentProfile>(
+                    "PitEnvironments");
+            }
+
+            for (int i = 0; i < profiles.Length; i++)
             {
                 PitEnvironmentProfile profile =
-                    pitEnvironmentProfiles[i];
+                    profiles[i];
                 if (profile != null &&
                     profile.Matches(player.Manifest.circuit))
                 {

@@ -511,11 +511,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 238308846}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!1 &264478119 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6207666677043022096, guid: 4e0fc0e4232ff2f429cb4022ca4749cf, type: 3}
-  m_PrefabInstance: {fileID: 1751285736}
-  m_PrefabAsset: {fileID: 0}
 --- !u!21 &325242635
 Material:
   serializedVersion: 8
@@ -1351,11 +1346,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &532678795 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 4024804146999784416, guid: 95c82ca19df72ab43a4aae9887cf7008, type: 3}
-  m_PrefabInstance: {fileID: 778030370}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &540868362
 GameObject:
   m_ObjectHideFlags: 0
@@ -2723,8 +2713,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1113257132}
   - component: {fileID: 1113257130}
-  - component: {fileID: 1113257131}
   - component: {fileID: 1113257129}
+  - component: {fileID: 1113257133}
   m_Layer: 0
   m_Name: Track Placement
   m_TagString: Untagged
@@ -2860,29 +2850,6 @@ MonoBehaviour:
   pinchReleaseThreshold: 0.55
   pinchDistancePressThreshold: 0.025
   pinchDistanceReleaseThreshold: 0.04
---- !u!114 &1113257131
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1113257128}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 834a38d9a908f444f97795c5ffe45263, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AR.RedPointer
-  placementController: {fileID: 1113257130}
-  showPointer: 1
-  showControllerPointers: 1
-  showHandPointers: 1
-  pointerSize: 0.01
-  surfaceOffset: 0.005
-  pointerColor: {r: 1, g: 0, b: 0, a: 1}
-  previewLineWidth: 0.01
-  validPreviewColor: {r: 0.1, g: 1, b: 0.35, a: 0.5176471}
-  invalidPreviewColor: {r: 1, g: 0.1, b: 0.05, a: 0.5176471}
-  prefabPreviewAlpha: 0.4
 --- !u!4 &1113257132
 Transform:
   m_ObjectHideFlags: 0
@@ -2898,6 +2865,34 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1113257133
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113257128}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e090f31d21a6ff4f91337ecd6047549, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.Build.TrackCloudPlacer
+  trackPlacer: {fileID: 1113257129}
+  cloudPrefab: {fileID: 6351855780575177041, guid: 8f93a849e381118469f4fef822615e42, type: 3}
+  cloudHeightOffset: 0.15
+  cloudSizeRatio: 1.2
+  cloudPositionOffset: {x: 0, y: 0, z: 0}
+  rainDropWidthMm: 0.77
+  rainStreakLengthMm: 49
+  rainAmount: 392
+  rainSplashSizeMm: 4
+  vrRainDropWidthMm: 191
+  vrRainStreakLengthMm: 3819
+  vrRainAmount: 1086
+  vrRainOpacity: 1
+  vrRainSplash: 1
+  vrRainSplashSizeMm: 1
+  vrScaleThreshold: 2.9
 --- !u!1 &1124768284
 GameObject:
   m_ObjectHideFlags: 0
@@ -4014,7 +4009,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d542b11b611b9dd46a0c1eafa43383fb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.Fracture.RoomShellFractureController
-  experienceManager: {fileID: 2042791792}
+  experienceManager: {fileID: 0}
   proxyGenerator: {fileID: 1510071734}
   driveModeTransition: 1
   driveReturnToMR: 1
@@ -4090,7 +4085,7 @@ MonoBehaviour:
   zeroCeilingNormalDrift: 1
   dust: {fileID: 0}
   spawnDustIfMissing: 1
-  passthrough: {fileID: 2042791793}
+  passthrough: {fileID: 0}
   tailSeconds: 0.15
   forceDebugGray: 0
   surfaceStaggerStep: 0.2
@@ -5864,113 +5859,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Mask
   m_ShowMaskGraphic: 0
---- !u!1 &2042791790
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2042791794}
-  - component: {fileID: 2042791793}
-  - component: {fileID: 2042791792}
-  - component: {fileID: 2042791791}
-  - component: {fileID: 2042791795}
-  m_Layer: 0
-  m_Name: Experience
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &2042791791
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2042791790}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c0ae3199cae71ca43a4b1287619dee42, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.ExperienceModeDebugTrigger
-  manager: {fileID: 2042791792}
-  player: {fileID: 1705380154}
-  testDriverNumber: 16
-  vrDriverLabel: {fileID: 1180560684}
---- !u!114 &2042791792
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2042791790}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38993e7c08e753445b355c995c2aa8db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.ExperienceModeManager
-  player: {fileID: 1705380154}
-  passthrough: {fileID: 2042791793}
-  vrEnvironmentRoot: {fileID: 1673902158}
-  mrVisualRoots:
-  - {fileID: 1113257128}
-  - {fileID: 2100327790}
-  - {fileID: 264478119}
-  - {fileID: 532678795}
-  - {fileID: 803093115}
-  transitionDuration: 2
-  verboseLogging: 1
---- !u!114 &2042791793
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2042791790}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 09e7bb1c5b6d70f4bbb64e36c592a145, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.PassthroughTransitionController
-  xrCamera: {fileID: 1674081565}
-  passthroughLayer: {fileID: 818663378}
-  defaultDuration: 2
-  vrBackgroundColor: {r: 0.015, g: 0.02, b: 0.04, a: 1}
---- !u!4 &2042791794
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2042791790}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &2042791795
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2042791790}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f5bd5384556eb5d48aa690dbae50da4d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F1XR.Experience.ExperienceDebugPanel
-  experienceTrigger: {fileID: 2042791791}
-  roomDebug: {fileID: 1510071733}
-  roomProvider: {fileID: 1510071735}
-  localNudge: {x: 0.75, y: -0.05, z: -0.15}
-  buildOnStart: 1
 --- !u!1 &2064226564
 GameObject:
   m_ObjectHideFlags: 0
@@ -6406,6 +6294,5 @@ SceneRoots:
   - {fileID: 2100327795}
   - {fileID: 1255090623}
   - {fileID: 1673902159}
-  - {fileID: 2042791794}
   - {fileID: 1510071736}
   - {fileID: 679593416}

@@ -268,6 +268,7 @@ MonoBehaviour:
     m_RotationOrder: 4
   useTrackFracture: 0
   useSkyShellExit: 1
+  vrSkybox: {fileID: 2100000, guid: 1c693427bae319a4b9cd4fac890cfa2c, type: 2}
   useRoomShellEnter: 1
   useRoomShellExit: 1
   earlyShrinkDuration: 0.5
@@ -389,7 +390,7 @@ MonoBehaviour:
   shellSubdivision: 2
   patchDetail: 1
   shellThickness: 0.9
-  shellColor: {r: 0.015, g: 0.02, b: 0.04, a: 1}
+  shellColor: {r: 0.29, g: 0.37, b: 0.53, a: 1}
   runFractureTestOnEntry: 0
   compositingTestRevealDelay: 3
   propagationStep: 0.07

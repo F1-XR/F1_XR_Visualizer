@@ -3085,7 +3085,7 @@ MonoBehaviour:
   - teamName: Cadillac
     prefab: {fileID: 4614466437777478188, guid: 0af79912877341cdab5f7fabd27d6bd6, type: 3}
   - teamName: Ferrari
-    prefab: {fileID: 4614466437777478188, guid: 29c42c9b98c645a0a6943ca12d4e930d, type: 3}
+    prefab: {fileID: 286630815333436405, guid: df64b0ed8d743ff42b3a8469a488e781, type: 3}
   - teamName: Haas F1 Team
     prefab: {fileID: 4614466437777478188, guid: 33b0b165db224de587ae0a9abe6932c6, type: 3}
   - teamName: Kick Sauber
@@ -3445,12 +3445,12 @@ MonoBehaviour:
   preferredYear: 2024
   preferredCircuitShortName: Suzuka
   preferredSessionName: Race
-  replayMinutes: 45
+  replayMinutes: 60
   chunkMinutes: 2
   overlapSeconds: 2
   skipWarmupLap: 0
   useCachedDatasetFastStart: 1
-  cachedDatasetId: 2024_suzuka_race_9496_c2_o2_m45
+  cachedDatasetId: 2024_suzuka_race_9496_c2_o2_m60
   cachedCircuitKey: 46
   useEventReplayTestSession: 0
 --- !u!4 &1705380157
