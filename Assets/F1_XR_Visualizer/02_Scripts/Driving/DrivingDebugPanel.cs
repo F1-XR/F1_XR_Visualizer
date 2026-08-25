@@ -13,6 +13,7 @@ namespace F1XR.Driving
         [Header("Display")]
         [SerializeField] bool showPanel;
         [SerializeField] bool showSteeringLine = true;
+        [SerializeField, Min(0.0005f)] float steeringLineWidth = 0.002f;
 
         VRVehicleDriver vehicle;
         GameObject panelRoot;
@@ -119,7 +120,7 @@ namespace F1XR.Driving
             steeringLine.positionCount = 2;
             steeringLine.useWorldSpace = true;
             steeringLine.alignment = LineAlignment.View;
-            steeringLine.widthMultiplier = 0.035f;
+            steeringLine.widthMultiplier = steeringLineWidth;
             steeringLine.numCapVertices = 4;
             steeringLine.startColor = Color.cyan;
             steeringLine.endColor = Color.cyan;
