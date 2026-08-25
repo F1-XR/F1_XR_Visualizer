@@ -120,6 +120,11 @@ namespace F1XR.Drone
             "Turning this on before the hole test passes just hides which half is wrong.")]
         [SerializeField] bool useSkyShellExit;
 
+        [Header("Sky")]
+        [Tooltip("Skybox shown while flying. Swapped in behind the blink, so the change is " +
+            "never visible, and put back on the way out. Leave empty to keep the void.")]
+        [SerializeField] Material vrSkybox;
+
         [Header("Room Shell")]
         [Tooltip("Enters VR by breaking the real room instead of blinking. Falls back to the " +
             "blink on its own whenever the room was never scanned, so leaving this on cannot " +
@@ -251,6 +256,8 @@ namespace F1XR.Drone
         Color savedBackgroundColor;
         float savedFarClipPlane;
         bool savedPassthroughActive;
+        Material savedSkybox;
+        bool skyOverridden;
         bool savedTrackEditMode;
         bool appliedShowGrabVolumeVisual;
         bool isVrActive;
@@ -324,6 +331,12 @@ namespace F1XR.Drone
         {
             while (!TryResolveReferences())
                 yield return null;
+
+            // The sky bake spends six frames in the render loop, so it is kicked off here
+            // rather than at the transition, where those six camera renders land on the frames
+            // the room is coming apart and read as a click. The shell picks it up by itself if
+            // it is switched off at this point.
+            skyShell?.SetSkyboxSource(vrSkybox);
 
             if (!debugSkipPlacementAndEnterDrone)
             {
@@ -636,13 +649,26 @@ namespace F1XR.Drone
                 $"entryLocal={entryPointLocal}",
                 this);
 
-            // The sky first, behind the room rather than in front of everything. Its usual
+            // Audio first, before anything is on the move. Changing the engine distance scale
+            // reconfigures the sound on twenty cars and costs about thirty milliseconds - one
+            // dropped frame. Run at the end of the entry, where it used to be, that frame is
+            // the click the transition ends on. Here the room is whole, nothing is animating,
+            // and a single long frame passes unnoticed. The scale it applies is the one the
+            // map is growing towards, so the engines lead the growth rather than snapping to
+            // it at the end.
+            yield return StepTimed("audioScale",
+                () => audioDistanceScaler?.Apply(vrScaleMultiplier));
+
+            // The sky next, behind the room rather than in front of everything. Its usual
             // background queue would paint the whole view opaque before the masks ran, and the
             // masks have no way to undo that - they write depth, not alpha.
             if (skyShell != null && skyShell.isActiveAndEnabled)
             {
+                // Before the depth mode, which is the call that first resolves the shell
+                // materials: the bake has to know which sky it is standing in for by then.
+                skyShell.SetSkyboxSource(vrSkybox);
                 skyShell.SetTransitionDepthMode(true);
-                skyShell.Prepare(xrCamera.transform, passthrough);
+                skyShell.Prepare(xrCamera.transform, passthrough, vrSkybox);
             }
 
             // The drone world comes up now, while the room still covers it completely, so that
@@ -699,16 +725,20 @@ namespace F1XR.Drone
             // VR endpoint only now, with the room essentially gone. Doing it earlier would
             // switch the underlay off and take the remaining real surfaces away in one frame,
             // which is the whole failure this replaces.
-            ApplyVrScreenEndpoint();
-            // Fragments stay dormant for reverse playback on exit.
-            skyShell?.SetTransitionDepthMode(false);
+            yield return ApplyVrScreenEndpointStaged();
 
-            audioDistanceScaler?.Apply(vrScaleMultiplier);
-            HideHostUi();
+            // Every remaining step on its own frame, timed. One of these is the click, and
+            // guessing which has cost several passes now - the log says outright how long the
+            // step took and how long the frame it landed on ended up being.
+            // Fragments stay dormant for reverse playback on exit.
+            yield return StepTimed("skyDepthMode",
+                () => skyShell?.SetTransitionDepthMode(false));
+            yield return StepTimed("hideHostUi", HideHostUi);
 
             isVrActive = true;
-            ShowDroneHud();
-            flightController?.ResetFlight();
+
+            yield return StepTimed("showDroneHud", ShowDroneHud);
+            yield return StepTimed("resetFlight", () => flightController?.ResetFlight());
 
             Debug.Log(
                 $"[MR2VR][EnterComplete] time={Time.realtimeSinceStartup:F3} " +
@@ -928,7 +958,7 @@ namespace F1XR.Drone
             // The controller is handed the passthrough owner rather than reaching for it: the
             // compositing test has to bring the underlay up and put it back down again, and
             // nothing else in the drone scene is allowed to touch that state.
-            skyShell.Prepare(xrCamera.transform, passthrough);
+            skyShell.Prepare(xrCamera.transform, passthrough, vrSkybox);
 
             if (!skyShell.IsVisible)
             {
@@ -943,6 +973,61 @@ namespace F1XR.Drone
         /// and this component never touches the layer or the camera; without one it falls back
         /// to the original direct writes so host scenes lacking the controller still work.
         /// </summary>
+        /// <summary>
+        /// Runs one handover step, then reports what it cost and how long the frame it landed
+        /// on turned out to be. A click at the end of the entry is one frame going long, and
+        /// this says which step that frame belonged to instead of leaving it to guesswork.
+        /// </summary>
+        IEnumerator StepTimed(string label, System.Action step)
+        {
+            float startedAt = Time.realtimeSinceStartup;
+            step();
+            float cost = (Time.realtimeSinceStartup - startedAt) * 1000f;
+
+            yield return null;
+
+            Debug.Log(
+                $"[MR2VR][Step] {label} cost={cost:F1}ms " +
+                $"frame={Time.unscaledDeltaTime * 1000f:F1}ms", this);
+        }
+
+        /// <summary>
+        /// The same handover, spread over three frames.
+        ///
+        /// Done in one go it is a click: the projection matrix changes, the passthrough
+        /// underlay is dropped, and the skybox comes up all on the same frame - and that last
+        /// one is where the procedural sky compiles its stereo shader variant, because the
+        /// bake camera only ever produced the mono one.
+        ///
+        /// Safe to stage only from the shell entry, and only here at the end of it: the room
+        /// is broken past its commit coverage by now, so passthrough is contributing nothing
+        /// to the image, and the sky shell is still whole and covering every pixel. The
+        /// skybox therefore comes up behind an opaque cover, which is exactly where a
+        /// compilation stall can happen without being seen.
+        /// </summary>
+        IEnumerator ApplyVrScreenEndpointStaged()
+        {
+            yield return StepTimed("farClip",
+                () => xrCamera.farClipPlane = droneFarClipPlane);
+
+            if (passthrough != null)
+            {
+                yield return StepTimed("vrSky", ApplyVrSky);
+                yield return StepTimed("passthroughOff", passthrough.ApplyVRImmediate);
+                yield break;
+            }
+
+            yield return StepTimed("vrSky", () =>
+            {
+                xrCamera.clearFlags = CameraClearFlags.Skybox;
+                xrCamera.backgroundColor = new Color(0.29f, 0.37f, 0.53f, 1f);
+                ApplyVrSky();
+            });
+
+            yield return StepTimed("passthroughOff",
+                () => passthroughLayer.SetActive(false));
+        }
+
         void ApplyVrScreenEndpoint()
         {
             xrCamera.farClipPlane = droneFarClipPlane;
@@ -950,17 +1035,20 @@ namespace F1XR.Drone
             if (passthrough != null)
             {
                 passthrough.ApplyVRImmediate();
+                ApplyVrSky();
                 return;
             }
 
             passthroughLayer.SetActive(false);
             xrCamera.clearFlags = CameraClearFlags.Skybox;
-            xrCamera.backgroundColor = new Color(0.015f, 0.02f, 0.04f, 1f);
+            xrCamera.backgroundColor = new Color(0.29f, 0.37f, 0.53f, 1f);
+            ApplyVrSky();
         }
 
         void ApplyMrScreenEndpoint()
         {
             xrCamera.farClipPlane = savedFarClipPlane;
+            RestoreMrSky();
 
             if (passthrough != null)
             {
@@ -971,6 +1059,40 @@ namespace F1XR.Drone
             xrCamera.clearFlags = savedClearFlags;
             xrCamera.backgroundColor = savedBackgroundColor;
             passthroughLayer.SetActive(savedPassthroughActive);
+        }
+
+        /// <summary>
+        /// The passthrough controller deliberately keeps the camera on Solid Color, because
+        /// its fade rides on the background alpha. Skybox can therefore only be switched on
+        /// once the flight is settled, which is exactly where this runs: behind the blink.
+        /// </summary>
+        void ApplyVrSky()
+        {
+            if (vrSkybox == null || xrCamera == null)
+                return;
+
+            if (!skyOverridden)
+            {
+                savedSkybox = RenderSettings.skybox;
+                skyOverridden = true;
+            }
+
+            RenderSettings.skybox = vrSkybox;
+            xrCamera.clearFlags = CameraClearFlags.Skybox;
+        }
+
+        void RestoreMrSky()
+        {
+            if (!skyOverridden)
+                return;
+
+            RenderSettings.skybox = savedSkybox;
+            skyOverridden = false;
+
+            // Clear flags are handed back to whoever owns the screen; the passthrough
+            // controller sets Solid Color itself on the very next call.
+            if (xrCamera != null)
+                xrCamera.clearFlags = savedClearFlags;
         }
 
         public void ExitVr()
@@ -1117,6 +1239,7 @@ namespace F1XR.Drone
             // SkyShell to transition depth mode so mask fragments (queue 1999) can
             // depth-block the sky (queue 2050). Without this the sky at Background queue
             // paints alpha 1 over the whole view before the masks run.
+            skyShell?.SetSkyboxSource(vrSkybox);
             skyShell?.SetTransitionDepthMode(true);
 
             // Passthrough compositing: layer ON, camera alpha 0. The VR environment +
@@ -1124,7 +1247,20 @@ namespace F1XR.Drone
             // fragments return they depth-block VR at their position, and the camera's
             // alpha-0 background lets passthrough show through those patches.
             if (passthrough != null)
+            {
                 passthrough.ApplyVRBehindOpaqueCover();
+            }
+            else if (xrCamera != null)
+            {
+                xrCamera.clearFlags = CameraClearFlags.SolidColor;
+                xrCamera.backgroundColor = new Color(
+                    xrCamera.backgroundColor.r,
+                    xrCamera.backgroundColor.g,
+                    xrCamera.backgroundColor.b,
+                    0f);
+                if (passthroughLayer != null)
+                    passthroughLayer.SetActive(true);
+            }
 
             Debug.Log(
                 $"[RoomReverse][Begin] time={beganAt:F3} " +
