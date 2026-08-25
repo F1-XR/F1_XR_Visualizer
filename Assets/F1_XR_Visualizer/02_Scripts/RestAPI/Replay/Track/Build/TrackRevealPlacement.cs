@@ -18,25 +18,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
             if (allowReplaceExisting)
                 ClearSpawned();
 
-            GameObject target;
-
-            if (previewInstance != null)
-            {
-                target = previewInstance;
-                previewInstance = null;
-
-                target.name = placementPrefab.name;
-                target.SetActive(true);
-
-                RestorePreviewForRealUse(target);
-            }
-            else
-            {
-                target = Instantiate(placementPrefab);
-                target.name = placementPrefab.name;
-                ApplyTrackMap(target);
-                ConfigurePhysics(target);
-            }
+            GameObject target = TakePreviewOrCreatePlacement();
 
             Quaternion rotation = CalculatePlacementRotation(target);
             target.transform.localScale = CalculatePlacementScale(target);
@@ -71,7 +53,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 }
             }
 
-            FinishPlacement(target);
+            FinishPlacement(target, savePlacement: true);
         }
 
         public bool TryPlaceFixed()
@@ -85,10 +67,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
             ClearPreview();
 
-            GameObject target = Instantiate(placementPrefab);
-            target.name = placementPrefab.name;
-            ApplyTrackMap(target);
-            ConfigurePhysics(target);
+            GameObject target = CreatePlacementInstance();
 
             Vector3 scale = fixedScale;
             if (scale.x <= 0f || scale.y <= 0f || scale.z <= 0f)
@@ -99,17 +78,68 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 Quaternion.Euler(fixedEulerAngles));
             target.transform.localScale = scale;
 
-            FinishPlacement(target);
+            FinishPlacement(target, savePlacement: true);
             return true;
         }
 
-        void FinishPlacement(GameObject target)
+        public bool TryCreateRuntimeDebugPlacement(
+            Vector3 position,
+            Quaternion rotation,
+            Vector3 scale)
+        {
+            if (placementPrefab == null)
+                return false;
+
+            ClearPreview();
+            if (spawnedInstance != null)
+                ClearSpawned();
+
+            placementMode = TrackPlacementMode.Free;
+
+            GameObject target = CreatePlacementInstance("Temporary Debug Map");
+            target.transform.SetPositionAndRotation(position, rotation);
+            target.transform.localScale = IsPositiveScale(scale)
+                ? scale
+                : Vector3.one;
+
+            FinishPlacement(target, savePlacement: false);
+            return true;
+        }
+
+        static bool IsPositiveScale(Vector3 scale) =>
+            scale.x > 0f && scale.y > 0f && scale.z > 0f;
+
+        GameObject TakePreviewOrCreatePlacement()
+        {
+            if (previewInstance == null)
+                return CreatePlacementInstance();
+
+            GameObject target = previewInstance;
+            previewInstance = null;
+            target.name = placementPrefab.name;
+            target.SetActive(true);
+            RestorePreviewForRealUse(target);
+            return target;
+        }
+
+        GameObject CreatePlacementInstance(string name = null)
+        {
+            GameObject target = Instantiate(placementPrefab);
+            target.name = string.IsNullOrEmpty(name) ? placementPrefab.name : name;
+            ApplyTrackMap(target);
+            ConfigurePhysics(target);
+            return target;
+        }
+
+        void FinishPlacement(GameObject target, bool savePlacement)
         {
             spawnedInstance = target;
             placementActive = false;
+            runtimeDebugPlacement = !savePlacement;
             ConfigureEditState(spawnedInstance);
             ObserveCurrentTransform();
-            SavePlacement();
+            if (savePlacement)
+                SavePlacement();
 
             Transform carsRoot = CarsTransform;
             if (carsRoot != null)
@@ -485,6 +515,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         public void ClearSpawned()
         {
             editState = null;
+            runtimeDebugPlacement = false;
             placementActive = true;
 
             if (currentAnchor != null)
