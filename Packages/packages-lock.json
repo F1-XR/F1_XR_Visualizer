@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "com.endel.nativewebsocket": {
-      "version": "https://github.com/endel/NativeWebSocket.git#upm",
+      "version": "https://github.com/endel/NativeWebSocket.git#ea014c9ae534d56111962d96f89f8a046e302dc9",
       "depth": 0,
       "source": "git",
       "dependencies": {},

@@ -6,6 +6,8 @@
 # This template is maintained from the gitattributes/gitattributes repository
 # and distributed under MIT License.
 
+.gitattributes          text eol=lf
+
 # Define macros (only works in top-level gitattributes files)
 [attr]lfs               filter=lfs diff=lfs merge=lfs -text
 [attr]unity-json        eol=lf linguist-language=json
@@ -66,9 +68,12 @@
 *.physicMaterial        unity-yaml
 *.physicsMaterial2D     unity-yaml
 
-# Exclude from GitHub stats and diffs: third-party plugins, packages lock file
+# Exclude third-party plugins from GitHub stats.
 Assets/Plugins/**           linguist-generated
-Packages/packages-lock.json linguist-generated
+
+# Keep Unity package manifests normalized and reduce noisy lock-file diffs.
+Packages/manifest.json      unity-json
+Packages/packages-lock.json unity-json linguist-generated
 
 # Unity LFS
 *.cubemap               lfs
