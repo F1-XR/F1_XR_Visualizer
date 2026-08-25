@@ -1433,7 +1433,8 @@ MonoBehaviour:
   logoLocalScale: {x: 0.1, y: 0.1, z: 0.1}
   logoRotationDegreesPerSecond: 12
   anchorLocalPosition: {x: 0, y: 0.5, z: 0}
-  flagLocalPosition: {x: 0, y: -0.45, z: 0}
+  flagLocalPosition: {x: 0, y: -0.55, z: 0}
+  presentationLocalScale: {x: 0.5, y: 0.5, z: 0.5}
   checkeredDisplayDuration: 5
   fallbackRaceEndTimeForTesting: 0
   missingEndFallbackDuration: 5
