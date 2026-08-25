@@ -13,7 +13,6 @@ namespace F1XR.RestAPI.Replay
         private const float ShowcaseMaximumSteeringDegrees = 26f;
         private const float ShowcaseSteeringGain = 5f;
         private const float ShowcaseMinimumSteeringDegrees = 9f;
-        private const float ShowcaseWheelSpinScale = 0.32f;
         private const float ShowcaseGroundClearanceRadiusRatio = 0.04f;
         private const float ShowcaseMaximumGroundLiftRadiusRatio = 1.25f;
         private const float SteeringResponse = 12f;
@@ -57,9 +56,11 @@ namespace F1XR.RestAPI.Replay
         private float currentSpeedKph;
         private float lastReplayTime;
         private Vector3 lastForward;
+        private Vector3 lastShowcasePosition;
         private float spinDegrees;
         private float steeringDegrees;
         private bool hasPreviousFrame;
+        private bool hasShowcasePosition;
         private bool configured;
         private bool showcaseEmphasis;
         private bool brakeCueVisible;
@@ -120,6 +121,7 @@ namespace F1XR.RestAPI.Replay
             forward.y = 0f;
             if (forward.sqrMagnitude > 0.000001f)
                 forward.Normalize();
+            Vector3 currentPosition = transform.position;
 
             float replayDelta = replayTime - lastReplayTime;
             if (!hasPreviousFrame ||
@@ -128,6 +130,8 @@ namespace F1XR.RestAPI.Replay
             {
                 lastReplayTime = replayTime;
                 lastForward = forward;
+                lastShowcasePosition = currentPosition;
+                hasShowcasePosition = showcaseEmphasis;
                 hasPreviousFrame = true;
                 steeringDegrees = 0f;
                 ApplyWheelRotations();
@@ -136,15 +140,22 @@ namespace F1XR.RestAPI.Replay
 
             float speedMps =
                 Mathf.Max(0f, speedKph) / 3.6f;
-            float spinScale = showcaseEmphasis
-                ? ShowcaseWheelSpinScale
-                : 1f;
+            float spinDistance = speedMps * replayDelta;
+            float wheelRadius = WheelRadiusMeters;
+            if (showcaseEmphasis)
+            {
+                spinDistance = hasShowcasePosition
+                    ? Vector3.Dot(
+                        currentPosition - lastShowcasePosition,
+                        forward)
+                    : 0f;
+                wheelRadius = ResolveShowcaseWheelRadiusWorld();
+            }
             spinDegrees = Mathf.Repeat(
                 spinDegrees +
-                    speedMps / WheelRadiusMeters *
-                    Mathf.Rad2Deg *
-                    replayDelta *
-                    spinScale,
+                    spinDistance /
+                    Mathf.Max(0.0001f, wheelRadius) *
+                    Mathf.Rad2Deg,
                 360f);
 
             float targetSteering = ResolveSteering(
@@ -176,12 +187,15 @@ namespace F1XR.RestAPI.Replay
 
             lastReplayTime = replayTime;
             lastForward = forward;
+            lastShowcasePosition = currentPosition;
+            hasShowcasePosition = showcaseEmphasis;
             ApplyWheelRotations();
         }
 
         public void ResetState()
         {
             hasPreviousFrame = false;
+            hasShowcasePosition = false;
             steeringDegrees = 0f;
             currentSpeedKph = 0f;
             ApplyWheelRotations();
@@ -192,6 +206,8 @@ namespace F1XR.RestAPI.Replay
         public void SetShowcaseEmphasis(bool enabled)
         {
             Configure();
+            if (showcaseEmphasis != enabled)
+                hasShowcasePosition = false;
             showcaseEmphasis = enabled;
 
             if (enabled && speedStreakRoot == null)
@@ -267,6 +283,33 @@ namespace F1XR.RestAPI.Replay
             return Mathf.Abs(axis.x) * extents.x +
                 Mathf.Abs(axis.y) * extents.y +
                 Mathf.Abs(axis.z) * extents.z;
+        }
+
+        private float ResolveShowcaseWheelRadiusWorld()
+        {
+            Vector3 up = transform.up;
+            float radius = 0f;
+            foreach (Wheel wheel in wheels)
+            {
+                if (wheel.Transform == null)
+                    continue;
+
+                Renderer[] renderers =
+                    wheel.Transform.GetComponentsInChildren<Renderer>(true);
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer != null)
+                    {
+                        radius = Mathf.Max(
+                            radius,
+                            ProjectedExtent(renderer.bounds.extents, up));
+                    }
+                }
+            }
+
+            return radius > 0.0001f
+                ? radius
+                : WheelRadiusMeters;
         }
 
         private void AddWheel(Transform wheel, bool steering)
