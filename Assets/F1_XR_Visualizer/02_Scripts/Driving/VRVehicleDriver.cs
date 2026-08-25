@@ -14,12 +14,13 @@ namespace F1XR.Driving
     public sealed class VRVehicleDriver : MonoBehaviour
     {
         [Header("Drive")]
-        [SerializeField, Min(1f)] float accelerationForce = 8000f;
+        [SerializeField, Min(1f)] float accelerationForce = 11000f;
         [SerializeField, Min(1f)] float brakeForce = 12000f;
-        [SerializeField, Min(1f)] float maximumSpeedKph = 160f;
+        [SerializeField, Min(1f)] float maximumSpeedKph = 370f;
         [SerializeField, Min(1f)] float steeringSpeedDegrees = 75f;
         [SerializeField, Range(0f, 1f)] float gripThreshold = 0.55f;
-        [SerializeField, Range(0f, 0.5f)] float steeringDeadzone = 0.08f;
+        [SerializeField, Min(0f)] float reverseHoldDelay = 1f;
+        [SerializeField, Min(0.1f)] float reverseSpeedMps = 2f;
 
         [Header("Handling")]
         [SerializeField, Min(0f)] float lateralGrip = 12f;
@@ -58,7 +59,9 @@ namespace F1XR.Driving
         float steeringInput;
         float throttleInput;
         float brakeInput;
+        float reverseHoldStartedAt = -1f;
         bool isSteeringGrabbing;
+        bool isReversing;
         bool wasGrabbing;
         bool respawnPressed;
         bool steeringWheelPivotCentered;
@@ -103,6 +106,7 @@ namespace F1XR.Driving
             : Vector3.Dot(body.linearVelocity, transform.forward);
         public float ThrottleInput => throttleInput;
         public float BrakeInput => brakeInput;
+        public bool IsReversing => isReversing;
         public float SteeringInput => steeringInput;
         public Vector3 Velocity => body == null ? Vector3.zero : body.linearVelocity;
         public Vector3 AngularVelocity => body == null ? Vector3.zero : body.angularVelocity;
@@ -185,6 +189,7 @@ namespace F1XR.Driving
                 ReadAxis(throttleAction, XRNode.RightHand, CommonUsages.trigger),
                 ReadDirectThrottle());
             brakeInput = ReadAxis(brakeAction, XRNode.LeftHand, CommonUsages.trigger);
+            UpdateReverseState();
 #if UNITY_EDITOR
             UpdateThrottleDiagnostic();
 #endif
@@ -201,8 +206,6 @@ namespace F1XR.Driving
             {
                 float delta = Mathf.DeltaAngle(grabStartAngle, handAngle);
                 steeringInput = Mathf.Clamp(steeringAtGrabStart - delta / 120f, -1f, 1f);
-                if (Mathf.Abs(steeringInput) < steeringDeadzone)
-                    steeringInput = 0f;
             }
             else
             {
@@ -225,7 +228,11 @@ namespace F1XR.Driving
             float maximumSpeed = maximumSpeedKph / 3.6f;
             float forwardSpeed = Vector3.Dot(body.linearVelocity, transform.forward);
 
-            if (throttleInput > 0f && forwardSpeed < maximumSpeed)
+            if (isReversing)
+            {
+                ApplyReverseMotion();
+            }
+            else if (throttleInput > 0f && forwardSpeed < maximumSpeed)
             {
                 body.AddForce(transform.forward * (throttleInput * accelerationForce), ForceMode.Force);
 #if UNITY_EDITOR
@@ -240,18 +247,40 @@ namespace F1XR.Driving
 #endif
             }
 
-            if (brakeInput > 0f && body.linearVelocity.sqrMagnitude > 0.0001f)
+            if (!isReversing && brakeInput > 0f && body.linearVelocity.sqrMagnitude > 0.0001f)
             {
                 body.AddForce(-body.linearVelocity.normalized * (brakeInput * brakeForce),
                     ForceMode.Force);
             }
 
-            if (IsGrounded)
+            if (IsGrounded && !isReversing)
                 ApplyGroundHandling();
 
             float speedRatio = Mathf.Clamp01(Mathf.Abs(forwardSpeed) / 4f);
             float yaw = steeringInput * steeringSpeedDegrees * speedRatio * Time.fixedDeltaTime;
             body.MoveRotation(body.rotation * Quaternion.Euler(0f, yaw, 0f));
+        }
+
+        void UpdateReverseState()
+        {
+            if (brakeInput <= 0.1f)
+            {
+                reverseHoldStartedAt = -1f;
+                isReversing = false;
+                return;
+            }
+
+            if (reverseHoldStartedAt < 0f)
+                reverseHoldStartedAt = Time.time;
+
+            isReversing = Time.time - reverseHoldStartedAt >= reverseHoldDelay;
+        }
+
+        void ApplyReverseMotion()
+        {
+            float verticalSpeed = Vector3.Dot(body.linearVelocity, transform.up);
+            body.linearVelocity = -transform.forward * reverseSpeedMps +
+                transform.up * verticalSpeed;
         }
 
         void ApplyGroundHandling()

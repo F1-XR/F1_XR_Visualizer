@@ -462,12 +462,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fc1aa46739f59e246b29620064a1140a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Driving.VRVehicleDriver
-  accelerationForce: 9000
+  accelerationForce: 11000
   brakeForce: 12000
-  maximumSpeedKph: 100
+  maximumSpeedKph: 370
   steeringSpeedDegrees: 75
   gripThreshold: 0.55
-  steeringDeadzone: 0.08
+  reverseHoldDelay: 1
+  reverseSpeedMps: 2
   lateralGrip: 12
   rollingResistance: 0.08
   steeringWheel: {fileID: 0}
@@ -537,7 +538,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0.01, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 405404312}
@@ -814,7 +815,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1588508726197127351, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_TrackingType
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_LocalPosition.x
@@ -826,7 +827,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: 0.6
       objectReference: {fileID: 0}
     - target: {fileID: 3208224508720249942, guid: 2d36889008f740b4983e7326511b2b90, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1374,7 +1375,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 727d96cdecf88284b945b77d1768d514, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Driving.DrivingDebugPanel
   showPanel: 1
   showSteeringLine: 1
@@ -1420,7 +1421,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b5d0e4789dca42ffa64194d9e6fd68c9, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Driving.SuzukaCircuitMeshColliders
   circuitRootName: SuzukaCircuit
   includeInactiveMeshes: 1
@@ -26938,6 +26939,6 @@ SceneRoots:
   - {fileID: 779384870}
   - {fileID: 1050833557}
   - {fileID: 1376172296}
-  - {fileID: 1900000002}
   - {fileID: 1900000012}
   - {fileID: 570748033}
+  - {fileID: 1900000002}
