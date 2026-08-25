@@ -1860,6 +1860,10 @@ namespace F1XR.RestAPI.Replay
                 roadWidth,
                 fallbackCorridorLoops);
             CreateStageRoot();
+            PitEnvironmentProfile pitEnvironmentProfile =
+                pitStop
+                    ? ResolvePitEnvironmentProfile()
+                    : null;
 
             TryGetMappedPosition(
                 referenceSamples,
@@ -1895,7 +1899,10 @@ namespace F1XR.RestAPI.Replay
                 CreateRoad(
                     center,
                     sourceToLocalRotation,
-                    createEdges: false);
+                    createEdges: false,
+                    rendererEnabled:
+                        pitEnvironmentProfile == null ||
+                        pitEnvironmentProfile.pitTrackPrefab == null);
                 stageBounds = roadMesh.bounds;
             }
             else if (!CreateActualTrackRegion(
@@ -1938,7 +1945,7 @@ namespace F1XR.RestAPI.Replay
                     pitStopSequence,
                     pitWheelGunPrefab,
                     pitWheelGunClip,
-                    ResolvePitEnvironmentProfile(),
+                    pitEnvironmentProfile,
                     pitShowcaseAssets);
                 stageBounds.Encapsulate(
                     pitStopPresentation.LocalBounds);
@@ -2568,7 +2575,8 @@ namespace F1XR.RestAPI.Replay
         private void CreateRoad(
             Vector3 center,
             Quaternion sourceToLocalRotation,
-            bool createEdges)
+            bool createEdges,
+            bool rendererEnabled = true)
         {
             int count = presentationPath.Count;
             Vector3[] vertices = new Vector3[count * 2];
@@ -2625,6 +2633,7 @@ namespace F1XR.RestAPI.Replay
             roadMaterial = CreateMaterial(new Color(0.12f, 0.13f, 0.15f, 1f));
             MeshRenderer renderer = road.GetComponent<MeshRenderer>();
             renderer.sharedMaterial = roadMaterial;
+            renderer.enabled = rendererEnabled;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
@@ -4035,17 +4044,24 @@ namespace F1XR.RestAPI.Replay
 
         private PitEnvironmentProfile ResolvePitEnvironmentProfile()
         {
-            if (pitEnvironmentProfiles == null ||
-                player == null ||
+            if (player == null ||
                 player.Manifest == null)
             {
                 return null;
             }
 
-            for (int i = 0; i < pitEnvironmentProfiles.Length; i++)
+            PitEnvironmentProfile[] profiles =
+                pitEnvironmentProfiles;
+            if (profiles == null || profiles.Length == 0)
+            {
+                profiles = Resources.LoadAll<PitEnvironmentProfile>(
+                    "PitEnvironments");
+            }
+
+            for (int i = 0; i < profiles.Length; i++)
             {
                 PitEnvironmentProfile profile =
-                    pitEnvironmentProfiles[i];
+                    profiles[i];
                 if (profile != null &&
                     profile.Matches(player.Manifest.circuit))
                 {
