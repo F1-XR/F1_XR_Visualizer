@@ -77,7 +77,7 @@ namespace F1XR.RestAPI.Replay
             preferredYear = 2024;
             preferredCircuitShortName = "Suzuka";
             preferredSessionName = "Race";
-            replayMinutes = 45;
+            replayMinutes = 60;
             skipWarmupLap = false;
             useCachedDatasetFastStart = false;
             cachedDatasetId = "";
