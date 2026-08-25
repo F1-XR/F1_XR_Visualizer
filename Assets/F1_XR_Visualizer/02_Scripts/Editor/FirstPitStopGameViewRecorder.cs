@@ -21,6 +21,8 @@ namespace F1XR.EditorTools
             "F1 XR/Capture/Record First Ferrari Pit Stop - Hero 45 MP4";
         private const string PortalHeroMenuPath =
             "F1 XR/Capture/Record First Ferrari Pit Stop - Portal Hero MP4";
+        private const string ElevatedFourCornerMenuPath =
+            "F1 XR/Capture/Record First Ferrari Pit Stop - ElevatedFourCorner MP4";
         private const string ScenePath =
             "Assets/F1_XR_Visualizer/01_Scenes/SessionSpace_fitin.unity";
         private const string ExpectedEventId = "pit_9496_55_15";
@@ -33,6 +35,8 @@ namespace F1XR.EditorTools
         private const string StartedTicksKey = StatePrefix + "StartedTicks";
         private const string HeroKey = StatePrefix + "Hero45";
         private const string PortalHeroKey = StatePrefix + "PortalHero";
+        private const string ElevatedFourCornerKey =
+            StatePrefix + "ElevatedFourCorner";
         private const string HeroCameraTag = "GameController";
         private const string PortalCameraName = "PitStopPortalCamera";
         private const string PortalSurfaceName = "PitStopPortalSurface";
@@ -41,12 +45,21 @@ namespace F1XR.EditorTools
         private const string ChoreographyOriginName =
             "PitChoreographyOrigin";
         private const string FlHubName = "FL_Hub";
+        private const string FrHubName = "FR_Hub";
+        private const string RlHubName = "RL_Hub";
+        private const string RrHubName = "RR_Hub";
         private const string FlTyreName = "FL_Tire";
+        private const string SuzukaContextSurfaceName = "ContextSurface";
+        private const string SuzukaContextMeshName =
+            "SuzukaPitLaneContextMesh";
+        private const int ElevatedOccluderSubMeshIndex = 1;
+        private const string ElevatedOccluderMaterialName = "WALL1";
         private const float HeroFieldOfView = 50f;
         private const float HeroTargetBlend = 0.35f;
         private const float HeroTargetHeightInTyres = 0.58f;
         private const float HeroDistanceInTyres = 8.75f;
         private const float HeroDownwardAim = 0.30f;
+        private const float ElevatedFourCornerFieldOfView = 48f;
         private const double ReadyTimeoutSeconds = 180d;
         private const double RecordingTimeoutSeconds = 90d;
         private const double TailSeconds = 0.5d;
@@ -57,7 +70,11 @@ namespace F1XR.EditorTools
         private static EventPopoutReplay replay;
         private static Camera heroCamera;
         private static Camera portalHeroCamera;
+        private static Camera elevatedFourCornerCamera;
         private static GameObject suppressedPortalHeroUi;
+        private static MeshFilter suppressedElevatedContextFilter;
+        private static Mesh suppressedElevatedContextSourceMesh;
+        private static Mesh elevatedValidationContextMesh;
         private static float replayEndTime;
         private static bool observedPlayback;
         private static double recordingStartedAt;
@@ -94,6 +111,7 @@ namespace F1XR.EditorTools
             SessionState.SetBool(SucceededKey, false);
             SessionState.SetBool(HeroKey, false);
             SessionState.SetBool(PortalHeroKey, false);
+            SessionState.SetBool(ElevatedFourCornerKey, false);
             SessionState.SetString(OutputBaseKey, outputBase);
             SessionState.SetString(
                 StartedTicksKey,
@@ -127,6 +145,7 @@ namespace F1XR.EditorTools
             SessionState.SetBool(SucceededKey, false);
             SessionState.SetBool(HeroKey, true);
             SessionState.SetBool(PortalHeroKey, false);
+            SessionState.SetBool(ElevatedFourCornerKey, false);
             SessionState.SetString(OutputBaseKey, outputBase);
             SessionState.SetString(
                 StartedTicksKey,
@@ -160,6 +179,7 @@ namespace F1XR.EditorTools
             SessionState.SetBool(SucceededKey, false);
             SessionState.SetBool(HeroKey, false);
             SessionState.SetBool(PortalHeroKey, true);
+            SessionState.SetBool(ElevatedFourCornerKey, false);
             SessionState.SetString(OutputBaseKey, outputBase);
             SessionState.SetString(
                 StartedTicksKey,
@@ -168,6 +188,40 @@ namespace F1XR.EditorTools
             Debug.Log(
                 "[PitRecorder] Waiting for the validated Ferrari pit stop " +
                 "Portal Hero view. Output: " + outputBase + ".mp4");
+            EditorApplication.isPlaying = true;
+        }
+
+        [MenuItem(ElevatedFourCornerMenuPath, false, 2003)]
+        private static void RecordElevatedFourCorner()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode ||
+                SessionState.GetBool(PendingKey, false))
+            {
+                Debug.LogWarning(
+                    "[PitRecorder] A Play Mode transition or recording is already active.");
+                return;
+            }
+
+            if (!EnsureTargetScene())
+                return;
+
+            string outputBase = BuildElevatedFourCornerOutputBasePath();
+            Directory.CreateDirectory(Path.GetDirectoryName(outputBase));
+
+            SessionState.SetBool(PendingKey, true);
+            SessionState.SetBool(RecordingKey, false);
+            SessionState.SetBool(SucceededKey, false);
+            SessionState.SetBool(HeroKey, false);
+            SessionState.SetBool(PortalHeroKey, false);
+            SessionState.SetBool(ElevatedFourCornerKey, true);
+            SessionState.SetString(OutputBaseKey, outputBase);
+            SessionState.SetString(
+                StartedTicksKey,
+                DateTime.UtcNow.Ticks.ToString());
+
+            Debug.Log(
+                "[PitRecorder] Waiting for the validated Ferrari pit stop " +
+                "ElevatedFourCorner view. Output: " + outputBase + ".mp4");
             EditorApplication.isPlaying = true;
         }
 
@@ -194,6 +248,12 @@ namespace F1XR.EditorTools
 
         [MenuItem(PortalHeroMenuPath, true)]
         private static bool CanRecordPortalHero()
+        {
+            return CanRecord();
+        }
+
+        [MenuItem(ElevatedFourCornerMenuPath, true)]
+        private static bool CanRecordElevatedFourCorner()
         {
             return CanRecord();
         }
@@ -254,6 +314,21 @@ namespace F1XR.EditorTools
                 Directory.GetParent(Application.dataPath).FullName;
             string fileName =
                 "Ferrari_Suzuka_L15_PortalHero_" +
+                DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            return Path.Combine(
+                projectRoot,
+                "Temp",
+                "PitValidation",
+                "Recorder",
+                fileName);
+        }
+
+        private static string BuildElevatedFourCornerOutputBasePath()
+        {
+            string projectRoot =
+                Directory.GetParent(Application.dataPath).FullName;
+            string fileName =
+                "Ferrari_Suzuka_L15_ElevatedFourCorner_" +
                 DateTime.Now.ToString("yyyyMMdd_HHmmss");
             return Path.Combine(
                 projectRoot,
@@ -328,8 +403,16 @@ namespace F1XR.EditorTools
             bool recordHero = SessionState.GetBool(HeroKey, false);
             bool recordPortalHero =
                 SessionState.GetBool(PortalHeroKey, false);
+            bool recordElevatedFourCorner =
+                SessionState.GetBool(ElevatedFourCornerKey, false);
             if (recordPortalHero &&
                 !TryCreatePortalHeroCamera(out string cameraFailure))
+            {
+                Fail(cameraFailure);
+                return;
+            }
+            if (recordElevatedFourCorner &&
+                !TryCreateElevatedFourCornerCamera(out cameraFailure))
             {
                 Fail(cameraFailure);
                 return;
@@ -350,17 +433,19 @@ namespace F1XR.EditorTools
 
             movieSettings =
                 ScriptableObject.CreateInstance<MovieRecorderSettings>();
-            movieSettings.name = recordPortalHero
-                ? "Portal Hero MP4"
-                : recordHero
-                    ? "Hero 45 MP4"
-                    : "Current Game View MP4";
+            movieSettings.name = recordElevatedFourCorner
+                ? "ElevatedFourCorner MP4"
+                : recordPortalHero
+                    ? "Portal Hero MP4"
+                    : recordHero
+                        ? "Hero 45 MP4"
+                        : "Current Game View MP4";
             movieSettings.Enabled = true;
             movieSettings.OutputFile = outputBase;
             movieSettings.CaptureAudio = false;
             movieSettings.CaptureAlpha = false;
             movieSettings.ImageInputSettings =
-                recordHero || recordPortalHero
+                recordHero || recordPortalHero || recordElevatedFourCorner
                     ? CreateHeroInputSettings()
                     : new GameViewInputSettings
                     {
@@ -398,7 +483,14 @@ namespace F1XR.EditorTools
             EditorApplication.isPaused = false;
             replay.Play();
 
-            if (recordPortalHero)
+            if (recordElevatedFourCorner)
+            {
+                Debug.Log(
+                    "[PitRecorder] Recording ElevatedFourCorner at 1920x1080, " +
+                    "30 fps, H.264 MP4. " +
+                    DescribeElevatedFourCornerCamera());
+            }
+            else if (recordPortalHero)
             {
                 Debug.Log(
                     "[PitRecorder] Recording Portal Hero at 1920x1080, " +
@@ -463,7 +555,6 @@ namespace F1XR.EditorTools
                     "The pit portal camera layer mask is unavailable.";
                 return false;
             }
-
             float tyreDiameter = ResolveVisualDiameter(tyre);
             Vector3 vehicleUp = origin.up;
             Vector3 localHub = origin.InverseTransformPoint(hub.position);
@@ -506,6 +597,76 @@ namespace F1XR.EditorTools
             heroCamera.transform.SetPositionAndRotation(
                 position,
                 Quaternion.LookRotation(forward, vehicleUp));
+            return true;
+        }
+
+        private static bool TrySuppressElevatedOccluder(
+            Transform stage,
+            out string failure)
+        {
+            failure = null;
+            MeshFilter[] filters =
+                stage.GetComponentsInChildren<MeshFilter>(true);
+            MeshFilter contextFilter = null;
+            for (int i = 0; i < filters.Length; i++)
+            {
+                MeshFilter candidate = filters[i];
+                if (candidate.gameObject.name ==
+                        SuzukaContextSurfaceName &&
+                    candidate.sharedMesh != null &&
+                    candidate.sharedMesh.name == SuzukaContextMeshName)
+                {
+                    contextFilter = candidate;
+                    break;
+                }
+            }
+
+            if (contextFilter == null)
+            {
+                failure =
+                    "The runtime Suzuka pit context surface is missing.";
+                return false;
+            }
+
+            MeshRenderer contextRenderer =
+                contextFilter.GetComponent<MeshRenderer>();
+            Mesh sourceMesh = contextFilter.sharedMesh;
+            Material[] materials = contextRenderer != null
+                ? contextRenderer.sharedMaterials
+                : null;
+            if (contextRenderer == null ||
+                sourceMesh.subMeshCount <= ElevatedOccluderSubMeshIndex ||
+                materials == null ||
+                materials.Length <= ElevatedOccluderSubMeshIndex ||
+                materials[ElevatedOccluderSubMeshIndex] == null ||
+                materials[ElevatedOccluderSubMeshIndex].name !=
+                    ElevatedOccluderMaterialName)
+            {
+                failure =
+                    "The validated Suzuka WALL1 occluder submesh mapping " +
+                    "is unavailable.";
+                return false;
+            }
+
+            Mesh validationMesh = UnityEngine.Object.Instantiate(sourceMesh);
+            validationMesh.name =
+                sourceMesh.name + "_ElevatedValidation";
+            validationMesh.hideFlags = HideFlags.HideAndDontSave;
+            validationMesh.SetIndices(
+                new int[0],
+                sourceMesh.GetTopology(ElevatedOccluderSubMeshIndex),
+                ElevatedOccluderSubMeshIndex,
+                false);
+
+            suppressedElevatedContextFilter = contextFilter;
+            suppressedElevatedContextSourceMesh = sourceMesh;
+            elevatedValidationContextMesh = validationMesh;
+            contextFilter.sharedMesh = validationMesh;
+
+            Debug.Log(
+                "[PitRecorder] Elevated validation suppressed " +
+                "PitTrack/ContextSurface submesh 1 (WALL1) only. " +
+                "Original renderer bounds: " + contextRenderer.bounds + ".");
             return true;
         }
 
@@ -584,6 +745,131 @@ namespace F1XR.EditorTools
             if (suppressedPortalHeroUi != null)
                 suppressedPortalHeroUi.SetActive(false);
             return true;
+        }
+
+        private static bool TryCreateElevatedFourCornerCamera(
+            out string failure)
+        {
+            failure = null;
+            Transform stage = replay.PresentationRoot;
+            if (stage == null)
+            {
+                failure = "The active replay presentation root is missing.";
+                return false;
+            }
+
+            Transform[] transforms =
+                stage.GetComponentsInChildren<Transform>(true);
+            Transform origin = FindTransform(
+                transforms,
+                ChoreographyOriginName);
+            Transform flHub = FindTransform(transforms, FlHubName);
+            Transform frHub = FindTransform(transforms, FrHubName);
+            Transform rlHub = FindTransform(transforms, RlHubName);
+            Transform rrHub = FindTransform(transforms, RrHubName);
+            Transform flTyre = FindTransform(transforms, FlTyreName);
+            Camera portalCamera = FindCamera(PortalCameraName);
+            if (origin == null || flHub == null || frHub == null ||
+                rlHub == null || rrHub == null || flTyre == null)
+            {
+                failure =
+                    "The active pit presentation is missing its choreography " +
+                    "origin, a wheel hub, or the FL tyre reference.";
+                return false;
+            }
+            if (portalCamera == null || portalCamera.cullingMask == 0)
+            {
+                failure =
+                    "The pit portal camera layer mask is unavailable.";
+                return false;
+            }
+            if (!TrySuppressElevatedOccluder(stage, out failure))
+                return false;
+
+            Bounds framingBounds = new(origin.position, Vector3.zero);
+            framingBounds.Encapsulate(flHub.position);
+            framingBounds.Encapsulate(frHub.position);
+            framingBounds.Encapsulate(rlHub.position);
+            framingBounds.Encapsulate(rrHub.position);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform candidate = transforms[i];
+                if (candidate != null &&
+                    (IsWheelServiceActorRoot(candidate.name) ||
+                     IsLooseTyreRoot(candidate.name)))
+                {
+                    framingBounds.Encapsulate(candidate.position);
+                }
+            }
+
+            float tyreDiameter = ResolveVisualDiameter(flTyre);
+            framingBounds.Expand(new Vector3(
+                tyreDiameter * 2.25f,
+                tyreDiameter * 3.5f,
+                tyreDiameter * 2.25f));
+            Vector3 vehicleUp = origin.up;
+            Vector3 target = framingBounds.center +
+                vehicleUp * tyreDiameter * 0.12f;
+            Vector3 viewDirection = (
+                vehicleUp * 1.9f -
+                origin.forward * 0.45f -
+                origin.right * 0.75f).normalized;
+            float radius = Mathf.Max(
+                framingBounds.extents.magnitude,
+                tyreDiameter * 3f);
+            float halfFov =
+                ElevatedFourCornerFieldOfView * Mathf.Deg2Rad * 0.5f;
+            float distance = radius / Mathf.Sin(halfFov) * 1.05f;
+            Vector3 position = target + viewDirection * distance;
+            Vector3 forward = (target - position).normalized;
+
+            GameObject cameraObject = new(
+                "PitRecorder_ElevatedFourCorner",
+                typeof(Camera));
+            cameraObject.hideFlags = HideFlags.HideAndDontSave;
+            cameraObject.tag = HeroCameraTag;
+            elevatedFourCornerCamera = cameraObject.GetComponent<Camera>();
+            elevatedFourCornerCamera.enabled = true;
+            elevatedFourCornerCamera.clearFlags =
+                CameraClearFlags.SolidColor;
+            elevatedFourCornerCamera.backgroundColor = Color.black;
+            elevatedFourCornerCamera.cullingMask = portalCamera.cullingMask;
+            elevatedFourCornerCamera.fieldOfView =
+                ElevatedFourCornerFieldOfView;
+            elevatedFourCornerCamera.nearClipPlane = 0.01f;
+            elevatedFourCornerCamera.farClipPlane = 1000f;
+            elevatedFourCornerCamera.aspect = 16f / 9f;
+            elevatedFourCornerCamera.usePhysicalProperties = false;
+            elevatedFourCornerCamera.rect = new Rect(0f, 0f, 1f, 1f);
+            elevatedFourCornerCamera.depth = portalCamera.depth + 1f;
+            elevatedFourCornerCamera.GetUniversalAdditionalCameraData()
+                .allowXRRendering = false;
+            elevatedFourCornerCamera.transform.SetPositionAndRotation(
+                position,
+                Quaternion.LookRotation(forward, vehicleUp));
+            return true;
+        }
+
+        private static bool IsWheelServiceActorRoot(string name)
+        {
+            return name == "FL_WheelGunner" ||
+                name == "FR_WheelGunner" ||
+                name == "RL_WheelGunner" ||
+                name == "RR_WheelGunner" ||
+                name.StartsWith("FL_WheelOff_") ||
+                name.StartsWith("FR_WheelOff_") ||
+                name.StartsWith("RL_WheelOff_") ||
+                name.StartsWith("RR_WheelOff_") ||
+                name.StartsWith("FL_WheelOn_") ||
+                name.StartsWith("FR_WheelOn_") ||
+                name.StartsWith("RL_WheelOn_") ||
+                name.StartsWith("RR_WheelOn_");
+        }
+
+        private static bool IsLooseTyreRoot(string name)
+        {
+            return name.EndsWith("_OldLooseTyre") ||
+                name.EndsWith("_NewLooseTyre");
         }
 
         private static Transform FindTransform(
@@ -680,6 +966,20 @@ namespace F1XR.EditorTools
                   ", FOV=" +
                   portalHeroCamera.fieldOfView.ToString("F1") +
                   ", Mask=" + portalHeroCamera.cullingMask + ".";
+        }
+
+        private static string DescribeElevatedFourCornerCamera()
+        {
+            return elevatedFourCornerCamera == null
+                ? "ElevatedFourCorner camera unavailable."
+                : "Position=" +
+                  elevatedFourCornerCamera.transform.position.ToString("F3") +
+                  ", Rotation=" +
+                  elevatedFourCornerCamera.transform.rotation.eulerAngles
+                      .ToString("F2") +
+                  ", FOV=" +
+                  elevatedFourCornerCamera.fieldOfView.ToString("F1") +
+                  ", Mask=" + elevatedFourCornerCamera.cullingMask + ".";
         }
 
         private static void RecoverStaleEditModeState()
@@ -798,6 +1098,12 @@ namespace F1XR.EditorTools
         private static void OnPlayModeStateChanged(
             PlayModeStateChange state)
         {
+            if (state == PlayModeStateChange.ExitingPlayMode)
+            {
+                RestoreElevatedOccluder();
+                return;
+            }
+
             if (state != PlayModeStateChange.EnteredEditMode ||
                 !SessionState.GetBool(PendingKey, false))
             {
@@ -840,6 +1146,8 @@ namespace F1XR.EditorTools
         {
             recorder = null;
 
+            RestoreElevatedOccluder();
+
             if (suppressedPortalHeroUi != null)
                 suppressedPortalHeroUi.SetActive(true);
 
@@ -853,6 +1161,11 @@ namespace F1XR.EditorTools
                 UnityEngine.Object.DestroyImmediate(
                     portalHeroCamera.gameObject);
             }
+            if (elevatedFourCornerCamera != null)
+            {
+                UnityEngine.Object.DestroyImmediate(
+                    elevatedFourCornerCamera.gameObject);
+            }
 
             if (movieSettings != null)
                 UnityEngine.Object.DestroyImmediate(movieSettings);
@@ -864,9 +1177,39 @@ namespace F1XR.EditorTools
             replay = null;
             heroCamera = null;
             portalHeroCamera = null;
+            elevatedFourCornerCamera = null;
             suppressedPortalHeroUi = null;
             observedPlayback = false;
             stopAfterTime = -1d;
+        }
+
+        private static void RestoreElevatedOccluder()
+        {
+            bool restored = false;
+            if (suppressedElevatedContextFilter != null &&
+                suppressedElevatedContextSourceMesh != null)
+            {
+                suppressedElevatedContextFilter.sharedMesh =
+                    suppressedElevatedContextSourceMesh;
+                restored = true;
+            }
+
+            if (elevatedValidationContextMesh != null)
+            {
+                UnityEngine.Object.DestroyImmediate(
+                    elevatedValidationContextMesh);
+            }
+
+            suppressedElevatedContextFilter = null;
+            suppressedElevatedContextSourceMesh = null;
+            elevatedValidationContextMesh = null;
+
+            if (restored)
+            {
+                Debug.Log(
+                    "[PitRecorder] Restored the Suzuka WALL1 context " +
+                    "submesh after Elevated validation.");
+            }
         }
 
         private static void ClearSessionState()
@@ -878,6 +1221,7 @@ namespace F1XR.EditorTools
             SessionState.EraseString(StartedTicksKey);
             SessionState.EraseBool(HeroKey);
             SessionState.EraseBool(PortalHeroKey);
+            SessionState.EraseBool(ElevatedFourCornerKey);
         }
     }
 
