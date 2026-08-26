@@ -574,9 +574,10 @@ namespace F1XR.RestAPI.UI
                         title);
             SetButton(
                 eventPitEditButton,
-                pitEditing ? "Done" : "Edit Pit",
+                pitEditing ? "Confirm" : "Edit Pit",
                 pitWallPresenter != null &&
-                pitWallPresenter.CanEditPortal);
+                pitWallPresenter.CanEditPortal &&
+                (!pitEditing || !pitManipulating));
             SetButton(
                 eventPitUndoButton,
                 "Undo",

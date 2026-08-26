@@ -1370,7 +1370,16 @@ MonoBehaviour:
   raceFlagAnchor: {fileID: 0}
   raceFlagAlert: {fileID: 0}
   raceFlagPrefab: {fileID: 4318770943564186492, guid: 6e2e556728f643644a93941bf4c5c1a3, type: 3}
+  yellowFlagLogoPrefab: {fileID: 0}
+  redFlagLogoPrefab: {fileID: 0}
+  logoPivotLocalPosition: {x: 0, y: -0.35, z: 0}
+  yellowFlagLogoLocalPosition: {x: 0.381, y: 0, z: 0}
+  redFlagLogoLocalPosition: {x: 0.257, y: 0, z: 0}
+  logoLocalScale: {x: 0.1, y: 0.1, z: 0.1}
+  logoRotationDegreesPerSecond: 12
   anchorLocalPosition: {x: 0, y: 0.5, z: 0}
+  flagLocalPosition: {x: 0, y: -0.45, z: 0}
+  presentationLocalScale: {x: 1, y: 1, z: 1}
   checkeredDisplayDuration: 5
   fallbackRaceEndTimeForTesting: 0
   missingEndFallbackDuration: 5

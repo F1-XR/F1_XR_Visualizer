@@ -921,8 +921,7 @@ namespace F1XR.RestAPI.Replay
             {
                 CreateContainedSuzukaBackdrop(
                     root.transform,
-                    carLength,
-                    floorColor);
+                    carLength);
             }
         }
 
@@ -989,23 +988,11 @@ namespace F1XR.RestAPI.Replay
 
         private void CreateContainedSuzukaBackdrop(
             Transform parent,
-            float carLength,
-            Color floorColor)
+            float carLength)
         {
             Transform backdrop = new GameObject(
                 "ContainedSuzukaBackdrop").transform;
             backdrop.SetParent(parent, false);
-
-            CreatePrimitive(
-                PrimitiveType.Cube,
-                "PitApronSupport",
-                backdrop,
-                new Vector3(0f, -carLength * 0.018f, 0f),
-                new Vector3(
-                    carLength * 8f,
-                    carLength * 0.025f,
-                    carLength * 22f),
-                Color.Lerp(floorColor, Color.white, 0.31f));
 
             CreateBackdropMesh(
                 "SuzukaDaylightSky",
@@ -1074,10 +1061,10 @@ namespace F1XR.RestAPI.Replay
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear
             };
-            Color zenith = new(0.24f, 0.36f, 0.5f, 1f);
-            Color upperSky = new(0.38f, 0.5f, 0.62f, 1f);
-            Color horizon = new(0.62f, 0.68f, 0.73f, 1f);
-            Color below = new(0.36f, 0.43f, 0.48f, 1f);
+            Color zenith = new(0.26f, 0.37f, 0.49f, 1f);
+            Color upperSky = new(0.41f, 0.52f, 0.62f, 1f);
+            Color horizon = new(0.65f, 0.71f, 0.75f, 1f);
+            Color below = new(0.39f, 0.46f, 0.51f, 1f);
             for (int y = 0; y < height; y++)
             {
                 float v = y / (float)(height - 1);

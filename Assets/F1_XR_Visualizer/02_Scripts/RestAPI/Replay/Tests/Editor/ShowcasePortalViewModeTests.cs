@@ -263,6 +263,78 @@ namespace F1XR.RestAPI.Replay.Tests
         }
 
         [Test]
+        public void LeftSecondaryShortcutRestartsOncePerPressOnlyDuringPitReplay()
+        {
+            PitWallShowcasePresenter presenter =
+                Create("PortalReplayShortcutPresenter")
+                    .AddComponent<PitWallShowcasePresenter>();
+            EventPopoutReplay eventReplay =
+                Create("PortalReplayShortcutReplay")
+                    .AddComponent<EventPopoutReplay>();
+
+            Set(eventReplay, "isActive", true);
+            Set(
+                eventReplay,
+                "currentEvent",
+                new ReplayEventDto { eventType = "PitStop" });
+            Set(presenter, "eventReplay", eventReplay);
+            ReplayTimeline timeline =
+                Get<ReplayTimeline>(eventReplay, "timeline");
+            timeline.Reset(10f, 20f);
+            timeline.SetTime(14f);
+
+            Assert.That(
+                Invoke(
+                    presenter,
+                    "ProcessPitReplayRestartShortcut",
+                    false),
+                Is.False);
+            Assert.That(
+                Invoke(
+                    presenter,
+                    "ProcessPitReplayRestartShortcut",
+                    true),
+                Is.True);
+            Assert.That(eventReplay.CurrentTime, Is.EqualTo(10f));
+            Assert.That(eventReplay.IsPlaying, Is.True);
+
+            timeline.SetTime(15f);
+            Assert.That(
+                Invoke(
+                    presenter,
+                    "ProcessPitReplayRestartShortcut",
+                    true),
+                Is.False);
+            Assert.That(eventReplay.CurrentTime, Is.EqualTo(15f));
+
+            Invoke(
+                presenter,
+                "ProcessPitReplayRestartShortcut",
+                false);
+            Assert.That(
+                Invoke(
+                    presenter,
+                    "ProcessPitReplayRestartShortcut",
+                    true),
+                Is.True);
+            Assert.That(eventReplay.CurrentTime, Is.EqualTo(10f));
+
+            Set(eventReplay, "isActive", false);
+            timeline.SetTime(16f);
+            Invoke(
+                presenter,
+                "ProcessPitReplayRestartShortcut",
+                false);
+            Assert.That(
+                Invoke(
+                    presenter,
+                    "ProcessPitReplayRestartShortcut",
+                    true),
+                Is.False);
+            Assert.That(eventReplay.CurrentTime, Is.EqualTo(16f));
+        }
+
+        [Test]
         public void ResolvesVerticalTopDownPoseFromServiceBounds()
         {
             GameObject stage = Create("PitStage");
@@ -344,7 +416,7 @@ namespace F1XR.RestAPI.Replay.Tests
         }
 
         [Test]
-        public void RestoresOnlyRuntimeWallMeshAfterTacticalModes()
+        public void RetainsRealWallStructureAndSuppressesDetachedBackdrop()
         {
             ShowcasePortalPresentation presentation =
                 Create("PortalOccluderOwner")
@@ -363,20 +435,37 @@ namespace F1XR.RestAPI.Replay.Tests
                     Vector3.zero,
                     Vector3.right,
                     Vector3.up,
-                    Vector3.forward,
-                    Vector3.right + Vector3.forward,
-                    Vector3.up + Vector3.forward
+                    new Vector3(2f, 0f, 0f),
+                    new Vector3(2f, 1f, 0f),
+                    new Vector3(2f, 0f, 1f),
+                    new Vector3(2f, 3f, 0f),
+                    new Vector3(3f, 3f, 0f),
+                    new Vector3(2f, 3f, 1f),
+                    new Vector3(0f, 0f, 2f),
+                    new Vector3(1f, 0f, 2f),
+                    new Vector3(0f, 1f, 2f),
+                    new Vector3(0f, 0f, 3f),
+                    new Vector3(1f, 0f, 3f),
+                    new Vector3(0f, 1f, 3f)
                 },
-                subMeshCount = 2
+                subMeshCount = 4
             };
             source.SetIndices(
                 new[] { 0, 1, 2 },
                 MeshTopology.Triangles,
                 0);
             source.SetIndices(
-                new[] { 3, 4, 5 },
+                new[] { 3, 4, 5, 6, 7, 8 },
                 MeshTopology.Triangles,
                 1);
+            source.SetIndices(
+                new[] { 9, 10, 11 },
+                MeshTopology.Triangles,
+                2);
+            source.SetIndices(
+                new[] { 12, 13, 14 },
+                MeshTopology.Triangles,
+                3);
             resources.Add(source);
             filter.sharedMesh = source;
 
@@ -384,15 +473,36 @@ namespace F1XR.RestAPI.Replay.Tests
             Assert.That(shader, Is.Not.Null);
             Material baseMaterial = new(shader) { name = "BASE" };
             Material wallMaterial = new(shader) { name = "WALL1" };
+            Material guardrailMaterial = new(shader) { name = "GRDR" };
+            Material garageMaterial = new(shader) { name = "garageback" };
             resources.Add(baseMaterial);
             resources.Add(wallMaterial);
+            resources.Add(guardrailMaterial);
+            resources.Add(garageMaterial);
             renderer.sharedMaterials =
-                new[] { baseMaterial, wallMaterial };
+                new[]
+                {
+                    baseMaterial,
+                    wallMaterial,
+                    guardrailMaterial,
+                    garageMaterial
+                };
 
             Invoke(
                 presentation,
-                "ResolvePitOverheadOccluder",
+                "ConfigurePitOverheadView",
                 stage.transform);
+            Mesh immersive = filter.sharedMesh;
+            Assert.That(immersive, Is.Not.SameAs(source));
+            Assert.That(source.GetIndexCount(1), Is.EqualTo(6));
+            Assert.That(immersive.GetIndexCount(0), Is.EqualTo(3));
+            Assert.That(immersive.GetIndexCount(1), Is.EqualTo(3));
+            Assert.That(immersive.GetIndexCount(2), Is.EqualTo(0));
+            Assert.That(immersive.GetIndexCount(3), Is.EqualTo(3));
+            Assert.That(
+                presentation.PitOverheadOccluderSuppressed,
+                Is.True);
+
             Set(presentation, "configured", true);
             Set(presentation, "pitStopOnly", true);
             Set(presentation, "pitOverheadPoseValid", true);
@@ -403,10 +513,7 @@ namespace F1XR.RestAPI.Replay.Tests
                 Is.True);
 
             Mesh overhead = filter.sharedMesh;
-            Assert.That(overhead, Is.Not.SameAs(source));
-            Assert.That(source.GetIndexCount(1), Is.EqualTo(3));
-            Assert.That(overhead.GetIndexCount(0), Is.EqualTo(3));
-            Assert.That(overhead.GetIndexCount(1), Is.EqualTo(0));
+            Assert.That(overhead, Is.SameAs(immersive));
             Assert.That(
                 presentation.PitOverheadOccluderSuppressed,
                 Is.True);
@@ -421,10 +528,10 @@ namespace F1XR.RestAPI.Replay.Tests
                 presentation.SetPitReplayView(
                     PitReplayViewMode.Immersive),
                 Is.True);
-            Assert.That(filter.sharedMesh, Is.SameAs(source));
+            Assert.That(filter.sharedMesh, Is.SameAs(overhead));
             Assert.That(
                 presentation.PitOverheadOccluderSuppressed,
-                Is.False);
+                Is.True);
 
             Assert.That(
                 presentation.SetPitReplayView(

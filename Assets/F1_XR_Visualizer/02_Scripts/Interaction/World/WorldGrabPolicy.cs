@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.Serialization;
 using UnityEngine.InputSystem;
 using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit.Attachment;
 using UnityEngine.XR.Interaction.Toolkit.Filtering;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
@@ -20,6 +21,7 @@ namespace F1XR.Interaction.World
         [SerializeField] float positionLerpSpeed = 18f;
         [SerializeField] float rotationLerpSpeed = 18f;
         [SerializeField] float farMoveSpeed = 0.7f;
+        [SerializeField] float minimumFarGrabDistance = 0.1f;
         [SerializeField] float farRotateSpeed = 90f;
         [SerializeField] float farRotationFollowSpeed = 18f;
         [SerializeField] float leftPitchDirection = 1f;
@@ -53,7 +55,12 @@ namespace F1XR.Interaction.World
         bool startUseDynamicAttach;
         bool startMatchAttachPosition;
         bool filterAdded;
+        bool ownFarDistanceInput;
+        bool hadFarAttachControllerSettings;
+        bool startUseDistanceBasedVelocityScaling;
+        bool startUseManipulationInput;
         IXRSelectInteractor farGrabInteractor;
+        InteractionAttachController farAttachController;
 
         static readonly System.Collections.Generic.List<UnityEngine.XR.InputDevice> InputDevices = new();
         static readonly System.Collections.Generic.List<Collider> Colliders = new();
@@ -80,6 +87,13 @@ namespace F1XR.Interaction.World
                 grab.selectFilters.Add(this);
                 filterAdded = true;
             }
+        }
+
+        public void ConfigurePreservedFarMovement(
+            float minimumDistance)
+        {
+            minimumFarGrabDistance = Mathf.Max(0.1f, minimumDistance);
+            ownFarDistanceInput = true;
         }
 
         void Awake()
@@ -134,6 +148,7 @@ namespace F1XR.Interaction.World
         {
             var isFarGrab = IsFarSelectingInteractor();
             ApplyManualGrabSettings(isFarGrab);
+            ApplyFarAttachControllerSettings(isFarGrab);
 
             if (!moving || farMoving != isFarGrab)
             {
@@ -158,7 +173,9 @@ namespace F1XR.Interaction.World
                     {
                         farPivotRayLocal = Quaternion.Inverse(rayRotation) *
                             (initialPivotWorld - rayOrigin);
-                        farGrabDistance = Mathf.Max(0.1f, farPivotRayLocal.z);
+                        farGrabDistance = Mathf.Max(
+                            minimumFarGrabDistance,
+                            farPivotRayLocal.z);
                         farPivotRayLocal.z = farGrabDistance;
                     }
                 }
@@ -200,7 +217,7 @@ namespace F1XR.Interaction.World
 
             pivotWorld = default;
             farGrabDistance = Mathf.Max(
-                0.1f,
+                minimumFarGrabDistance,
                 farGrabDistance + farAxis.y * farMoveSpeed * Time.deltaTime);
 
             if (!TryGetFarRayFrame(out var rayOrigin, out var rayRotation))
@@ -268,7 +285,9 @@ namespace F1XR.Interaction.World
             var leftAxis = ApplyThumbstickDeadzone(GetLeftThumbstick());
 
             var deltaTime = Time.deltaTime;
-            farGrabDistance = Mathf.Max(0.1f, farGrabDistance + axis.y * farMoveSpeed * deltaTime);
+            farGrabDistance = Mathf.Max(
+                minimumFarGrabDistance,
+                farGrabDistance + axis.y * farMoveSpeed * deltaTime);
             var hasPosition = false;
             var position = target.position;
             if (TryGetFarRayPose(out var currentRayOrigin, out var currentRayForward))
@@ -406,12 +425,58 @@ namespace F1XR.Interaction.World
             hadAttachSettings = false;
         }
 
+        void ApplyFarAttachControllerSettings(bool farGrab)
+        {
+            if (!ownFarDistanceInput || !farGrab)
+            {
+                RestoreFarAttachControllerSettings();
+                return;
+            }
+
+            if (hadFarAttachControllerSettings)
+                return;
+
+            if (GetSelectingInteractor() is not Component component ||
+                !component.TryGetComponent(out farAttachController))
+            {
+                farAttachController = null;
+                return;
+            }
+
+            hadFarAttachControllerSettings = true;
+            startUseDistanceBasedVelocityScaling =
+                farAttachController.useDistanceBasedVelocityScaling;
+            startUseManipulationInput =
+                farAttachController.useManipulationInput;
+            farAttachController.useDistanceBasedVelocityScaling = false;
+            farAttachController.useManipulationInput = false;
+        }
+
+        void RestoreFarAttachControllerSettings()
+        {
+            if (!hadFarAttachControllerSettings ||
+                farAttachController == null)
+            {
+                hadFarAttachControllerSettings = false;
+                farAttachController = null;
+                return;
+            }
+
+            farAttachController.useDistanceBasedVelocityScaling =
+                startUseDistanceBasedVelocityScaling;
+            farAttachController.useManipulationInput =
+                startUseManipulationInput;
+            hadFarAttachControllerSettings = false;
+            farAttachController = null;
+        }
+
         void StopMoving()
         {
             moving = false;
             farMoving = false;
             hasGrabPivot = false;
             farGrabInteractor = null;
+            RestoreFarAttachControllerSettings();
             RestoreGrabSettings();
         }
 

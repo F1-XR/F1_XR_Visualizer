@@ -1,5 +1,6 @@
 using F1XR.Interaction.World;
 using UnityEngine;
+using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
@@ -12,6 +13,10 @@ namespace F1XR.RestAPI.Replay.Room
         private const float MinimumPortalScale = 0.55f;
         private const float MaximumPortalScale = 1.1f;
         private const int EditInteractionLayer = 0;
+        private const float ThumbstickDeadzone = 0.15f;
+
+        private static readonly System.Collections.Generic.List<InputDevice>
+            InputDevices = new();
 
         private ShowcasePortalPresentation owner;
         private ShowcaseWallFrame wall;
@@ -177,6 +182,42 @@ namespace F1XR.RestAPI.Replay.Room
         {
             if (owner != null)
                 ApplyEditedTransform();
+        }
+
+        private void Update()
+        {
+            if (!IsEditMode || owner == null)
+                return;
+
+            Vector2 axis = ReadLeftThumbstick();
+            if (axis.sqrMagnitude <
+                ThumbstickDeadzone * ThumbstickDeadzone)
+            {
+                return;
+            }
+
+            owner.AdjustPitWallImmersiveReference(
+                axis,
+                Time.deltaTime);
+        }
+
+        private static Vector2 ReadLeftThumbstick()
+        {
+            InputDevices.Clear();
+            UnityEngine.XR.InputDevices.GetDevicesAtXRNode(
+                XRNode.LeftHand,
+                InputDevices);
+            foreach (InputDevice device in InputDevices)
+            {
+                if (device.TryGetFeatureValue(
+                        CommonUsages.primary2DAxis,
+                        out Vector2 axis))
+                {
+                    return axis;
+                }
+            }
+
+            return Vector2.zero;
         }
 
         private void BindEvents()

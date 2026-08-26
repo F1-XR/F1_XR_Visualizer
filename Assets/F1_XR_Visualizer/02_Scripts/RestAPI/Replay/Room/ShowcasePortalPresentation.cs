@@ -54,6 +54,8 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly List<GameObject> rendererProxies = new();
         private readonly List<Mesh> runtimeMeshes = new();
         private readonly List<Material> runtimeMaterials = new();
+        private readonly Dictionary<Renderer, MaterialPropertyBlock>
+            pitAmbientOriginalBlocks = new();
         private readonly Dictionary<Renderer, Material[]>
             roomTrackOriginalMaterials = new();
         private readonly Dictionary<Renderer, Material[]>
@@ -515,6 +517,7 @@ namespace F1XR.RestAPI.Replay.Room
             ConfigurePitOverheadView(stage);
             configured = true;
             pitStopOnly = true;
+            ApplyPitPortalAmbientLift(stage);
             exitPortalVisible = false;
             SuspendPlaneMeshVisualizers();
             RefreshPortalViews();
@@ -523,6 +526,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void Clear()
         {
+            RestorePitPortalAmbientLift();
             ClearPitReplayView();
             ClearPitWallEditor();
             ClearPitWallOverlay();
@@ -2267,7 +2271,9 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
-            Vector3 eye = viewerCamera.transform.position;
+            Vector3 eye = ResolvePitWallImmersiveEye(
+                portalCamera,
+                viewerCamera.transform.position);
             Vector3 center = surface.position;
             Vector3 surfaceForward = surface.forward.normalized;
             if (!portalCameraForwardSigns.TryGetValue(
@@ -3318,6 +3324,80 @@ namespace F1XR.RestAPI.Replay.Room
                 new MaterialPropertyBlock();
             source.GetPropertyBlock(block);
             destination.SetPropertyBlock(block);
+        }
+
+        private void ApplyPitPortalAmbientLift(Transform stage)
+        {
+            if (!pitStopOnly || stage == null)
+                return;
+
+            Renderer[] renderers =
+                stage.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+                ApplyPitPortalAmbientLift(renderers[i], 0.025f);
+        }
+
+        private void ApplyPitPortalAmbientLift(
+            Renderer renderer,
+            float maximumLift)
+        {
+            if (renderer == null || maximumLift <= 0f)
+                return;
+
+            Material[] sharedMaterials = renderer.sharedMaterials;
+            if (sharedMaterials == null || sharedMaterials.Length != 1)
+                return;
+
+            Material material = sharedMaterials[0];
+            if (material == null ||
+                material.shader == null ||
+                material.shader.name.Contains("Unlit"))
+            {
+                return;
+            }
+
+            int colorId;
+            if (material.HasProperty("_BaseColor"))
+                colorId = Shader.PropertyToID("_BaseColor");
+            else if (material.HasProperty("_Color"))
+                colorId = Shader.PropertyToID("_Color");
+            else
+                return;
+
+            MaterialPropertyBlock block = new();
+            renderer.GetPropertyBlock(block);
+            MaterialPropertyBlock original = new();
+            renderer.GetPropertyBlock(original);
+            pitAmbientOriginalBlocks[renderer] = original;
+            Color sourceColor = block.HasColor(colorId)
+                ? block.GetColor(colorId)
+                : material.GetColor(colorId);
+            float luminance =
+                sourceColor.r * 0.2126f +
+                sourceColor.g * 0.7152f +
+                sourceColor.b * 0.0722f;
+            float darkness = Mathf.InverseLerp(0.62f, 0.08f, luminance);
+            float lift = maximumLift * Mathf.Lerp(0.35f, 1f, darkness);
+            Color daylight = new(0.68f, 0.72f, 0.76f, sourceColor.a);
+            Color lifted = Color.Lerp(sourceColor, daylight, lift);
+            lifted.r = Mathf.Max(sourceColor.r, lifted.r);
+            lifted.g = Mathf.Max(sourceColor.g, lifted.g);
+            lifted.b = Mathf.Max(sourceColor.b, lifted.b);
+            lifted.a = sourceColor.a;
+            block.SetColor(colorId, lifted);
+            renderer.SetPropertyBlock(block);
+        }
+
+        private void RestorePitPortalAmbientLift()
+        {
+            foreach (KeyValuePair<Renderer, MaterialPropertyBlock> pair in
+                     pitAmbientOriginalBlocks)
+            {
+                if (pair.Key != null)
+                    pair.Key.SetPropertyBlock(pair.Value);
+            }
+
+            pitAmbientOriginalBlocks.Clear();
         }
 
         private static bool IsDriverLabelRenderer(

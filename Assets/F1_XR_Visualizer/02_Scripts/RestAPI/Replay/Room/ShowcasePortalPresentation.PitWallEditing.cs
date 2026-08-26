@@ -11,6 +11,8 @@ namespace F1XR.RestAPI.Replay.Room
         private const float PitEditMaximumScale = 1.1f;
         private const float PitEditHandleDepth = 0.08f;
         private const float PitEditHandleHeight = 0.18f;
+        private const float PitEditMinimumGrabDistance = 0.3f;
+        private const float PitImmersiveReferenceSpeed = 0.7f;
 
         private PitWallPortalEditState pitWallEditState;
         private GameObject pitWallEditOutline;
@@ -21,6 +23,8 @@ namespace F1XR.RestAPI.Replay.Room
         private Quaternion pitWallEditBaseStageRotation;
         private Vector3 pitWallEditBaseStageScale;
         private Quaternion pitWallEditBasePortalRotation;
+        private Vector3 pitWallImmersiveEyeOffset;
+        private bool pitWallImmersiveEyeOffsetValid;
 
         public bool IsPitWallEditMode =>
             pitWallEditState != null &&
@@ -39,9 +43,83 @@ namespace F1XR.RestAPI.Replay.Room
             if (!IsPitStopConfigured || pitWallEditState == null)
                 return false;
 
-            pitWallEditState.SetEditMode(
-                !pitWallEditState.IsEditMode);
+            if (!pitWallEditState.IsEditMode)
+            {
+                pitWallEditState.SetEditMode(true);
+                return true;
+            }
+
+            if (pitWallEditState.IsManipulating)
+                return false;
+
+            pitWallEditState.SetEditMode(false);
             return true;
+        }
+
+        internal void AdjustPitWallImmersiveReference(
+            Vector2 axis,
+            float deltaTime)
+        {
+            if (!IsPitWallEditMode ||
+                pitReplayViewMode != PitReplayViewMode.Immersive ||
+                viewerCamera == null ||
+                entrySurface == null ||
+                entryCamera == null ||
+                axis.sqrMagnitude <= 0f ||
+                deltaTime <= 0f)
+            {
+                return;
+            }
+
+            Vector3 viewerPosition = viewerCamera.transform.position;
+            Vector3 eye = pitWallImmersiveEyeOffsetValid
+                ? viewerPosition + pitWallImmersiveEyeOffset
+                : viewerPosition;
+            Vector3 surfaceForward = entrySurface.forward.normalized;
+            if (!portalCameraForwardSigns.TryGetValue(
+                    entryCamera,
+                    out float cameraForwardSign))
+            {
+                cameraForwardSign = Vector3.Dot(
+                    entrySurface.position - eye,
+                    surfaceForward) >= 0f
+                    ? 1f
+                    : -1f;
+                portalCameraForwardSigns[entryCamera] =
+                    cameraForwardSign;
+            }
+
+            Vector3 cameraForward =
+                surfaceForward * cameraForwardSign;
+            Vector3 cameraRight = Vector3.Cross(
+                entrySurface.up,
+                cameraForward).normalized;
+            Vector3 cameraUp = Vector3.Cross(
+                cameraForward,
+                cameraRight).normalized;
+            Vector2 input = Vector2.ClampMagnitude(axis, 1f);
+            Vector3 candidateEye = eye +
+                (cameraRight * input.x +
+                 cameraUp * input.y) *
+                PitImmersiveReferenceSpeed * deltaTime;
+
+            pitWallImmersiveEyeOffset =
+                candidateEye - viewerPosition;
+            pitWallImmersiveEyeOffsetValid =
+                IsFinite(pitWallImmersiveEyeOffset);
+            RefreshPortalViews();
+        }
+
+        private Vector3 ResolvePitWallImmersiveEye(
+            Camera portalCamera,
+            Vector3 viewerPosition)
+        {
+            return pitStopOnly &&
+                   pitReplayViewMode == PitReplayViewMode.Immersive &&
+                   portalCamera == entryCamera &&
+                   pitWallImmersiveEyeOffsetValid
+                ? viewerPosition + pitWallImmersiveEyeOffset
+                : viewerPosition;
         }
 
         internal void SetPitWallEditOutlineVisible(bool visible)
@@ -129,6 +207,8 @@ namespace F1XR.RestAPI.Replay.Room
             pitWallEditBaseStagePosition = stage.position;
             pitWallEditBaseStageRotation = stage.rotation;
             pitWallEditBaseStageScale = stage.localScale;
+            pitWallImmersiveEyeOffset = Vector3.zero;
+            pitWallImmersiveEyeOffsetValid = false;
 
             GameObject surface = entrySurface.gameObject;
             CreatePitWallEditOutline(
@@ -169,6 +249,8 @@ namespace F1XR.RestAPI.Replay.Room
             WorldGrabPolicy grabPolicy =
                 surface.AddComponent<WorldGrabPolicy>();
             grabPolicy.UseGrabPoint(grab, entrySurface);
+            grabPolicy.ConfigurePreservedFarMovement(
+                PitEditMinimumGrabDistance);
 
             ScaleController scaleController =
                 surface.AddComponent<ScaleController>();
@@ -243,6 +325,8 @@ namespace F1XR.RestAPI.Replay.Room
             pitWallEditBaseStageRotation = Quaternion.identity;
             pitWallEditBaseStageScale = Vector3.one;
             pitWallEditBasePortalRotation = Quaternion.identity;
+            pitWallImmersiveEyeOffset = Vector3.zero;
+            pitWallImmersiveEyeOffsetValid = false;
         }
     }
 }

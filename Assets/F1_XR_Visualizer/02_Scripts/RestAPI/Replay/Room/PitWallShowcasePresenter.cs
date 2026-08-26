@@ -40,6 +40,7 @@ namespace F1XR.RestAPI.Replay.Room
         private ShowcaseWallFrame fitinWall;
         private string lastFailure = "";
         private bool pitReplayViewButtonWasPressed;
+        private bool pitReplayRestartButtonWasPressed;
 
         public string LastFailure => lastFailure;
         public bool IsPortalEditMode =>
@@ -139,6 +140,7 @@ namespace F1XR.RestAPI.Replay.Room
                 ? replayPlayer.EventReplay
                 : null;
             UpdatePitReplayViewShortcut();
+            UpdatePitReplayRestartShortcut();
             if (eventReplay == null ||
                 !eventReplay.IsPitStopActive)
             {
@@ -197,6 +199,30 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             return TogglePitReplayView();
+        }
+
+        private void UpdatePitReplayRestartShortcut()
+        {
+            ProcessPitReplayRestartShortcut(
+                XRControllerButton.IsPressed(
+                    MorphHoldButton.SecondaryButton,
+                    false));
+        }
+
+        private bool ProcessPitReplayRestartShortcut(bool isPressed)
+        {
+            bool pressedThisFrame =
+                isPressed && !pitReplayRestartButtonWasPressed;
+            pitReplayRestartButtonWasPressed = isPressed;
+            if (!pressedThisFrame ||
+                eventReplay == null ||
+                !eventReplay.IsPitStopActive)
+            {
+                return false;
+            }
+
+            eventReplay.Restart();
+            return true;
         }
 
         private bool TryBind(
@@ -675,17 +701,23 @@ namespace F1XR.RestAPI.Replay.Room
                 XRControllerButton.IsPressed(
                     MorphHoldButton.PrimaryButton,
                     false);
+            pitReplayRestartButtonWasPressed =
+                XRControllerButton.IsPressed(
+                    MorphHoldButton.SecondaryButton,
+                    false);
         }
 
         private void OnDisable()
         {
             pitReplayViewButtonWasPressed = false;
+            pitReplayRestartButtonWasPressed = false;
             ReleaseBinding();
         }
 
         private void OnDestroy()
         {
             pitReplayViewButtonWasPressed = false;
+            pitReplayRestartButtonWasPressed = false;
             ReleaseBinding();
         }
     }

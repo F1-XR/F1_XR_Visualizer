@@ -19,9 +19,22 @@ namespace F1XR.RestAPI.Replay.Room
             "ContextSurface";
         private const string SuzukaContextMeshName =
             "SuzukaPitLaneContextMesh";
-        private const string SuzukaOverheadOccluderMaterialName =
-            "WALL1";
-        private const int SuzukaOverheadOccluderSubMeshIndex = 1;
+        private const string SuzukaWallMaterialName = "WALL1";
+        private const float SuzukaGarageStructureMinX = 1.65f;
+        private const float SuzukaGarageStructureMaxX = 6.75f;
+        private const float SuzukaGarageStructureMaxY = 3.25f;
+        private const float SuzukaGarageVerticalNormalY = 0.35f;
+        private static readonly HashSet<string>
+            SuzukaDetachedBackdropMaterialNames = new(
+                System.StringComparer.OrdinalIgnoreCase)
+            {
+                "TWALL",
+                "TWALL1",
+                "GRDR",
+                "GRDR_TOP",
+                "GRDR8",
+                "GURDRC"
+            };
         private const float PitOverheadFieldOfView = 42f;
         private const float PitOverheadFramingPadding = 0.68f;
         private const float PitTopDownFieldOfView = 42f;
@@ -96,10 +109,7 @@ namespace F1XR.RestAPI.Replay.Room
                 return false;
             }
 
-            if (mode != PitReplayViewMode.Immersive)
-                ApplyPitOverheadOccluderSuppression();
-            else
-                RestorePitOverheadOccluder();
+            ApplyPitOverheadOccluderSuppression();
 
             pitReplayViewMode = mode;
             RefreshPortalViews();
@@ -116,6 +126,7 @@ namespace F1XR.RestAPI.Replay.Room
             pitOverheadPoseValid = posesValid;
             pitTopDownPoseValid = posesValid;
             ResolvePitOverheadOccluder(stage);
+            ApplyPitOverheadOccluderSuppression();
         }
 
         private void ClearPitReplayView()
@@ -166,15 +177,10 @@ namespace F1XR.RestAPI.Replay.Room
                     SuzukaContextSurfaceName ||
                     source == null ||
                     source.name != SuzukaContextMeshName ||
-                    source.subMeshCount <=
-                    SuzukaOverheadOccluderSubMeshIndex ||
                     materials == null ||
-                    materials.Length <=
-                    SuzukaOverheadOccluderSubMeshIndex ||
-                    materials[SuzukaOverheadOccluderSubMeshIndex] ==
-                    null ||
-                    materials[SuzukaOverheadOccluderSubMeshIndex].name !=
-                    SuzukaOverheadOccluderMaterialName)
+                    !HasSuzukaDetachedBackdrop(
+                        source,
+                        materials))
                 {
                     continue;
                 }
@@ -199,13 +205,44 @@ namespace F1XR.RestAPI.Replay.Room
                     pitOverheadContextSourceMesh);
                 pitOverheadContextMesh.name =
                     pitOverheadContextSourceMesh.name +
-                    "_OverheadView";
-                pitOverheadContextMesh.SetIndices(
-                    System.Array.Empty<int>(),
-                    pitOverheadContextSourceMesh.GetTopology(
-                        SuzukaOverheadOccluderSubMeshIndex),
-                    SuzukaOverheadOccluderSubMeshIndex,
-                    false);
+                    "_PitArchitectureFiltered";
+                MeshRenderer renderer =
+                    pitOverheadContextFilter.GetComponent<MeshRenderer>();
+                Material[] materials = renderer != null
+                    ? renderer.sharedMaterials
+                    : null;
+                int count = Mathf.Min(
+                    pitOverheadContextSourceMesh.subMeshCount,
+                    materials != null ? materials.Length : 0);
+                for (int subMesh = 0; subMesh < count; subMesh++)
+                {
+                    Material material = materials[subMesh];
+                    if (material == null)
+                    {
+                        continue;
+                    }
+
+                    if (material.name == SuzukaWallMaterialName)
+                    {
+                        pitOverheadContextMesh.SetIndices(
+                            CreateSuzukaWallArchitectureIndices(
+                                pitOverheadContextSourceMesh,
+                                subMesh),
+                            MeshTopology.Triangles,
+                            subMesh,
+                            false);
+                    }
+                    else if (SuzukaDetachedBackdropMaterialNames.Contains(
+                                 material.name))
+                    {
+                        pitOverheadContextMesh.SetIndices(
+                            System.Array.Empty<int>(),
+                            pitOverheadContextSourceMesh.GetTopology(
+                                subMesh),
+                            subMesh,
+                            false);
+                    }
+                }
                 runtimeMeshes.Add(pitOverheadContextMesh);
             }
 
@@ -223,6 +260,87 @@ namespace F1XR.RestAPI.Replay.Room
                 pitOverheadContextFilter.sharedMesh =
                     pitOverheadContextSourceMesh;
             }
+        }
+
+        private static bool HasSuzukaDetachedBackdrop(
+            Mesh source,
+            IReadOnlyList<Material> materials)
+        {
+            int count = Mathf.Min(
+                source != null ? source.subMeshCount : 0,
+                materials != null ? materials.Count : 0);
+            for (int subMesh = 0; subMesh < count; subMesh++)
+            {
+                Material material = materials[subMesh];
+                if (material != null &&
+                    (material.name == SuzukaWallMaterialName ||
+                     SuzukaDetachedBackdropMaterialNames.Contains(
+                         material.name)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int[] CreateSuzukaWallArchitectureIndices(
+            Mesh source,
+            int subMesh)
+        {
+            if (source == null ||
+                subMesh < 0 ||
+                subMesh >= source.subMeshCount ||
+                source.GetTopology(subMesh) != MeshTopology.Triangles)
+            {
+                return System.Array.Empty<int>();
+            }
+
+            Vector3[] vertices = source.vertices;
+            int[] sourceIndices = source.GetIndices(subMesh);
+            List<int> retained = new(sourceIndices.Length);
+            for (int index = 0;
+                 index + 2 < sourceIndices.Length;
+                 index += 3)
+            {
+                int first = sourceIndices[index];
+                int second = sourceIndices[index + 1];
+                int third = sourceIndices[index + 2];
+                if (first < 0 || first >= vertices.Length ||
+                    second < 0 || second >= vertices.Length ||
+                    third < 0 || third >= vertices.Length)
+                {
+                    continue;
+                }
+
+                Vector3 a = vertices[first];
+                Vector3 b = vertices[second];
+                Vector3 c = vertices[third];
+                Vector3 normal = Vector3.Cross(b - a, c - a);
+                if (normal.sqrMagnitude <= Mathf.Epsilon)
+                    continue;
+
+                float centerX = (a.x + b.x + c.x) / 3f;
+                float highestY = Mathf.Max(a.y, Mathf.Max(b.y, c.y));
+                bool isGarageSide =
+                    centerX >= SuzukaGarageStructureMinX &&
+                    centerX <= SuzukaGarageStructureMaxX;
+                bool isVerticalStructure =
+                    Mathf.Abs(normal.normalized.y) <=
+                    SuzukaGarageVerticalNormalY;
+                if (!isGarageSide ||
+                    !isVerticalStructure ||
+                    highestY > SuzukaGarageStructureMaxY)
+                {
+                    continue;
+                }
+
+                retained.Add(first);
+                retained.Add(second);
+                retained.Add(third);
+            }
+
+            return retained.ToArray();
         }
 
         private bool UsesPitTacticalView(Camera portalCamera) =>

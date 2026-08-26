@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using F1XR.Interaction.World;
 using F1XR.RestAPI.Replay.Room;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace F1XR.RestAPI.Replay.Tests
 {
@@ -198,6 +200,283 @@ namespace F1XR.RestAPI.Replay.Tests
             TestContext.Out.WriteLine(evidence.ToString());
         }
 
+        [Test]
+        public void ManualPitReferencePersistsAfterConfirmAndKeepsParallax()
+        {
+            ShowcasePortalPresentation presentation =
+                Create("PitPortalManualReferenceOwner")
+                    .AddComponent<ShowcasePortalPresentation>();
+            Camera viewer = CreateCamera("PitPortalManualReferenceViewer");
+            Camera portalCamera = CreateCamera(
+                "PitPortalManualReferenceCamera");
+            GameObject surfaceObject =
+                GameObject.CreatePrimitive(PrimitiveType.Quad);
+            objects.Add(surfaceObject);
+            surfaceObject.hideFlags = HideFlags.HideAndDontSave;
+
+            Vector3 portalPosition = new(0f, 1.2f, 3f);
+            Quaternion portalRotation =
+                Quaternion.LookRotation(Vector3.back, Vector3.up);
+            Vector2 portalSize = new(4.2f, 2.4f);
+            Vector3 viewerPosition = new(0f, 1.6f, 0f);
+
+            surfaceObject.transform.SetPositionAndRotation(
+                portalPosition,
+                portalRotation);
+            surfaceObject.transform.localScale =
+                new Vector3(portalSize.x, portalSize.y, 1f);
+            viewer.transform.SetPositionAndRotation(
+                viewerPosition,
+                Quaternion.LookRotation(
+                    portalPosition - viewerPosition,
+                    Vector3.up));
+            viewer.farClipPlane = 100f;
+
+            Set(presentation, "viewerCamera", viewer);
+            Set(presentation, "entryCamera", portalCamera);
+            Set(presentation, "entrySurface", surfaceObject.transform);
+            Set(
+                presentation,
+                "entrySurfaceRenderer",
+                surfaceObject.GetComponent<Renderer>());
+            Set(presentation, "entryPortalSize", portalSize);
+            Set(presentation, "configured", true);
+            Set(presentation, "pitStopOnly", true);
+            Get<Dictionary<Camera, float>>(
+                presentation,
+                "portalCameraForwardSigns")[portalCamera] = -1f;
+
+            BoxCollider editCollider =
+                surfaceObject.AddComponent<BoxCollider>();
+            Rigidbody body = surfaceObject.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            XRGrabInteractable grab =
+                surfaceObject.AddComponent<XRGrabInteractable>();
+            ScaleController scale =
+                surfaceObject.AddComponent<ScaleController>();
+            scale.Configure(
+                surfaceObject.transform,
+                grab,
+                body,
+                0.55f,
+                1.1f);
+            WorldGrabPolicy policy =
+                surfaceObject.AddComponent<WorldGrabPolicy>();
+            policy.UseGrabPoint(grab, surfaceObject.transform);
+            PitWallPortalEditState editState =
+                surfaceObject.AddComponent<PitWallPortalEditState>();
+            ShowcaseWallFrame wall = new(
+                default,
+                portalPosition,
+                Vector3.back,
+                Vector3.right,
+                Vector3.up,
+                8f,
+                5f,
+                -4f,
+                4f,
+                -2.5f,
+                2.5f);
+            MethodInfo configure =
+                typeof(PitWallPortalEditState).GetMethod(
+                    "Configure",
+                    PrivateInstance);
+            Assert.That(configure, Is.Not.Null);
+            configure.Invoke(
+                editState,
+                new object[]
+                {
+                    presentation,
+                    wall,
+                    portalSize,
+                    grab,
+                    scale,
+                    policy,
+                    editCollider,
+                    true
+                });
+            Set(presentation, "pitWallEditState", editState);
+            editState.SetEditMode(true);
+
+            MethodInfo adjustReference =
+                typeof(ShowcasePortalPresentation).GetMethod(
+                    "AdjustPitWallImmersiveReference",
+                    PrivateInstance);
+            MethodInfo refresh =
+                typeof(ShowcasePortalPresentation).GetMethod(
+                    "RefreshPortalViews",
+                    PrivateInstance);
+            MethodInfo confirm =
+                typeof(ShowcasePortalPresentation).GetMethod(
+                    "TogglePitWallEditMode",
+                    PrivateInstance);
+            Assert.That(adjustReference, Is.Not.Null);
+            Assert.That(refresh, Is.Not.Null);
+            Assert.That(confirm, Is.Not.Null);
+
+            adjustReference.Invoke(
+                presentation,
+                new object[] { new Vector2(0.8f, 0.4f), 1f });
+            Assert.That(portalCamera.enabled, Is.True);
+            Vector3 expectedEye =
+                viewerPosition + new Vector3(0.56f, 0.28f, 0f);
+            Assert.That(
+                Vector3.Distance(
+                    portalCamera.transform.position,
+                    expectedEye),
+                Is.LessThan(0.0001f));
+            Matrix4x4 confirmedProjection =
+                portalCamera.projectionMatrix;
+            Vector3 chosenOffset = Get<Vector3>(
+                presentation,
+                "pitWallImmersiveEyeOffset");
+
+            Set(
+                presentation,
+                "pitReplayViewMode",
+                PitReplayViewMode.Overhead);
+            adjustReference.Invoke(
+                presentation,
+                new object[] { Vector2.left, 1f });
+            Assert.That(
+                Get<Vector3>(
+                    presentation,
+                    "pitWallImmersiveEyeOffset"),
+                Is.EqualTo(chosenOffset));
+            Set(
+                presentation,
+                "pitReplayViewMode",
+                PitReplayViewMode.Immersive);
+
+            Assert.That((bool)confirm.Invoke(presentation, null), Is.True);
+            Assert.That(editState.IsEditMode, Is.False);
+            Assert.That(
+                Get<Vector3>(
+                    presentation,
+                    "pitWallImmersiveEyeOffset"),
+                Is.EqualTo(chosenOffset));
+            adjustReference.Invoke(
+                presentation,
+                new object[] { Vector2.left, 1f });
+            Assert.That(
+                Get<Vector3>(
+                    presentation,
+                    "pitWallImmersiveEyeOffset"),
+                Is.EqualTo(chosenOffset));
+
+            Vector3 viewerDelta = new(0.2f, 0.1f, -0.15f);
+            viewer.transform.position += viewerDelta;
+            refresh.Invoke(presentation, null);
+
+            Assert.That(
+                Vector3.Distance(
+                    portalCamera.transform.position,
+                    expectedEye + viewerDelta),
+                Is.LessThan(0.0001f));
+            Assert.That(
+                MaximumDifference(
+                    confirmedProjection,
+                    portalCamera.projectionMatrix),
+                Is.GreaterThan(0.0001f));
+        }
+
+        [Test]
+        public void PitPortalEditPreservesMoveAndBoundedScaleWhenDisabled()
+        {
+            ShowcasePortalPresentation presentation =
+                Create("PitPortalEditOwner")
+                    .AddComponent<ShowcasePortalPresentation>();
+            GameObject surface = Create("PitPortalEditSurface");
+            BoxCollider editCollider =
+                surface.AddComponent<BoxCollider>();
+            Rigidbody body = surface.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            XRGrabInteractable grab =
+                surface.AddComponent<XRGrabInteractable>();
+            ScaleController scale =
+                surface.AddComponent<ScaleController>();
+            scale.Configure(surface.transform, grab, body, 0.55f, 1.1f);
+            WorldGrabPolicy policy =
+                surface.AddComponent<WorldGrabPolicy>();
+            policy.UseGrabPoint(grab, surface.transform);
+            PitWallPortalEditState editState =
+                surface.AddComponent<PitWallPortalEditState>();
+            ShowcaseWallFrame wall = new(
+                default,
+                Vector3.zero,
+                Vector3.forward,
+                Vector3.right,
+                Vector3.up,
+                8f,
+                5f,
+                -4f,
+                4f,
+                -2.5f,
+                2.5f);
+            MethodInfo configure =
+                typeof(PitWallPortalEditState).GetMethod(
+                    "Configure",
+                    PrivateInstance);
+            Assert.That(configure, Is.Not.Null);
+            configure.Invoke(
+                editState,
+                new object[]
+                {
+                    presentation,
+                    wall,
+                    new Vector2(4f, 2f),
+                    grab,
+                    scale,
+                    policy,
+                    editCollider,
+                    true
+                });
+
+            Assert.That(editState.IsEditMode, Is.False);
+            Assert.That(grab.enabled, Is.False);
+            Assert.That(scale.enabled, Is.False);
+            Assert.That(policy.enabled, Is.False);
+            Assert.That(editCollider.enabled, Is.False);
+
+            editState.SetEditMode(true);
+            Assert.That(grab.enabled, Is.True);
+            Assert.That(scale.enabled, Is.True);
+            Assert.That(policy.enabled, Is.True);
+            Assert.That(editCollider.enabled, Is.True);
+
+            Vector3 editedPosition = new(1.2f, 1.7f, 2.4f);
+            Quaternion editedRotation = Quaternion.Euler(0f, 25f, 0f);
+            surface.transform.SetPositionAndRotation(
+                editedPosition,
+                editedRotation);
+            surface.transform.localScale = Vector3.one * 2f;
+            InvokeEditLateUpdate(editState);
+            Assert.That(
+                Vector3.Distance(surface.transform.position, editedPosition),
+                Is.LessThan(0.0001f));
+            Assert.That(
+                Quaternion.Angle(surface.transform.rotation, editedRotation),
+                Is.LessThan(0.0001f));
+            Assert.That(
+                surface.transform.localScale.x,
+                Is.EqualTo(1.1f).Within(0.0001f));
+
+            surface.transform.localScale = Vector3.one * 0.8f;
+            InvokeEditLateUpdate(editState);
+            editState.SetEditMode(false);
+
+            Assert.That(
+                Vector3.Distance(surface.transform.position, editedPosition),
+                Is.LessThan(0.0001f));
+            Assert.That(
+                surface.transform.localScale.x,
+                Is.EqualTo(0.8f).Within(0.0001f));
+            Assert.That(grab.enabled, Is.False);
+            Assert.That(scale.enabled, Is.False);
+            Assert.That(policy.enabled, Is.False);
+            Assert.That(editCollider.enabled, Is.False);
+        }
+
         private GameObject Create(string name)
         {
             GameObject created = new(name)
@@ -210,6 +489,17 @@ namespace F1XR.RestAPI.Replay.Tests
 
         private Camera CreateCamera(string name) =>
             Create(name).AddComponent<Camera>();
+
+        private static void InvokeEditLateUpdate(
+            PitWallPortalEditState editState)
+        {
+            MethodInfo lateUpdate =
+                typeof(PitWallPortalEditState).GetMethod(
+                    "LateUpdate",
+                    PrivateInstance);
+            Assert.That(lateUpdate, Is.Not.Null);
+            lateUpdate.Invoke(editState, null);
+        }
 
         private static T Get<T>(object target, string fieldName) =>
             (T)target.GetType()
