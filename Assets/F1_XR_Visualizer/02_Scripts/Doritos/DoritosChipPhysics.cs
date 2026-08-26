@@ -33,6 +33,13 @@ namespace F1XR.Doritos
         [SerializeField] float spawnInsetRatio = 0.12f;   // 입구에서 안쪽으로 얼마나
         [SerializeField] float mouthZoneHeightRatio = 0.22f; // 입구 존 두께(부피 대비)
 
+        [Header("Grab SFX (봉지 잡을 때 chipbag 소리 앞부분만)")]
+        [SerializeField] AudioSource grabAudioSource;
+        [SerializeField] AudioClip chipBagClip;
+        [SerializeField] float chipBagStartTime = 0.15f; // 앞 ~147ms 무음 구간 스킵
+        [SerializeField] float chipBagPlaySeconds = 0.1f;
+        [SerializeField] AudioClip chipPickupClip; // 칩 잡을 때
+
         readonly List<GameObject> fixedChips = new List<GameObject>();
         int nextHideIndex;
         InteractorHandedness holderHand = InteractorHandedness.None;
@@ -176,7 +183,31 @@ namespace F1XR.Doritos
             isGrabbed = true;
             holderHand = (args.interactorObject as XRBaseInputInteractor)?.handedness ?? InteractorHandedness.None;
             if (extractZone != null) extractZone.gameObject.SetActive(HasChipsLeft());
+            PlayChipBagSfx();
             Debug.Log($"[Doritos] BAG GRABBED by {holderHand}, zoneActive={extractZone!=null && extractZone.gameObject.activeSelf}");
+        }
+
+        void PlayChipBagSfx()
+        {
+            if (grabAudioSource == null || chipBagClip == null) return;
+            StopCoroutine(nameof(ChipBagSfxRoutine));
+            StartCoroutine(ChipBagSfxRoutine());
+        }
+
+        void PlayChipPickupSfx()
+        {
+            if (grabAudioSource != null && chipPickupClip != null)
+                grabAudioSource.PlayOneShot(chipPickupClip);
+        }
+
+        System.Collections.IEnumerator ChipBagSfxRoutine()
+        {
+            grabAudioSource.Stop();
+            grabAudioSource.clip = chipBagClip;
+            grabAudioSource.time = Mathf.Clamp(chipBagStartTime, 0f, Mathf.Max(0f, chipBagClip.length - 0.02f));
+            grabAudioSource.Play();
+            yield return new WaitForSeconds(chipBagPlaySeconds);
+            grabAudioSource.Stop();
         }
 
         void OnBagReleased(SelectExitEventArgs args)
@@ -218,6 +249,9 @@ namespace F1XR.Doritos
 
             // 순간이동 튕김 방지: 스폰 위치에서 손까지 확 당겨질 때 velocity 폭발 안 하도록 Instantaneous.
             grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
+
+            // 이 과자를 잡을 때마다(auto-grab + 이후 수동 재잡기) 픽업 효과음.
+            grab.selectEntered.AddListener(_ => PlayChipPickupSfx());
 
             // Ray가 zone 비활성으로 이미 free지만, 남은 select 있으면 정리 후 과자로 전환.
             if (interactor.hasSelection)
