@@ -380,7 +380,7 @@ MonoBehaviour:
   coordinatorWaitSeconds: 10
   skipSpatialSetupOnPlay: 0
   showTablePlacementCandidatesOnPlay: 0
-  placeTemporaryMapInFrontOfVrOrigin: 0
+  placeTemporaryMapInFrontOfVrOrigin: 1
   enterVrDroneOnPlay: 0
 --- !u!1 &417482157
 GameObject:
@@ -3182,7 +3182,7 @@ MonoBehaviour:
     circuitName: Suzuka
     circuitShortName: Suzuka
     visualizerPrefab: {fileID: 0}
-    mapPrefab: {fileID: 4781409877837566449, guid: a22e6c50786583349af8b25ddbfb743a, type: 3}
+    mapPrefab: {fileID: 4781409877837566449, guid: 848f4ce9953e4dddbba6b8af0a732e44, type: 3}
     mapScale: 0.0003
     fitMapToCalibrationBounds: 0
     mapFitScaleMultiplier: 1

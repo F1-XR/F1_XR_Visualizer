@@ -16,8 +16,8 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField, Min(0.01f)] float hoverScaleSpeed = 12f;
         [SerializeField] Color grabVolumeColor =
             new(0.15f, 0.85f, 1f, 0.2f);
-        [SerializeField, Min(0f)] float sideClearance = 0.06f;
-        [SerializeField, Min(0f)] float surfaceClearance = 0.005f;
+        [SerializeField, Min(0f)] float sideClearance = 0.15f;
+        [SerializeField, Min(0f)] float surfaceClearance = 0.1f;
         [SerializeField] Color cubeColor = new(0.9f, 0.05f, 0.05f, 1f);
 
         GameObject cube;
