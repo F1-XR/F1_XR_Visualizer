@@ -27,6 +27,8 @@ namespace F1XR.Showroom
         [Header("FX")]
         [SerializeField] ParticleSystem mist;
         [SerializeField] AudioSource hiss;
+        [SerializeField] Transform foamCluster;
+        [SerializeField] float foamGrowDuration = 0.9f;
 
         [Header("Reveal")]
         [Tooltip("Hidden while closed: the can body still carries its own tab, so showing both would z-fight.")]
@@ -52,7 +54,9 @@ namespace F1XR.Showroom
         readonly List<IXRHoverInteractor> hovering = new();
         XRSimpleInteractable interactable;
         Tween tween;
+        Tween foamTween;
         Quaternion baseRot;
+        Vector3 foamScale;
         bool opened;
 
         void Awake()
@@ -67,6 +71,12 @@ namespace F1XR.Showroom
                 hinge = transform;
             // the FBX axis conversion leaves a base rotation on the piece: lift on top of it
             baseRot = hinge.localRotation;
+            if (foamCluster != null)
+            {
+                foamScale = foamCluster.localScale;
+                foamCluster.localScale = Vector3.zero;
+                foamCluster.gameObject.SetActive(false);
+            }
             SetRevealed(false);
         }
 
@@ -82,6 +92,14 @@ namespace F1XR.Showroom
             interactable.hoverExited.RemoveListener(OnHoverExited);
             hovering.Clear();
             tween?.Kill();
+            foamTween?.Kill();
+            if (mist != null)
+                mist.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            if (foamCluster != null)
+            {
+                foamCluster.localScale = Vector3.zero;
+                foamCluster.gameObject.SetActive(false);
+            }
         }
 
         void Update()
@@ -124,6 +142,7 @@ namespace F1XR.Showroom
         {
             opened = open;
             tween?.Kill();
+            foamTween?.Kill();
 
             if (open)
                 SetRevealed(true);
@@ -136,11 +155,26 @@ namespace F1XR.Showroom
 
             if (open)
             {
-                if (mist != null) mist.Play();
+                if (foamCluster != null)
+                {
+                    foamCluster.gameObject.SetActive(true);
+                    foamCluster.localScale = Vector3.zero;
+                    foamTween = foamCluster.DOScale(foamScale, foamGrowDuration)
+                            .SetEase(Ease.OutCubic);
+                }
+                if (mist != null) mist.Play(true);
                 if (hiss != null) hiss.Play();
             }
             else
             {
+                if (foamCluster != null)
+                {
+                    foamTween = foamCluster.DOScale(Vector3.zero, closeDuration)
+                            .SetEase(Ease.InQuad)
+                            .OnComplete(() => foamCluster.gameObject.SetActive(false));
+                }
+                if (mist != null)
+                    mist.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
                 tween.OnComplete(() => SetRevealed(false));
             }
         }
