@@ -66,6 +66,7 @@ Packages/packages-lock.json linguist-generated
 *.cubemap               lfs
 *.unitypackage          lfs
 # 3D models
+Assets/F1_XR_Visualizer/05_Models/Tracks/SuzukaCircuit_v2.glb lfs
 *.3dm                   lfs
 *.3ds                   lfs
 *.blend                 lfs
