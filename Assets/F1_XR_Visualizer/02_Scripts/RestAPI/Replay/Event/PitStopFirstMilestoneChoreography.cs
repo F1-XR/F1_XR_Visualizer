@@ -45,8 +45,12 @@ namespace F1XR.RestAPI.Replay
             Shader.PropertyToID("_Metallic");
         private static readonly int SmoothnessId =
             Shader.PropertyToID("_Smoothness");
-        private static readonly Color FerrariCrewRed =
+        private static readonly Color FerrariWheelGunnerRed =
+            new(0.34f, 0.035f, 0.028f, 1f);
+        private static readonly Color FerrariWheelOffRed =
             new(0.46f, 0.055f, 0.04f, 1f);
+        private static readonly Color FerrariWheelOnRed =
+            new(0.405f, 0.044f, 0.034f, 1f);
         private static readonly Vector3 FallbackFlHub =
             new(0.92f, 0.39f, 2f);
         private static readonly Vector3 FallbackRearHub =
@@ -1163,6 +1167,14 @@ namespace F1XR.RestAPI.Replay
 
             Renderer[] renderers =
                 instance.GetComponentsInChildren<Renderer>(true);
+            Color roleColor = actorName.Contains("_WheelGunner")
+                ? FerrariWheelGunnerRed
+                : actorName.Contains("_WheelOn_")
+                    ? FerrariWheelOnRed
+                    : FerrariWheelOffRed;
+            float roleSmoothness = actorName.Contains("_WheelOn_")
+                ? 0.24f
+                : 0.28f;
             MaterialPropertyBlock properties = new();
             for (int i = 0; i < renderers.Length; i++)
             {
@@ -1171,10 +1183,10 @@ namespace F1XR.RestAPI.Replay
                     continue;
 
                 renderer.GetPropertyBlock(properties);
-                properties.SetColor(BaseColorId, FerrariCrewRed);
-                properties.SetColor(ColorId, FerrariCrewRed);
+                properties.SetColor(BaseColorId, roleColor);
+                properties.SetColor(ColorId, roleColor);
                 properties.SetFloat(MetallicId, 0f);
-                properties.SetFloat(SmoothnessId, 0.28f);
+                properties.SetFloat(SmoothnessId, roleSmoothness);
                 renderer.SetPropertyBlock(properties);
                 properties.Clear();
             }

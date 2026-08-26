@@ -1062,7 +1062,7 @@ namespace F1XR.RestAPI.Replay
 
         private Material CreateSuzukaSkyMaterial()
         {
-            const int height = 32;
+            const int height = 64;
             Texture2D gradient = new(
                 1,
                 height,
@@ -1074,15 +1074,35 @@ namespace F1XR.RestAPI.Replay
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear
             };
-            Color zenith = new(0.17f, 0.27f, 0.4f, 1f);
-            Color horizon = new(0.52f, 0.61f, 0.68f, 1f);
-            Color below = new(0.34f, 0.42f, 0.48f, 1f);
+            Color zenith = new(0.24f, 0.36f, 0.5f, 1f);
+            Color upperSky = new(0.38f, 0.5f, 0.62f, 1f);
+            Color horizon = new(0.62f, 0.68f, 0.73f, 1f);
+            Color below = new(0.36f, 0.43f, 0.48f, 1f);
             for (int y = 0; y < height; y++)
             {
                 float v = y / (float)(height - 1);
-                Color color = v <= 0.5f
-                    ? Color.Lerp(zenith, horizon, v * 2f)
-                    : Color.Lerp(horizon, below, (v - 0.5f) * 2f);
+                Color color;
+                if (v <= 0.34f)
+                {
+                    float t = Mathf.SmoothStep(0f, 1f, v / 0.34f);
+                    color = Color.Lerp(zenith, upperSky, t);
+                }
+                else if (v <= 0.56f)
+                {
+                    float t = Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        (v - 0.34f) / 0.22f);
+                    color = Color.Lerp(upperSky, horizon, t);
+                }
+                else
+                {
+                    float t = Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        (v - 0.56f) / 0.44f);
+                    color = Color.Lerp(horizon, below, t);
+                }
                 gradient.SetPixel(0, y, color);
             }
             gradient.Apply(false, true);
