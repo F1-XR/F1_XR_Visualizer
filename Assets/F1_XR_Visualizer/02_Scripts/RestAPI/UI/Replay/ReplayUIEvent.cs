@@ -26,6 +26,7 @@ namespace F1XR.RestAPI.UI
         private Button eventPitEditButton;
         private Button eventPitUndoButton;
         private Button eventPitResetButton;
+        private Button eventPitViewButton;
         private Slider eventSlider;
         private bool refreshingEventSlider;
         private RoomShowcaseSetupController roomSetup;
@@ -121,6 +122,12 @@ namespace F1XR.RestAPI.UI
                 -126f,
                 92f,
                 ResetPitPortalEdit);
+            eventPitViewButton = CreateEventButton(
+                "VIEW: IMMERSIVE",
+                8f,
+                -168f,
+                284f,
+                TogglePitReplayView);
             eventSlider = CreateEventSlider();
             eventSlider.onValueChanged.AddListener(SeekEvent);
             RefreshEventControls();
@@ -444,6 +451,9 @@ namespace F1XR.RestAPI.UI
             bool pitManipulating = pitEditing &&
                 pitWallPresenter.IsPortalManipulating;
 
+            eventControls.gameObject.SetActive(
+                !pitActive || !eventReplay.IsPlaying);
+
             eventOpenButton.gameObject.SetActive(!active && !loading);
             eventCollisionButton.gameObject.SetActive(
                 !active && !loading);
@@ -460,16 +470,17 @@ namespace F1XR.RestAPI.UI
             eventPitEditButton.gameObject.SetActive(pitActive);
             eventPitUndoButton.gameObject.SetActive(pitActive);
             eventPitResetButton.gameObject.SetActive(pitActive);
+            eventPitViewButton.gameObject.SetActive(pitActive);
             eventCloseButton.gameObject.SetActive(active || loading);
             eventSlider.gameObject.SetActive(
                 active && !collisionActive);
             eventControls.sizeDelta = new Vector2(
                 300f,
-                pitActive ? 226f : 184f);
+                pitActive ? 268f : 184f);
             SetRect(
                 eventSlider.GetComponent<RectTransform>(),
                 12f,
-                pitActive ? -176f : -134f,
+                pitActive ? -218f : -134f,
                 276f,
                 30f);
             UpdateEventControlsPlacement(pitActive);
@@ -581,6 +592,22 @@ namespace F1XR.RestAPI.UI
                 eventPitWallButton,
                 "Change Wall",
                 pitActive && !pitEditing);
+            SetButton(
+                eventPitViewButton,
+                pitWallPresenter != null
+                    ? pitWallPresenter.PitReplayViewMode switch
+                    {
+                        PitReplayViewMode.Overhead =>
+                            "VIEW: OVERHEAD",
+                        PitReplayViewMode.TopDown =>
+                            "VIEW: TOPDOWN",
+                        _ => "VIEW: IMMERSIVE"
+                    }
+                    : "VIEW: IMMERSIVE",
+                pitActive &&
+                !pitEditing &&
+                pitWallPresenter != null &&
+                pitWallPresenter.CanChangePitReplayView);
             SetButton(
                 eventPlayButton,
                 collisionActive
@@ -1099,6 +1126,13 @@ namespace F1XR.RestAPI.UI
         private void ResetPitPortalEdit()
         {
             pitWallPresenter?.ResetPortalEdit();
+            RefreshEventControls();
+        }
+
+        private void TogglePitReplayView()
+        {
+            ResolveRoomSetup();
+            pitWallPresenter?.TogglePitReplayView();
             RefreshEventControls();
         }
 

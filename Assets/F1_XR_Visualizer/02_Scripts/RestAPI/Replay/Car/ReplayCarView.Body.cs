@@ -129,6 +129,11 @@ namespace F1XR.RestAPI.Replay
             return hasBounds;
         }
 
+        public bool TryGetBodyBounds(out Bounds bounds)
+        {
+            return TryGetCarBounds(out bounds);
+        }
+
         internal bool TryGetVisualGroundOffset(
             Transform referenceSpace,
             out float offset)

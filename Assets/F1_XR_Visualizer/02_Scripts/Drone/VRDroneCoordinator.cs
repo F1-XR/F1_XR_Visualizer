@@ -267,6 +267,8 @@ namespace F1XR.Drone
         // sequences, and a second CubeReleased arriving halfway through would otherwise save
         // the transition's own state as the MR state to return to.
         bool isTransitioning;
+        bool debugEntryRequested;
+        bool initializationComplete;
         Coroutine transitionRoutine;
         VRDroneTransitionOccluder occluder;
         TrackAnchorStabilizer anchorStabilizer;
@@ -396,6 +398,7 @@ namespace F1XR.Drone
             if (debugSkipPlacementAndEnterDrone)
                 StartCoroutine(EnterDroneDebugWhenReady());
 
+            initializationComplete = true;
         }
 
         bool TryResolveReferences()
@@ -459,7 +462,55 @@ namespace F1XR.Drone
             BeginEnterVr(debugDroneEntryLocalPoint, null);
         }
 
-        void BeginEnterVr(Vector3 entryLocal, Transform sourceCube)
+        public void BeginDebugEntryWithoutPlacement()
+        {
+            if (debugEntryRequested || isVrActive || isTransitioning)
+                return;
+
+            debugEntryRequested = true;
+            StartCoroutine(EnterDroneDebugAfterReady());
+        }
+
+        IEnumerator EnterDroneDebugAfterReady()
+        {
+            while (!TryResolveReferences())
+                yield return null;
+
+            yield return EnterDroneDebugWhenReady();
+            debugEntryRequested = false;
+        }
+
+        public void BeginDebugEntryFromExistingPlacement()
+        {
+            if (debugEntryRequested || isVrActive || isTransitioning)
+                return;
+
+            debugEntryRequested = true;
+            StartCoroutine(EnterDroneFromExistingPlacementAfterReady());
+        }
+
+        IEnumerator EnterDroneFromExistingPlacementAfterReady()
+        {
+            while (!TryResolveReferences() || !initializationComplete)
+                yield return null;
+
+            if (!trackPlacer.HasPlacement)
+            {
+                Debug.LogError(
+                    "[VRDrone] Debug VR entry needs an existing track placement.",
+                    this);
+                debugEntryRequested = false;
+                yield break;
+            }
+
+            BeginEnterVr(debugDroneEntryLocalPoint, null, true);
+            debugEntryRequested = false;
+        }
+
+        void BeginEnterVr(
+            Vector3 entryLocal,
+            Transform sourceCube,
+            bool skipRoomShellForEntry = false)
         {
             if (isVrActive || isTransitioning || trackPlacer == null ||
                 !trackPlacer.HasPlacement)
@@ -478,10 +529,13 @@ namespace F1XR.Drone
 
             entryPointLocal = entryLocal;
             isTransitioning = true;
-            transitionRoutine = StartCoroutine(EnterVrRoutine(sourceCube));
+            transitionRoutine = StartCoroutine(
+                EnterVrRoutine(sourceCube, skipRoomShellForEntry));
         }
 
-        IEnumerator EnterVrRoutine(Transform cubeTransform)
+        IEnumerator EnterVrRoutine(
+            Transform cubeTransform,
+            bool skipRoomShellForEntry)
         {
             SaveMrState();
             SuspendPlaneVisualizers();
@@ -510,7 +564,8 @@ namespace F1XR.Drone
             // The room is the way in whenever there is a room to break. Everything below this
             // - the visible tenfold growth, the blink, the scale jump, the origin teleport -
             // exists only because there was previously nothing to uncover VR through.
-            if (useRoomShellEnter && roomShell != null && roomShell.isActiveAndEnabled &&
+            if (!skipRoomShellForEntry && useRoomShellEnter &&
+                roomShell != null && roomShell.isActiveAndEnabled &&
                 roomShell.HasBreakableSurfaces)
             {
                 yield return RoomShellEnterRoutine();
@@ -519,7 +574,7 @@ namespace F1XR.Drone
                 yield break;
             }
 
-            if (useRoomShellEnter)
+            if (!skipRoomShellForEntry && useRoomShellEnter)
             {
                 Debug.LogWarning(
                     "[MR2VR] No breakable room surfaces, so the entry falls back to the blink. " +

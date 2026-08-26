@@ -14,6 +14,7 @@ namespace F1XR.RestAPI.Replay
 
         private readonly List<Material> materials = new();
         private readonly List<Mesh> meshes = new();
+        private readonly List<Texture2D> textures = new();
         private readonly Dictionary<Color32, Material> materialCache = new();
         private readonly Dictionary<PrimitiveType, Mesh> primitiveMeshes =
             new();
@@ -345,6 +346,12 @@ namespace F1XR.RestAPI.Replay
                     Object.Destroy(meshes[i]);
             }
             meshes.Clear();
+            for (int i = 0; i < textures.Count; i++)
+            {
+                if (textures[i] != null)
+                    Object.Destroy(textures[i]);
+            }
+            textures.Clear();
             LocalBounds = default;
         }
 
@@ -852,19 +859,28 @@ namespace F1XR.RestAPI.Replay
             PitEnvironmentProfile environmentProfile,
             Color floorColor)
         {
+            bool isSuzuka = environmentProfile != null &&
+                environmentProfile.Matches("Suzuka");
             Transform trackModule = new GameObject(
                 "PitTrackModule").transform;
             trackModule.SetParent(root.transform, false);
             if (environmentProfile != null &&
                 environmentProfile.pitTrackPrefab != null)
             {
-                InstantiateEnvironmentPrefab(
+                GameObject pitTrack = InstantiateEnvironmentPrefab(
                     environmentProfile.pitTrackPrefab,
                     "PitTrack",
                     trackModule,
                     environmentProfile.pitTrackLocalPosition,
                     environmentProfile.pitTrackLocalEulerAngles,
                     environmentProfile.pitTrackLocalScale);
+                if (isSuzuka)
+                {
+                    ExtendSuzukaPitLane(
+                        environmentProfile,
+                        trackModule,
+                        pitTrack);
+                }
             }
             else
             {
@@ -900,6 +916,302 @@ namespace F1XR.RestAPI.Replay
                     environmentProfile.localEulerAngles,
                     environmentProfile.localScale);
             }
+
+            if (isSuzuka)
+            {
+                CreateContainedSuzukaBackdrop(
+                    root.transform,
+                    carLength,
+                    floorColor);
+            }
+        }
+
+        private static void ExtendSuzukaPitLane(
+            PitEnvironmentProfile environmentProfile,
+            Transform trackModule,
+            GameObject pitTrack)
+        {
+            if (environmentProfile == null ||
+                trackModule == null ||
+                pitTrack == null)
+            {
+                return;
+            }
+
+            if (TryCalculateRendererBounds(
+                    pitTrack,
+                    pitTrack.transform,
+                    out Bounds nativeBounds) &&
+                float.IsFinite(nativeBounds.size.z) &&
+                nativeBounds.size.z >= 90f)
+            {
+                return;
+            }
+
+            if (!TryCalculateRendererBounds(
+                    pitTrack,
+                    trackModule,
+                    out Bounds bounds))
+            {
+                return;
+            }
+
+            Vector3 laneDirection =
+                Quaternion.Euler(
+                    environmentProfile.pitTrackLocalEulerAngles) *
+                Vector3.forward;
+            laneDirection.Normalize();
+            float laneSpan =
+                Mathf.Abs(laneDirection.x) * bounds.size.x +
+                Mathf.Abs(laneDirection.y) * bounds.size.y +
+                Mathf.Abs(laneDirection.z) * bounds.size.z;
+            if (!float.IsFinite(laneSpan) || laneSpan <= 0.00001f)
+                return;
+            Vector3 continuationOffset =
+                laneDirection * laneSpan * 0.995f;
+            InstantiateEnvironmentPrefab(
+                environmentProfile.pitTrackPrefab,
+                "PitTrack_ApproachContinuation",
+                trackModule,
+                environmentProfile.pitTrackLocalPosition -
+                continuationOffset,
+                environmentProfile.pitTrackLocalEulerAngles,
+                environmentProfile.pitTrackLocalScale);
+            InstantiateEnvironmentPrefab(
+                environmentProfile.pitTrackPrefab,
+                "PitTrack_DepartureContinuation",
+                trackModule,
+                environmentProfile.pitTrackLocalPosition +
+                continuationOffset,
+                environmentProfile.pitTrackLocalEulerAngles,
+                environmentProfile.pitTrackLocalScale);
+        }
+
+        private void CreateContainedSuzukaBackdrop(
+            Transform parent,
+            float carLength,
+            Color floorColor)
+        {
+            Transform backdrop = new GameObject(
+                "ContainedSuzukaBackdrop").transform;
+            backdrop.SetParent(parent, false);
+
+            CreatePrimitive(
+                PrimitiveType.Cube,
+                "PitApronSupport",
+                backdrop,
+                new Vector3(0f, -carLength * 0.018f, 0f),
+                new Vector3(
+                    carLength * 8f,
+                    carLength * 0.025f,
+                    carLength * 22f),
+                Color.Lerp(floorColor, Color.white, 0.31f));
+
+            CreateBackdropMesh(
+                "SuzukaDaylightSky",
+                backdrop,
+                new Vector3(0f, carLength * 3.8f, 0f),
+                new Vector3(
+                    carLength * 12f,
+                    carLength * 6f,
+                    carLength * 12f),
+                CreateSkyDomeMesh(),
+                CreateSuzukaSkyMaterial());
+        }
+
+        private void CreateBackdropMesh(
+            string name,
+            Transform parent,
+            Vector3 localPosition,
+            Vector3 localScale,
+            Mesh mesh,
+            Color color)
+        {
+            CreateBackdropMesh(
+                name,
+                parent,
+                localPosition,
+                localScale,
+                mesh,
+                CreateMaterial(color));
+        }
+
+        private static void CreateBackdropMesh(
+            string name,
+            Transform parent,
+            Vector3 localPosition,
+            Vector3 localScale,
+            Mesh mesh,
+            Material material)
+        {
+            if (mesh == null || material == null)
+                return;
+
+            GameObject instance = new(name);
+            instance.transform.SetParent(parent, false);
+            instance.transform.localPosition = localPosition;
+            instance.transform.localScale = localScale;
+            MeshFilter filter = instance.AddComponent<MeshFilter>();
+            filter.sharedMesh = mesh;
+            MeshRenderer renderer = instance.AddComponent<MeshRenderer>();
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            renderer.sharedMaterial = material;
+            ConfigurePresentationRenderer(renderer);
+        }
+
+        private Material CreateSuzukaSkyMaterial()
+        {
+            const int height = 64;
+            Texture2D gradient = new(
+                1,
+                height,
+                TextureFormat.RGBA32,
+                false,
+                true)
+            {
+                name = "Runtime_SuzukaDaylightGradient",
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            Color zenith = new(0.24f, 0.36f, 0.5f, 1f);
+            Color upperSky = new(0.38f, 0.5f, 0.62f, 1f);
+            Color horizon = new(0.62f, 0.68f, 0.73f, 1f);
+            Color below = new(0.36f, 0.43f, 0.48f, 1f);
+            for (int y = 0; y < height; y++)
+            {
+                float v = y / (float)(height - 1);
+                Color color;
+                if (v <= 0.34f)
+                {
+                    float t = Mathf.SmoothStep(0f, 1f, v / 0.34f);
+                    color = Color.Lerp(zenith, upperSky, t);
+                }
+                else if (v <= 0.56f)
+                {
+                    float t = Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        (v - 0.34f) / 0.22f);
+                    color = Color.Lerp(upperSky, horizon, t);
+                }
+                else
+                {
+                    float t = Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        (v - 0.56f) / 0.44f);
+                    color = Color.Lerp(horizon, below, t);
+                }
+                gradient.SetPixel(0, y, color);
+            }
+            gradient.Apply(false, true);
+            textures.Add(gradient);
+
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Unlit/Texture");
+            Material material = new(shader)
+            {
+                name = "Runtime_SuzukaDaylightSky",
+                color = Color.white,
+                mainTexture = gradient
+            };
+            if (material.HasProperty("_BaseMap"))
+                material.SetTexture("_BaseMap", gradient);
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", Color.white);
+            materials.Add(material);
+            return material;
+        }
+
+        private Mesh CreateSkyDomeMesh()
+        {
+            const int segments = 24;
+            const int rings = 8;
+            List<Vector3> vertices = new((segments + 1) * (rings + 1));
+            List<Vector2> uvs = new(vertices.Capacity);
+            List<int> triangles = new(segments * rings * 6);
+            for (int ring = 0; ring <= rings; ring++)
+            {
+                float v = ring / (float)rings;
+                float latitude = Mathf.PI * v;
+                float radius = Mathf.Sin(latitude);
+                float y = Mathf.Cos(latitude);
+                for (int segment = 0; segment <= segments; segment++)
+                {
+                    float u = segment / (float)segments;
+                    float longitude = Mathf.PI * 2f * u;
+                    vertices.Add(new Vector3(
+                        Mathf.Cos(longitude) * radius,
+                        y,
+                        Mathf.Sin(longitude) * radius));
+                    uvs.Add(new Vector2(u, v));
+                }
+            }
+
+            for (int ring = 0; ring < rings; ring++)
+            {
+                for (int segment = 0; segment < segments; segment++)
+                {
+                    int current = ring * (segments + 1) + segment;
+                    int next = current + segments + 1;
+                    triangles.Add(current);
+                    triangles.Add(next);
+                    triangles.Add(current + 1);
+                    triangles.Add(current + 1);
+                    triangles.Add(next);
+                    triangles.Add(next + 1);
+                }
+            }
+
+            Mesh mesh = new()
+            {
+                name = "Runtime_SuzukaDaylightSky",
+                vertices = vertices.ToArray(),
+                uv = uvs.ToArray(),
+                triangles = triangles.ToArray()
+            };
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            meshes.Add(mesh);
+            return mesh;
+        }
+
+        private static bool TryCalculateRendererBounds(
+            GameObject instance,
+            Transform relativeTo,
+            out Bounds bounds)
+        {
+            bounds = default;
+            if (instance == null || relativeTo == null)
+                return false;
+
+            Renderer[] renderers =
+                instance.GetComponentsInChildren<Renderer>(true);
+            bool found = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null)
+                    continue;
+
+                Bounds rendererBounds = TransformBounds(
+                    renderer.localBounds,
+                    relativeTo.worldToLocalMatrix *
+                    renderer.localToWorldMatrix);
+                if (!found)
+                {
+                    bounds = rendererBounds;
+                    found = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(rendererBounds);
+                }
+            }
+            return found;
         }
 
         private void CreateCrewSilhouette(

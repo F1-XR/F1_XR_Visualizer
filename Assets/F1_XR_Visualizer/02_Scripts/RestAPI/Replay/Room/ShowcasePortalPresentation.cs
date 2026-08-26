@@ -36,6 +36,8 @@ namespace F1XR.RestAPI.Replay.Room
         private const float MaximumPortalTopOverflow = 0.5f;
         private const float PortalBottomOffset = 0.02f;
         private const float PortalClipTolerance = 0.12f;
+        private const float MinimumPortalViewDistance = 0.03f;
+        private const float MinimumPortalFrustumSpan = 0.0001f;
         private const float PortalRoadOverlap = 0.08f;
         private const float PortalApertureCropDepth = 2f;
         private const float PortalApertureExpansion = 1f;
@@ -65,6 +67,8 @@ namespace F1XR.RestAPI.Replay.Room
         private readonly HashSet<Material>
             combinedRoomOccluderMaterials = new();
         private readonly List<RenderTexture> renderTextures = new();
+        private readonly Dictionary<Camera, float>
+            portalCameraForwardSigns = new();
         private readonly List<ARPlaneMeshVisualizer> suspendedPlaneVisualizers = new();
         private readonly List<ARPlaneManager> subscribedPlaneManagers = new();
         private readonly List<Vector3> roomTrackLeftBoundary = new();
@@ -508,6 +512,7 @@ namespace F1XR.RestAPI.Replay.Room
             viewerCamera.cullingMask &=
                 ~(1 << PortalSceneLayer);
             CaptureAndHideSourceRenderers(stage);
+            ConfigurePitOverheadView(stage);
             configured = true;
             pitStopOnly = true;
             exitPortalVisible = false;
@@ -518,6 +523,7 @@ namespace F1XR.RestAPI.Replay.Room
 
         public void Clear()
         {
+            ClearPitReplayView();
             ClearPitWallEditor();
             ClearPitWallOverlay();
             plannedRoomOccluderMaterials.Clear();
@@ -605,6 +611,7 @@ namespace F1XR.RestAPI.Replay.Room
                 Destroy(texture);
             }
             renderTextures.Clear();
+            portalCameraForwardSigns.Clear();
 
             for (int i = 0; i < runtimeMaterials.Count; i++)
             {
@@ -1839,6 +1846,13 @@ namespace F1XR.RestAPI.Replay.Room
                     surface.transform,
                     false);
             }
+            else
+            {
+                CreateArchitecturalPitPortalFrame(
+                    name,
+                    size,
+                    surface.transform);
+            }
 
             GameObject cameraObject =
                 new GameObject($"{name}Camera");
@@ -1849,14 +1863,20 @@ namespace F1XR.RestAPI.Replay.Room
             portalCamera =
                 cameraObject.AddComponent<Camera>();
             portalCamera.enabled = true;
-            portalCamera.stereoTargetEye =
-                StereoTargetEyeMask.None;
+            portalCameraForwardSigns[portalCamera] =
+                Vector3.Dot(
+                    pose.position - viewerCamera.transform.position,
+                    pose.forward) >= 0f
+                    ? 1f
+                    : -1f;
             portalCamera.cullingMask =
                 1 << PortalSceneLayer;
             portalCamera.clearFlags =
                 CameraClearFlags.SolidColor;
             portalCamera.backgroundColor =
-                new Color(0.015f, 0.025f, 0.04f, 0f);
+                rectangular
+                    ? new Color(0.34f, 0.4f, 0.47f, 1f)
+                    : new Color(0.015f, 0.025f, 0.04f, 0f);
             portalCamera.allowHDR = false;
             portalCamera.allowMSAA = highQuality;
             portalCamera.allowDynamicResolution = false;
@@ -1876,6 +1896,96 @@ namespace F1XR.RestAPI.Replay.Room
             cameraData.allowXRRendering = false;
 
             return surface.transform;
+        }
+
+        private void CreateArchitecturalPitPortalFrame(
+            string name,
+            Vector2 size,
+            Transform parent)
+        {
+            float frameWidth = Mathf.Clamp(
+                Mathf.Min(size.x, size.y) * 0.026f,
+                0.045f,
+                0.07f);
+            Material material = CreateArchitecturalPitMaterial(
+                $"{name}ArchitecturalFrame",
+                new Color(0.075f, 0.085f, 0.1f, 1f));
+            if (material == null)
+                return;
+
+            CreatePersistentPortalFrameRenderer(
+                $"{name}ArchitecturalFrame",
+                CreateRectangularPitPortalFrameMesh(
+                    size,
+                    frameWidth,
+                    $"Runtime_{name}ArchitecturalFrame"),
+                material,
+                parent,
+                -0.018f,
+                20);
+
+            GameObject threshold =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            threshold.name = $"{name}FloorThreshold";
+            threshold.layer = PortalSurfaceLayer;
+            threshold.transform.SetParent(parent, false);
+            float thresholdHeight = Mathf.Clamp(
+                size.y * 0.024f,
+                0.045f,
+                0.065f);
+            threshold.transform.localPosition = new Vector3(
+                0f,
+                -size.y * 0.5f + thresholdHeight * 0.5f,
+                -0.012f);
+            threshold.transform.localScale = new Vector3(
+                size.x + frameWidth * 0.5f,
+                thresholdHeight,
+                0.085f);
+            Collider thresholdCollider =
+                threshold.GetComponent<Collider>();
+            if (thresholdCollider != null)
+                Destroy(thresholdCollider);
+            MeshRenderer thresholdRenderer =
+                threshold.GetComponent<MeshRenderer>();
+            thresholdRenderer.sharedMaterial = material;
+            thresholdRenderer.shadowCastingMode =
+                ShadowCastingMode.Off;
+            thresholdRenderer.receiveShadows = false;
+            thresholdRenderer.lightProbeUsage = LightProbeUsage.Off;
+            thresholdRenderer.reflectionProbeUsage =
+                ReflectionProbeUsage.Off;
+            thresholdRenderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
+            thresholdRenderer.sortingOrder = 20;
+        }
+
+        private Material CreateArchitecturalPitMaterial(
+            string name,
+            Color color)
+        {
+            Shader shader = Shader.Find(
+                "Universal Render Pipeline/Unlit");
+            if (shader == null)
+                shader = Shader.Find("Unlit/Color");
+            if (shader == null)
+                return null;
+
+            Material material = new(shader)
+            {
+                name = $"{name}Material",
+                color = color
+            };
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", color);
+            if (material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", (float)CullMode.Off);
+            if (material.HasProperty("_ZWrite"))
+                material.SetFloat("_ZWrite", 1f);
+            material.renderQueue = (int)RenderQueue.Geometry;
+            runtimeMaterials.Add(material);
+            return material;
         }
 
         private void CreatePersistentPortalFrame(
@@ -2151,16 +2261,40 @@ namespace F1XR.RestAPI.Replay.Room
                 return;
             }
 
+            if (UsesPitTacticalView(portalCamera))
+            {
+                ApplyPitTacticalView(portalCamera);
+                return;
+            }
+
             Vector3 eye = viewerCamera.transform.position;
             Vector3 center = surface.position;
             Vector3 surfaceForward = surface.forward.normalized;
+            if (!portalCameraForwardSigns.TryGetValue(
+                    portalCamera,
+                    out float cameraForwardSign))
+            {
+                cameraForwardSign =
+                    Vector3.Dot(center - eye, surfaceForward) >= 0f
+                        ? 1f
+                        : -1f;
+                portalCameraForwardSigns[portalCamera] =
+                    cameraForwardSign;
+            }
+
             Vector3 cameraForward =
-                Vector3.Dot(center - eye, surfaceForward) >= 0f
-                    ? surfaceForward
-                    : -surfaceForward;
+                surfaceForward * cameraForwardSign;
             float portalDistance =
                 Vector3.Dot(center - eye, cameraForward);
-            if (portalDistance <= 0.03f)
+            if (!IsFinite(eye) ||
+                !IsFinite(center) ||
+                !IsFinite(cameraForward) ||
+                !float.IsFinite(portalDistance) ||
+                portalDistance <= MinimumPortalViewDistance ||
+                !float.IsFinite(size.x) ||
+                !float.IsFinite(size.y) ||
+                size.x <= 0.01f ||
+                size.y <= 0.01f)
             {
                 portalCamera.enabled = false;
                 return;
@@ -2181,47 +2315,52 @@ namespace F1XR.RestAPI.Replay.Room
             Vector3 right = surface.right * (size.x * 0.5f);
             Vector3 vertical =
                 surface.up * (size.y * 0.5f);
-            Vector3[] corners =
-            {
-                center - right - vertical,
-                center + right - vertical,
-                center - right + vertical,
-                center + right + vertical
-            };
-
-            float minimumZ = float.PositiveInfinity;
             float minimumX = float.PositiveInfinity;
             float maximumX = float.NegativeInfinity;
             float minimumY = float.PositiveInfinity;
             float maximumY = float.NegativeInfinity;
-            Vector3[] localCorners = new Vector3[4];
-            for (int i = 0; i < corners.Length; i++)
-            {
-                Vector3 local =
-                    portalCamera.transform.InverseTransformPoint(
-                        corners[i]);
-                localCorners[i] = local;
-                minimumZ = Mathf.Min(minimumZ, local.z);
-            }
-
-            if (minimumZ <= 0.01f)
+            float near = Mathf.Max(
+                MinimumPortalViewDistance,
+                portalDistance - PortalClipTolerance);
+            Matrix4x4 worldToCamera =
+                portalCamera.transform.worldToLocalMatrix;
+            if (!TryIncludePortalCorner(
+                    worldToCamera,
+                    center - right - vertical,
+                    near,
+                    ref minimumX,
+                    ref maximumX,
+                    ref minimumY,
+                    ref maximumY) ||
+                !TryIncludePortalCorner(
+                    worldToCamera,
+                    center + right - vertical,
+                    near,
+                    ref minimumX,
+                    ref maximumX,
+                    ref minimumY,
+                    ref maximumY) ||
+                !TryIncludePortalCorner(
+                    worldToCamera,
+                    center - right + vertical,
+                    near,
+                    ref minimumX,
+                    ref maximumX,
+                    ref minimumY,
+                    ref maximumY) ||
+                !TryIncludePortalCorner(
+                    worldToCamera,
+                    center + right + vertical,
+                    near,
+                    ref minimumX,
+                    ref maximumX,
+                    ref minimumY,
+                    ref maximumY) ||
+                maximumX - minimumX <= MinimumPortalFrustumSpan ||
+                maximumY - minimumY <= MinimumPortalFrustumSpan)
             {
                 portalCamera.enabled = false;
                 return;
-            }
-
-            float near = Mathf.Max(
-                0.03f,
-                portalDistance - PortalClipTolerance);
-            for (int i = 0; i < localCorners.Length; i++)
-            {
-                Vector3 local = localCorners[i];
-                float x = near * local.x / local.z;
-                float y = near * local.y / local.z;
-                minimumX = Mathf.Min(minimumX, x);
-                maximumX = Mathf.Max(maximumX, x);
-                minimumY = Mathf.Min(minimumY, y);
-                maximumY = Mathf.Max(maximumY, y);
             }
 
             portalCamera.nearClipPlane = near;
@@ -2236,6 +2375,36 @@ namespace F1XR.RestAPI.Replay.Room
                 near,
                 portalCamera.farClipPlane);
         }
+
+        private static bool TryIncludePortalCorner(
+            Matrix4x4 worldToCamera,
+            Vector3 corner,
+            float near,
+            ref float minimumX,
+            ref float maximumX,
+            ref float minimumY,
+            ref float maximumY)
+        {
+            Vector3 local = worldToCamera.MultiplyPoint(corner);
+            if (!IsFinite(local) || local.z <= 0.01f)
+                return false;
+
+            float x = near * local.x / local.z;
+            float y = near * local.y / local.z;
+            if (!float.IsFinite(x) || !float.IsFinite(y))
+                return false;
+
+            minimumX = Mathf.Min(minimumX, x);
+            maximumX = Mathf.Max(maximumX, x);
+            minimumY = Mathf.Min(minimumY, y);
+            maximumY = Mathf.Max(maximumY, y);
+            return true;
+        }
+
+        private static bool IsFinite(Vector3 value) =>
+            float.IsFinite(value.x) &&
+            float.IsFinite(value.y) &&
+            float.IsFinite(value.z);
 
         private bool IsVisibleToViewer(
             Renderer surfaceRenderer,

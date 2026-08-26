@@ -35,6 +35,7 @@ namespace F1XR.RaceFlags
         [Header("Placement")]
         [SerializeField] private Vector3 anchorLocalPosition = new Vector3(0.0f, 0.5f, 0.0f);
         [SerializeField] private Vector3 flagLocalPosition = new Vector3(0.0f, -0.45f, 0.0f);
+        [SerializeField] private Vector3 presentationLocalScale = Vector3.one;
 
         [Header("Timing")]
         [SerializeField] private float checkeredDisplayDuration = 5.0f;
@@ -260,7 +261,7 @@ namespace F1XR.RaceFlags
 
             raceFlagAnchor.localPosition = anchorLocalPosition;
             raceFlagAnchor.localRotation = Quaternion.identity;
-            raceFlagAnchor.localScale = Vector3.one;
+            raceFlagAnchor.localScale = presentationLocalScale;
             hasAnchor = raceFlagAnchor != null;
 
             if (raceFlagAlert == null)
@@ -532,15 +533,35 @@ namespace F1XR.RaceFlags
             }
         }
 
-        private static void SetStatusLogoVisible(GameObject logo, Transform pivot, bool visible)
+        private void SetStatusLogoVisible(GameObject logo, Transform pivot, bool visible)
         {
             if (logo == null || logo.activeSelf == visible)
                 return;
 
             if (visible && pivot != null)
-                pivot.localRotation = Quaternion.identity;
+                FaceLogoTowardUser(pivot);
 
             logo.SetActive(visible);
+        }
+
+        private static void FaceLogoTowardUser(Transform pivot)
+        {
+            Camera userCamera = Camera.main;
+            if (userCamera == null)
+            {
+                pivot.localRotation = Quaternion.identity;
+                return;
+            }
+
+            Vector3 directionToUser = userCamera.transform.position - pivot.position;
+            directionToUser.y = 0.0f;
+            if (directionToUser.sqrMagnitude <= 0.0001f)
+            {
+                pivot.localRotation = Quaternion.identity;
+                return;
+            }
+
+            pivot.rotation = Quaternion.LookRotation(directionToUser, Vector3.up);
         }
 
         private void HandleRaceFinished()
