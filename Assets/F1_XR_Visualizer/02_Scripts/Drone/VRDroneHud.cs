@@ -34,12 +34,16 @@ namespace F1XR.Drone
         [SerializeField] SpeedIndicatorStyle speedIndicatorStyle =
             SpeedIndicatorStyle.Tick;
 
+        [Header("Debug")]
+        [SerializeField] bool showFlightInputDiagnostic = true;
+
         Canvas canvas;
         Camera xrCamera;
         Image exitProgress;
         Image[] speedMarkers;
         Image[] whiteTicks;
         TextMeshProUGUI speedValue;
+        TextMeshProUGUI flightInputDiagnostic;
         RectTransform targetOverlay;
         readonly List<TargetBox> targetBoxes = new();
         TargetCard targetCard;
@@ -102,6 +106,21 @@ namespace F1XR.Drone
             targetSpeedKph = Mathf.Max(0f, speedKph);
         }
 
+        public void SetFlightInputDiagnostic(
+            Vector2 leftStick,
+            bool hasLeftThumbstick,
+            float throttle)
+        {
+            if (flightInputDiagnostic == null)
+                return;
+
+            flightInputDiagnostic.text =
+                $"L STICK  {leftStick.x:+0.00;-0.00;0.00}  " +
+                $"{leftStick.y:+0.00;-0.00;0.00}\n" +
+                $"L INPUT  {(hasLeftThumbstick ? "OK" : "NOT FOUND")}  " +
+                $"THR  {throttle:0.00}";
+        }
+
         void LateUpdate()
         {
             if (isVisible)
@@ -145,12 +164,34 @@ namespace F1XR.Drone
             CreateCrosshair(rect);
             CreateExitHint(rect);
             CreateSpeedometer(rect);
+            CreateFlightInputDiagnostic(rect);
             targetOverlay = CreateRect("Vehicle Targets", rect);
             targetOverlay.anchorMin = Vector2.zero;
             targetOverlay.anchorMax = Vector2.one;
             targetOverlay.offsetMin = Vector2.zero;
             targetOverlay.offsetMax = Vector2.zero;
             return result;
+        }
+
+        void CreateFlightInputDiagnostic(RectTransform parent)
+        {
+            if (!showFlightInputDiagnostic)
+                return;
+
+            flightInputDiagnostic = CreateText(
+                "Flight Input Diagnostic",
+                parent,
+                "L STICK  0.00  0.00\nL INPUT  WAITING  THR  0.00",
+                24f);
+            flightInputDiagnostic.font = f1NumberFont;
+            flightInputDiagnostic.color = new Color(0.55f, 0.9f, 1f, 0.9f);
+            flightInputDiagnostic.alignment = TextAlignmentOptions.BottomLeft;
+            RectTransform rect = flightInputDiagnostic.rectTransform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.zero;
+            rect.pivot = Vector2.zero;
+            rect.anchoredPosition = new Vector2(56f, 98f);
+            rect.sizeDelta = new Vector2(620f, 68f);
         }
 
         public void SetVehicleTargets(IReadOnlyList<DroneVehicleTarget> targets)
