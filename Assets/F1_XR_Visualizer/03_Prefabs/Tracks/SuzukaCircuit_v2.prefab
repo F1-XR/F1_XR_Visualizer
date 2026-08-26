@@ -245,6 +245,10 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: -2679893250897200292, guid: 89d883a633cd79446b3ff6205b238f4c, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 8771091787928289351, guid: 89d883a633cd79446b3ff6205b238f4c, type: 3}
       propertyPath: m_Name
       value: SuzukaCircuit_v2_Model
