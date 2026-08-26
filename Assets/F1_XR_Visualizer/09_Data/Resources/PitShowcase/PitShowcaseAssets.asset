@@ -27,3 +27,14 @@ MonoBehaviour:
   frontJackFullL: {fileID: 8993902097722301239, guid: 74eef150a2898974193672bb7ab14de2, type: 3}
   rearJackFullR: {fileID: 8993902097722301239, guid: 0af686b6f6821e1469114bff29a562b2, type: 3}
   pitSignalFullR: {fileID: 8993902097722301239, guid: 0f1ad8566bd10f34aa7c6e13dc3cf9ae, type: 3}
+  flWheelGunnerPrefab: {fileID: 1829216968837268331, guid: 1cf5dea4b3f451049bb606f1ce701656, type: 3}
+  flWheelGunnerVisualPrefab: {fileID: 919132149155446097, guid: cc4384fc9b895504d9b95b5a0e4ce033, type: 3}
+  flWheelGunnerMaterial: {fileID: 2100000, guid: 9ef83c65b1094fbea21586fdf75e2b6c, type: 2}
+  flWheelGunnerHumanoidFull: {fileID: 7400000, guid: e203d703f1793a64f858e09cc31aadc8, type: 2}
+  racerWheelOffHumanoidFullL: {fileID: 7400000, guid: b7b67413a0cb7ad46a0b921722bab89c, type: 2}
+  racerWheelOffHumanoidFullR: {fileID: 7400000, guid: ac0adedd99510dd40b7dabb2ae25a6f2, type: 2}
+  racerWheelOnHumanoidFullL: {fileID: 7400000, guid: fcbe704435bd3ae44aa2e7eae34f2295, type: 2}
+  racerWheelOnHumanoidFullR: {fileID: 7400000, guid: 2ef72339f6f95c041ab23a5a37ae5023, type: 2}
+  flWheelGunnerIdle: {fileID: -203655887218126122, guid: 687497e151cbdfb41919af9a91620da0, type: 3}
+  flWheelGunnerFastRun: {fileID: -203655887218126122, guid: 691b5033dd075304b8706c9059427824, type: 3}
+  flWheelGunnerRunningBackward: {fileID: -203655887218126122, guid: 42771e175cc46df439eb0c09df8f9fb2, type: 3}

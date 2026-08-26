@@ -1,3 +1,5 @@
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -38,6 +40,11 @@ namespace F1XR.RestAPI.Replay
         private const float StaticSignalPoseNormalized = 0.38f;
         private const float VehicleClearanceMarginMeters = 0.22f;
         private const float CrewClearancePaddingMeters = 0.1f;
+        private const float RacerVisualScaleMultiplier = 1.03f;
+        private const float RacerRunPlaybackSpeed = 1f;
+        private const float RacerBackwardRunPlaybackSpeed = 1f;
+        private const float RacerLocomotionCrossfadeDuration = 0.1f;
+        private const float RacerIdleCrossfadeDuration = 0.06f;
         private static readonly int BaseColorId =
             Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -66,6 +73,12 @@ namespace F1XR.RestAPI.Replay
             private readonly bool lockMotionRoot;
             private AnimationClip activeClip;
             private float sampledNormalizedTime = -1f;
+            private PlayableGraph blendGraph;
+            private AnimationMixerPlayable blendMixer;
+            private AnimationClipPlayable firstBlendPlayable;
+            private AnimationClipPlayable secondBlendPlayable;
+            private AnimationClip firstBlendClip;
+            private AnimationClip secondBlendClip;
 
             public SampledActor(
                 Transform root,
@@ -90,8 +103,19 @@ namespace F1XR.RestAPI.Replay
 
             public Transform Root { get; }
 
+            public Transform GetBoneTransform(HumanBodyBones bone)
+            {
+                return animator != null &&
+                       animator.avatar != null &&
+                       animator.avatar.isValid &&
+                       animator.avatar.isHuman
+                    ? animator.GetBoneTransform(bone)
+                    : null;
+            }
+
             public void Dispose()
             {
+                DestroyBlendGraph(restoreController: false);
                 if (animator != null)
                     animator.runtimeAnimatorController = null;
                 Object.Destroy(controller);
@@ -107,6 +131,8 @@ namespace F1XR.RestAPI.Replay
                 {
                     return;
                 }
+
+                DestroyBlendGraph(restoreController: true);
 
                 if (activeClip != clip)
                 {
@@ -137,6 +163,102 @@ namespace F1XR.RestAPI.Replay
 
                 RestoreMotionRoot();
                 sampledNormalizedTime = normalizedTime;
+            }
+
+            public void SampleBlended(
+                AnimationClip firstClip,
+                float firstTime,
+                AnimationClip secondClip,
+                float secondNormalizedTime,
+                float secondWeight)
+            {
+                if (firstClip == null ||
+                    secondClip == null ||
+                    animator == null ||
+                    !animator.isActiveAndEnabled)
+                {
+                    return;
+                }
+
+                EnsureBlendGraph(firstClip, secondClip);
+                firstBlendPlayable.SetTime(Mathf.Max(0f, firstTime));
+                secondBlendPlayable.SetTime(
+                    Mathf.Clamp(secondNormalizedTime, 0f, 0.999f) *
+                    secondClip.length);
+                secondWeight = Mathf.Clamp01(secondWeight);
+                blendMixer.SetInputWeight(0, 1f - secondWeight);
+                blendMixer.SetInputWeight(1, secondWeight);
+                blendGraph.Evaluate(0f);
+                RestoreMotionRoot();
+            }
+
+            private void EnsureBlendGraph(
+                AnimationClip firstClip,
+                AnimationClip secondClip)
+            {
+                if (blendGraph.IsValid() &&
+                    firstBlendClip == firstClip &&
+                    secondBlendClip == secondClip)
+                {
+                    return;
+                }
+
+                DestroyBlendGraph(restoreController: false);
+                animator.runtimeAnimatorController = null;
+                blendGraph = PlayableGraph.Create(
+                    $"{Root.name}_Racer_Blend");
+                blendGraph.SetTimeUpdateMode(
+                    DirectorUpdateMode.Manual);
+                blendMixer = AnimationMixerPlayable.Create(
+                    blendGraph,
+                    2);
+                firstBlendPlayable = AnimationClipPlayable.Create(
+                    blendGraph,
+                    firstClip);
+                secondBlendPlayable = AnimationClipPlayable.Create(
+                    blendGraph,
+                    secondClip);
+                firstBlendPlayable.SetApplyFootIK(true);
+                secondBlendPlayable.SetApplyFootIK(true);
+                firstBlendPlayable.SetSpeed(0f);
+                secondBlendPlayable.SetSpeed(0f);
+                blendGraph.Connect(
+                    firstBlendPlayable,
+                    0,
+                    blendMixer,
+                    0);
+                blendGraph.Connect(
+                    secondBlendPlayable,
+                    0,
+                    blendMixer,
+                    1);
+                AnimationPlayableOutput output =
+                    AnimationPlayableOutput.Create(
+                        blendGraph,
+                        "Racer Wheel Gunner Animation",
+                        animator);
+                output.SetSourcePlayable(blendMixer);
+                blendGraph.Play();
+                firstBlendClip = firstClip;
+                secondBlendClip = secondClip;
+                activeClip = null;
+                sampledNormalizedTime = -1f;
+            }
+
+            private void DestroyBlendGraph(bool restoreController)
+            {
+                if (!blendGraph.IsValid())
+                    return;
+
+                blendGraph.Destroy();
+                blendGraph = default;
+                firstBlendClip = null;
+                secondBlendClip = null;
+                if (restoreController && animator != null)
+                {
+                    animator.runtimeAnimatorController = controller;
+                    animator.Rebind();
+                }
             }
 
             private void ResetToClipStart()
@@ -234,8 +356,14 @@ namespace F1XR.RestAPI.Replay
         private CrewTransition[] crewTransitions;
         private float vehicleCorridorMinX;
         private float vehicleCorridorMaxX;
+        private bool useRacerTyreServiceCrew;
 
         public bool ReleaseReady { get; private set; }
+
+        private AnimationClip WheelGunnerClip =>
+            useRacerTyreServiceCrew
+                ? assets.FlWheelGunnerHumanoidFull
+                : assets.WheelGunnerFull;
 
         public bool TryBuild(
             Transform parent,
@@ -345,6 +473,28 @@ namespace F1XR.RestAPI.Replay
                 "hand_r");
             if (prefabAnimator == null || prefabRightHand == null)
                 return false;
+
+            if (profile.FlWheelGunnerPrefab != null &&
+                profile.FlWheelGunnerVisualPrefab != null)
+            {
+                Animator racerAnimator = profile.FlWheelGunnerVisualPrefab
+                    .GetComponentInChildren<Animator>(true);
+                useRacerTyreServiceCrew =
+                    racerAnimator != null &&
+                    racerAnimator.avatar != null &&
+                    racerAnimator.avatar.isValid &&
+                    racerAnimator.avatar.isHuman &&
+                    profile.FlWheelGunnerHumanoidFull != null &&
+                    profile.RacerWheelOffHumanoidFullL != null &&
+                    profile.RacerWheelOffHumanoidFullR != null &&
+                    profile.RacerWheelOnHumanoidFullL != null &&
+                    profile.RacerWheelOnHumanoidFullR != null;
+                if (!useRacerTyreServiceCrew)
+                {
+                    Debug.LogWarning(
+                        "[PitRacerRetarget] Racer tyre-service crew require a valid Humanoid Avatar and Humanoid Gunner/Off/On clips.");
+                }
+            }
 
             assets = profile;
             originalFlWheelRenderers = flRenderers;
@@ -471,21 +621,21 @@ namespace F1XR.RestAPI.Replay
             SetActorPresentationVisible(rearJack, false);
             SetActorPresentationVisible(pitSignal, false);
 
-            gunnerRightHand = FindDescendant(
-                gunner.Root,
-                "hand_r");
-            wheelOffLeftHand = FindDescendant(
-                wheelOff.Root,
-                "hand_l");
-            wheelOffRightHand = FindDescendant(
-                wheelOff.Root,
-                "hand_r");
-            wheelOnLeftHand = FindDescendant(
-                wheelOn.Root,
-                "hand_l");
-            wheelOnRightHand = FindDescendant(
-                wheelOn.Root,
-                "hand_r");
+            gunnerRightHand = gunner.GetBoneTransform(
+                    HumanBodyBones.RightHand) ??
+                FindDescendant(gunner.Root, "hand_r");
+            wheelOffLeftHand = wheelOff.GetBoneTransform(
+                    HumanBodyBones.LeftHand) ??
+                FindDescendant(wheelOff.Root, "hand_l");
+            wheelOffRightHand = wheelOff.GetBoneTransform(
+                    HumanBodyBones.RightHand) ??
+                FindDescendant(wheelOff.Root, "hand_r");
+            wheelOnLeftHand = wheelOn.GetBoneTransform(
+                    HumanBodyBones.LeftHand) ??
+                FindDescendant(wheelOn.Root, "hand_l");
+            wheelOnRightHand = wheelOn.GetBoneTransform(
+                    HumanBodyBones.RightHand) ??
+                FindDescendant(wheelOn.Root, "hand_r");
             if (gunnerRightHand == null ||
                 wheelOffLeftHand == null ||
                 wheelOffRightHand == null ||
@@ -639,13 +789,13 @@ namespace F1XR.RestAPI.Replay
             origin.gameObject.SetActive(true);
             SetCrewServicePositions();
             gunner.SampleNormalized(
-                assets.WheelGunnerFull,
+                WheelGunnerClip,
                 GunnerContactNormalized);
             wheelOff.SampleNormalized(
-                assets.WheelOffFullL,
+                ResolveWheelOffClip(wheelOff),
                 StaticWheelOffPoseNormalized);
             wheelOn.SampleNormalized(
-                assets.WheelOnFullL,
+                ResolveWheelOnClip(wheelOn),
                 StaticWheelOnPoseNormalized);
             frontJack.SampleNormalized(
                 assets.FrontJackFullL,
@@ -704,6 +854,7 @@ namespace F1XR.RestAPI.Replay
                 ResolveWheelOnProgress(clampedTime));
             ApplyWheelGun();
             ApplyAdditionalCorners(
+                clampedTime,
                 ResolveGunnerProgress(clampedTime),
                 ResolveWheelOffProgress(clampedTime),
                 ResolveWheelOnProgress(clampedTime));
@@ -731,16 +882,19 @@ namespace F1XR.RestAPI.Replay
                 -SignalLeadTime,
                 SignalDuration);
 
-            gunner.SampleNormalized(
-                assets.WheelGunnerFull,
+            SampleWheelGunner(
+                gunner,
+                FindCrewTransition(gunner),
+                time,
                 gunnerProgress);
             wheelOff.SampleNormalized(
-                assets.WheelOffFullL,
+                ResolveWheelOffClip(wheelOff),
                 wheelOffProgress);
             wheelOn.SampleNormalized(
-                assets.WheelOnFullL,
+                ResolveWheelOnClip(wheelOn),
                 wheelOnProgress);
             SampleAdditionalCorners(
+                time,
                 gunnerProgress,
                 wheelOffProgress,
                 wheelOnProgress);
@@ -966,6 +1120,7 @@ namespace F1XR.RestAPI.Replay
             crewTransitions = null;
             vehicleCorridorMinX = 0f;
             vehicleCorridorMaxX = 0f;
+            useRacerTyreServiceCrew = false;
             flHub = FallbackFlHub;
             flOutward = Vector3.right;
             flHubRotation = Quaternion.identity;
@@ -986,19 +1141,66 @@ namespace F1XR.RestAPI.Replay
                 lookDirection.normalized,
                 Vector3.up);
 
+            bool useCandidateVisual =
+                IsTyreServiceActor(name) &&
+                useRacerTyreServiceCrew;
+            GameObject actorPrefab = useCandidateVisual
+                ? assets.FlWheelGunnerPrefab
+                : assets.PitCrewPrefab;
             GameObject instance = Object.Instantiate(
-                assets.PitCrewPrefab,
+                actorPrefab,
                 actorRoot);
             instance.name = $"{name}_Visual";
             instance.transform.localPosition = Vector3.zero;
             instance.transform.localRotation = Quaternion.identity;
             instance.transform.localScale = Vector3.one;
-            NormalizeActorHeight(instance, FullScaleCrewHeightMeters);
+
+            GameObject characterVisual = instance;
+            if (useCandidateVisual)
+            {
+                Renderer[] serviceRenderers =
+                    instance.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < serviceRenderers.Length; i++)
+                    serviceRenderers[i].enabled = false;
+
+                Animator[] serviceAnimators =
+                    instance.GetComponentsInChildren<Animator>(true);
+                for (int i = 0; i < serviceAnimators.Length; i++)
+                    serviceAnimators[i].enabled = false;
+
+                characterVisual = Object.Instantiate(
+                    assets.FlWheelGunnerVisualPrefab,
+                    instance.transform);
+                characterVisual.name = $"{name}_RacerVisual";
+                characterVisual.transform.localPosition = Vector3.zero;
+                characterVisual.transform.localRotation = Quaternion.identity;
+                characterVisual.transform.localScale = Vector3.one;
+            }
+
+            float targetHeight = FullScaleCrewHeightMeters *
+                (useCandidateVisual ? RacerVisualScaleMultiplier : 1f);
+            float sourceHeight = NormalizeActorHeight(
+                characterVisual,
+                targetHeight);
             DisablePhysics(instance, keepAnimator: true);
-            ApplyFerrariCrewAppearance(name, instance);
+            if (useCandidateVisual)
+            {
+                ApplyMaterial(
+                    characterVisual,
+                    assets.FlWheelGunnerMaterial);
+                LogRacerTyreServiceActor(
+                    name,
+                    characterVisual,
+                    sourceHeight,
+                    targetHeight);
+            }
+            else
+            {
+                ApplyFerrariCrewAppearance(name, instance);
+            }
 
             Animator animator =
-                instance.GetComponentInChildren<Animator>(true);
+                characterVisual.GetComponentInChildren<Animator>(true);
             return animator != null
                 ? new SampledActor(
                     actorRoot,
@@ -1006,6 +1208,200 @@ namespace F1XR.RestAPI.Replay
                     assets.ChoreographyBaseController,
                     lockMotionRoot)
                 : null;
+        }
+
+        private void SampleWheelGunner(
+            SampledActor actor,
+            CrewTransition transition,
+            float time,
+            float serviceProgress)
+        {
+            if (actor == null)
+                return;
+
+            AnimationClip idle = assets.FlWheelGunnerIdle;
+            AnimationClip fastRun = assets.FlWheelGunnerFastRun;
+            AnimationClip service = WheelGunnerClip;
+            AnimationClip backwardRun =
+                assets.FlWheelGunnerRunningBackward;
+            if (!useRacerTyreServiceCrew ||
+                idle == null ||
+                fastRun == null ||
+                backwardRun == null)
+            {
+                actor.SampleNormalized(
+                    service,
+                    serviceProgress);
+                return;
+            }
+
+            float ingressStart = transition?.IngressStart ?? 0f;
+            float ingressEnd = transition?.IngressEnd ?? 0.36f;
+            float egressStart = transition?.EgressStart ?? 2.72f;
+            float egressEnd = transition?.EgressEnd ?? 3.18f;
+            float ingressRunBlendEnd = ingressStart +
+                RacerIdleCrossfadeDuration;
+            float serviceBlendStart = ingressEnd -
+                RacerLocomotionCrossfadeDuration;
+            float backwardBlendStart = egressStart -
+                RacerLocomotionCrossfadeDuration;
+            float finalIdleBlendStart = egressEnd -
+                RacerIdleCrossfadeDuration;
+
+            if (time <= ingressRunBlendEnd)
+            {
+                float runWeight = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        ingressStart,
+                        ingressRunBlendEnd,
+                        time));
+                float ingressTime = Mathf.Max(
+                    0f,
+                    time - ingressStart);
+                actor.SampleBlended(
+                    idle,
+                    ingressTime,
+                    fastRun,
+                    ingressTime * RacerRunPlaybackSpeed /
+                        Mathf.Max(0.001f, fastRun.length),
+                    runWeight);
+            }
+            else if (time <= ingressEnd)
+            {
+                float serviceWeight = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        serviceBlendStart,
+                        ingressEnd,
+                        time));
+                actor.SampleBlended(
+                    fastRun,
+                    (time - ingressStart) *
+                        RacerRunPlaybackSpeed,
+                    service,
+                    serviceProgress,
+                    serviceWeight);
+            }
+            else if (time < finalIdleBlendStart)
+            {
+                float backwardWeight = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        backwardBlendStart,
+                        egressStart,
+                        time));
+                float backwardTime = Mathf.Max(
+                        0f,
+                        time - backwardBlendStart) *
+                    RacerBackwardRunPlaybackSpeed;
+                actor.SampleBlended(
+                    service,
+                    serviceProgress * service.length,
+                    backwardRun,
+                    backwardTime /
+                        Mathf.Max(0.001f, backwardRun.length),
+                    backwardWeight);
+            }
+            else
+            {
+                float idleWeight = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(
+                        finalIdleBlendStart,
+                        egressEnd,
+                        time));
+                float backwardTime = Mathf.Max(
+                        0f,
+                        time - backwardBlendStart) *
+                    RacerBackwardRunPlaybackSpeed;
+                float idleTime = Mathf.Max(
+                    0f,
+                    time - finalIdleBlendStart);
+                actor.SampleBlended(
+                    backwardRun,
+                    backwardTime,
+                    idle,
+                    idleTime / Mathf.Max(0.001f, idle.length),
+                    idleWeight);
+            }
+        }
+
+        private static void ApplyMaterial(
+            GameObject instance,
+            Material material)
+        {
+            if (instance == null || material == null)
+                return;
+
+            Renderer[] renderers =
+                instance.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Material[] sharedMaterials = renderers[i].sharedMaterials;
+                for (int slot = 0; slot < sharedMaterials.Length; slot++)
+                    sharedMaterials[slot] = material;
+                renderers[i].sharedMaterials = sharedMaterials;
+            }
+        }
+
+        private static void LogRacerTyreServiceActor(
+            string actorName,
+            GameObject instance,
+            float sourceHeight,
+            float targetHeight)
+        {
+            Renderer[] renderers =
+                instance.GetComponentsInChildren<Renderer>(true);
+            SkinnedMeshRenderer[] skinnedRenderers =
+                instance.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            int vertices = 0;
+            int triangles = 0;
+            int materialSlots = 0;
+            string materialName = "None";
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                materialSlots += renderers[i].sharedMaterials.Length;
+                if (materialName == "None" &&
+                    renderers[i].sharedMaterial != null)
+                {
+                    materialName = renderers[i].sharedMaterial.name;
+                }
+            }
+            for (int i = 0; i < skinnedRenderers.Length; i++)
+            {
+                Mesh mesh = skinnedRenderers[i].sharedMesh;
+                if (mesh == null)
+                    continue;
+                vertices += mesh.vertexCount;
+                for (int subMesh = 0;
+                     subMesh < mesh.subMeshCount;
+                     subMesh++)
+                {
+                    triangles += (int)mesh.GetIndexCount(subMesh) / 3;
+                }
+            }
+
+            float finalHeight = 0f;
+            if (TryMeasureRenderersInSpace(
+                    renderers,
+                    instance.transform.parent != null
+                        ? instance.transform.parent
+                        : instance.transform,
+                    out Bounds bounds))
+            {
+                finalHeight = bounds.size.y;
+            }
+
+            float scale = sourceHeight > 0.0001f
+                ? targetHeight / sourceHeight
+                : 1f;
+            Debug.Log(
+                $"[PitRacerRetarget] {actorName} sourceHeight={sourceHeight:F3}m finalHeight={finalHeight:F3}m uniformScale={scale:F4} renderers={renderers.Length} skinnedMeshes={skinnedRenderers.Length} vertices={vertices} triangles={triangles} materialSlots={materialSlots} sharedMaterial={materialName}");
         }
 
         private WheelServiceCorner CreateWheelServiceCorner(
@@ -1088,21 +1484,21 @@ namespace F1XR.RestAPI.Replay
                 return null;
             }
 
-            corner.GunnerRightHand = FindDescendant(
-                corner.Gunner.Root,
-                "hand_r");
-            corner.WheelOffLeftHand = FindDescendant(
-                corner.WheelOff.Root,
-                "hand_l");
-            corner.WheelOffRightHand = FindDescendant(
-                corner.WheelOff.Root,
-                "hand_r");
-            corner.WheelOnLeftHand = FindDescendant(
-                corner.WheelOn.Root,
-                "hand_l");
-            corner.WheelOnRightHand = FindDescendant(
-                corner.WheelOn.Root,
-                "hand_r");
+            corner.GunnerRightHand = corner.Gunner.GetBoneTransform(
+                    HumanBodyBones.RightHand) ??
+                FindDescendant(corner.Gunner.Root, "hand_r");
+            corner.WheelOffLeftHand = corner.WheelOff.GetBoneTransform(
+                    HumanBodyBones.LeftHand) ??
+                FindDescendant(corner.WheelOff.Root, "hand_l");
+            corner.WheelOffRightHand = corner.WheelOff.GetBoneTransform(
+                    HumanBodyBones.RightHand) ??
+                FindDescendant(corner.WheelOff.Root, "hand_r");
+            corner.WheelOnLeftHand = corner.WheelOn.GetBoneTransform(
+                    HumanBodyBones.LeftHand) ??
+                FindDescendant(corner.WheelOn.Root, "hand_l");
+            corner.WheelOnRightHand = corner.WheelOn.GetBoneTransform(
+                    HumanBodyBones.RightHand) ??
+                FindDescendant(corner.WheelOn.Root, "hand_r");
             if (corner.GunnerRightHand == null ||
                 corner.WheelOffLeftHand == null ||
                 corner.WheelOffRightHand == null ||
@@ -1203,6 +1599,32 @@ namespace F1XR.RestAPI.Replay
                 (actorName.Contains("_WheelGunner") ||
                  actorName.Contains("_WheelOff_") ||
                  actorName.Contains("_WheelOn_"));
+        }
+
+        private AnimationClip ResolveWheelOffClip(SampledActor actor)
+        {
+            if (!useRacerTyreServiceCrew)
+                return assets.WheelOffFullL;
+
+            return IsRightSideActor(actor)
+                ? assets.RacerWheelOffHumanoidFullR
+                : assets.RacerWheelOffHumanoidFullL;
+        }
+
+        private AnimationClip ResolveWheelOnClip(SampledActor actor)
+        {
+            if (!useRacerTyreServiceCrew)
+                return assets.WheelOnFullL;
+
+            return IsRightSideActor(actor)
+                ? assets.RacerWheelOnHumanoidFullR
+                : assets.RacerWheelOnHumanoidFullL;
+        }
+
+        private static bool IsRightSideActor(SampledActor actor)
+        {
+            return actor?.Root != null &&
+                   actor.Root.name.EndsWith("_R");
         }
 
         private static void SetActorPresentationVisible(
@@ -1338,7 +1760,7 @@ namespace F1XR.RestAPI.Replay
         private void CalibrateGunner()
         {
             gunner.SampleNormalized(
-                assets.WheelGunnerFull,
+                WheelGunnerClip,
                 GunnerContactNormalized);
             Vector3 hand = origin.InverseTransformPoint(
                 gunnerRightHand.position);
@@ -1354,7 +1776,7 @@ namespace F1XR.RestAPI.Replay
         private void CalibrateCorner(WheelServiceCorner corner)
         {
             corner.Gunner.SampleNormalized(
-                assets.WheelGunnerFull,
+                WheelGunnerClip,
                 GunnerContactNormalized);
             Vector3 hand = origin.InverseTransformPoint(
                 corner.GunnerRightHand.position);
@@ -1369,7 +1791,7 @@ namespace F1XR.RestAPI.Replay
             corner.Gunner.Root.localPosition += correction;
 
             corner.WheelOff.SampleNormalized(
-                assets.WheelOffFullL,
+                ResolveWheelOffClip(corner.WheelOff),
                 WheelOffOwnershipNormalized);
             Vector3 wheelOffHands = ResolveHandMidpoint(
                 corner.WheelOffLeftHand,
@@ -1380,7 +1802,7 @@ namespace F1XR.RestAPI.Replay
             corner.WheelOff.Root.localPosition += correction;
 
             corner.WheelOn.SampleNormalized(
-                assets.WheelOnFullL,
+                ResolveWheelOnClip(corner.WheelOn),
                 WheelOnHandoffNormalized);
             Vector3 wheelOnHands = ResolveHandMidpoint(
                 corner.WheelOnLeftHand,
@@ -1443,7 +1865,7 @@ namespace F1XR.RestAPI.Replay
         private void CalibrateWheelOffContact()
         {
             wheelOff.SampleNormalized(
-                assets.WheelOffFullL,
+                ResolveWheelOffClip(wheelOff),
                 WheelOffOwnershipNormalized);
             Vector3 hands = ResolveHandMidpoint(
                 wheelOffLeftHand,
@@ -1457,7 +1879,7 @@ namespace F1XR.RestAPI.Replay
         private void CalibrateWheelOnContact()
         {
             wheelOn.SampleNormalized(
-                assets.WheelOnFullL,
+                ResolveWheelOnClip(wheelOn),
                 WheelOnHandoffNormalized);
             Vector3 hands = ResolveHandMidpoint(
                 wheelOnLeftHand,
@@ -1512,10 +1934,14 @@ namespace F1XR.RestAPI.Replay
 
         private void ApplyReadyPose()
         {
-            gunner.SampleNormalized(assets.WheelGunnerFull, 0f);
-            wheelOff.SampleNormalized(assets.WheelOffFullL, 0f);
-            wheelOn.SampleNormalized(assets.WheelOnFullL, 0f);
-            SampleAdditionalCorners(0f, 0f, 0f);
+            SampleWheelGunner(
+                gunner,
+                FindCrewTransition(gunner),
+                0f,
+                0f);
+            wheelOff.SampleNormalized(ResolveWheelOffClip(wheelOff), 0f);
+            wheelOn.SampleNormalized(ResolveWheelOnClip(wheelOn), 0f);
+            SampleAdditionalCorners(0f, 0f, 0f, 0f);
             frontJack.SampleNormalized(assets.FrontJackFullL, 0f);
             rearJack.SampleNormalized(assets.RearJackFullR, 0f);
             pitSignal.SampleNormalized(assets.PitSignalFullR, 0f);
@@ -1523,6 +1949,20 @@ namespace F1XR.RestAPI.Replay
             ApplyWheelGun();
             ApplyAdditionalCornerStates(0f, 0f);
             ApplyAdditionalWheelGuns();
+        }
+
+        private CrewTransition FindCrewTransition(SampledActor actor)
+        {
+            if (actor == null || crewTransitions == null)
+                return null;
+
+            for (int i = 0; i < crewTransitions.Length; i++)
+            {
+                if (crewTransitions[i].Actor == actor)
+                    return crewTransitions[i];
+            }
+
+            return null;
         }
 
         private void ApplyAdditionalStaticComposition()
@@ -1534,13 +1974,13 @@ namespace F1XR.RestAPI.Replay
             {
                 WheelServiceCorner corner = additionalCorners[i];
                 corner.Gunner.SampleNormalized(
-                    assets.WheelGunnerFull,
+                    WheelGunnerClip,
                     GunnerContactNormalized);
                 corner.WheelOff.SampleNormalized(
-                    assets.WheelOffFullL,
+                    ResolveWheelOffClip(corner.WheelOff),
                     StaticWheelOffPoseNormalized);
                 corner.WheelOn.SampleNormalized(
-                    assets.WheelOnFullL,
+                    ResolveWheelOnClip(corner.WheelOn),
                     StaticWheelOnPoseNormalized);
                 SetCornerOriginalWheelVisible(corner, true);
                 corner.OldLooseTyre.SetActive(false);
@@ -1562,11 +2002,13 @@ namespace F1XR.RestAPI.Replay
         }
 
         private void ApplyAdditionalCorners(
+            float time,
             float gunnerProgress,
             float wheelOffProgress,
             float wheelOnProgress)
         {
             SampleAdditionalCorners(
+                time,
                 gunnerProgress,
                 wheelOffProgress,
                 wheelOnProgress);
@@ -1577,6 +2019,7 @@ namespace F1XR.RestAPI.Replay
         }
 
         private void SampleAdditionalCorners(
+            float time,
             float gunnerProgress,
             float wheelOffProgress,
             float wheelOnProgress)
@@ -1587,14 +2030,16 @@ namespace F1XR.RestAPI.Replay
             for (int i = 0; i < additionalCorners.Length; i++)
             {
                 WheelServiceCorner corner = additionalCorners[i];
-                corner.Gunner.SampleNormalized(
-                    assets.WheelGunnerFull,
+                SampleWheelGunner(
+                    corner.Gunner,
+                    FindCrewTransition(corner.Gunner),
+                    time,
                     gunnerProgress);
                 corner.WheelOff.SampleNormalized(
-                    assets.WheelOffFullL,
+                    ResolveWheelOffClip(corner.WheelOff),
                     wheelOffProgress);
                 corner.WheelOn.SampleNormalized(
-                    assets.WheelOnFullL,
+                    ResolveWheelOnClip(corner.WheelOn),
                     wheelOnProgress);
             }
         }
@@ -2131,12 +2576,12 @@ namespace F1XR.RestAPI.Replay
             instance.transform.localScale *= diameter / currentDiameter;
         }
 
-        private static void NormalizeActorHeight(
+        private static float NormalizeActorHeight(
             GameObject instance,
             float targetHeight)
         {
             if (instance == null || targetHeight <= 0.0001f)
-                return;
+                return 0f;
 
             Renderer[] renderers =
                 instance.GetComponentsInChildren<Renderer>(true);
@@ -2146,10 +2591,11 @@ namespace F1XR.RestAPI.Replay
                     out Bounds bounds) ||
                 bounds.size.y <= 0.0001f)
             {
-                return;
+                return 0f;
             }
 
             instance.transform.localScale *= targetHeight / bounds.size.y;
+            return bounds.size.y;
         }
     }
 }

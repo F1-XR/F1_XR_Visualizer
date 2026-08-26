@@ -26,6 +26,19 @@ namespace F1XR.RestAPI.Replay
         [SerializeField] private AnimationClip rearJackFullR;
         [SerializeField] private AnimationClip pitSignalFullR;
 
+        [Header("Racer Tyre-Service Retarget")]
+        [SerializeField] private GameObject flWheelGunnerPrefab;
+        [SerializeField] private GameObject flWheelGunnerVisualPrefab;
+        [SerializeField] private Material flWheelGunnerMaterial;
+        [SerializeField] private AnimationClip flWheelGunnerHumanoidFull;
+        [SerializeField] private AnimationClip racerWheelOffHumanoidFullL;
+        [SerializeField] private AnimationClip racerWheelOffHumanoidFullR;
+        [SerializeField] private AnimationClip racerWheelOnHumanoidFullL;
+        [SerializeField] private AnimationClip racerWheelOnHumanoidFullR;
+        [SerializeField] private AnimationClip flWheelGunnerIdle;
+        [SerializeField] private AnimationClip flWheelGunnerFastRun;
+        [SerializeField] private AnimationClip flWheelGunnerRunningBackward;
+
         public GameObject WheelGunPrefab => wheelGunPrefab;
         public AudioClip WheelGunLoopClip => wheelGunLoopClip;
         public AudioClip SuspensionSettleClip => suspensionSettleClip;
@@ -42,6 +55,26 @@ namespace F1XR.RestAPI.Replay
         public AnimationClip FrontJackFullL => frontJackFullL;
         public AnimationClip RearJackFullR => rearJackFullR;
         public AnimationClip PitSignalFullR => pitSignalFullR;
+        public GameObject FlWheelGunnerPrefab => flWheelGunnerPrefab;
+        public GameObject FlWheelGunnerVisualPrefab =>
+            flWheelGunnerVisualPrefab;
+        public Material FlWheelGunnerMaterial => flWheelGunnerMaterial;
+        public AnimationClip FlWheelGunnerHumanoidFull =>
+            flWheelGunnerHumanoidFull;
+        public AnimationClip RacerWheelOffHumanoidFullL =>
+            racerWheelOffHumanoidFullL;
+        public AnimationClip RacerWheelOffHumanoidFullR =>
+            racerWheelOffHumanoidFullR;
+        public AnimationClip RacerWheelOnHumanoidFullL =>
+            racerWheelOnHumanoidFullL;
+        public AnimationClip RacerWheelOnHumanoidFullR =>
+            racerWheelOnHumanoidFullR;
+        public AnimationClip FlWheelGunnerIdle =>
+            flWheelGunnerIdle;
+        public AnimationClip FlWheelGunnerFastRun =>
+            flWheelGunnerFastRun;
+        public AnimationClip FlWheelGunnerRunningBackward =>
+            flWheelGunnerRunningBackward;
 
         public bool HasFirstMilestoneChoreographyAssets =>
             pitCrewPrefab != null &&
