@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
@@ -20,6 +21,13 @@ namespace F1XR.Showroom
         [Tooltip("Plays the sip clip. Left empty, one on this object is used.")]
         [SerializeField] AudioSource audioSource;
 
+        [Tooltip("Short gulp sound played immediately before the AudioSource clip.")]
+        [SerializeField] AudioClip gulpClip;
+
+        [Tooltip("Volume multiplier for drink-sip-and-swallow relative to gulp.")]
+        [Range(0f, 5f)]
+        [SerializeField] float sipAndSwallowVolume = 1.08f;
+
         [Tooltip("How close the mouth of the can must come to the head, in metres.")]
         [SerializeField] float drinkDistance = 0.25f;
 
@@ -30,6 +38,7 @@ namespace F1XR.Showroom
         [SerializeField] bool logTransitions = true;
 
         XRGrabInteractable grab;
+        Coroutine drinkSequence;
         bool wasDrinking;
         bool wasGrabbed;
 
@@ -61,9 +70,8 @@ namespace F1XR.Showroom
 
             if (isDrinking && !wasDrinking)
             {
-                // The clip is a couple of seconds long, so let it run to the end on its own
-                // rather than cutting it off the moment the can dips back down.
-                if (audioSource && audioSource.clip) audioSource.Play();
+                if (drinkSequence == null && audioSource && audioSource.clip)
+                    drinkSequence = StartCoroutine(PlayDrinkSequence(audioSource.clip));
                 if (logTransitions)
                     Debug.Log($"[BeerDrink] Drink started | distance={distance:F2} | angle={angle:F1}", this);
             }
@@ -73,6 +81,30 @@ namespace F1XR.Showroom
             }
 
             wasDrinking = isDrinking;
+        }
+
+        IEnumerator PlayDrinkSequence(AudioClip sipAndSwallowClip)
+        {
+            if (gulpClip)
+            {
+                audioSource.PlayOneShot(gulpClip);
+                yield return new WaitWhile(() => audioSource && audioSource.isPlaying);
+            }
+
+            if (audioSource)
+            {
+                audioSource.PlayOneShot(sipAndSwallowClip, sipAndSwallowVolume);
+                yield return new WaitWhile(() => audioSource && audioSource.isPlaying);
+            }
+
+            drinkSequence = null;
+        }
+
+        void OnDisable()
+        {
+            drinkSequence = null;
+            wasDrinking = false;
+            wasGrabbed = false;
         }
     }
 }
