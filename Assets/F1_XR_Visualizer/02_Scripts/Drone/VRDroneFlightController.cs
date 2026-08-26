@@ -26,6 +26,8 @@ namespace F1XR.Drone
         float verticalVelocity;
         float yawVelocity;
         float exitHoldTime;
+        bool previousRankAheadPressed;
+        bool previousRankBehindPressed;
         public void Configure(VRDroneCoordinator value)
         {
             coordinator = value;
@@ -47,6 +49,18 @@ namespace F1XR.Drone
 
             if (UpdateExitHold())
                 return;
+
+            UpdateRankSelectionInput();
+            if (coordinator.IsRankSelectionActive)
+            {
+                if (HasManualFlightStickInput())
+                    coordinator.CancelRankSelection();
+                else
+                {
+                    ResetFlight();
+                    return;
+                }
+            }
 
             Vector2 leftStick = ReadThumbstick(XRNode.LeftHand);
             Vector2 rightStick = ReadThumbstick(XRNode.RightHand);
@@ -96,6 +110,12 @@ namespace F1XR.Drone
             coordinator.ApplyDroneMotion(movement, yawVelocity * Time.deltaTime);
         }
 
+        bool HasManualFlightStickInput()
+        {
+            return ReadThumbstick(XRNode.LeftHand).sqrMagnitude > 0f ||
+                ReadThumbstick(XRNode.RightHand).sqrMagnitude > 0f;
+        }
+
         bool UpdateExitHold()
         {
             if (!ReadButton(XRNode.RightHand, CommonUsages.secondaryButton))
@@ -113,6 +133,24 @@ namespace F1XR.Drone
             exitHoldTime = 0f;
             coordinator.ExitVr();
             return true;
+        }
+
+        void UpdateRankSelectionInput()
+        {
+            bool aheadPressed = ReadButton(
+                XRNode.LeftHand,
+                CommonUsages.primaryButton);
+            bool behindPressed = ReadButton(
+                XRNode.LeftHand,
+                CommonUsages.secondaryButton);
+
+            if (aheadPressed && !previousRankAheadPressed)
+                coordinator.SelectDriverBehind();
+            else if (behindPressed && !previousRankBehindPressed)
+                coordinator.SelectDriverAhead();
+
+            previousRankAheadPressed = aheadPressed;
+            previousRankBehindPressed = behindPressed;
         }
 
         Vector3 MoveVelocity(

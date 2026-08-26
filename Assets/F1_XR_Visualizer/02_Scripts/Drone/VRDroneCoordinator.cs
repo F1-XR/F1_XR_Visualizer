@@ -27,6 +27,11 @@ namespace F1XR.Drone
             "default of a kilometre would cut most of it off mid-air.")]
         [SerializeField, Min(1f)] float droneFarClipPlane = 5000f;
 
+        [Header("Rank Selection")]
+        [SerializeField, Min(0.1f)] float rankSelectionFollowDuration = 3f;
+        [SerializeField, Min(0.1f)] float rankSelectionMoveSpeed = 120f;
+        [SerializeField, Min(0.1f)] float rankSelectionMinimumForwardDistance = 6f;
+
         [Header("Aerial Ground")]
         [Tooltip("Textures the drone ground with the aerial photo, placed in the " +
             "track's own metric space so it rides the placement scale. Off falls back " +
@@ -270,6 +275,7 @@ namespace F1XR.Drone
         bool debugEntryRequested;
         bool initializationComplete;
         Coroutine transitionRoutine;
+        Coroutine rankSelectionRoutine;
         VRDroneTransitionOccluder occluder;
         TrackAnchorStabilizer anchorStabilizer;
         TrackFracture.VRTrackFractureController trackFracture;
@@ -288,6 +294,7 @@ namespace F1XR.Drone
         bool hasHostScene;
 
         public bool IsVrActive => isVrActive;
+        public bool IsRankSelectionActive => rankSelectionRoutine != null;
         public Transform VrCameraTransform =>
             xrCamera != null ? xrCamera.transform : null;
 
@@ -1921,6 +1928,89 @@ namespace F1XR.Drone
             }
 
             xrOrigin.transform.position += movement;
+        }
+
+        public void SelectDriverAhead()
+        {
+            BeginRankSelection(vehicleTargeting?.SelectDriverAhead() == true);
+        }
+
+        public void SelectDriverBehind()
+        {
+            BeginRankSelection(vehicleTargeting?.SelectDriverBehind() == true);
+        }
+
+        public void CancelRankSelection()
+        {
+            if (rankSelectionRoutine == null)
+                return;
+
+            StopCoroutine(rankSelectionRoutine);
+            rankSelectionRoutine = null;
+            vehicleTargeting?.ResumeAutomaticSelection();
+        }
+
+        void BeginRankSelection(bool didSelectDriver)
+        {
+            if (!isVrActive || isTransitioning || !didSelectDriver ||
+                vehicleTargeting == null ||
+                !vehicleTargeting.TryGetNavigationTarget(out _))
+            {
+                return;
+            }
+
+            if (rankSelectionRoutine != null)
+                StopCoroutine(rankSelectionRoutine);
+
+            flightController?.ResetFlight();
+            rankSelectionRoutine = StartCoroutine(FollowRankSelection());
+        }
+
+        IEnumerator FollowRankSelection()
+        {
+            float endTime = Time.unscaledTime + rankSelectionFollowDuration;
+            while (isVrActive && !isTransitioning &&
+                   Time.unscaledTime < endTime &&
+                   vehicleTargeting != null &&
+                   vehicleTargeting.TryGetNavigationTarget(out Transform target))
+            {
+                RecenterDroneOnTarget(target.position);
+                yield return null;
+            }
+
+            vehicleTargeting?.ResumeAutomaticSelection();
+            flightController?.ResetFlight();
+            rankSelectionRoutine = null;
+        }
+
+        void RecenterDroneOnTarget(Vector3 targetPosition)
+        {
+            if (xrCamera == null)
+                return;
+
+            Vector3 forward = Vector3.ProjectOnPlane(
+                xrCamera.transform.forward,
+                Vector3.up);
+            if (forward.sqrMagnitude < 0.0001f)
+                return;
+
+            forward.Normalize();
+            Vector3 cameraPosition = xrCamera.transform.position;
+            float forwardDistance = Vector3.Dot(
+                targetPosition - cameraPosition,
+                forward);
+            float distance = Mathf.Max(
+                rankSelectionMinimumForwardDistance,
+                Mathf.Abs(forwardDistance));
+            Vector3 targetCameraPosition = targetPosition - forward * distance;
+            targetCameraPosition.y = cameraPosition.y;
+
+            Vector3 movement = targetCameraPosition - cameraPosition;
+            movement.y = 0f;
+            movement = Vector3.ClampMagnitude(
+                movement,
+                rankSelectionMoveSpeed * Time.deltaTime);
+            ApplyDroneMotion(movement, 0f);
         }
 
         public void SetExitHoldProgress(float normalizedProgress)

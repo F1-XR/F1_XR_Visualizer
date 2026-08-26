@@ -98,56 +98,18 @@ namespace F1XR.Drone
 
         public bool SelectDriverAhead()
         {
-            PositionSampleDto current = FindPosition(
-                selectedDriverNumber,
-                fallbackToLeader: true);
-            if (current == null)
-                return false;
-
-            PositionSampleDto ahead = null;
-            foreach (PositionSampleDto position in replayPlayer.GetPositions())
-            {
-                if (position == null || position.position >= current.position ||
-                    ahead != null && position.position <= ahead.position)
-                {
-                    continue;
-                }
-
-                ahead = position;
-            }
-
-            if (ahead == null)
-                return false;
-
-            selectedDriverNumber = ahead.driverNumber;
-            return true;
+            return SelectRelativeDriver(ahead: true);
         }
 
         public bool SelectDriverBehind()
         {
-            PositionSampleDto current = FindPosition(
-                selectedDriverNumber,
-                fallbackToLeader: true);
-            if (current == null)
-                return false;
+            return SelectRelativeDriver(ahead: false);
+        }
 
-            PositionSampleDto trailing = null;
-            foreach (PositionSampleDto position in replayPlayer.GetPositions())
-            {
-                if (position == null || position.position <= current.position ||
-                    trailing != null && position.position >= trailing.position)
-                {
-                    continue;
-                }
-
-                trailing = position;
-            }
-
-            if (trailing == null)
-                return false;
-
-            selectedDriverNumber = trailing.driverNumber;
-            return true;
+        public void ResumeAutomaticSelection()
+        {
+            selectedDriverNumber = -1;
+            presenter?.SetSelectedDriver(-1);
         }
 
         public bool TryGetNavigationTarget(out Transform carTransform)
@@ -186,14 +148,19 @@ namespace F1XR.Drone
             {
                 if (position == null || !replayPlayer.TryGetVisualCarTransform(
                         position.driverNumber, out Transform carTransform) ||
-                    !TryGetViewportRect(carTransform, out Rect rect,
-                        out Bounds worldBounds))
+                    !TryGetVehicleBounds(carTransform, out Bounds worldBounds))
                 {
                     continue;
                 }
 
                 bool isActiveTarget = position.driverNumber == activeDriverNumber;
-                if (!isActiveTarget && (!viewportFrame.Overlaps(rect) ||
+                bool isInViewport = TryGetViewportRect(
+                    worldBounds,
+                    out Rect rect);
+                if (!isInViewport && !isActiveTarget)
+                    continue;
+
+                if (isInViewport && !isActiveTarget && (!viewportFrame.Overlaps(rect) ||
                     !viewportFrame.Contains(rect.center)))
                 {
                     continue;
@@ -228,6 +195,8 @@ namespace F1XR.Drone
             visibleTargets.Sort(CompareTargets);
             if (selectedDriverNumber < 0 && visibleTargets.Count > 0)
                 selectedDriverNumber = visibleTargets[0].driverNumber;
+
+            presenter.SetSelectedDriver(ActiveDriverNumber);
 
             int activeIndex = FindVisibleTargetIndex(ActiveDriverNumber);
             if (activeIndex > 0)
@@ -271,6 +240,61 @@ namespace F1XR.Drone
             return result;
         }
 
+        bool SelectRelativeDriver(bool ahead)
+        {
+            PositionSampleDto current = FindPosition(
+                selectedDriverNumber,
+                fallbackToLeader: true);
+            List<PositionSampleDto> positions = replayPlayer?.GetPositions();
+            if (current == null || positions == null || positions.Count == 0)
+                return false;
+
+            PositionSampleDto adjacent = null;
+            PositionSampleDto wrapped = null;
+            foreach (PositionSampleDto candidate in positions)
+            {
+                if (candidate == null ||
+                    !replayPlayer.TryGetVisualCarTransform(
+                        candidate.driverNumber,
+                        out _))
+                {
+                    continue;
+                }
+
+                if (ahead)
+                {
+                    if (candidate.position < current.position &&
+                        (adjacent == null ||
+                         candidate.position > adjacent.position))
+                    {
+                        adjacent = candidate;
+                    }
+
+                    if (wrapped == null || candidate.position > wrapped.position)
+                        wrapped = candidate;
+                }
+                else
+                {
+                    if (candidate.position > current.position &&
+                        (adjacent == null ||
+                         candidate.position < adjacent.position))
+                    {
+                        adjacent = candidate;
+                    }
+
+                    if (wrapped == null || candidate.position < wrapped.position)
+                        wrapped = candidate;
+                }
+            }
+
+            PositionSampleDto selected = adjacent ?? wrapped;
+            if (selected == null || selected.driverNumber == current.driverNumber)
+                return false;
+
+            selectedDriverNumber = selected.driverNumber;
+            return true;
+        }
+
         int FindVisibleTargetIndex(int driverNumber)
         {
             for (int i = 0; i < visibleTargets.Count; i++)
@@ -287,12 +311,10 @@ namespace F1XR.Drone
             return brake > 0;
         }
 
-        bool TryGetViewportRect(
+        static bool TryGetVehicleBounds(
             Transform carTransform,
-            out Rect rect,
             out Bounds worldBounds)
         {
-            rect = default;
             worldBounds = default;
             if (carTransform == null)
                 return false;
@@ -303,12 +325,18 @@ namespace F1XR.Drone
                 return false;
 
             worldBounds = bounds;
+            return true;
+        }
 
-            Vector3 center = camera.WorldToViewportPoint(bounds.center);
+        bool TryGetViewportRect(Bounds worldBounds, out Rect rect)
+        {
+            rect = default;
+
+            Vector3 center = camera.WorldToViewportPoint(worldBounds.center);
             if (center.z <= 0.01f)
                 return false;
 
-            Vector3 extents = bounds.extents;
+            Vector3 extents = worldBounds.extents;
             float minX = float.PositiveInfinity;
             float minY = float.PositiveInfinity;
             float maxX = float.NegativeInfinity;
@@ -319,7 +347,7 @@ namespace F1XR.Drone
             for (int y = -1; y <= 1; y += 2)
             for (int z = -1; z <= 1; z += 2)
             {
-                Vector3 point = bounds.center + Vector3.Scale(
+                Vector3 point = worldBounds.center + Vector3.Scale(
                     extents,
                     new Vector3(x, y, z));
                 Vector3 viewportPoint = camera.WorldToViewportPoint(point);
@@ -410,6 +438,22 @@ namespace F1XR.Drone
                 root.SetActive(false);
         }
 
+        public void SetSelectedDriver(int driverNumber)
+        {
+            if (primaryCardDriverNumber == driverNumber)
+                return;
+
+            primaryCardDriverNumber = driverNumber;
+            primaryCardLastVisibleTime = 0f;
+            primaryCardSide = 0f;
+            primaryCardFrame = null;
+            heldPrimaryFrame?.SetActive(false);
+            primaryCardTarget = default;
+            card?.SetActive(false);
+            if (leaderLine != null)
+                leaderLine.enabled = false;
+        }
+
         public void SetTargets(IReadOnlyList<DroneVehicleTarget> targets)
         {
             if (!isVisible || xrCamera == null || root == null)
@@ -428,6 +472,16 @@ namespace F1XR.Drone
 
             if (primaryIndex >= 0)
             {
+                if (primaryCardTarget.driverNumber !=
+                    targets[primaryIndex].driverNumber ||
+                    Mathf.Approximately(primaryCardSide, 0f))
+                {
+                    primaryCardSide =
+                        targets[primaryIndex].viewportRect.center.x > 0.5f
+                            ? -1f
+                            : 1f;
+                }
+
                 primaryCardLastVisibleTime = Time.unscaledTime;
                 primaryCardFrame = frames[primaryIndex];
                 primaryCardTarget = targets[primaryIndex];
