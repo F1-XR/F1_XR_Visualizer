@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.UI;
@@ -48,6 +49,7 @@ namespace F1XR.AIBridge
         RectTransform _agentGroup;
         readonly List<WaveBarGraphic> _bars = new List<WaveBarGraphic>();
         bool _recording;
+        bool _startingRecording;
         bool _processing;
         string _lastTranscript;
         Coroutine _typeRoutine;
@@ -141,12 +143,26 @@ namespace F1XR.AIBridge
             bridge.SendText(q, sessionKey);
         }
 
-        void ToggleRecord()
+        void StartRecord()
         {
             if (mic == null) { Debug.LogError("[Tester] mic 미할당"); return; }
-            if (!_recording)
+            if (_startingRecording || _recording) return;
+
+            _startingRecording = true;
+            _statusText.text = "MIC PERMISSION";
+            _footerText.text = "allow microphone access to continue";
+            mic.StartRecording(started =>
             {
-                mic.StartRecording();
+                _startingRecording = false;
+                if (!started)
+                {
+                    _recording = false;
+                    _statusText.text = "MIC UNAVAILABLE";
+                    _footerText.text = "microphone permission or device unavailable";
+                    if (_statusDot != null) _statusDot.color = new Color(1f, 0.55f, 0f, 1f);
+                    return;
+                }
+
                 _recording = true;
                 SetProcessing(false);
                 _lastTranscript = "";
@@ -159,20 +175,24 @@ namespace F1XR.AIBridge
                 _recordBg.color = accent;
                 _stopBg.color = new Color(1f, 1f, 1f, 0.08f);
                 Debug.Log("[Tester] 녹음 시작");
-            }
-            else
-            {
-                mic.currentSessionKey = sessionKey;
-                mic.StopAndSend();
-                _recording = false;
-                SetProcessing(true);
-                _statusText.text = "STT LIVE";
-                if (_statusDot != null) _statusDot.color = accent;
-                _footerText.text = "voice captured - agent processing";
-                _recordBg.color = new Color(1f, 1f, 1f, 0.06f);
-                _stopBg.color = accent;
-                Debug.Log("[Tester] 정지 & 전송");
-            }
+            });
+        }
+
+        void StopRecord()
+        {
+            if (mic == null) { Debug.LogError("[Tester] mic 미할당"); return; }
+            if (_startingRecording || !_recording) return;
+
+            mic.currentSessionKey = sessionKey;
+            mic.StopAndSend();
+            _recording = false;
+            SetProcessing(true);
+            _statusText.text = "STT LIVE";
+            if (_statusDot != null) _statusDot.color = accent;
+            _footerText.text = "voice captured - agent processing";
+            _recordBg.color = new Color(1f, 1f, 1f, 0.06f);
+            _stopBg.color = accent;
+            Debug.Log("[Tester] 정지 & 전송");
         }
 
         void HandleTranscript(string text)
@@ -342,6 +362,11 @@ namespace F1XR.AIBridge
             canvas.renderMode = RenderMode.ScreenSpaceCamera;
             canvas.worldCamera = viewCamera;
             canvas.planeDistance = 1.25f;
+            // XR에서는 TrackedDeviceGraphicRaycaster 하나만 사용한다. 일반
+            // GraphicRaycaster와 함께 두면 같은 컨트롤러 클릭이 중복 처리될 수 있다.
+            var desktopRaycaster = canvasGO.GetComponent<GraphicRaycaster>();
+            if (desktopRaycaster != null)
+                desktopRaycaster.enabled = false;
             canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
         }
 
@@ -401,7 +426,7 @@ namespace F1XR.AIBridge
             hlg.childAlignment = TextAnchor.MiddleCenter;
 
             var rec = MakeIconButton(group, true, out _recordBg);
-            rec.onClick.AddListener(ToggleRecord);
+            rec.onClick.AddListener(StartRecord);
             var play = NewGraphicRect("PlayIcon", rec.transform);
             Stretch(play);
             var playGraphic = play.gameObject.AddComponent<PlayIconGraphic>();
@@ -409,7 +434,7 @@ namespace F1XR.AIBridge
             playGraphic.raycastTarget = false;
 
             var stop = MakeIconButton(group, false, out _stopBg);
-            stop.onClick.AddListener(ToggleRecord);
+            stop.onClick.AddListener(StopRecord);
             var pause = NewGraphicRect("PauseIcon", stop.transform);
             Stretch(pause);
             var pauseGraphic = pause.gameObject.AddComponent<PauseIconGraphic>();
@@ -683,7 +708,9 @@ namespace F1XR.AIBridge
         {
             if (_input == null) return;
             if (!_input.isFocused) return;
-            if (!Input.GetKeyDown(KeyCode.Return) && !Input.GetKeyDown(KeyCode.KeypadEnter)) return;
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null) return;
+            if (!keyboard.enterKey.wasPressedThisFrame && !keyboard.numpadEnterKey.wasPressedThisFrame) return;
             if (string.IsNullOrWhiteSpace(_input.text)) return;
 
             SendCurrent();

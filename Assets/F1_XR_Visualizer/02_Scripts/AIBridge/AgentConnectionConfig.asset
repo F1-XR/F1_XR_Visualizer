@@ -12,6 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7de2f3634bf10e648bf2dd23813d472f, type: 3}
   m_Name: AgentConnectionConfig
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Net.AgentConnectionConfig
-  url: ws://localhost:8001/ws
+  url: ws://127.0.0.1:8001/ws
   autoReconnect: 1
   reconnectDelaySec: 2
