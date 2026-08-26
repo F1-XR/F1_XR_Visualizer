@@ -271,7 +271,22 @@ namespace F1XR.RestAPI.Replay
             if (labelLayoutDirty && UpdateLabelLayout(showLabelDetails))
                 labelLayoutDirty = false;
 
-            label.transform.rotation = labelCamera.transform.rotation;
+            Vector3 labelForward = Vector3.ProjectOnPlane(
+                label.transform.position - labelCamera.transform.position,
+                Vector3.up);
+            if (labelForward.sqrMagnitude < 0.0001f)
+            {
+                labelForward = Vector3.ProjectOnPlane(
+                    labelCamera.transform.forward,
+                    Vector3.up);
+            }
+
+            if (labelForward.sqrMagnitude > 0.0001f)
+            {
+                label.transform.rotation = Quaternion.LookRotation(
+                    labelForward.normalized,
+                    Vector3.up);
+            }
         }
 
         private void RefreshRuntimeUpdateState()

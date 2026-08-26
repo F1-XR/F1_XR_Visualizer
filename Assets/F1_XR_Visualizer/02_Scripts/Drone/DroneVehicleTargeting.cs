@@ -66,6 +66,7 @@ namespace F1XR.Drone
         DroneVehicleWorldTargetPresenter presenter;
         Camera camera;
         bool isVisible;
+        int selectedDriverNumber = -1;
 
         public void Configure(
             ReplayPlayer source,
@@ -92,6 +93,68 @@ namespace F1XR.Drone
             presenter?.Hide();
         }
 
+        public bool SelectDriverAhead()
+        {
+            PositionSampleDto current = FindPosition(
+                selectedDriverNumber,
+                fallbackToLeader: true);
+            if (current == null)
+                return false;
+
+            PositionSampleDto ahead = null;
+            foreach (PositionSampleDto position in replayPlayer.GetPositions())
+            {
+                if (position == null || position.position >= current.position ||
+                    ahead != null && position.position <= ahead.position)
+                {
+                    continue;
+                }
+
+                ahead = position;
+            }
+
+            if (ahead == null)
+                return false;
+
+            selectedDriverNumber = ahead.driverNumber;
+            return true;
+        }
+
+        public bool SelectDriverBehind()
+        {
+            PositionSampleDto current = FindPosition(
+                selectedDriverNumber,
+                fallbackToLeader: true);
+            if (current == null)
+                return false;
+
+            PositionSampleDto trailing = null;
+            foreach (PositionSampleDto position in replayPlayer.GetPositions())
+            {
+                if (position == null || position.position <= current.position ||
+                    trailing != null && position.position >= trailing.position)
+                {
+                    continue;
+                }
+
+                trailing = position;
+            }
+
+            if (trailing == null)
+                return false;
+
+            selectedDriverNumber = trailing.driverNumber;
+            return true;
+        }
+
+        public bool TryGetNavigationTarget(out Transform carTransform)
+        {
+            carTransform = null;
+            int driverNumber = ActiveDriverNumber;
+            return driverNumber >= 0 && replayPlayer != null &&
+                replayPlayer.TryGetVisualCarTransform(driverNumber, out carTransform);
+        }
+
         void LateUpdate()
         {
             if (isVisible)
@@ -115,18 +178,20 @@ namespace F1XR.Drone
                 return;
             }
 
+            int activeDriverNumber = ActiveDriverNumber;
             foreach (PositionSampleDto position in positions)
             {
-                if (position == null ||
-                    !replayPlayer.TryGetVisualCarTransform(
-                        position.driverNumber,
-                        out Transform carTransform) ||
-                    !TryGetViewportRect(
-                        carTransform,
-                        out Rect rect,
-                        out Bounds worldBounds) ||
-                    !viewportFrame.Overlaps(rect) ||
-                    !viewportFrame.Contains(rect.center))
+                if (position == null || !replayPlayer.TryGetVisualCarTransform(
+                        position.driverNumber, out Transform carTransform) ||
+                    !TryGetViewportRect(carTransform, out Rect rect,
+                        out Bounds worldBounds))
+                {
+                    continue;
+                }
+
+                bool isActiveTarget = position.driverNumber == activeDriverNumber;
+                if (!isActiveTarget && (!viewportFrame.Overlaps(rect) ||
+                    !viewportFrame.Contains(rect.center)))
                 {
                     continue;
                 }
@@ -157,12 +222,60 @@ namespace F1XR.Drone
             }
 
             visibleTargets.Sort(CompareTargets);
+            if (selectedDriverNumber < 0 && visibleTargets.Count > 0)
+                selectedDriverNumber = visibleTargets[0].driverNumber;
+
+            int activeIndex = FindVisibleTargetIndex(ActiveDriverNumber);
+            if (activeIndex > 0)
+            {
+                DroneVehicleTarget activeTarget = visibleTargets[activeIndex];
+                visibleTargets.RemoveAt(activeIndex);
+                visibleTargets.Insert(0, activeTarget);
+            }
+
             if (visibleTargets.Count > maximumVisibleTargets)
                 visibleTargets.RemoveRange(
                     maximumVisibleTargets,
                     visibleTargets.Count - maximumVisibleTargets);
 
             presenter.SetTargets(visibleTargets);
+        }
+
+        int ActiveDriverNumber => selectedDriverNumber;
+
+        PositionSampleDto FindPosition(int driverNumber, bool fallbackToLeader)
+        {
+            if (replayPlayer == null)
+                return null;
+
+            PositionSampleDto result = null;
+            foreach (PositionSampleDto position in replayPlayer.GetPositions())
+            {
+                if (position == null)
+                    continue;
+
+                if (position.driverNumber == driverNumber)
+                    return position;
+
+                if (fallbackToLeader && (result == null ||
+                    position.position < result.position))
+                {
+                    result = position;
+                }
+            }
+
+            return result;
+        }
+
+        int FindVisibleTargetIndex(int driverNumber)
+        {
+            for (int i = 0; i < visibleTargets.Count; i++)
+            {
+                if (visibleTargets[i].driverNumber == driverNumber)
+                    return i;
+            }
+
+            return -1;
         }
 
         static bool IsBraking(int brake)
@@ -307,22 +420,18 @@ namespace F1XR.Drone
                 frames.Add(new WorldTargetFrame(root.transform, lineMaterial));
 
             for (int i = 0; i < frames.Count; i++)
-            {
-                frames[i].SetActive(i < count);
-                if (i < count)
-                {
-                    frames[i].SetTarget(
-                        targets[i],
-                        xrCamera,
-                        ResolveDepthOffset(targets[i].worldBounds.center));
-                }
-            }
+                frames[i].SetActive(false);
 
             if (primaryIndex >= 0)
             {
                 primaryCardLastVisibleTime = Time.unscaledTime;
                 primaryCardFrame = frames[primaryIndex];
                 primaryCardTarget = targets[primaryIndex];
+                primaryCardFrame.SetActive(true);
+                primaryCardFrame.SetTarget(
+                    primaryCardTarget,
+                    xrCamera,
+                    ResolveDepthOffset(primaryCardTarget.worldBounds.center));
                 heldPrimaryFrame?.SetActive(false);
                 SetPrimaryCard(
                     primaryCardTarget,
@@ -341,6 +450,7 @@ namespace F1XR.Drone
                 heldPrimaryFrame ??= new WorldTargetFrame(
                     root.transform,
                     lineMaterial);
+                heldPrimaryFrame.SetActive(true);
                 heldPrimaryFrame.SetTarget(
                     primaryCardTarget,
                     xrCamera,
@@ -364,6 +474,11 @@ namespace F1XR.Drone
             primaryCardSide = targets[0].viewportRect.center.x > 0.5f ? -1f : 1f;
             primaryCardFrame = frames[0];
             primaryCardTarget = targets[0];
+            primaryCardFrame.SetActive(true);
+            primaryCardFrame.SetTarget(
+                primaryCardTarget,
+                xrCamera,
+                ResolveDepthOffset(primaryCardTarget.worldBounds.center));
             heldPrimaryFrame?.SetActive(false);
             SetPrimaryCard(primaryCardTarget, primaryCardFrame, primaryCardSide, 1f);
         }
@@ -445,13 +560,29 @@ namespace F1XR.Drone
                 xrCamera.transform.position,
                 frame.Center);
             float cardWidth = Mathf.Clamp(distance * 0.27f, 2.4f, 39f);
+            Vector3 viewForward = Vector3.ProjectOnPlane(
+                xrCamera.transform.forward,
+                Vector3.up);
+            if (viewForward.sqrMagnitude < 0.0001f)
+            {
+                viewForward = Vector3.ProjectOnPlane(
+                    frame.Center - xrCamera.transform.position,
+                    Vector3.up);
+            }
+
+            if (viewForward.sqrMagnitude < 0.0001f)
+                viewForward = Vector3.forward;
+
+            Vector3 viewRight = Vector3.Cross(
+                Vector3.up,
+                viewForward.normalized);
             Vector3 cardPosition = frame.Center +
-                xrCamera.transform.right * side *
+                viewRight * side *
                     (frame.Width * 0.5f + cardWidth * 0.85f) +
-                xrCamera.transform.up * frame.Height * 0.2f;
+                Vector3.up * frame.Height * 0.2f;
             Quaternion rotation = Quaternion.LookRotation(
                 cardPosition - xrCamera.transform.position,
-                xrCamera.transform.up);
+                Vector3.up);
             card.SetTarget(
                 target,
                 cardPosition,
@@ -656,7 +787,7 @@ namespace F1XR.Drone
                     Center,
                     Quaternion.LookRotation(
                         Center - camera.transform.position,
-                        camera.transform.up));
+                        Vector3.up));
                 float halfWidth = Width * 0.5f;
                 float halfHeight = Height * 0.5f;
                 line.widthMultiplier = Mathf.Clamp(
@@ -693,7 +824,7 @@ namespace F1XR.Drone
                     Center,
                     Quaternion.LookRotation(
                         Center - camera.transform.position,
-                        camera.transform.up));
+                        Vector3.up));
                 return true;
             }
 
