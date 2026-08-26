@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using F1XR.Interaction.Input;
 using UnityEngine;
 using UnityEngine.XR.ARSubsystems;
 
@@ -38,6 +39,7 @@ namespace F1XR.RestAPI.Replay.Room
         private bool fitinWallLocked;
         private ShowcaseWallFrame fitinWall;
         private string lastFailure = "";
+        private bool pitReplayViewButtonWasPressed;
 
         public string LastFailure => lastFailure;
         public bool IsPortalEditMode =>
@@ -52,6 +54,13 @@ namespace F1XR.RestAPI.Replay.Room
         public bool CanEditPortal =>
             portalPresentation != null &&
             portalPresentation.IsPitStopConfigured;
+        public PitReplayViewMode PitReplayViewMode =>
+            portalPresentation != null
+                ? portalPresentation.PitReplayViewMode
+                : PitReplayViewMode.Immersive;
+        public bool CanChangePitReplayView =>
+            portalPresentation != null &&
+            portalPresentation.CanChangePitReplayView;
         public bool HasSuitablePitWall
         {
             get
@@ -116,12 +125,20 @@ namespace F1XR.RestAPI.Replay.Room
                    portalPresentation.ResetPitWallEdit();
         }
 
+        public bool TogglePitReplayView()
+        {
+            ResolveReferences();
+            return portalPresentation != null &&
+                   portalPresentation.TogglePitReplayView();
+        }
+
         private void LateUpdate()
         {
             ResolveReferences();
             eventReplay = replayPlayer != null
                 ? replayPlayer.EventReplay
                 : null;
+            UpdatePitReplayViewShortcut();
             if (eventReplay == null ||
                 !eventReplay.IsPitStopActive)
             {
@@ -155,6 +172,31 @@ namespace F1XR.RestAPI.Replay.Room
 
             ReleaseBinding();
             TryBind(stage, layoutRevision);
+        }
+
+        private void UpdatePitReplayViewShortcut()
+        {
+            ProcessPitReplayViewShortcut(
+                XRControllerButton.IsPressed(
+                    MorphHoldButton.PrimaryButton,
+                    false));
+        }
+
+        private bool ProcessPitReplayViewShortcut(bool isPressed)
+        {
+            bool pressedThisFrame =
+                isPressed && !pitReplayViewButtonWasPressed;
+            pitReplayViewButtonWasPressed = isPressed;
+            if (!pressedThisFrame ||
+                eventReplay == null ||
+                !eventReplay.IsPitStopActive ||
+                portalPresentation == null ||
+                !portalPresentation.CanChangePitReplayView)
+            {
+                return false;
+            }
+
+            return TogglePitReplayView();
         }
 
         private bool TryBind(
@@ -627,13 +669,23 @@ namespace F1XR.RestAPI.Replay.Room
             }
         }
 
+        private void OnEnable()
+        {
+            pitReplayViewButtonWasPressed =
+                XRControllerButton.IsPressed(
+                    MorphHoldButton.PrimaryButton,
+                    false);
+        }
+
         private void OnDisable()
         {
+            pitReplayViewButtonWasPressed = false;
             ReleaseBinding();
         }
 
         private void OnDestroy()
         {
+            pitReplayViewButtonWasPressed = false;
             ReleaseBinding();
         }
     }
