@@ -34,7 +34,7 @@ namespace F1XR.AIBridge
         const float PanelWidth = 440f;
         const float HeaderHeight = 168f;
 
-        TMP_InputField _input;
+        InputField _input;
         TMP_Text _statusText;
         TMP_Text _userLabel;
         UnityEngine.UI.Text _userText;
@@ -51,7 +51,6 @@ namespace F1XR.AIBridge
         bool _processing;
         string _lastTranscript;
         Coroutine _typeRoutine;
-        TMP_FontAsset _resolvedKoreanFont;
         Font _koreanUiFont;
 
         void OnEnable()
@@ -74,7 +73,6 @@ namespace F1XR.AIBridge
 
         void Start()
         {
-            _resolvedKoreanFont = koreanFont != null ? koreanFont : CreateRuntimeKoreanFont();
             _koreanUiFont = CreateKoreanUiFont();
             BuildUI();
             StartCoroutine(FocusInputNextFrame());
@@ -82,6 +80,9 @@ namespace F1XR.AIBridge
 
         void Update()
         {
+            EnsureInputUsesKoreanFont();
+            SubmitInputOnEnter();
+
             float t = Time.unscaledTime;
             bool active = _recording || _processing;
             for (int i = 0; i < _bars.Count; i++)
@@ -245,6 +246,8 @@ namespace F1XR.AIBridge
 
         void BuildUI()
         {
+            ClearExistingTesterCanvas();
+
             var canvasGO = new GameObject("AIBridgeTesterCanvas",
                 typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGO.transform.SetParent(transform, false);
@@ -308,6 +311,21 @@ namespace F1XR.AIBridge
             BuildInput(panel);
             BuildFooter(panel);
             BuildPanelChrome(panel);
+        }
+
+        void ClearExistingTesterCanvas()
+        {
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = transform.GetChild(i);
+                if (child.name != "AIBridgeTesterCanvas")
+                    continue;
+
+                if (Application.isPlaying)
+                    Destroy(child.gameObject);
+                else
+                    DestroyImmediate(child.gameObject);
+            }
         }
 
         void ConfigureCanvas(Canvas canvas, GameObject canvasGO)
@@ -551,12 +569,14 @@ namespace F1XR.AIBridge
             return btn;
         }
 
-        TMP_InputField MakeInput(Transform parent, string value)
+        InputField MakeInput(Transform parent, string value)
         {
             var go = new GameObject("Input", typeof(RectTransform));
             go.transform.SetParent(parent, false);
-            Bg(go, new Color(0f, 0f, 0f, 0.18f));
-            var input = go.AddComponent<TMP_InputField>();
+            var bg = Bg(go, new Color(0f, 0f, 0f, 0.18f));
+            var input = go.AddComponent<InputField>();
+            input.targetGraphic = bg;
+            input.transition = Selectable.Transition.None;
             SetHeight(go, 34);
 
             var area = NewRect("TextArea", go.transform);
@@ -564,26 +584,21 @@ namespace F1XR.AIBridge
             area.offsetMin = new Vector2(10, 5); area.offsetMax = new Vector2(-10, -5);
             area.gameObject.AddComponent<RectMask2D>();
 
-            var placeholder = Text("Placeholder", area, "Type a question or use radio", 12, FontStyles.Italic, TextAlignmentOptions.MidlineLeft);
+            var placeholder = KoreanText("Placeholder", area, "Type a question or use radio", 12, TextAnchor.MiddleLeft);
+            placeholder.fontStyle = FontStyle.Italic;
+            placeholder.horizontalOverflow = HorizontalWrapMode.Overflow;
             placeholder.color = new Color(1, 1, 1, 0.35f);
             Stretch(placeholder.rectTransform);
 
-            var text = Text("Text", area, "", 13, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            var text = KoreanText("Text", area, "", 13, TextAnchor.MiddleLeft);
+            text.supportRichText = false;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
             Stretch(text.rectTransform);
 
-            input.textViewport = area;
             input.textComponent = text;
             input.placeholder = placeholder;
             input.text = "";
-            input.lineType = TMP_InputField.LineType.SingleLine;
-            input.onSubmit.AddListener(_ =>
-            {
-                if (string.IsNullOrWhiteSpace(input.text))
-                    return;
-                SendCurrent();
-                input.text = "";
-                StartCoroutine(FocusInputNextFrame());
-            });
+            input.lineType = InputField.LineType.SingleLine;
             return input;
         }
 
@@ -647,6 +662,35 @@ namespace F1XR.AIBridge
             return t;
         }
 
+        void EnsureInputUsesKoreanFont()
+        {
+            if (_input == null) return;
+
+            if (_koreanUiFont == null)
+                _koreanUiFont = CreateKoreanUiFont();
+
+            Font font = _koreanUiFont;
+            if (font == null) return;
+
+            if (_input.textComponent != null && _input.textComponent.font != font)
+                _input.textComponent.font = font;
+
+            if (_input.placeholder is UnityEngine.UI.Text placeholder && placeholder.font != font)
+                placeholder.font = font;
+        }
+
+        void SubmitInputOnEnter()
+        {
+            if (_input == null) return;
+            if (!_input.isFocused) return;
+            if (!Input.GetKeyDown(KeyCode.Return) && !Input.GetKeyDown(KeyCode.KeypadEnter)) return;
+            if (string.IsNullOrWhiteSpace(_input.text)) return;
+
+            SendCurrent();
+            _input.text = "";
+            StartCoroutine(FocusInputNextFrame());
+        }
+
         UnityEngine.UI.Text KoreanText(string name, Transform parent, string text, int size, TextAnchor align)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer));
@@ -685,22 +729,6 @@ namespace F1XR.AIBridge
                 Mathf.Approximately(anchorMin.y, anchorMax.y) ? anchorMin.y : 0.5f);
             rt.anchoredPosition = pos;
             rt.sizeDelta = size;
-        }
-
-        TMP_FontAsset CreateRuntimeKoreanFont()
-        {
-            try
-            {
-                Font font = Font.CreateDynamicFontFromOSFont(
-                    new[] { "Malgun Gothic", "맑은 고딕", "Noto Sans CJK KR", "Arial" }, 20);
-                TMP_FontAsset asset = font != null ? TMP_FontAsset.CreateFontAsset(font) : null;
-                if (asset != null) asset.atlasPopulationMode = AtlasPopulationMode.Dynamic;
-                return asset;
-            }
-            catch
-            {
-                return null;
-            }
         }
 
         Font CreateKoreanUiFont()

@@ -19,6 +19,7 @@ GameObject:
   - component: {fileID: 612189976496330165}
   - component: {fileID: 1512278900930449566}
   - component: {fileID: 2599781216080018502}
+  - component: {fileID: 8727417429481636675}
   m_Layer: 0
   m_Name: AIBridge
   m_TagString: Untagged
@@ -51,7 +52,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 69f48e3f83c8b134d9afc1fb843b5b4e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Net.AgentWebSocketClient
   config: {fileID: 11400000, guid: a3fafc8a5f57b8f49ac7f85c08a7e7d0, type: 2}
 --- !u!114 &358480993955718652
@@ -69,6 +70,9 @@ MonoBehaviour:
   client: {fileID: 7823266626266337528}
   dispatcher: {fileID: 7897636086228883126}
   ttsPlayer: {fileID: 612189976496330165}
+  player: {fileID: 0}
+  sendReplayState: 1
+  replayStateInterval: 0.25
 --- !u!114 &7897636086228883126
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -84,6 +88,9 @@ MonoBehaviour:
   loadSession: {fileID: 319710139870861721}
   highlightDriver: {fileID: 1972968151036858088}
   controlReplay: {fileID: 8761324872737865527}
+  predictOvertake: {fileID: 0}
+  droneView: {fileID: 0}
+  showBattleContext: {fileID: 8727417429481636675}
 --- !u!114 &319710139870861721
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -246,9 +253,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.AgentBridgeTester
   bridge: {fileID: 358480993955718652}
   mic: {fileID: 2599781216080018502}
-  question: "DRS\uAC00 \uBB50\uC57C?"
   sessionKey: 9839
+  defaultQuestion: Who is in the lead?
   uiFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+  koreanFont: {fileID: 0}
+  accent: {r: 0.882, g: 0.024, b: 0, a: 1}
+  panelColor: {r: 0.012, g: 0.014, b: 0.017, a: 0.96}
 --- !u!114 &2599781216080018502
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -266,3 +276,39 @@ MonoBehaviour:
   maxSeconds: 15
   currentSessionKey: 0
   currentAtTime: 
+--- !u!114 &8727417429481636675
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3195421536832648194}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec4f07e65f4841398f8ded930b1d0be4, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.AIBridge.Commands.ShowBattleContextHandler
+  player: {fileID: 0}
+  badgeFont: {fileID: 11400000, guid: c5f8060f82018564092c332c23aa9b44, type: 2}
+  holdSeconds: 6
+  amberColor: {r: 1, g: 0.82, b: 0.08, a: 0.95}
+  closingColor: {r: 1, g: 0.5, b: 0.1, a: 1}
+  neutralColor: {r: 0.85, g: 0.85, b: 0.9, a: 1}
+  bandWidth: 2.5
+  bandColorStart: {r: 0.58623886, g: 0.7106918, b: 0, a: 0.95}
+  bandColorEnd: {r: 0.82, g: 1, b: 0.02, a: 0.98}
+  arrowHeadMul: 2.6
+  chevronSpacing: 1.15
+  chevronBarRatio: 0.5
+  maxChevrons: 24
+  bandLift: 0.18
+  arrowHeight: 0.4
+  arrowMinClosing: 0.03
+  badgeTextCarHeights: 2.1
+  gapTextColor: {r: 0, g: 0.03883648, b: 1, a: 1}
+  badgeFontSize: 6
+  badgeHeight: 1.25
+  panelColor: {r: 0.05, g: 0.08, b: 0.11, a: 0.72}
+  showConfidenceBar: 1
+  testSubject: 44
+  testTarget: 16

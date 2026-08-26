@@ -43,13 +43,23 @@ namespace F1XR.AIBridge.Commands
         [Tooltip("그 외(stable/opening) 배지·텍스트 색")]
         public Color neutralColor = new Color(0.85f, 0.85f, 0.9f, 1f);
 
-        [Header("Gap Line")]
-        [Tooltip("선 두께(차 스케일 배수). 트랙이 작아도 비율 유지")]
-        public float lineWidth = 0.06f;
-        [Tooltip("글로우 언더레이 두께 배수(선 두께 대비). 소프트한 발광 느낌")]
-        public float glowWidthMul = 3.2f;
-        [Tooltip("흐르는 점선 스크롤 속도(초당 UV). 좁혀지는 방향으로 흐른다")]
-        public float dashScrollSpeed = 1.6f;
+        [Header("화살표 밴드")]
+        [Tooltip("밴드 두께(차 크기 배수). 클수록 두껍게")]
+        public float bandWidth = 0.18f;
+        [Tooltip("채도 낮은 옅은 형광노랑(뒤쪽) — 여기서 시작")]
+        public Color bandColorStart = new Color(0.96f, 1f, 0.72f, 0.95f);
+        [Tooltip("채도 높은 쨍한 형광노랑(앞/팁) — 여기로 갈수록 진해짐")]
+        public Color bandColorEnd = new Color(0.82f, 1f, 0.02f, 1f);
+        [Tooltip("화살촉 길이(밴드 두께 배수)")]
+        public float arrowHeadMul = 2.6f;
+        [Tooltip("셰브론(>) 사이 간격(차 크기 배수). 클수록 듬성듬성")]
+        public float chevronSpacing = 1.15f;
+        [Tooltip("셰브론 획 두께(셰브론 크기 배수)")]
+        public float chevronBarRatio = 0.5f;
+        [Tooltip("셰브론 최대 개수")]
+        public int maxChevrons = 24;
+        [Tooltip("밴드를 맵 위로 띄우는 높이(차 크기 배수). 맵에 안 가릴 정도로만")]
+        public float bandLift = 0.18f;
 
         [Header("예측 화살표")]
         [Tooltip("3초 뒤 예측 갭 화살표를 Gap Line 위로 띄우는 높이(차 스케일 배수)")]
@@ -58,6 +68,10 @@ namespace F1XR.AIBridge.Commands
         public float arrowMinClosing = 0.03f;
 
         [Header("배지(근사 글래스)")]
+        [Tooltip("갭 텍스트 높이 = 실제 차 크기 × 이 값(1.6~2.4 권장). 값 키우면 글씨 커짐")]
+        public float badgeTextCarHeights = 2.1f;
+        [Tooltip("갭 텍스트 색 — 쨍한 코발트 블루")]
+        public Color gapTextColor = new Color(0.04f, 0.28f, 1f, 1f);
         public float badgeFontSize = 6f;
         [Tooltip("두 차 중점에서 위로 띄우는 높이(차 스케일 배수)")]
         public float badgeHeight = 1.25f;
@@ -81,13 +95,20 @@ namespace F1XR.AIBridge.Commands
 
         // ── 런타임 생성 리소스 ──
         LineRenderer _line, _glow, _dash, _arrow, _bracket;   // _bracket = 예측 불확실성 브래킷(±σ)
+        readonly System.Collections.Generic.List<LineRenderer> _chevrons = new System.Collections.Generic.List<LineRenderer>();
         Transform _badgeRoot;
         TextMeshPro _badge;
+        MeshRenderer _badgeRenderer;
+        Material _badgeTopMaterial;
+        TMP_FontAsset _badgeTopMaterialFont;
         SpriteRenderer _panel, _rim, _confBg, _confFill, _ghost;
         static Sprite _whiteSprite, _roundedSprite;
         static Texture2D _dashTex;
         float _dashOffset;
         OvertakeGaugeHud _gaugeHud;
+        static readonly int _zTestId = Shader.PropertyToID("_ZTest");
+        static readonly int _zTestModeId = Shader.PropertyToID("_ZTestMode");
+        static readonly int _guiZTestId = Shader.PropertyToID("unity_GUIZTestMode");
 
         /// <summary>showBattleContext 진입점. (dispatcher가 호출하는 시그니처)</summary>
         /// <param name="predictedGap">3초 뒤 예측 갭(초). 없으면 음수(-1) 전달.</param>
@@ -116,18 +137,8 @@ namespace F1XR.AIBridge.Commands
             isClosing = (trend == "closing");
             accentColor = isClosing ? closingColor : amberColor;
 
-            // 배지: "0.8s → 0.4±0.1s (3s) · Closing · DRS"  (±σ는 있을 때만)
-            string t = string.IsNullOrEmpty(trend) ? "" : char.ToUpper(trend[0]) + trend.Substring(1);
-            string label = $"{gapSeconds:0.0}s";
-            if (predictedGap >= 0f)
-            {
-                label += $"  →  {predictedGap:0.0}";
-                if (predictedGapStd > 0f) label += $"±{predictedGapStd:0.1}";
-                label += $"s ({horizon:0}s)";
-            }
-            if (!string.IsNullOrEmpty(t)) label += $"  ·  {t}";
-            if (drs) label += "  ·  DRS";
-            badgeText = label;
+            // 갭차이만 크게: "0.95s". 방향/접근은 화살표 밴드가 표현.
+            badgeText = $"{gapSeconds:0.00}s";
 
             float? closingRate = null;
             if (predictedGap >= 0f && horizon > 0.001f)
@@ -146,6 +157,7 @@ namespace F1XR.AIBridge.Commands
             activeUntil = -1f;
             SetActive(_line, false); SetActive(_glow, false); SetActive(_dash, false); SetActive(_arrow, false);
             SetActive(_bracket, false);
+            DeactivateChevronsFrom(0);
             if (_ghost) _ghost.gameObject.SetActive(false);
             if (_badgeRoot) _badgeRoot.gameObject.SetActive(false);
             if (_gaugeHud != null) _gaugeHud.Clear();
@@ -166,183 +178,202 @@ namespace F1XR.AIBridge.Commands
 
             Vector3 a = subjectView.transform.position;
             Vector3 b = targetView.transform.position;
-            float carScale = subjectView.transform.lossyScale.y;
+            // 단위 = 실제 차 월드 크기(라벨과 동일 기준). 미니맵/실물 공통 비율.
+            float carScale = Mathf.Max(subjectView.GetVisualLength(), subjectView.GetVisualWidth());
+            if (carScale <= 0f) carScale = subjectView.transform.lossyScale.y;
             if (carScale <= 0f) carScale = 1f;
 
-            UpdateGapLine(a, b, carScale);
-            UpdateArrow(a, b, carScale);
-            UpdateBadge(a, b, carScale);
+            // 이제 안 쓰는 요소(글로우/점선/브래킷/고스트/패널)는 꺼둔다.
+            SetActive(_glow, false); SetActive(_dash, false); SetActive(_bracket, false);
+            if (_ghost) _ghost.gameObject.SetActive(false);
+            if (_panel) _panel.gameObject.SetActive(false);
+            if (_rim) _rim.gameObject.SetActive(false);
+            if (_confBg) _confBg.gameObject.SetActive(false);
+            if (_confFill) _confFill.gameObject.SetActive(false);
+
+            UpdateArrowBand(a, b, carScale);
+            UpdateGapText(a, b, carScale);
         }
 
-        // ── Gap Line: 글로우 언더레이 + 앰버→주황 그라데이션 + 흐르는 점선 ──
-        void UpdateGapLine(Vector3 a, Vector3 b, float carScale)
+        // ── 화살표 밴드: 뒤차→앞차 두꺼운 그라데이션 리본(코발트블루→형광노랑) + 화살촉 ──
+        void UpdateArrowBand(Vector3 a, Vector3 b, float carScale)
         {
-            EnsureLines();
-            float w = lineWidth * carScale;
-
-            // 1) 소프트 글로우(넓고 투명) — 파이프라인 독립적 발광 근사
-            Color glow = accentColor; glow.a *= 0.28f;
-            _glow.gameObject.SetActive(true);
-            _glow.startWidth = _glow.endWidth = w * glowWidthMul;
-            _glow.startColor = _glow.endColor = glow;
-            _glow.SetPosition(0, a); _glow.SetPosition(1, b);
-
-            // 2) 메인 라인(앰버 subject → 주황 target 그라데이션)
-            _line.gameObject.SetActive(true);
-            _line.startWidth = _line.endWidth = w;
-            _line.startColor = amberColor;
-            _line.endColor = isClosing ? closingColor : amberColor;
-            _line.SetPosition(0, a); _line.SetPosition(1, b);
-
-            // 3) 흐르는 점선(좁혀지는 방향 = subject→target 으로 스크롤)
-            _dash.gameObject.SetActive(true);
-            _dash.startWidth = _dash.endWidth = w * 0.6f;
-            Color dc = Color.white; dc.a = 0.85f;
-            _dash.startColor = _dash.endColor = dc;
-            _dash.SetPosition(0, a); _dash.SetPosition(1, b);
-            float len = Vector3.Distance(a, b);
-            _dashOffset -= dashScrollSpeed * Time.deltaTime;   // 음수 = subject→target 방향
-            if (_dash.material != null)
-            {
-                _dash.material.mainTextureScale = new Vector2(1f, Mathf.Max(1f, len / Mathf.Max(0.001f, carScale) * 2f));
-                _dash.material.mainTextureOffset = new Vector2(0f, _dashOffset);
-            }
-        }
-
-        // ── 예측 화살표: predGap 유효하고 '의미 있게' 좁혀질 때만. 길이 = 좁혀지는 비율 ──
-        void UpdateArrow(Vector3 a, Vector3 b, float carScale)
-        {
-            EnsureArrow();
-            float closing = curGap - predGap;   // +면 좁혀짐
-            if (predGap < 0f || closing < arrowMinClosing || curGap <= 0.001f)
-            {
-                _arrow.gameObject.SetActive(false);
-                if (_ghost) _ghost.gameObject.SetActive(false);
-                return;
-            }
-
-            Vector3 up = Vector3.up * (arrowHeight * carScale);
+            EnsureBand();
+            Vector3 up = Vector3.up * (bandLift * carScale);   // 맵 위로 살짝 띄워 안 가리게
             Vector3 pa = a + up, pb = b + up;
             Vector3 dir = pb - pa;
             float dist = dir.magnitude;
-            if (dist < 1e-4f) { _arrow.gameObject.SetActive(false); return; }
+            if (dist < 1e-4f) { SetActive(_arrow, false); DeactivateChevronsFrom(0); return; }
             dir /= dist;
-
-            float frac = Mathf.Clamp(closing / curGap, 0.15f, 0.9f);
-            Vector3 tip = pa + dir * (dist * frac);
             Vector3 side = Vector3.Cross(dir, Vector3.up).normalized;
-            float hw = Mathf.Max(lineWidth * carScale * 4f, dist * 0.045f);   // 화살촉 크기
-            Vector3 back = tip - dir * hw;
-            Vector3 h1 = back + side * hw, h2 = back - side * hw;
 
-            // 은은한 펄스(굵기)로 '예측 압박' 강조
-            float pulse = 1f + 0.12f * Mathf.Sin(Time.time * 6f);
-            _arrow.gameObject.SetActive(true);
-            _arrow.startColor = _arrow.endColor = closingColor;
-            _arrow.startWidth = _arrow.endWidth = lineWidth * carScale * 1.1f * pulse;
-            _arrow.positionCount = 5;
-            _arrow.SetPosition(0, pa);
-            _arrow.SetPosition(1, tip);
-            _arrow.SetPosition(2, h1);
-            _arrow.SetPosition(3, tip);
-            _arrow.SetPosition(4, h2);
+            float chevW = bandWidth * carScale;                       // 셰브론 반크기(가로=세로)
+            float bt = Mathf.Max(0.001f, chevW * chevronBarRatio);    // 획 두께
+            float headLen = Mathf.Min(dist * 0.45f, chevW * arrowHeadMul);
+            float usable = Mathf.Max(0f, dist - headLen);             // 화살촉 앞 구간은 비움
 
-            // 고스트 마커: 3초 뒤 예측 갭 '지점'(target 기준 predGap 비율만큼 앞) 표시
-            EnsureGhost();
-            _ghost.gameObject.SetActive(true);
-            _ghost.color = new Color(closingColor.r, closingColor.g, closingColor.b, 0.8f);
-            _ghost.transform.position = tip;
-            _ghost.transform.localScale = Vector3.one * (hw * 0.7f);
-            BillboardTo(_ghost.transform);
+            float spacing = Mathf.Max(0.001f, carScale * chevronSpacing);
+            int n = Mathf.Clamp(Mathf.RoundToInt(usable / spacing), 1, Mathf.Max(1, maxChevrons));
 
-            UpdateBracket(pa, dir, dist, side, frac, hw, carScale);
-        }
-
-        // ── 예측 불확실성 브래킷(⊣ ⊢): 예측 갭 ±σ 범위를 갭 라인 위에 에러바로 표시 ──
-        //   갭 값 g → 라인 위 위치 비율 f(g) = (curGap - g)/curGap (subject=0, target=1).
-        //   좁을수록(σ 작음) 확신, 넓을수록 불확실. predGapStd<=0 이면 생략.
-        void UpdateBracket(Vector3 pa, Vector3 dir, float dist, Vector3 side,
-                           float frac, float hw, float carScale)
-        {
-            EnsureBracket();
-            if (predGapStd <= 0f || curGap <= 0.001f)
+            float pulse = 1f + 0.06f * Mathf.Sin(Time.time * 4f);
+            // 개별 셰브론(>) 나열 — 뒤(옅은 저채도) → 앞(쨍한 고채도)
+            for (int i = 0; i < n; i++)
             {
-                _bracket.gameObject.SetActive(false);
-                return;
+                float f = (i + 0.5f) / n;
+                Vector3 c = pa + dir * (usable * f);
+                float t = (n <= 1) ? 1f : i / (float)(n - 1);
+                Color col = Color.Lerp(bandColorStart, bandColorEnd, t);
+                col.a = Mathf.Lerp(bandColorStart.a * 0.45f, bandColorEnd.a, t);   // 뒤로 갈수록 옅게
+
+                LineRenderer lr = GetChevron(i);
+                lr.gameObject.SetActive(true);
+                lr.startWidth = lr.endWidth = bt * pulse;
+                lr.startColor = lr.endColor = col;
+                Vector3 tip = c + dir * chevW;
+                Vector3 top = c - dir * chevW + side * chevW;
+                Vector3 bot = c - dir * chevW - side * chevW;
+                lr.positionCount = 3;
+                lr.SetPosition(0, top);
+                lr.SetPosition(1, tip);
+                lr.SetPosition(2, bot);
             }
-            float sigmaFrac = predGapStd / curGap;                 // ±σ 를 라인 비율로 환산
-            float fHi = Mathf.Clamp01(frac - sigmaFrac);           // predGap+σ (subject 쪽)
-            float fLo = Mathf.Clamp01(frac + sigmaFrac);           // predGap−σ (target 쪽)
-            if (fLo - fHi < 1e-3f) { _bracket.gameObject.SetActive(false); return; }
+            DeactivateChevronsFrom(n);
 
-            Vector3 pHi = pa + dir * (dist * fHi);
-            Vector3 pLo = pa + dir * (dist * fLo);
-            float capHalf = hw * 0.8f;
-
-            _bracket.gameObject.SetActive(true);
-            Color bc = closingColor; bc.a = 0.85f;
-            _bracket.startColor = _bracket.endColor = bc;
-            _bracket.startWidth = _bracket.endWidth = lineWidth * carScale * 0.6f;
-            // I-빔 폴리라인: 위 캡 → 위스커 → 아래 캡
-            _bracket.positionCount = 6;
-            _bracket.SetPosition(0, pHi + side * capHalf);
-            _bracket.SetPosition(1, pHi - side * capHalf);
-            _bracket.SetPosition(2, pHi);
-            _bracket.SetPosition(3, pLo);
-            _bracket.SetPosition(4, pLo + side * capHalf);
-            _bracket.SetPosition(5, pLo - side * capHalf);
+            // 맨 앞 솔리드 화살촉(가장 쨍한 형광노랑)
+            Vector3 neck = pb - dir * headLen;
+            float hw = chevW * 1.7f;
+            Vector3 h1 = neck + side * hw, h2 = neck - side * hw;
+            _arrow.gameObject.SetActive(true);
+            _arrow.startColor = _arrow.endColor = bandColorEnd;
+            _arrow.startWidth = _arrow.endWidth = chevW * 1.1f;
+            _arrow.numCapVertices = 4;
+            _arrow.positionCount = 3;
+            _arrow.SetPosition(0, h1);
+            _arrow.SetPosition(1, pb);
+            _arrow.SetPosition(2, h2);
         }
 
-        // ── 근사 글래스 배지: 라운드 패널 + 앰버 림 + F1 폰트 텍스트 + 게이지 ──
-        void UpdateBadge(Vector3 a, Vector3 b, float carScale)
+        // ── 갭 텍스트: 패널 없이 밴드 위에 떠 있는 큰 텍스트(프로젝트 폰트) ──
+        void UpdateGapText(Vector3 a, Vector3 b, float carScale)
         {
-            EnsureBadge();
+            EnsureText();
             _badgeRoot.gameObject.SetActive(true);
-            _badgeRoot.position = (a + b) * 0.5f + Vector3.up * (badgeHeight * carScale);
-            _badgeRoot.localScale = Vector3.one * carScale;
+            float textLift = Mathf.Max(badgeHeight, bandLift + bandWidth * 0.75f);
+            _badgeRoot.position = (a + b) * 0.5f + Vector3.up * (textLift * carScale);
+            _badge.fontSize = badgeFontSize;
+            float rootScale = (carScale * badgeTextCarHeights) / Mathf.Max(0.001f, badgeFontSize);
+            _badgeRoot.localScale = Vector3.one * rootScale;
             BillboardTo(_badgeRoot);
 
-            _badge.font = ResolveFont();
+            TMP_FontAsset f = ResolveFont();
+            if (f != null && _badge.font != f) _badge.font = f;
+            ApplyGapTextMaterial(_badge.font);
+            ConfigureGapTextRenderer();
             _badge.text = badgeText;
-            _badge.fontSize = badgeFontSize;
-            _badge.color = isClosing ? closingColor : neutralColor;
-
-            // 텍스트 실제 폭에 맞춰 패널 크기 조절(가로만 대략 추정)
-            Vector2 pref = _badge.GetPreferredValues(badgeText);
-            float pw = pref.x + badgeFontSize * 0.9f;     // 좌우 패딩
-            float ph = pref.y + badgeFontSize * (showConfidenceBar ? 1.5f : 0.7f);
-
-            _panel.transform.localScale = new Vector3(pw, ph, 1f);
-            _rim.transform.localScale = new Vector3(pw + badgeFontSize * 0.18f, ph + badgeFontSize * 0.18f, 1f);
-            _panel.color = panelColor;
-            _rim.color = new Color(accentColor.r, accentColor.g, accentColor.b, 0.55f);
-
-            // OVERTAKE PRESSURE 게이지(= confidence)
-            if (showConfidenceBar)
-            {
-                _confBg.gameObject.SetActive(true);
-                _confFill.gameObject.SetActive(true);
-                float barW = pw * 0.82f, barH = badgeFontSize * 0.28f;
-                float barY = -ph * 0.5f + barH * 1.4f;
-                _confBg.transform.localPosition = new Vector3(0f, barY, -0.02f);
-                _confBg.transform.localScale = new Vector3(barW, barH, 1f);
-                _confBg.color = new Color(1f, 1f, 1f, 0.14f);
-
-                float fillW = barW * Mathf.Clamp01(confidence);
-                _confFill.transform.localPosition = new Vector3(-(barW - fillW) * 0.5f, barY, -0.03f);
-                _confFill.transform.localScale = new Vector3(Mathf.Max(0.0001f, fillW), barH, 1f);
-                _confFill.color = accentColor;
-                _badge.rectTransform.localPosition = new Vector3(0f, badgeFontSize * 0.35f, -0.04f);
-            }
-            else
-            {
-                _confBg.gameObject.SetActive(false);
-                _confFill.gameObject.SetActive(false);
-                _badge.rectTransform.localPosition = new Vector3(0f, 0f, -0.04f);
-            }
+            _badge.color = gapTextColor;
+            _badge.rectTransform.localPosition = Vector3.zero;
+            _badge.ForceMeshUpdate();
         }
 
         // ───────────────────────── helpers ─────────────────────────
+
+        void EnsureBand()
+        {
+            if (_arrow == null) _arrow = MakeLine("BattleArrowHead");
+        }
+
+        LineRenderer GetChevron(int i)
+        {
+            while (_chevrons.Count <= i)
+            {
+                LineRenderer lr = MakeLine("BattleChevron" + _chevrons.Count);
+                lr.numCapVertices = 4;      // 둥근 끝
+                lr.numCornerVertices = 4;   // 둥근 꼭짓점(참고 이미지처럼)
+                lr.positionCount = 3;
+                _chevrons.Add(lr);
+            }
+            return _chevrons[i];
+        }
+
+        void DeactivateChevronsFrom(int start)
+        {
+            for (int i = start; i < _chevrons.Count; i++)
+                if (_chevrons[i]) _chevrons[i].gameObject.SetActive(false);
+        }
+
+        void EnsureText()
+        {
+            if (_badgeRoot != null) return;
+            _badgeRoot = new GameObject("BattleGapText").transform;
+            _badgeRoot.SetParent(transform, false);
+            var go = new GameObject("Text");
+            go.transform.SetParent(_badgeRoot, false);
+            _badge = go.AddComponent<TextMeshPro>();
+            _badge.alignment = TextAlignmentOptions.Center;
+            _badge.enableWordWrapping = false;
+            _badge.fontStyle = FontStyles.Bold;
+            _badge.enableAutoSizing = false;
+            _badge.overflowMode = TextOverflowModes.Overflow;
+            _badge.rectTransform.sizeDelta = new Vector2(40f, 8f);
+            _badgeRenderer = go.GetComponent<MeshRenderer>();
+            ConfigureGapTextRenderer();
+        }
+
+        void ConfigureGapTextRenderer()
+        {
+            if (_badge == null) return;
+            if (_badgeRenderer == null)
+                _badgeRenderer = _badge.GetComponent<MeshRenderer>();
+            if (_badgeRenderer == null) return;
+
+            _badgeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _badgeRenderer.receiveShadows = false;
+            _badgeRenderer.sortingOrder = 30001;
+        }
+
+        void ApplyGapTextMaterial(TMP_FontAsset font)
+        {
+            if (_badge == null) return;
+            if (font == null) font = _badge.font;
+            if (font == null || font.material == null) return;
+
+            if (_badgeTopMaterial == null || _badgeTopMaterialFont != font)
+            {
+                if (_badgeTopMaterial != null)
+                    Destroy(_badgeTopMaterial);
+
+                _badgeTopMaterialFont = font;
+                _badgeTopMaterial = new Material(font.material)
+                {
+                    name = "BattleGapText_AlwaysOnTop",
+                    renderQueue = 4000
+                };
+
+                Shader overlay = Shader.Find("TextMeshPro/Mobile/Distance Field Overlay") ??
+                                 Shader.Find("TextMeshPro/Distance Field Overlay");
+                if (overlay != null)
+                    _badgeTopMaterial.shader = overlay;
+
+                int always = (int)UnityEngine.Rendering.CompareFunction.Always;
+                SetMaterialInt(_badgeTopMaterial, _guiZTestId, always);
+                SetMaterialFloat(_badgeTopMaterial, _zTestId, always);
+                SetMaterialFloat(_badgeTopMaterial, _zTestModeId, always);
+            }
+
+            _badge.fontSharedMaterial = _badgeTopMaterial;
+        }
+
+        static void SetMaterialInt(Material material, int propertyId, int value)
+        {
+            if (material != null && material.HasProperty(propertyId))
+                material.SetInt(propertyId, value);
+        }
+
+        static void SetMaterialFloat(Material material, int propertyId, float value)
+        {
+            if (material != null && material.HasProperty(propertyId))
+                material.SetFloat(propertyId, value);
+        }
 
         void BillboardTo(Transform t)
         {
@@ -351,11 +382,19 @@ namespace F1XR.AIBridge.Commands
                 t.rotation = Quaternion.LookRotation(t.position - cam.transform.position, Vector3.up);
         }
 
+        static TMP_FontAsset _f1Font;
         TMP_FontAsset ResolveFont()
         {
             if (badgeFont != null) return badgeFont;
+            // 씬에 연결돼 이미 로드된 프로젝트 F1 폰트(carLabelFont = Formula1-Bold SDF) 우선 → 확실히 렌더됨.
             ReplayPlayer p = Player;
-            if (p != null && p.carLabelFont != null) return p.carLabelFont;   // 프로젝트 F1 폰트
+            if (p != null && p.carLabelFont != null) return p.carLabelFont;
+            if (_f1Font != null) return _f1Font;
+            // (carLabelFont 미연결 씬 폴백) 로드된 Formula1-Bold 탐색
+            TMP_FontAsset[] fonts = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
+            for (int i = 0; i < fonts.Length; i++)
+                if (fonts[i] != null && fonts[i].name.Contains("Formula1-Bold"))
+                { _f1Font = fonts[i]; return _f1Font; }
             return TMP_Settings.defaultFontAsset;
         }
 
@@ -392,7 +431,7 @@ namespace F1XR.AIBridge.Commands
             return lr;
         }
 
-        void EnsureGhost() { if (_ghost == null) _ghost = MakeSprite("BattlePredictGhost", RoundedSprite(), transform); }
+        void EnsureGhost() { if (_ghost == null) _ghost = MakeSprite("BattlePredictGhost", CircleSprite(), transform); }
 
         void EnsureBadge()
         {
@@ -436,6 +475,52 @@ namespace F1XR.AIBridge.Commands
         }
 
         // ── 런타임 생성 스프라이트/텍스처(에셋 의존 0) ──
+        // ── 셰브론(>>>) 타일 텍스처: 부드러운(페더) 가장자리로 형태가 자연스럽게 이어짐 ──
+        static Texture2D _chevronTex;
+        static Texture2D ChevronTexture()
+        {
+            if (_chevronTex != null) return _chevronTex;
+            int W = 128, H = 64; float th = 0.20f, feather = 0.17f;
+            _chevronTex = new Texture2D(W, H, TextureFormat.RGBA32, false)
+            { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear };
+            var px = new Color32[W * H];
+            for (int y = 0; y < H; y++)
+            {
+                float v = y / (float)(H - 1);
+                float uc = 1f - Mathf.Abs(v - 0.5f) * 2f;   // 셰브론 중심선(팁 v=0.5,u=1 → +길이방향)
+                for (int x = 0; x < W; x++)
+                {
+                    float u = x / (float)(W - 1);
+                    float d = Mathf.Min(Mathf.Abs(u - uc),
+                              Mathf.Min(Mathf.Abs(u - (uc - 1f)), Mathf.Abs(u - (uc + 1f))));
+                    float a = 1f - Mathf.SmoothStep(th, th + feather, d);
+                    px[y * W + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(a) * 255f));
+                }
+            }
+            _chevronTex.SetPixels32(px); _chevronTex.Apply();
+            return _chevronTex;
+        }
+
+        static Sprite _circleSprite;
+        static Sprite CircleSprite()
+        {
+            if (_circleSprite != null) return _circleSprite;
+            int D = 48; float r = D * 0.5f - 1f, c = (D - 1) * 0.5f;
+            var tex = new Texture2D(D, D, TextureFormat.RGBA32, false);
+            var px = new Color32[D * D];
+            for (int y = 0; y < D; y++)
+                for (int x = 0; x < D; x++)
+                {
+                    float dx = x - c, dy = y - c, d = Mathf.Sqrt(dx * dx + dy * dy);
+                    // 속 빈 링(고스트 마커): 바깥 테두리만 채움 → 차 위 '이상한 blob' 대신 깔끔한 원
+                    byte a = (byte)(d <= r && d >= r - D * 0.22f ? 255 : 0);
+                    px[y * D + x] = new Color32(255, 255, 255, a);
+                }
+            tex.SetPixels32(px); tex.Apply();
+            _circleSprite = Sprite.Create(tex, new Rect(0, 0, D, D), new Vector2(0.5f, 0.5f), D);
+            return _circleSprite;
+        }
+
         static Sprite WhiteSprite()
         {
             if (_whiteSprite != null) return _whiteSprite;
@@ -495,6 +580,12 @@ namespace F1XR.AIBridge.Commands
         [ContextMenu("Test Show Battle")]
         void TestShowBattle()
             => Handle(testSubject, testTarget, 0.8f, 0.4f, 3f, "closing", true, 0.76f, "test", 0.15f);
+
+        void OnDestroy()
+        {
+            if (_badgeTopMaterial != null)
+                Destroy(_badgeTopMaterial);
+        }
     }
 }
 #endif

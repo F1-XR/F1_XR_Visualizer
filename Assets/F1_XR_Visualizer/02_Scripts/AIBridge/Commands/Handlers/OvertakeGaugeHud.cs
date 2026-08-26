@@ -135,6 +135,8 @@ namespace F1XR.AIBridge.Commands
             footerMidText.text = probability.HasValue ? $"ML {probability.Value:0.00}" : "ML --";
             footerRightText.text = gapSeconds.HasValue ? "DRS RANGE" : "PREDICT";
 
+            ApplyAlwaysOnTop();   // 지형/오브젝트에 안 가리게(HUD는 항상 위)
+            _topApplyFrames = 8;  // 이후 몇 프레임 더 재적용(게이지 니들/아크 등 늦생성 커버)
             canvas.gameObject.SetActive(true);
             visibleUntil = Time.unscaledTime + holdSeconds;
             if (useWorldSpace) UpdatePose();
@@ -201,6 +203,8 @@ namespace F1XR.AIBridge.Commands
                 Clear();
                 return;
             }
+
+            if (_topApplyFrames > 0) { _topApplyFrames--; ApplyAlwaysOnTop(); }
 
             if (useWorldSpace) UpdatePose();
         }
@@ -368,6 +372,56 @@ namespace F1XR.AIBridge.Commands
             text.overflowMode = TextOverflowModes.Overflow;
             text.raycastTarget = false;
             return text;
+        }
+
+        // ── 월드공간 HUD가 지형/씬 지오메트리에 가려지지 않도록 UI/텍스트를 ZTest Always 로.
+        //    ScreenOverlay 모드에선 이미 항상 위라 불필요 → 스킵.
+        Material _uiTopMat;
+        static readonly int _zTestId = Shader.PropertyToID("_ZTestMode");
+        static readonly int _guiZTestId = Shader.PropertyToID("unity_GUIZTestMode");
+        int _topApplyFrames;   // Show 직후 몇 프레임 재적용(늦게 생기는 게이지 요소 커버)
+        void ApplyAlwaysOnTop()
+        {
+            if (canvas == null || !useWorldSpace) return;
+            int always = (int)UnityEngine.Rendering.CompareFunction.Always;   // 8
+
+            if (_uiTopMat == null)
+            {
+                Shader sh = Shader.Find("UI/Default");
+                if (sh != null)
+                {
+                    _uiTopMat = new Material(sh) { name = "HUD_UI_AlwaysOnTop" };
+                    _uiTopMat.SetInt("unity_GUIZTestMode", always);
+                }
+            }
+
+            var graphics = canvas.GetComponentsInChildren<Graphic>(true);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                Graphic g = graphics[i];
+                if (g is TMP_Text tmp)
+                {
+                    // TMP SDF 셰이더는 ZTest 를 [unity_GUIZTestMode] 로 읽음(_ZTestMode 아님!).
+                    // + Overlay 셰이더 교체로 확실히 항상 위. fontMaterial=인스턴스라 타 텍스트 영향 X.
+                    Material fm = tmp.fontMaterial;
+                    if (fm != null)
+                    {
+                        fm.SetInt(_guiZTestId, always);
+                        fm.SetFloat(_zTestId, always);   // 일부 버전 호환
+                        if (fm.shader != null && !fm.shader.name.Contains("Overlay"))
+                        {
+                            Shader ov = Shader.Find(fm.shader.name.Contains("Mobile")
+                                ? "TextMeshPro/Mobile/Distance Field Overlay"
+                                : "TextMeshPro/Distance Field Overlay");
+                            if (ov != null) fm.shader = ov;
+                        }
+                    }
+                }
+                else if (g is Image img && _uiTopMat != null)
+                {
+                    img.material = _uiTopMat;
+                }
+            }
         }
 
         static Image CreateImage(string name, Transform parent, Color color)
