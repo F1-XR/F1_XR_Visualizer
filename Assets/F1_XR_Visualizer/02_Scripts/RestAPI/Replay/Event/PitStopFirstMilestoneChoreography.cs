@@ -13,6 +13,8 @@ namespace F1XR.RestAPI.Replay
         private const float FullScaleVehicleLengthMeters = 5.6f;
         private const float FullScaleCrewHeightMeters = 1.78f;
         private const float FallbackTyreDiameterMeters = 0.72f;
+        private const float FallbackTyreThicknessMeters = 0.32f;
+        private const float CarriedTyreBodyGapMeters = 0.055f;
         private const float JackDuration = 2.8f;
         private const float GunnerLoosenEndTime = 0.8f;
         private const float GunnerTightenStartTime = 2.35f;
@@ -36,6 +38,19 @@ namespace F1XR.RestAPI.Replay
         private const float StaticSignalPoseNormalized = 0.38f;
         private const float VehicleClearanceMarginMeters = 0.22f;
         private const float CrewClearancePaddingMeters = 0.1f;
+        private static readonly int BaseColorId =
+            Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private static readonly int MetallicId =
+            Shader.PropertyToID("_Metallic");
+        private static readonly int SmoothnessId =
+            Shader.PropertyToID("_Smoothness");
+        private static readonly Color FerrariWheelGunnerRed =
+            new(0.34f, 0.035f, 0.028f, 1f);
+        private static readonly Color FerrariWheelOffRed =
+            new(0.46f, 0.055f, 0.04f, 1f);
+        private static readonly Color FerrariWheelOnRed =
+            new(0.405f, 0.044f, 0.034f, 1f);
         private static readonly Vector3 FallbackFlHub =
             new(0.92f, 0.39f, 2f);
         private static readonly Vector3 FallbackRearHub =
@@ -156,10 +171,39 @@ namespace F1XR.RestAPI.Replay
             public float EgressEnd;
         }
 
+        private sealed class WheelServiceCorner
+        {
+            public string Name;
+            public bool IsFront;
+            public Vector3 Hub;
+            public Vector3 Outward;
+            public Quaternion HubRotation;
+            public float TyreDiameter;
+            public float TyreThickness;
+            public Transform OriginalWheel;
+            public Renderer[] OriginalWheelRenderers;
+            public bool[] OriginalWheelRendererStates;
+            public SampledActor Gunner;
+            public SampledActor WheelOff;
+            public SampledActor WheelOn;
+            public Transform GunnerRightHand;
+            public Transform WheelOffLeftHand;
+            public Transform WheelOffRightHand;
+            public Transform WheelOnLeftHand;
+            public Transform WheelOnRightHand;
+            public GameObject OldLooseTyre;
+            public GameObject NewLooseTyre;
+            public Vector3 OldLooseTyreVisualCenter;
+            public Vector3 NewLooseTyreVisualCenter;
+            public GameObject WheelGun;
+            public Transform WheelGunGrip;
+        }
+
         private Vector3 flHub = FallbackFlHub;
         private Vector3 flOutward = Vector3.right;
         private Quaternion flHubRotation = Quaternion.identity;
         private float tyreDiameterMeters = FallbackTyreDiameterMeters;
+        private float tyreThicknessMeters = FallbackTyreThicknessMeters;
 
         private PitShowcaseAssetProfile assets;
         private Transform origin;
@@ -186,6 +230,7 @@ namespace F1XR.RestAPI.Replay
         private Vector3 newLooseTyreVisualCenter;
         private Renderer[] originalFlWheelRenderers;
         private bool[] originalFlWheelRendererStates;
+        private WheelServiceCorner[] additionalCorners;
         private CrewTransition[] crewTransitions;
         private float vehicleCorridorMinX;
         private float vehicleCorridorMaxX;
@@ -211,8 +256,22 @@ namespace F1XR.RestAPI.Replay
             Transform flWheel = FindDescendant(
                 vehicle.VisualMotionRoot,
                 "FL_Tire");
-            if (flWheel == null)
+            Transform frWheel = FindDescendant(
+                vehicle.VisualMotionRoot,
+                "FR_Tire");
+            Transform rlWheel = FindDescendant(
+                vehicle.VisualMotionRoot,
+                "RL_Tire");
+            Transform rrWheel = FindDescendant(
+                vehicle.VisualMotionRoot,
+                "RR_Tire");
+            if (flWheel == null ||
+                frWheel == null ||
+                rlWheel == null ||
+                rrWheel == null)
+            {
                 return false;
+            }
 
             originalFlWheel = flWheel;
 
@@ -249,11 +308,14 @@ namespace F1XR.RestAPI.Replay
                 tyreDiameterMeters = Mathf.Max(
                     flBounds.size.y,
                     flBounds.size.z) * localToPhysical;
+                tyreThicknessMeters =
+                    flBounds.size.x * localToPhysical;
             }
             else
             {
                 flHub = FallbackFlHub;
                 tyreDiameterMeters = FallbackTyreDiameterMeters;
+                tyreThicknessMeters = FallbackTyreThicknessMeters;
             }
             flOutward = Mathf.Abs(flHub.x) > 0.0001f
                 ? Vector3.right * Mathf.Sign(flHub.x)
@@ -306,6 +368,36 @@ namespace F1XR.RestAPI.Replay
             propRoot = CreateRoot("PropRoot", origin);
             CreateAnchor("VehicleStopAnchor", Vector3.zero);
             CreateAnchor("FL_Hub", flHub);
+
+            additionalCorners = new[]
+            {
+                CreateWheelServiceCorner(
+                    "FR",
+                    frWheel,
+                    vehicle.LogicalRoot,
+                    localToPhysical,
+                    isFront: true),
+                CreateWheelServiceCorner(
+                    "RL",
+                    rlWheel,
+                    vehicle.LogicalRoot,
+                    localToPhysical,
+                    isFront: false),
+                CreateWheelServiceCorner(
+                    "RR",
+                    rrWheel,
+                    vehicle.LogicalRoot,
+                    localToPhysical,
+                    isFront: false)
+            };
+            for (int i = 0; i < additionalCorners.Length; i++)
+            {
+                if (additionalCorners[i] == null)
+                {
+                    Clear();
+                    return false;
+                }
+            }
 
             float gunnerOutward = tyreDiameterMeters * 1.05f;
             float wheelOffOutward = tyreDiameterMeters * 1.18f;
@@ -434,9 +526,16 @@ namespace F1XR.RestAPI.Replay
             CalibrateGunner();
             CalibrateWheelOffContact();
             CalibrateWheelOnContact();
+            ApplyWheelServiceLaneSpacing(
+                "FL",
+                flOutward,
+                Vector3.forward,
+                tyreDiameterMeters,
+                wheelOff,
+                wheelOn);
             ApplyReadyPose();
 
-            crewTransitions = new[]
+            CrewTransition[] flAndAuxiliaryTransitions = new[]
             {
                 CreateCrewTransition(
                     gunner,
@@ -463,6 +562,45 @@ namespace F1XR.RestAPI.Replay
                 CreateCrewTransition(rearJack, 0f, 0.45f, 2.8f, 3.18f),
                 CreateCrewTransition(pitSignal, 0f, 0.45f, 2.8f, 3.18f)
             };
+
+            crewTransitions = new CrewTransition[
+                flAndAuxiliaryTransitions.Length +
+                additionalCorners.Length * 3];
+            for (int i = 0; i < flAndAuxiliaryTransitions.Length; i++)
+                crewTransitions[i] = flAndAuxiliaryTransitions[i];
+            for (int i = 0; i < additionalCorners.Length; i++)
+            {
+                WheelServiceCorner corner = additionalCorners[i];
+                int transitionIndex =
+                    flAndAuxiliaryTransitions.Length + i * 3;
+                crewTransitions[transitionIndex] = CreateCrewTransition(
+                    corner.Gunner,
+                    0f,
+                    0.36f,
+                    2.72f,
+                    3.18f,
+                    corner.Outward,
+                    corner.TyreDiameter,
+                    corner.TyreDiameter * 0.3f);
+                crewTransitions[transitionIndex + 1] = CreateCrewTransition(
+                    corner.WheelOff,
+                    0.15f,
+                    0.72f,
+                    2.25f,
+                    2.75f,
+                    corner.Outward,
+                    corner.TyreDiameter,
+                    corner.TyreDiameter * 0.55f);
+                crewTransitions[transitionIndex + 2] = CreateCrewTransition(
+                    corner.WheelOn,
+                    0.8f,
+                    1.55f,
+                    2.82f,
+                    3.18f,
+                    corner.Outward,
+                    corner.TyreDiameter,
+                    corner.TyreDiameter * 0.55f);
+            }
 
             CreateAnchor(
                 "FL_WheelGunner_Service",
@@ -525,11 +663,16 @@ namespace F1XR.RestAPI.Replay
             SetTyreVisualCenter(
                 newLooseTyre,
                 newLooseTyreVisualCenter,
-                ResolveHandMidpoint(
+                ResolveTyreGripCenter(
+                    wheelOn,
                     wheelOnLeftHand,
                     wheelOnRightHand,
-                    flHub));
+                    flHub,
+                    flOutward,
+                    tyreDiameterMeters,
+                    tyreThicknessMeters));
             ApplyWheelGun();
+            ApplyAdditionalStaticComposition();
             ReleaseReady = false;
         }
 
@@ -560,6 +703,10 @@ namespace F1XR.RestAPI.Replay
                 ResolveWheelOffProgress(clampedTime),
                 ResolveWheelOnProgress(clampedTime));
             ApplyWheelGun();
+            ApplyAdditionalCorners(
+                ResolveGunnerProgress(clampedTime),
+                ResolveWheelOffProgress(clampedTime),
+                ResolveWheelOnProgress(clampedTime));
         }
 
         public void ApplyChoreographyTime(
@@ -593,6 +740,10 @@ namespace F1XR.RestAPI.Replay
             wheelOn.SampleNormalized(
                 assets.WheelOnFullL,
                 wheelOnProgress);
+            SampleAdditionalCorners(
+                gunnerProgress,
+                wheelOffProgress,
+                wheelOnProgress);
             frontJack.SampleNormalized(
                 assets.FrontJackFullL,
                 jackProgress);
@@ -607,6 +758,10 @@ namespace F1XR.RestAPI.Replay
                 wheelOffProgress,
                 wheelOnProgress);
             ApplyWheelGun();
+            ApplyAdditionalCornerStates(
+                wheelOffProgress,
+                wheelOnProgress);
+            ApplyAdditionalWheelGuns();
             ReleaseReady =
                 releaseEligible &&
                 time >= ReleaseReadyTime &&
@@ -759,6 +914,20 @@ namespace F1XR.RestAPI.Replay
         public void Clear()
         {
             SetOriginalFlWheelVisible(true);
+            if (additionalCorners != null)
+            {
+                for (int i = 0; i < additionalCorners.Length; i++)
+                {
+                    WheelServiceCorner corner = additionalCorners[i];
+                    if (corner == null)
+                        continue;
+
+                    SetCornerOriginalWheelVisible(corner, true);
+                    corner.Gunner?.Dispose();
+                    corner.WheelOff?.Dispose();
+                    corner.WheelOn?.Dispose();
+                }
+            }
             gunner?.Dispose();
             wheelOff?.Dispose();
             wheelOn?.Dispose();
@@ -793,6 +962,7 @@ namespace F1XR.RestAPI.Replay
             newLooseTyreVisualCenter = Vector3.zero;
             originalFlWheelRenderers = null;
             originalFlWheelRendererStates = null;
+            additionalCorners = null;
             crewTransitions = null;
             vehicleCorridorMinX = 0f;
             vehicleCorridorMaxX = 0f;
@@ -800,6 +970,7 @@ namespace F1XR.RestAPI.Replay
             flOutward = Vector3.right;
             flHubRotation = Quaternion.identity;
             tyreDiameterMeters = FallbackTyreDiameterMeters;
+            tyreThicknessMeters = FallbackTyreThicknessMeters;
             ReleaseReady = false;
         }
 
@@ -824,6 +995,7 @@ namespace F1XR.RestAPI.Replay
             instance.transform.localScale = Vector3.one;
             NormalizeActorHeight(instance, FullScaleCrewHeightMeters);
             DisablePhysics(instance, keepAnimator: true);
+            ApplyFerrariCrewAppearance(name, instance);
 
             Animator animator =
                 instance.GetComponentInChildren<Animator>(true);
@@ -834,6 +1006,203 @@ namespace F1XR.RestAPI.Replay
                     assets.ChoreographyBaseController,
                     lockMotionRoot)
                 : null;
+        }
+
+        private WheelServiceCorner CreateWheelServiceCorner(
+            string cornerName,
+            Transform wheel,
+            Transform vehicleSpace,
+            float localToPhysical,
+            bool isFront)
+        {
+            Renderer[] wheelRenderers =
+                wheel.GetComponentsInChildren<Renderer>(true);
+            if (wheelRenderers.Length == 0 ||
+                !TryMeasureRenderersInSpace(
+                    wheelRenderers,
+                    vehicleSpace,
+                    out Bounds wheelBounds))
+            {
+                return null;
+            }
+
+            WheelServiceCorner corner = new()
+            {
+                Name = cornerName,
+                IsFront = isFront,
+                Hub = wheelBounds.center * localToPhysical,
+                TyreDiameter = Mathf.Max(
+                    wheelBounds.size.y,
+                    wheelBounds.size.z) * localToPhysical,
+                TyreThickness =
+                    wheelBounds.size.x * localToPhysical,
+                OriginalWheel = wheel,
+                OriginalWheelRenderers = wheelRenderers,
+                OriginalWheelRendererStates =
+                    new bool[wheelRenderers.Length]
+            };
+            corner.Outward = Mathf.Abs(corner.Hub.x) > 0.0001f
+                ? Vector3.right * Mathf.Sign(corner.Hub.x)
+                : Vector3.right;
+            corner.HubRotation = Quaternion.Inverse(origin.rotation) *
+                wheel.rotation;
+            for (int i = 0; i < wheelRenderers.Length; i++)
+            {
+                corner.OriginalWheelRendererStates[i] =
+                    wheelRenderers[i] != null && wheelRenderers[i].enabled;
+            }
+
+            CreateAnchor($"{cornerName}_Hub", corner.Hub);
+            Vector3 ground = new(corner.Hub.x, 0f, corner.Hub.z);
+            Vector3 serviceDirection = isFront
+                ? Vector3.forward
+                : Vector3.back;
+            Vector3 gunnerPosition = ground +
+                corner.Outward * corner.TyreDiameter * 1.05f;
+            Vector3 wheelOffPosition = ground +
+                corner.Outward * corner.TyreDiameter * 1.18f +
+                serviceDirection * corner.TyreDiameter * 1.26f;
+            Vector3 wheelOnPosition = ground +
+                corner.Outward * corner.TyreDiameter * 1.62f -
+                serviceDirection * corner.TyreDiameter * 1.08f;
+            string side = corner.Outward.x >= 0f ? "L" : "R";
+            corner.Gunner = CreateActor(
+                $"{cornerName}_WheelGunner",
+                gunnerPosition,
+                ResolveGroundFacing(gunnerPosition, ground),
+                lockMotionRoot: true);
+            corner.WheelOff = CreateActor(
+                $"{cornerName}_WheelOff_{side}",
+                wheelOffPosition,
+                ResolveGroundFacing(wheelOffPosition, ground),
+                lockMotionRoot: true);
+            corner.WheelOn = CreateActor(
+                $"{cornerName}_WheelOn_{side}",
+                wheelOnPosition,
+                ResolveGroundFacing(wheelOnPosition, ground),
+                lockMotionRoot: true);
+            if (corner.Gunner == null ||
+                corner.WheelOff == null ||
+                corner.WheelOn == null)
+            {
+                return null;
+            }
+
+            corner.GunnerRightHand = FindDescendant(
+                corner.Gunner.Root,
+                "hand_r");
+            corner.WheelOffLeftHand = FindDescendant(
+                corner.WheelOff.Root,
+                "hand_l");
+            corner.WheelOffRightHand = FindDescendant(
+                corner.WheelOff.Root,
+                "hand_r");
+            corner.WheelOnLeftHand = FindDescendant(
+                corner.WheelOn.Root,
+                "hand_l");
+            corner.WheelOnRightHand = FindDescendant(
+                corner.WheelOn.Root,
+                "hand_r");
+            if (corner.GunnerRightHand == null ||
+                corner.WheelOffLeftHand == null ||
+                corner.WheelOffRightHand == null ||
+                corner.WheelOnLeftHand == null ||
+                corner.WheelOnRightHand == null)
+            {
+                return null;
+            }
+
+            corner.OldLooseTyre = CreateProp(
+                wheel.gameObject,
+                $"{cornerName}_OldLooseTyre");
+            corner.NewLooseTyre = CreateProp(
+                wheel.gameObject,
+                $"{cornerName}_NewLooseTyre");
+            corner.WheelGun = CreateProp(
+                assets.WheelGunPrefab,
+                $"{cornerName}_WheelGun");
+            corner.WheelGunGrip = corner.WheelGun != null
+                ? FindDescendant(corner.WheelGun.transform, "GripAnchor")
+                : null;
+            if (corner.OldLooseTyre == null ||
+                corner.NewLooseTyre == null ||
+                corner.WheelGun == null ||
+                corner.WheelGunGrip == null)
+            {
+                return null;
+            }
+
+            NormalizePropDiameter(
+                corner.OldLooseTyre,
+                corner.TyreDiameter);
+            NormalizePropDiameter(
+                corner.NewLooseTyre,
+                corner.TyreDiameter);
+            corner.OldLooseTyreVisualCenter =
+                ResolveRendererCenterInObjectSpace(corner.OldLooseTyre);
+            corner.NewLooseTyreVisualCenter =
+                ResolveRendererCenterInObjectSpace(corner.NewLooseTyre);
+            CalibrateCorner(corner);
+            CreateAnchor(
+                $"{cornerName}_WheelGunner_Service",
+                corner.Gunner.Root.localPosition);
+            CreateAnchor(
+                $"{cornerName}_WheelOff_Service",
+                corner.WheelOff.Root.localPosition);
+            CreateAnchor(
+                $"{cornerName}_WheelOn_Service",
+                corner.WheelOn.Root.localPosition);
+            return corner;
+        }
+
+        private static void ApplyFerrariCrewAppearance(
+            string actorName,
+            GameObject instance)
+        {
+            if (instance == null ||
+                !IsTyreServiceActor(actorName))
+            {
+                return;
+            }
+
+            Renderer[] renderers =
+                instance.GetComponentsInChildren<Renderer>(true);
+            Color roleColor = actorName.Contains("_WheelGunner")
+                ? FerrariWheelGunnerRed
+                : actorName.Contains("_WheelOn_")
+                    ? FerrariWheelOnRed
+                    : FerrariWheelOffRed;
+            float roleSmoothness = actorName.Contains("_WheelOn_")
+                ? 0.24f
+                : 0.28f;
+            MaterialPropertyBlock properties = new();
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null)
+                    continue;
+
+                renderer.GetPropertyBlock(properties);
+                properties.SetColor(BaseColorId, roleColor);
+                properties.SetColor(ColorId, roleColor);
+                properties.SetFloat(MetallicId, 0f);
+                properties.SetFloat(SmoothnessId, roleSmoothness);
+                renderer.SetPropertyBlock(properties);
+                properties.Clear();
+            }
+        }
+
+        private static bool IsTyreServiceActor(string actorName)
+        {
+            bool validCorner =
+                actorName.StartsWith("FL_") ||
+                actorName.StartsWith("FR_") ||
+                actorName.StartsWith("RL_") ||
+                actorName.StartsWith("RR_");
+            return validCorner &&
+                (actorName.Contains("_WheelGunner") ||
+                 actorName.Contains("_WheelOff_") ||
+                 actorName.Contains("_WheelOn_"));
         }
 
         private static void SetActorPresentationVisible(
@@ -854,9 +1223,30 @@ namespace F1XR.RestAPI.Replay
             float egressEnd,
             float carriedPropClearance = CrewClearancePaddingMeters)
         {
+            return CreateCrewTransition(
+                actor,
+                ingressStart,
+                ingressEnd,
+                egressStart,
+                egressEnd,
+                flOutward,
+                tyreDiameterMeters,
+                carriedPropClearance);
+        }
+
+        private CrewTransition CreateCrewTransition(
+            SampledActor actor,
+            float ingressStart,
+            float ingressEnd,
+            float egressStart,
+            float egressEnd,
+            Vector3 outward,
+            float tyreDiameter,
+            float carriedPropClearance)
+        {
             Vector3 servicePosition = actor.Root.localPosition;
-            float outwardSign = Mathf.Sign(flOutward.x);
-            float outwardDistance = tyreDiameterMeters * 0.45f;
+            float outwardSign = Mathf.Sign(outward.x);
+            float outwardDistance = tyreDiameter * 0.45f;
             Renderer[] renderers =
                 actor.Root.GetComponentsInChildren<Renderer>(true);
             if (TryMeasureRenderersInSpace(
@@ -880,7 +1270,7 @@ namespace F1XR.RestAPI.Replay
                 Actor = actor,
                 ServicePosition = servicePosition,
                 StandbyPosition = servicePosition +
-                    flOutward * outwardDistance,
+                    outward * outwardDistance,
                 IngressStart = ingressStart,
                 IngressEnd = ingressEnd,
                 EgressStart = egressStart,
@@ -961,6 +1351,95 @@ namespace F1XR.RestAPI.Replay
             gunner.Root.localPosition += correction;
         }
 
+        private void CalibrateCorner(WheelServiceCorner corner)
+        {
+            corner.Gunner.SampleNormalized(
+                assets.WheelGunnerFull,
+                GunnerContactNormalized);
+            Vector3 hand = origin.InverseTransformPoint(
+                corner.GunnerRightHand.position);
+            Vector3 facing =
+                corner.Gunner.Root.localRotation * Vector3.forward;
+            Vector3 target = corner.Hub -
+                facing * EstimateWheelGunReach(
+                    corner.WheelGun,
+                    corner.WheelGunGrip);
+            Vector3 correction = target - hand;
+            correction.y = 0f;
+            corner.Gunner.Root.localPosition += correction;
+
+            corner.WheelOff.SampleNormalized(
+                assets.WheelOffFullL,
+                WheelOffOwnershipNormalized);
+            Vector3 wheelOffHands = ResolveHandMidpoint(
+                corner.WheelOffLeftHand,
+                corner.WheelOffRightHand,
+                corner.Hub);
+            correction = corner.Hub - wheelOffHands;
+            correction.y = 0f;
+            corner.WheelOff.Root.localPosition += correction;
+
+            corner.WheelOn.SampleNormalized(
+                assets.WheelOnFullL,
+                WheelOnHandoffNormalized);
+            Vector3 wheelOnHands = ResolveHandMidpoint(
+                corner.WheelOnLeftHand,
+                corner.WheelOnRightHand,
+                corner.Hub);
+            correction = corner.Hub - wheelOnHands;
+            correction.y = 0f;
+            corner.WheelOn.Root.localPosition += correction;
+
+            ApplyWheelServiceLaneSpacing(
+                corner.Name,
+                corner.Outward,
+                corner.IsFront ? Vector3.forward : Vector3.back,
+                corner.TyreDiameter,
+                corner.WheelOff,
+                corner.WheelOn);
+        }
+
+        private static void ApplyWheelServiceLaneSpacing(
+            string cornerName,
+            Vector3 outward,
+            Vector3 serviceDirection,
+            float tyreDiameter,
+            SampledActor wheelOffActor,
+            SampledActor wheelOnActor)
+        {
+            float wheelOffOutward;
+            float wheelOffLongitudinal;
+            float wheelOnOutward;
+            float wheelOnLongitudinal;
+            if (cornerName == "FL")
+            {
+                wheelOffOutward = 0.12f;
+                wheelOffLongitudinal = 0.26f;
+                wheelOnOutward = 0.08f;
+                wheelOnLongitudinal = 0.12f;
+            }
+            else if (cornerName == "RL")
+            {
+                wheelOffOutward = 0.24f;
+                wheelOffLongitudinal = 0.30f;
+                wheelOnOutward = 0.22f;
+                wheelOnLongitudinal = 0.34f;
+            }
+            else
+            {
+                return;
+            }
+
+            wheelOffActor.Root.localPosition +=
+                outward * tyreDiameter * wheelOffOutward +
+                serviceDirection * tyreDiameter *
+                wheelOffLongitudinal;
+            wheelOnActor.Root.localPosition +=
+                outward * tyreDiameter * wheelOnOutward -
+                serviceDirection * tyreDiameter *
+                wheelOnLongitudinal;
+        }
+
         private void CalibrateWheelOffContact()
         {
             wheelOff.SampleNormalized(
@@ -1002,18 +1481,25 @@ namespace F1XR.RestAPI.Replay
 
         private float EstimateWheelGunReach()
         {
+            return EstimateWheelGunReach(wheelGun, wheelGunGrip);
+        }
+
+        private static float EstimateWheelGunReach(
+            GameObject gun,
+            Transform gripAnchor)
+        {
             Renderer[] renderers =
-                wheelGun.GetComponentsInChildren<Renderer>(true);
+                gun.GetComponentsInChildren<Renderer>(true);
             if (!TryMeasureRenderersInSpace(
                     renderers,
-                    wheelGun.transform,
+                    gun.transform,
                     out Bounds bounds))
             {
                 return 0.32f;
             }
 
-            Vector3 grip = wheelGun.transform.InverseTransformPoint(
-                wheelGunGrip.position);
+            Vector3 grip = gun.transform.InverseTransformPoint(
+                gripAnchor.position);
             float forwardReach = bounds.max.z - grip.z;
             if (forwardReach <= 0.08f)
             {
@@ -1029,11 +1515,224 @@ namespace F1XR.RestAPI.Replay
             gunner.SampleNormalized(assets.WheelGunnerFull, 0f);
             wheelOff.SampleNormalized(assets.WheelOffFullL, 0f);
             wheelOn.SampleNormalized(assets.WheelOnFullL, 0f);
+            SampleAdditionalCorners(0f, 0f, 0f);
             frontJack.SampleNormalized(assets.FrontJackFullL, 0f);
             rearJack.SampleNormalized(assets.RearJackFullR, 0f);
             pitSignal.SampleNormalized(assets.PitSignalFullR, 0f);
             ApplyWheelState(0f, 0f);
             ApplyWheelGun();
+            ApplyAdditionalCornerStates(0f, 0f);
+            ApplyAdditionalWheelGuns();
+        }
+
+        private void ApplyAdditionalStaticComposition()
+        {
+            if (additionalCorners == null)
+                return;
+
+            for (int i = 0; i < additionalCorners.Length; i++)
+            {
+                WheelServiceCorner corner = additionalCorners[i];
+                corner.Gunner.SampleNormalized(
+                    assets.WheelGunnerFull,
+                    GunnerContactNormalized);
+                corner.WheelOff.SampleNormalized(
+                    assets.WheelOffFullL,
+                    StaticWheelOffPoseNormalized);
+                corner.WheelOn.SampleNormalized(
+                    assets.WheelOnFullL,
+                    StaticWheelOnPoseNormalized);
+                SetCornerOriginalWheelVisible(corner, true);
+                corner.OldLooseTyre.SetActive(false);
+                corner.NewLooseTyre.SetActive(true);
+                SetTyreVisualPose(
+                    corner.NewLooseTyre,
+                    corner.NewLooseTyreVisualCenter,
+                    ResolveTyreGripCenter(
+                        corner.WheelOn,
+                        corner.WheelOnLeftHand,
+                        corner.WheelOnRightHand,
+                        corner.Hub,
+                        corner.Outward,
+                        corner.TyreDiameter,
+                        corner.TyreThickness),
+                    corner.HubRotation);
+                ApplyCornerWheelGun(corner);
+            }
+        }
+
+        private void ApplyAdditionalCorners(
+            float gunnerProgress,
+            float wheelOffProgress,
+            float wheelOnProgress)
+        {
+            SampleAdditionalCorners(
+                gunnerProgress,
+                wheelOffProgress,
+                wheelOnProgress);
+            ApplyAdditionalCornerStates(
+                wheelOffProgress,
+                wheelOnProgress);
+            ApplyAdditionalWheelGuns();
+        }
+
+        private void SampleAdditionalCorners(
+            float gunnerProgress,
+            float wheelOffProgress,
+            float wheelOnProgress)
+        {
+            if (additionalCorners == null)
+                return;
+
+            for (int i = 0; i < additionalCorners.Length; i++)
+            {
+                WheelServiceCorner corner = additionalCorners[i];
+                corner.Gunner.SampleNormalized(
+                    assets.WheelGunnerFull,
+                    gunnerProgress);
+                corner.WheelOff.SampleNormalized(
+                    assets.WheelOffFullL,
+                    wheelOffProgress);
+                corner.WheelOn.SampleNormalized(
+                    assets.WheelOnFullL,
+                    wheelOnProgress);
+            }
+        }
+
+        private void ApplyAdditionalCornerStates(
+            float wheelOffProgress,
+            float wheelOnProgress)
+        {
+            if (additionalCorners == null)
+                return;
+
+            for (int i = 0; i < additionalCorners.Length; i++)
+            {
+                ApplyCornerWheelState(
+                    additionalCorners[i],
+                    wheelOffProgress,
+                    wheelOnProgress);
+            }
+        }
+
+        private void ApplyCornerWheelState(
+            WheelServiceCorner corner,
+            float wheelOffProgress,
+            float wheelOnProgress)
+        {
+            bool oldTyreOwned =
+                wheelOffProgress >= WheelOffOwnershipNormalized;
+            bool replacementMounted =
+                wheelOnProgress >= WheelOnHandoffNormalized;
+            Quaternion mountedRotation =
+                ResolveCornerMountedTyreRotation(corner);
+            float removalBlend = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.InverseLerp(
+                    WheelOffOwnershipNormalized,
+                    WheelOffClearNormalized,
+                    wheelOffProgress));
+            float installationBlend = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.InverseLerp(
+                    0f,
+                    WheelOnHandoffNormalized,
+                    wheelOnProgress));
+
+            SetCornerOriginalWheelVisible(
+                corner,
+                !oldTyreOwned || replacementMounted);
+            corner.OldLooseTyre.SetActive(oldTyreOwned);
+            corner.NewLooseTyre.SetActive(!replacementMounted);
+
+            if (oldTyreOwned)
+            {
+                Vector3 carryCenter = ResolveTyreGripCenter(
+                    corner.WheelOff,
+                    corner.WheelOffLeftHand,
+                    corner.WheelOffRightHand,
+                    corner.Hub,
+                    corner.Outward,
+                    corner.TyreDiameter,
+                    corner.TyreThickness);
+                SetTyreVisualPose(
+                    corner.OldLooseTyre,
+                    corner.OldLooseTyreVisualCenter,
+                    Vector3.Lerp(
+                        corner.Hub,
+                        carryCenter,
+                        removalBlend),
+                    Quaternion.Slerp(
+                        mountedRotation,
+                        corner.HubRotation,
+                        removalBlend));
+            }
+
+            if (!replacementMounted)
+            {
+                Vector3 carryCenter = ResolveTyreGripCenter(
+                    corner.WheelOn,
+                    corner.WheelOnLeftHand,
+                    corner.WheelOnRightHand,
+                    corner.Hub,
+                    corner.Outward,
+                    corner.TyreDiameter,
+                    corner.TyreThickness);
+                SetTyreVisualPose(
+                    corner.NewLooseTyre,
+                    corner.NewLooseTyreVisualCenter,
+                    Vector3.Lerp(
+                        carryCenter,
+                        corner.Hub,
+                        installationBlend),
+                    Quaternion.Slerp(
+                        corner.HubRotation,
+                        mountedRotation,
+                        installationBlend));
+            }
+        }
+
+        private void ApplyAdditionalWheelGuns()
+        {
+            if (additionalCorners == null)
+                return;
+
+            for (int i = 0; i < additionalCorners.Length; i++)
+                ApplyCornerWheelGun(additionalCorners[i]);
+        }
+
+        private void ApplyCornerWheelGun(WheelServiceCorner corner)
+        {
+            corner.WheelGun.SetActive(true);
+            Vector3 hubWorld = origin.TransformPoint(corner.Hub);
+            Vector3 direction =
+                hubWorld - corner.GunnerRightHand.position;
+            if (direction.sqrMagnitude <= 0.000001f)
+                direction = -origin.TransformDirection(corner.Outward);
+
+            corner.WheelGun.transform.SetPositionAndRotation(
+                corner.GunnerRightHand.position,
+                Quaternion.LookRotation(
+                    direction.normalized,
+                    origin.up));
+            if (corner.WheelGunGrip != corner.WheelGun.transform)
+            {
+                Vector3 gripOffset =
+                    corner.WheelGunGrip.position -
+                    corner.WheelGun.transform.position;
+                corner.WheelGun.transform.position -= gripOffset;
+            }
+        }
+
+        private Quaternion ResolveCornerMountedTyreRotation(
+            WheelServiceCorner corner)
+        {
+            return corner.OriginalWheel != null && origin != null
+                ? Quaternion.Inverse(origin.rotation) *
+                  corner.OriginalWheel.rotation
+                : corner.HubRotation;
         }
 
         private void ApplyWheelState(
@@ -1068,9 +1767,13 @@ namespace F1XR.RestAPI.Replay
             if (oldTyreOwned)
             {
                 Vector3 carryCenter = ResolveTyreGripCenter(
+                    wheelOff,
                     wheelOffLeftHand,
                     wheelOffRightHand,
-                    flHub);
+                    flHub,
+                    flOutward,
+                    tyreDiameterMeters,
+                    tyreThicknessMeters);
                 SetTyreVisualPose(
                     oldLooseTyre,
                     oldLooseTyreVisualCenter,
@@ -1087,9 +1790,13 @@ namespace F1XR.RestAPI.Replay
             if (!replacementMounted)
             {
                 Vector3 carryCenter = ResolveTyreGripCenter(
+                    wheelOn,
                     wheelOnLeftHand,
                     wheelOnRightHand,
-                    flHub);
+                    flHub,
+                    flOutward,
+                    tyreDiameterMeters,
+                    tyreThicknessMeters);
                 SetTyreVisualPose(
                     newLooseTyre,
                     newLooseTyreVisualCenter,
@@ -1155,14 +1862,59 @@ namespace F1XR.RestAPI.Replay
         }
 
         private Vector3 ResolveTyreGripCenter(
+            SampledActor actor,
             Transform leftHand,
             Transform rightHand,
-            Vector3 fallback)
+            Vector3 fallback,
+            Vector3 outward,
+            float tyreDiameter,
+            float tyreThickness)
         {
-            return ResolveHandMidpoint(
+            Vector3 handCenter = ResolveHandMidpoint(
                 leftHand,
                 rightHand,
                 fallback);
+            if (actor?.Root == null || origin == null)
+                return handCenter;
+
+            Vector3 actorCenter = origin.InverseTransformPoint(
+                actor.Root.position);
+            float renderedHalfDepth = tyreDiameter * 0.28f;
+            Renderer[] renderers =
+                actor.Root.GetComponentsInChildren<Renderer>(true);
+            if (TryMeasureRenderersInSpace(
+                    renderers,
+                    origin,
+                    out Bounds actorBounds))
+            {
+                Vector3 extents = actorBounds.extents;
+                renderedHalfDepth =
+                    Mathf.Abs(outward.x) * extents.x +
+                    Mathf.Abs(outward.y) * extents.y +
+                    Mathf.Abs(outward.z) * extents.z;
+            }
+
+            float torsoHalfDepth = Mathf.Clamp(
+                renderedHalfDepth * 0.5f,
+                0.12f,
+                tyreDiameter * 0.34f);
+            float tyreHalfThickness = Mathf.Max(
+                tyreThickness * 0.5f,
+                tyreDiameter * 0.08f);
+            float bodyClearProjection =
+                Vector3.Dot(actorCenter, outward) -
+                torsoHalfDepth -
+                tyreHalfThickness -
+                CarriedTyreBodyGapMeters;
+            float handProjection =
+                Vector3.Dot(handCenter, outward);
+            float correction = Mathf.Min(
+                0f,
+                bodyClearProjection - handProjection);
+            correction = Mathf.Max(
+                correction,
+                -tyreDiameter * 0.52f);
+            return handCenter + outward * correction;
         }
 
         private Vector3 ResolveHandMidpoint(
@@ -1219,6 +1971,29 @@ namespace F1XR.RestAPI.Replay
                 {
                     renderer.enabled = visible &&
                         originalFlWheelRendererStates[i];
+                }
+            }
+        }
+
+        private static void SetCornerOriginalWheelVisible(
+            WheelServiceCorner corner,
+            bool visible)
+        {
+            if (corner?.OriginalWheelRenderers == null ||
+                corner.OriginalWheelRendererStates == null)
+            {
+                return;
+            }
+
+            for (int i = 0;
+                 i < corner.OriginalWheelRenderers.Length;
+                 i++)
+            {
+                Renderer renderer = corner.OriginalWheelRenderers[i];
+                if (renderer != null)
+                {
+                    renderer.enabled = visible &&
+                        corner.OriginalWheelRendererStates[i];
                 }
             }
         }
