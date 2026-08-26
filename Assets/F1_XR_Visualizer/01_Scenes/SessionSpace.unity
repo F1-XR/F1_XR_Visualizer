@@ -379,12 +379,8 @@ MonoBehaviour:
   drivingTestSceneName: DrivingTest
   coordinatorWaitSeconds: 10
   skipSpatialSetupOnPlay: 0
+  showTablePlacementCandidatesOnPlay: 0
   placeTemporaryMapInFrontOfVrOrigin: 0
-  temporaryMapDistance: 0.5
-  temporaryMapHeightOffset: 0.5
-  temporaryMapScale: {x: 2.5, y: 2.5, z: 2.5}
-  temporaryMapYawOffset: 90
-  temporaryMapModelWaitSeconds: 8
   enterVrDroneOnPlay: 0
 --- !u!1 &417482157
 GameObject:

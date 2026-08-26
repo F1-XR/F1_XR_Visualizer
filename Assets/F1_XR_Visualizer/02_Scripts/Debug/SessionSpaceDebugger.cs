@@ -13,17 +13,21 @@ namespace F1XR.Debugging
     [DisallowMultipleComponent]
     public sealed class SessionSpaceDebugger : MonoBehaviour
     {
+        const float TemporaryMapDistance = 0.5f;
+        const float TemporaryMapHeightOffset = 0.5f;
+        const float TemporaryMapYawOffset = 90f;
+        const float TemporaryMapModelWaitSeconds = 8f;
+        static readonly Vector3 TemporaryMapScale = Vector3.one * 2.5f;
+
         [SerializeField] string vrDroneSceneName = "VRDroneSpace";
         [SerializeField] string drivingTestSceneName = "DrivingTest";
         [SerializeField, Min(1f)] float coordinatorWaitSeconds = 10f;
         [SerializeField] bool skipSpatialSetupOnPlay;
+        [Header("Placement Preview")]
+        [Tooltip("Shows blue overlays on detected surfaces that satisfy the automatic table placement rules.")]
+        [SerializeField] bool showTablePlacementCandidatesOnPlay;
         [Header("Temporary Map")]
         [SerializeField] bool placeTemporaryMapInFrontOfVrOrigin;
-        [SerializeField, Min(0.1f)] float temporaryMapDistance = 0.5f;
-        [SerializeField] float temporaryMapHeightOffset = 0.5f;
-        [SerializeField] Vector3 temporaryMapScale = Vector3.one * 2.5f;
-        [SerializeField] float temporaryMapYawOffset = 90f;
-        [SerializeField, Min(0f)] float temporaryMapModelWaitSeconds = 8f;
         [Header("VR Drone")]
         [SerializeField] bool enterVrDroneOnPlay;
 
@@ -33,6 +37,9 @@ namespace F1XR.Debugging
             skipSpatialSetupOnPlay || placeTemporaryMapInFrontOfVrOrigin;
         void Awake()
         {
+            SetTablePlacementCandidatePreviewVisible(
+                showTablePlacementCandidatesOnPlay);
+
             if (!SkipSpatialSetupOnPlay)
                 return;
 
@@ -44,6 +51,13 @@ namespace F1XR.Debugging
                     requester.DisableSpatialSystemsForDebug(
                         placeTemporaryMapInFrontOfVrOrigin);
             }
+        }
+
+        void SetTablePlacementCandidatePreviewVisible(bool visible)
+        {
+            var preview = FindInScene<AutomaticTableCandidatePreview>(
+                gameObject.scene);
+            preview?.SetShowCandidates(visible);
         }
 
         void Start()
@@ -147,7 +161,7 @@ namespace F1XR.Debugging
                 yield break;
             }
 
-            var mapReadyAt = Time.unscaledTime + temporaryMapModelWaitSeconds;
+            var mapReadyAt = Time.unscaledTime + TemporaryMapModelWaitSeconds;
             while (!placer.HasTrackMapPrefab && Time.unscaledTime < mapReadyAt)
                 yield return null;
 
@@ -168,11 +182,11 @@ namespace F1XR.Debugging
             forward.Normalize();
 
             Vector3 position = view.position +
-                forward * temporaryMapDistance +
-                Vector3.up * temporaryMapHeightOffset;
+                forward * TemporaryMapDistance +
+                Vector3.up * TemporaryMapHeightOffset;
             Quaternion rotation =
                 Quaternion.LookRotation(forward, Vector3.up) *
-                Quaternion.Euler(0f, temporaryMapYawOffset, 0f);
+                Quaternion.Euler(0f, TemporaryMapYawOffset, 0f);
             bool revealCompleted = false;
             Action onPlacementRevealed = () => revealCompleted = true;
             if (enterVrDroneOnPlay)
@@ -181,7 +195,7 @@ namespace F1XR.Debugging
             if (!placer.TryCreateRuntimeDebugPlacement(
                     position,
                     rotation,
-                    temporaryMapScale))
+                    TemporaryMapScale))
             {
                 if (enterVrDroneOnPlay)
                     placer.PlacementRevealed -= onPlacementRevealed;

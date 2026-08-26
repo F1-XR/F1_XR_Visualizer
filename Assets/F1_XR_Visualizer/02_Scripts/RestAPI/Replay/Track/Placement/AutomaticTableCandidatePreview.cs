@@ -30,6 +30,13 @@ namespace F1XR.RestAPI.Replay.Track.Placement
                 ClearPreviews();
         }
 
+        public void SetShowCandidates(bool visible)
+        {
+            showCandidates = visible;
+            if (!showCandidates)
+                ClearPreviews();
+        }
+
         private void Reset()
         {
             placementController = GetComponent<ARPlanePlacementController>();
