@@ -17,6 +17,7 @@ namespace F1XR.Drone
         public readonly int driverNumber;
         public readonly int rank;
         public readonly string driverLabel;
+        public readonly string driverName;
         public readonly string teamName;
         public readonly Color teamColor;
         public readonly bool hasTelemetry;
@@ -31,6 +32,7 @@ namespace F1XR.Drone
             int driverNumber,
             int rank,
             string driverLabel,
+            string driverName,
             string teamName,
             Color teamColor,
             bool hasTelemetry,
@@ -44,6 +46,7 @@ namespace F1XR.Drone
             this.driverNumber = driverNumber;
             this.rank = rank;
             this.driverLabel = driverLabel;
+            this.driverName = driverName;
             this.teamName = teamName;
             this.teamColor = teamColor;
             this.hasTelemetry = hasTelemetry;
@@ -214,6 +217,7 @@ namespace F1XR.Drone
                     position.driverNumber,
                     position.position,
                     label,
+                    driver?.fullName ?? label,
                     team,
                     replayPlayer.GetDriverColor(position.driverNumber),
                     hasTelemetry,
@@ -853,7 +857,11 @@ namespace F1XR.Drone
             readonly TextMeshProUGUI rank;
             readonly TextMeshProUGUI speed;
             readonly Image brakeBadge;
+            readonly Image portrait;
             readonly CanvasGroup canvasGroup;
+            readonly Dictionary<string, Sprite> portraits =
+                new(System.StringComparer.OrdinalIgnoreCase);
+            bool portraitsLoaded;
 
             public WorldTargetCard(
                 Transform parent,
@@ -893,6 +901,17 @@ namespace F1XR.Drone
                 brakeBadge = CreateImage("Brake Badge", root,
                     new Color(0.8f, 0.04f, 0.02f, 0.95f));
                 brakeBadge.material = uiMaterial;
+                portrait = CreateImage("Driver Portrait", root, Color.white);
+                portrait.material = uiMaterial;
+                portrait.preserveAspect = true;
+                portrait.raycastTarget = false;
+                portrait.transform.SetSiblingIndex(1);
+                RectTransform portraitRect = portrait.rectTransform;
+                portraitRect.anchorMin = Vector2.one;
+                portraitRect.anchorMax = Vector2.one;
+                portraitRect.pivot = Vector2.one;
+                portraitRect.anchoredPosition = new Vector2(-44f, -48f);
+                portraitRect.sizeDelta = new Vector2(90f, 258f);
                 TextMeshProUGUI brake = CreateText(
                     "Brake", brakeBadge.transform, 22f, font, textMaterial);
                 SetRect(number.rectTransform, new Vector2(34f, -30f), new Vector2(340f, 38f));
@@ -931,7 +950,38 @@ namespace F1XR.Drone
                     ? $"{Mathf.RoundToInt(target.speedKph)} KM/H"
                     : "-- KM/H";
                 brakeBadge.gameObject.SetActive(target.isBraking);
+                portrait.sprite = GetPortrait(target.driverName);
+                portrait.enabled = portrait.sprite != null;
                 root.gameObject.SetActive(true);
+            }
+
+            Sprite GetPortrait(string driverName)
+            {
+                if (string.IsNullOrWhiteSpace(driverName))
+                    return null;
+
+                LoadPortraits();
+                return portraits.TryGetValue(
+                    driverName.Replace(" ", "_"),
+                    out Sprite result)
+                    ? result
+                    : null;
+            }
+
+            void LoadPortraits()
+            {
+                if (portraitsLoaded)
+                    return;
+
+                portraitsLoaded = true;
+                foreach (Texture2D texture in Resources.LoadAll<Texture2D>(
+                    "DriverPortraits_2026"))
+                {
+                    portraits[texture.name] = Sprite.Create(
+                        texture,
+                        new Rect(0f, 0f, texture.width, texture.height),
+                        new Vector2(0.5f, 0.5f));
+                }
             }
 
             public Vector3 GetSidePoint(float side)

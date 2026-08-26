@@ -8,10 +8,22 @@ namespace F1XR.RestAPI.UI
 {
     public partial class ReplayUI
     {
+        private const float DriverPortraitWidth = 92f;
+        private const float DriverPortraitHeight = 96.7f;
+        private Image driverDetailPortrait;
+        private readonly Dictionary<string, Sprite> driverPortraits =
+            new(System.StringComparer.OrdinalIgnoreCase);
+        private bool driverPortraitsLoaded;
+
         private void EnsureDriverDetailPanel()
         {
-            if (driverDetailRoot != null ||
-                standingsRoot == null)
+            if (driverDetailRoot != null)
+            {
+                RefreshDriverDetailLayout();
+                return;
+            }
+
+            if (standingsRoot == null)
                 return;
 
             driverDetailRoot = new GameObject(
@@ -38,7 +50,9 @@ namespace F1XR.RestAPI.UI
                 new Vector2(standingsSize.x + 8f, 0f);
 
             driverDetailRoot.sizeDelta =
-                driverDetailSize;
+                new Vector2(
+                    driverDetailSize.x + DriverPortraitWidth,
+                    driverDetailSize.y);
 
             driverDetailRoot.localRotation =
                 standingsRoot.localRotation;
@@ -148,6 +162,26 @@ namespace F1XR.RestAPI.UI
                 driverDetailSize.x - 26f,
                 20f);
 
+            driverDetailPortrait = new GameObject(
+                "DriverPortrait",
+                typeof(RectTransform),
+                typeof(Image))
+                .GetComponent<Image>();
+
+            driverDetailPortrait.transform.SetParent(
+                driverDetailRoot,
+                false);
+
+            driverDetailPortrait.preserveAspect = false;
+            driverDetailPortrait.raycastTarget = false;
+
+            SetRect(
+                driverDetailPortrait.rectTransform,
+                driverDetailSize.x - 8f,
+                -(driverDetailSize.y - DriverPortraitHeight),
+                DriverPortraitWidth - 8f,
+                DriverPortraitHeight);
+
             Button close = new GameObject(
                 "Close",
                 typeof(RectTransform),
@@ -161,7 +195,7 @@ namespace F1XR.RestAPI.UI
 
             SetRect(
                 close.GetComponent<RectTransform>(),
-                driverDetailSize.x - 26f,
+                driverDetailSize.x + DriverPortraitWidth - 26f,
                 -6f,
                 20f,
                 20f);
@@ -194,6 +228,34 @@ namespace F1XR.RestAPI.UI
 
             driverDetailRoot.gameObject.SetActive(false);
             EnsureDriverOnboardPanel();
+        }
+
+        private void RefreshDriverDetailLayout()
+        {
+            driverDetailRoot.sizeDelta = new Vector2(
+                driverDetailSize.x + DriverPortraitWidth,
+                driverDetailSize.y);
+
+            if (driverDetailPortrait != null)
+            {
+                SetRect(
+                    driverDetailPortrait.rectTransform,
+                    driverDetailSize.x - 8f,
+                    -(driverDetailSize.y - DriverPortraitHeight),
+                    DriverPortraitWidth - 8f,
+                    DriverPortraitHeight);
+            }
+
+            Transform close = driverDetailRoot.Find("Close");
+            if (close != null)
+            {
+                SetRect(
+                    close.GetComponent<RectTransform>(),
+                    driverDetailSize.x + DriverPortraitWidth - 26f,
+                    -6f,
+                    20f,
+                    20f);
+            }
         }
 
         private void ShowDriverDetail(int driverNumber)
@@ -320,6 +382,8 @@ namespace F1XR.RestAPI.UI
                     new Color(0.72f, 0.76f, 0.82f);
             }
 
+            RefreshDriverPortrait(driver);
+
             foreach (StandingRow row in standingRows)
             {
                 row.SetSelected(
@@ -360,6 +424,53 @@ namespace F1XR.RestAPI.UI
                 return driver.nameAcronym;
 
             return $"Driver #{driverNumber}";
+        }
+
+        private void RefreshDriverPortrait(DriverInfoDto driver)
+        {
+            if (driverDetailPortrait == null)
+                return;
+
+            string portraitName = driver?.fullName?.Replace(" ", "_");
+            driverDetailPortrait.sprite =
+                string.IsNullOrWhiteSpace(portraitName)
+                    ? null
+                    : GetDriverPortrait(portraitName);
+            driverDetailPortrait.enabled =
+                driverDetailPortrait.sprite != null;
+        }
+
+        private Sprite GetDriverPortrait(string portraitName)
+        {
+            LoadDriverPortraits();
+            return driverPortraits.TryGetValue(
+                portraitName,
+                out Sprite portrait)
+                ? portrait
+                : null;
+        }
+
+        private void LoadDriverPortraits()
+        {
+            if (driverPortraitsLoaded)
+                return;
+
+            driverPortraitsLoaded = true;
+
+            foreach (Texture2D texture in Resources.LoadAll<Texture2D>(
+                "DriverPortraits_2026"))
+            {
+                float torsoStart = texture.height * 0.60f;
+
+                driverPortraits[texture.name] = Sprite.Create(
+                    texture,
+                    new Rect(
+                        0f,
+                        torsoStart,
+                        texture.width,
+                        texture.height - torsoStart),
+                    new Vector2(0.5f, 0.5f));
+            }
         }
     }
 }
