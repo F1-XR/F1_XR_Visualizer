@@ -112,7 +112,7 @@ namespace F1XR.EditorTools
             changed |= SetFalse(
                 serializedDebugger,
                 "showTablePlacementCandidatesOnPlay");
-            changed |= SetFalse(
+            changed |= SetTrue(
                 serializedDebugger,
                 "placeTemporaryMapInFrontOfVrOrigin");
             changed |= SetFalse(
@@ -132,6 +132,16 @@ namespace F1XR.EditorTools
                 return false;
 
             property.boolValue = false;
+            return true;
+        }
+
+        static bool SetTrue(SerializedObject target, string propertyName)
+        {
+            SerializedProperty property = target.FindProperty(propertyName);
+            if (property == null || property.boolValue)
+                return false;
+
+            property.boolValue = true;
             return true;
         }
     }

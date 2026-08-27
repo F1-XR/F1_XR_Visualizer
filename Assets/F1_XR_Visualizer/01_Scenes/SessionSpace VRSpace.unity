@@ -380,7 +380,7 @@ MonoBehaviour:
   coordinatorWaitSeconds: 10
   skipSpatialSetupOnPlay: 0
   showTablePlacementCandidatesOnPlay: 0
-  placeTemporaryMapInFrontOfVrOrigin: 0
+  placeTemporaryMapInFrontOfVrOrigin: 1
   enterVrDroneOnPlay: 0
 --- !u!1 &417482157
 GameObject:
@@ -3624,7 +3624,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.Build.TrackCloudPlacer
   trackPlacer: {fileID: 1113257129}
   cloudPrefab: {fileID: 6351855780575177041, guid: 8f93a849e381118469f4fef822615e42, type: 3}
-  cloudHeightOffset: 0.15
+  cloudHeightOffset: 0.075
   cloudSizeRatio: 1.2
   cloudPositionOffset: {x: 0, y: 0, z: 0}
   rainDropWidthMm: 0.77

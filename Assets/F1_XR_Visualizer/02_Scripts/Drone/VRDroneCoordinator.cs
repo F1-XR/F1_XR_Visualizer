@@ -22,6 +22,14 @@ namespace F1XR.Drone
 
         [SerializeField, Min(1f)] float vrScaleMultiplier = 1000f;
 
+        [Header("MR Drone View")]
+        [Tooltip("Visual shown on the tabletop map before entering VR drone mode. " +
+            "The grab volume and transition stay on the runtime marker root.")]
+        [SerializeField] GameObject droneViewVisualPrefab;
+
+        [Tooltip("Use 180 when the imported drone model faces opposite the track direction.")]
+        [SerializeField] float droneViewVisualYawOffset;
+
         [Header("Drone Camera")]
         [Tooltip("Far clip while flying. The aerial ground is 11.3 km across, so the rig's " +
             "default of a kilometre would cut most of it off mid-air.")]
@@ -370,7 +378,9 @@ namespace F1XR.Drone
                 cubeSpawner.Configure(
                     trackPlacer,
                     xrCamera.transform,
-                    showGrabRange);
+                    showGrabRange,
+                    droneViewVisualPrefab,
+                    droneViewVisualYawOffset);
                 appliedShowGrabVolumeVisual = showGrabRange;
                 cubeSpawner.CubeReleased -= EnterVr;
                 cubeSpawner.CubeReleased += EnterVr;
@@ -416,7 +426,8 @@ namespace F1XR.Drone
             vehicleTargeting.Configure(
                 replayPlayer,
                 worldTargetPresenter,
-                xrCamera);
+                xrCamera,
+                droneHud);
 
             if (debugSkipPlacementAndEnterDrone)
                 StartCoroutine(EnterDroneDebugWhenReady());

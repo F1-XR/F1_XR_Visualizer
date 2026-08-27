@@ -24,6 +24,13 @@ namespace F1XR.Drone
         const int SpeedWarningKph = 300;
         const int HighSpeedUpdateThresholdKph = 100;
         static readonly Vector2 CanvasSize = new(2200f, 1238f);
+        static readonly Rect[] VehicleFadeRegions =
+        {
+            new(0.42f, 0.91f, 0.16f, 0.08f),
+            new(0.46f, 0.45f, 0.08f, 0.1f),
+            new(0.34f, 0.02f, 0.32f, 0.34f),
+            new(0.02f, 0.05f, 0.3f, 0.13f),
+        };
 
         [Header("Speedometer")]
         [SerializeField] TMP_FontAsset f1NumberFont;
@@ -34,10 +41,19 @@ namespace F1XR.Drone
         [SerializeField] SpeedIndicatorStyle speedIndicatorStyle =
             SpeedIndicatorStyle.Tick;
 
+        [Header("Vehicle Overlap")]
+        [SerializeField, Range(0.1f, 1f)] float vehicleOverlapAlpha = 0.45f;
+        [SerializeField, Range(0.5f, 1f)] float vehicleOverlapScale = 0.5f;
+        [SerializeField, Min(0.05f)] float vehicleOverlapTransitionDuration = 0.28f;
+
         [Header("Debug")]
         [SerializeField] bool showFlightInputDiagnostic = true;
 
         Canvas canvas;
+        CanvasGroup hudContentGroup;
+        RectTransform exitHint;
+        RectTransform speedometerScaleAnchor;
+        RectTransform speedometerGroup;
         Camera xrCamera;
         Image exitProgress;
         Image[] speedMarkers;
@@ -50,9 +66,12 @@ namespace F1XR.Drone
         float targetSpeedKph;
         float displayedSpeedKph;
         float nextSpeedUpdateTime;
+        float hudContentAlphaVelocity;
+        float speedometerScaleVelocity;
         int displayedSpeed = -1;
         int activeSpeedMarkers = -1;
         bool isVisible;
+        bool isVehicleOverHud;
 
         public TMP_FontAsset NumberFont => f1NumberFont;
 
@@ -82,6 +101,8 @@ namespace F1XR.Drone
             canvas.gameObject.SetActive(true);
             SetExitHoldProgress(0f);
             ResetSpeedometer();
+            isVehicleOverHud = false;
+            ResetHudContentVisual();
             isVisible = true;
             UpdatePose();
         }
@@ -91,6 +112,8 @@ namespace F1XR.Drone
             isVisible = false;
             xrCamera = null;
             ResetSpeedometer();
+            isVehicleOverHud = false;
+            ResetHudContentVisual();
             if (canvas != null)
                 canvas.gameObject.SetActive(false);
         }
@@ -127,7 +150,46 @@ namespace F1XR.Drone
             {
                 UpdatePose();
                 UpdateSpeedometer();
+                UpdateVehicleOverlapFade();
             }
+        }
+
+        void UpdateVehicleOverlapFade()
+        {
+            if (hudContentGroup == null)
+                return;
+
+            float targetAlpha = isVehicleOverHud ? vehicleOverlapAlpha : 1f;
+            float targetScale = isVehicleOverHud ? vehicleOverlapScale : 1f;
+            hudContentGroup.alpha = Mathf.SmoothDamp(
+                hudContentGroup.alpha,
+                targetAlpha,
+                ref hudContentAlphaVelocity,
+                vehicleOverlapTransitionDuration,
+                Mathf.Infinity,
+                Time.unscaledDeltaTime);
+            if (speedometerScaleAnchor != null)
+            {
+                float scale = Mathf.SmoothDamp(
+                    speedometerScaleAnchor.localScale.x,
+                    targetScale,
+                    ref speedometerScaleVelocity,
+                    vehicleOverlapTransitionDuration,
+                    Mathf.Infinity,
+                    Time.unscaledDeltaTime);
+                speedometerScaleAnchor.localScale = Vector3.one * scale;
+            }
+        }
+
+        void ResetHudContentVisual()
+        {
+            if (hudContentGroup != null)
+                hudContentGroup.alpha = 1f;
+            if (speedometerScaleAnchor != null)
+                speedometerScaleAnchor.localScale = Vector3.one;
+
+            hudContentAlphaVelocity = 0f;
+            speedometerScaleVelocity = 0f;
         }
 
         void UpdatePose()
@@ -159,12 +221,19 @@ namespace F1XR.Drone
             rect.sizeDelta = CanvasSize;
             rect.localScale = Vector3.one * hudScale;
 
-            CreateFrame(rect);
-            CreateHeader(rect);
-            CreateCrosshair(rect);
-            CreateExitHint(rect);
-            CreateSpeedometer(rect);
-            CreateFlightInputDiagnostic(rect);
+            RectTransform hudContent = CreateRect("HUD Content", rect);
+            hudContent.anchorMin = Vector2.zero;
+            hudContent.anchorMax = Vector2.one;
+            hudContent.offsetMin = Vector2.zero;
+            hudContent.offsetMax = Vector2.zero;
+            hudContentGroup = hudContent.gameObject.AddComponent<CanvasGroup>();
+
+            CreateFrame(hudContent);
+            CreateHeader(hudContent);
+            CreateCrosshair(hudContent);
+            CreateExitHint(hudContent);
+            CreateSpeedometer(hudContent);
+            CreateFlightInputDiagnostic(hudContent);
             targetOverlay = CreateRect("Vehicle Targets", rect);
             targetOverlay.anchorMin = Vector2.zero;
             targetOverlay.anchorMax = Vector2.one;
@@ -215,6 +284,25 @@ namespace F1XR.Drone
 
             targetCard ??= CreateTargetCard(targetOverlay);
             targetCard.SetTarget(targets[0]);
+        }
+
+        public void SetVehicleOverlapTargets(IReadOnlyList<DroneVehicleTarget> targets)
+        {
+            isVehicleOverHud = false;
+            if (targets == null)
+                return;
+
+            foreach (DroneVehicleTarget target in targets)
+            {
+                foreach (Rect region in VehicleFadeRegions)
+                {
+                    if (target.viewportRect.Overlaps(region))
+                    {
+                        isVehicleOverHud = true;
+                        return;
+                    }
+                }
+            }
         }
 
         void EnsureTargetBoxCount(int count)
@@ -377,7 +465,8 @@ namespace F1XR.Drone
 
         void CreateExitHint(RectTransform parent)
         {
-            RectTransform group = CreateRect("Exit Hold Hint", parent);
+            exitHint = CreateRect("Exit Hold Hint", parent);
+            RectTransform group = exitHint;
             group.anchorMin = new Vector2(0.5f, 0f);
             group.anchorMax = new Vector2(0.5f, 0f);
             group.pivot = new Vector2(0.5f, 0f);
@@ -413,13 +502,27 @@ namespace F1XR.Drone
 
         void CreateSpeedometer(RectTransform parent)
         {
-            RectTransform group = CreateRect("Speedometer", parent);
-            group.anchorMin = new Vector2(0.5f, 0f);
-            group.anchorMax = new Vector2(0.5f, 0f);
-            group.pivot = new Vector2(0.5f, 0.5f);
-            group.anchoredPosition = new Vector2(0f, 200f);
-            group.sizeDelta = new Vector2(470f, 470f);
-            group.localScale = Vector3.one * SpeedometerScale;
+            float exitHintLineY = exitHint != null
+                ? exitHint.anchoredPosition.y + exitHint.sizeDelta.y * 0.5f
+                : 65f;
+            speedometerScaleAnchor = CreateRect(
+                "Speedometer Scale Anchor",
+                parent);
+            speedometerScaleAnchor.anchorMin = new Vector2(0.5f, 0f);
+            speedometerScaleAnchor.anchorMax = new Vector2(0.5f, 0f);
+            speedometerScaleAnchor.pivot = new Vector2(0.5f, 0f);
+            speedometerScaleAnchor.anchoredPosition =
+                new Vector2(0f, exitHintLineY);
+            speedometerScaleAnchor.sizeDelta = Vector2.zero;
+
+            speedometerGroup = CreateRect("Speedometer", speedometerScaleAnchor);
+            speedometerGroup.anchorMin = new Vector2(0.5f, 0f);
+            speedometerGroup.anchorMax = new Vector2(0.5f, 0f);
+            speedometerGroup.pivot = new Vector2(0.5f, 0f);
+            speedometerGroup.anchoredPosition = new Vector2(0f, 20f);
+            speedometerGroup.sizeDelta = new Vector2(470f, 470f);
+            speedometerGroup.localScale = Vector3.one * SpeedometerScale;
+            RectTransform group = speedometerGroup;
 
             const float outlineRadius = 205f;
             const float innerOutlineRadius = 150f;

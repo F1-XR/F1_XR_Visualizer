@@ -11,6 +11,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         [SerializeField] TrackRevealPlacer trackPlacer;
         [SerializeField] Transform viewerCamera;
         [SerializeField, Min(0.001f)] float cubeSize = 0.05f / 3f;
+        [SerializeField, Min(0.1f)] float droneVisualScaleMultiplier = 3f;
         [SerializeField, Min(0.001f)] float grabVolumeSize = 0.08f;
         [SerializeField, Min(1f)] float hoverScale = 2.5f;
         [SerializeField, Min(0.01f)] float hoverScaleSpeed = 12f;
@@ -22,9 +23,11 @@ namespace F1XR.RestAPI.Replay.Track.Build
 
         GameObject cube;
         GameObject grabVolumeVisual;
+        GameObject droneVisualPrefab;
         Transform cubeVisual;
         Transform observedPlacement;
         Material grabVolumeMaterial;
+        float droneVisualYawOffset;
         bool isCubeHovered;
         bool showGrabVolumeVisual;
 
@@ -66,11 +69,15 @@ namespace F1XR.RestAPI.Replay.Track.Build
         public void Configure(
             TrackRevealPlacer source,
             Transform cameraTransform,
-            bool showGrabVisual)
+            bool showGrabVisual,
+            GameObject visualPrefab,
+            float visualYawOffset)
         {
             trackPlacer = source;
             viewerCamera = cameraTransform;
             showGrabVolumeVisual = showGrabVisual;
+            droneVisualPrefab = visualPrefab;
+            droneVisualYawOffset = visualYawOffset;
             observedPlacement = null;
         }
 
@@ -128,26 +135,26 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 cubeSize * 0.5f +
                 surfaceClearance;
 
+            Vector3 trackForward = Vector3.ProjectOnPlane(placement.forward, up);
+            if (trackForward.sqrMagnitude < 0.0001f)
+                trackForward = viewDirection;
+            trackForward.Normalize();
+
             cube = new GameObject("Drone View Cube");
             cube.name = "Drone View Cube";
-            cube.transform.SetPositionAndRotation(position, Quaternion.identity);
+            cube.transform.SetPositionAndRotation(
+                position,
+                Quaternion.LookRotation(trackForward, up));
             cube.transform.SetParent(placement, true);
 
             SphereCollider grabCollider = cube.AddComponent<SphereCollider>();
             grabCollider.radius = grabVolumeSize * 0.5f;
             UpdateGrabVolumeVisual();
 
-            GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            visual.name = "Visual";
+            GameObject visual = new GameObject("Visual");
             visual.transform.SetParent(cube.transform, false);
-            visual.transform.localScale = Vector3.one * cubeSize;
-            Collider visualCollider = visual.GetComponent<Collider>();
-            if (visualCollider != null)
-                visualCollider.enabled = false;
-
-            Renderer renderer = visual.GetComponent<Renderer>();
-            if (renderer != null)
-                renderer.material.color = cubeColor;
+            if (!TryCreateDroneVisual(visual.transform))
+                CreateFallbackCubeVisual(visual.transform);
 
             Rigidbody body = cube.AddComponent<Rigidbody>();
             body.useGravity = false;
@@ -176,18 +183,91 @@ namespace F1XR.RestAPI.Replay.Track.Build
             isCubeHovered = false;
         }
 
+        bool TryCreateDroneVisual(Transform visualRoot)
+        {
+            if (droneVisualPrefab == null)
+                return false;
+
+            GameObject droneVisual = Instantiate(droneVisualPrefab, visualRoot, false);
+            droneVisual.name = "Drone.fbx Visual";
+            droneVisual.transform.localRotation = Quaternion.Euler(
+                0f,
+                droneVisualYawOffset,
+                0f);
+
+            foreach (Collider collider in droneVisual.GetComponentsInChildren<Collider>(true))
+                collider.enabled = false;
+
+            if (!TryGetLocalRendererBounds(droneVisual, visualRoot, out Bounds localBounds))
+            {
+                Debug.LogWarning(
+                    "[DroneView] Drone visual has no renderers; using the fallback cube.",
+                    this);
+                Destroy(droneVisual);
+                return false;
+            }
+
+            float longestAxis = Mathf.Max(
+                localBounds.size.x,
+                localBounds.size.y,
+                localBounds.size.z);
+            if (longestAxis < 0.0001f)
+            {
+                Debug.LogWarning(
+                    "[DroneView] Drone visual has invalid bounds; using the fallback cube.",
+                    this);
+                Destroy(droneVisual);
+                return false;
+            }
+
+            droneVisual.transform.localScale *=
+                cubeSize * droneVisualScaleMultiplier / longestAxis;
+            TryGetLocalRendererBounds(droneVisual, visualRoot, out localBounds);
+            droneVisual.transform.localPosition = new Vector3(
+                -localBounds.center.x,
+                -cubeSize * 0.5f - localBounds.min.y,
+                -localBounds.center.z);
+            cubeVisual = visualRoot;
+            return true;
+        }
+
+        void CreateFallbackCubeVisual(Transform visualRoot)
+        {
+            if (droneVisualPrefab == null)
+            {
+                Debug.LogWarning(
+                    "[DroneView] Drone visual is not assigned; using the fallback cube.",
+                    this);
+            }
+
+            GameObject fallback = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            fallback.name = "Fallback Cube";
+            fallback.transform.SetParent(visualRoot, false);
+            fallback.transform.localScale = Vector3.one * cubeSize;
+
+            Collider fallbackCollider = fallback.GetComponent<Collider>();
+            if (fallbackCollider != null)
+                fallbackCollider.enabled = false;
+
+            Renderer renderer = fallback.GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.material.color = cubeColor;
+
+            cubeVisual = visualRoot;
+        }
+
         void UpdateCubeVisual()
         {
             if (cubeVisual == null)
                 return;
 
             float targetScale = isCubeHovered ? hoverScale : 1f;
-            float currentScale = cubeVisual.localScale.x / cubeSize;
+            float currentScale = cubeVisual.localScale.x;
             float nextScale = Mathf.MoveTowards(
                 currentScale,
                 targetScale,
                 hoverScaleSpeed * Time.deltaTime);
-            cubeVisual.localScale = Vector3.one * cubeSize * nextScale;
+            cubeVisual.localScale = Vector3.one * nextScale;
         }
 
         void UpdateGrabVolumeVisual()
@@ -293,6 +373,48 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 else
                 {
                     bounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            return hasBounds;
+        }
+
+        static bool TryGetLocalRendererBounds(
+            GameObject target,
+            Transform relativeTo,
+            out Bounds bounds)
+        {
+            bounds = default;
+            bool hasBounds = false;
+            Matrix4x4 worldToLocal = relativeTo.worldToLocalMatrix;
+
+            foreach (Renderer renderer in target.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null)
+                    continue;
+
+                Bounds rendererBounds = renderer.localBounds;
+                Matrix4x4 toRelative = worldToLocal * renderer.localToWorldMatrix;
+                Vector3 extents = rendererBounds.extents;
+                Vector3 center = rendererBounds.center;
+
+                for (int x = -1; x <= 1; x += 2)
+                for (int y = -1; y <= 1; y += 2)
+                for (int z = -1; z <= 1; z += 2)
+                {
+                    Vector3 corner = center + Vector3.Scale(
+                        extents,
+                        new Vector3(x, y, z));
+                    Vector3 point = toRelative.MultiplyPoint3x4(corner);
+                    if (!hasBounds)
+                    {
+                        bounds = new Bounds(point, Vector3.zero);
+                        hasBounds = true;
+                    }
+                    else
+                    {
+                        bounds.Encapsulate(point);
+                    }
                 }
             }
 

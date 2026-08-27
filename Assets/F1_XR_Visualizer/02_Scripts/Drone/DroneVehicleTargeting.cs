@@ -67,6 +67,7 @@ namespace F1XR.Drone
 
         ReplayPlayer replayPlayer;
         DroneVehicleWorldTargetPresenter presenter;
+        VRDroneHud droneHud;
         Camera camera;
         bool isVisible;
         int selectedDriverNumber = -1;
@@ -74,11 +75,13 @@ namespace F1XR.Drone
         public void Configure(
             ReplayPlayer source,
             DroneVehicleWorldTargetPresenter targetPresenter,
-            Camera targetCamera)
+            Camera targetCamera,
+            VRDroneHud hud)
         {
             replayPlayer = source;
             presenter = targetPresenter;
             camera = targetCamera;
+            droneHud = hud;
         }
 
         public void Show(Camera targetCamera)
@@ -94,6 +97,7 @@ namespace F1XR.Drone
             isVisible = false;
             visibleTargets.Clear();
             presenter?.Hide();
+            droneHud?.SetVehicleOverlapTargets(visibleTargets);
         }
 
         public bool SelectDriverAhead()
@@ -133,6 +137,7 @@ namespace F1XR.Drone
             if (replayPlayer == null || presenter == null || camera == null)
             {
                 presenter?.SetTargets(visibleTargets);
+                droneHud?.SetVehicleOverlapTargets(visibleTargets);
                 return;
             }
 
@@ -140,6 +145,7 @@ namespace F1XR.Drone
             if (positions == null)
             {
                 presenter.SetTargets(visibleTargets);
+                droneHud?.SetVehicleOverlapTargets(visibleTargets);
                 return;
             }
 
@@ -212,6 +218,7 @@ namespace F1XR.Drone
                     visibleTargets.Count - maximumVisibleTargets);
 
             presenter.SetTargets(visibleTargets);
+            droneHud?.SetVehicleOverlapTargets(visibleTargets);
         }
 
         int ActiveDriverNumber => selectedDriverNumber;

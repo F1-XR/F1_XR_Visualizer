@@ -380,7 +380,7 @@ MonoBehaviour:
   coordinatorWaitSeconds: 10
   skipSpatialSetupOnPlay: 0
   showTablePlacementCandidatesOnPlay: 0
-  placeTemporaryMapInFrontOfVrOrigin: 0
+  placeTemporaryMapInFrontOfVrOrigin: 1
   enterVrDroneOnPlay: 0
 --- !u!1 &417482157
 GameObject:

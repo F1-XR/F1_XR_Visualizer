@@ -199,6 +199,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::F1XR.Drone.VRDroneCoordinator
   vrScaleMultiplier: 1000
+  droneViewVisualPrefab: {fileID: 919132149155446097, guid: 0cf9ef2b850c42db9bac8192b7dd6a56, type: 3}
+  droneViewVisualYawOffset: 0
   droneFarClipPlane: 5000
   useAerialGround: 1
   aerialLocalPosition: {x: -64.9576, y: 26.56, z: 40.0006}
@@ -284,7 +286,7 @@ MonoBehaviour:
   mapShrinkStartRevealCoverage: 0.75
   mapShrinkDuration: 1
   skyFractureCommitTimeout: 4
-  showGrabRange: 1
+  showGrabRange: 0
   debugSkipPlacementAndEnterDrone: 0
   debugDroneEntryLocalPoint: {x: 0, y: 0, z: 0}
 --- !u!114 &2003

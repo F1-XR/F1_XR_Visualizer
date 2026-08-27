@@ -27,7 +27,7 @@ namespace F1XR.Debugging
         [Tooltip("Shows blue overlays on detected surfaces that satisfy the automatic table placement rules.")]
         [SerializeField] bool showTablePlacementCandidatesOnPlay;
         [Header("Temporary Map")]
-        [SerializeField] bool placeTemporaryMapInFrontOfVrOrigin;
+        [SerializeField] bool placeTemporaryMapInFrontOfVrOrigin = true;
         [Header("VR Drone")]
         [SerializeField] bool enterVrDroneOnPlay;
         [Header("Weather Debug")]
