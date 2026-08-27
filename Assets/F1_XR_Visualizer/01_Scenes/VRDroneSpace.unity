@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 20d4f77b9022eab48b4d94599ed4bf82, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -268,7 +268,8 @@ MonoBehaviour:
     m_RotationOrder: 4
   useTrackFracture: 0
   useSkyShellExit: 1
-  vrSkybox: {fileID: 2100000, guid: 1c693427bae319a4b9cd4fac890cfa2c, type: 2}
+  vrSkybox: {fileID: 2100000, guid: 20d4f77b9022eab48b4d94599ed4bf82, type: 2}
+  rainSkybox: {fileID: 2100000, guid: 2039a0ad0a9d05549928b70362f54902, type: 2}
   useRoomShellEnter: 1
   useRoomShellExit: 1
   earlyShrinkDuration: 0.5

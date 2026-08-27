@@ -129,6 +129,8 @@ namespace F1XR.Drone
         [Tooltip("Skybox shown while flying. Swapped in behind the blink, so the change is " +
             "never visible, and put back on the way out. Leave empty to keep the void.")]
         [SerializeField] Material vrSkybox;
+        [SerializeField] Material rainSkybox;
+        [SerializeField, Min(0.1f)] float rainSkyboxTransitionDuration = 2f;
 
         [Header("Room Shell")]
         [Tooltip("Enters VR by breaking the real room instead of blinking. Falls back to the " +
@@ -292,6 +294,13 @@ namespace F1XR.Drone
         Vector3 entryPointLocal;
         Scene hostScene;
         bool hasHostScene;
+        WeatherController weatherController;
+        Coroutine skyboxTransitionRoutine;
+        Material skyboxTransitionMaterial;
+        Material displayedVrSkybox;
+
+        Material ActiveVrSkybox => weatherController != null && weatherController.IsRaining &&
+            rainSkybox != null ? rainSkybox : vrSkybox;
 
         public bool IsVrActive => isVrActive;
         public bool IsRankSelectionActive => rankSelectionRoutine != null;
@@ -310,6 +319,7 @@ namespace F1XR.Drone
 
             hostScene = scene;
             hasHostScene = true;
+            BindWeatherController();
         }
 
         void Start()
@@ -328,6 +338,12 @@ namespace F1XR.Drone
 
         void OnDestroy()
         {
+            if (skyboxTransitionMaterial != null)
+                Destroy(skyboxTransitionMaterial);
+
+            if (weatherController != null)
+                weatherController.RainChanged -= OnRainChanged;
+
             if (cubeSpawner != null)
                 cubeSpawner.CubeReleased -= EnterVr;
 
@@ -343,7 +359,7 @@ namespace F1XR.Drone
             // rather than at the transition, where those six camera renders land on the frames
             // the room is coming apart and read as a click. The shell picks it up by itself if
             // it is switched off at this point.
-            skyShell?.SetSkyboxSource(vrSkybox);
+            skyShell?.SetSkyboxSource(ActiveVrSkybox);
 
             if (!debugSkipPlacementAndEnterDrone)
             {
@@ -415,6 +431,7 @@ namespace F1XR.Drone
                 return false;
 
             trackPlacer ??= FindInScene<TrackRevealPlacer>(hostScene);
+            BindWeatherController();
             xrOrigin ??= FindInScene<XROrigin>(hostScene);
             environment ??= FindRoot(vrScene, EnvironmentName);
             passthroughLayer ??= FindInScene(hostScene, "Passthrough Layer");
@@ -673,9 +690,9 @@ namespace F1XR.Drone
             {
                 // Before the depth mode, which is the call that first resolves the shell
                 // materials: the bake has to know which sky it is standing in for by then.
-                skyShell.SetSkyboxSource(vrSkybox);
+                skyShell.SetSkyboxSource(ActiveVrSkybox);
                 skyShell.SetTransitionDepthMode(true);
-                skyShell.Prepare(xrCamera.transform, passthrough, vrSkybox);
+                skyShell.Prepare(xrCamera.transform, passthrough, ActiveVrSkybox);
             }
 
             // The drone world comes up now, while the room still covers it completely, so that
@@ -965,7 +982,7 @@ namespace F1XR.Drone
             // The controller is handed the passthrough owner rather than reaching for it: the
             // compositing test has to bring the underlay up and put it back down again, and
             // nothing else in the drone scene is allowed to touch that state.
-            skyShell.Prepare(xrCamera.transform, passthrough, vrSkybox);
+            skyShell.Prepare(xrCamera.transform, passthrough, ActiveVrSkybox);
 
             if (!skyShell.IsVisible)
             {
@@ -1075,7 +1092,8 @@ namespace F1XR.Drone
         /// </summary>
         void ApplyVrSky()
         {
-            if (vrSkybox == null || xrCamera == null)
+            Material skybox = ActiveVrSkybox;
+            if (skybox == null || xrCamera == null)
                 return;
 
             if (!skyOverridden)
@@ -1084,16 +1102,126 @@ namespace F1XR.Drone
                 skyOverridden = true;
             }
 
-            RenderSettings.skybox = vrSkybox;
+            RenderSettings.skybox = skybox;
+            displayedVrSkybox = skybox;
             xrCamera.clearFlags = CameraClearFlags.Skybox;
+        }
+
+        void BindWeatherController()
+        {
+            if (!hasHostScene || !hostScene.isLoaded)
+                return;
+
+            WeatherController next = FindInScene<WeatherController>(hostScene);
+            if (weatherController == next)
+                return;
+
+            if (weatherController != null)
+                weatherController.RainChanged -= OnRainChanged;
+
+            weatherController = next;
+            if (weatherController == null)
+                return;
+
+            weatherController.RainChanged += OnRainChanged;
+            OnRainChanged(weatherController.IsRaining);
+        }
+
+        void OnRainChanged(bool isRaining)
+        {
+            if (!isVrActive)
+                return;
+
+            StartSkyboxTransition(ActiveVrSkybox);
+        }
+
+        void StartSkyboxTransition(Material targetSkybox)
+        {
+            if (targetSkybox == null)
+                return;
+
+            if (skyboxTransitionRoutine != null)
+                StopCoroutine(skyboxTransitionRoutine);
+
+            Material sourceSkybox = displayedVrSkybox != null
+                ? displayedVrSkybox
+                : RenderSettings.skybox;
+            if (sourceSkybox == null || sourceSkybox == targetSkybox)
+            {
+                RenderSettings.skybox = targetSkybox;
+                displayedVrSkybox = targetSkybox;
+                skyShell?.SetSkyboxSource(targetSkybox);
+                return;
+            }
+
+            if (!TryConfigureSkyboxBlend(sourceSkybox, targetSkybox))
+            {
+                RenderSettings.skybox = targetSkybox;
+                displayedVrSkybox = targetSkybox;
+                skyShell?.SetSkyboxSource(targetSkybox);
+                return;
+            }
+
+            skyboxTransitionRoutine = StartCoroutine(SkyboxTransitionRoutine(targetSkybox));
+        }
+
+        bool TryConfigureSkyboxBlend(Material from, Material to)
+        {
+            Shader shader = Shader.Find("F1XR/Skybox/Cubemap Blend");
+            Cubemap fromTexture = from.GetTexture("_Tex") as Cubemap;
+            Cubemap toTexture = to.GetTexture("_Tex") as Cubemap;
+            if (shader == null || fromTexture == null || toTexture == null)
+                return false;
+
+            if (skyboxTransitionMaterial == null)
+                skyboxTransitionMaterial = new Material(shader)
+                {
+                    name = "Weather Skybox Blend (Runtime)"
+                };
+
+            skyboxTransitionMaterial.SetTexture("_TexA", fromTexture);
+            skyboxTransitionMaterial.SetTexture("_TexB", toTexture);
+            skyboxTransitionMaterial.SetColor("_TintA", from.GetColor("_Tint"));
+            skyboxTransitionMaterial.SetColor("_TintB", to.GetColor("_Tint"));
+            skyboxTransitionMaterial.SetFloat("_ExposureA", from.GetFloat("_Exposure"));
+            skyboxTransitionMaterial.SetFloat("_ExposureB", to.GetFloat("_Exposure"));
+            skyboxTransitionMaterial.SetFloat("_Blend", 0f);
+            return true;
+        }
+
+        IEnumerator SkyboxTransitionRoutine(Material targetSkybox)
+        {
+            RenderSettings.skybox = skyboxTransitionMaterial;
+
+            float elapsed = 0f;
+            while (elapsed < rainSkyboxTransitionDuration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = Mathf.SmoothStep(0f, 1f,
+                    Mathf.Clamp01(elapsed / rainSkyboxTransitionDuration));
+                skyboxTransitionMaterial.SetFloat("_Blend", progress);
+                yield return null;
+            }
+
+            RenderSettings.skybox = targetSkybox;
+            displayedVrSkybox = targetSkybox;
+            skyShell?.SetSkyboxSource(targetSkybox);
+            skyboxTransitionRoutine = null;
         }
 
         void RestoreMrSky()
         {
+            if (skyboxTransitionRoutine != null)
+            {
+                StopCoroutine(skyboxTransitionRoutine);
+                skyboxTransitionRoutine = null;
+            }
+
             if (!skyOverridden)
                 return;
 
             RenderSettings.skybox = savedSkybox;
+            displayedVrSkybox = null;
             skyOverridden = false;
 
             // Clear flags are handed back to whoever owns the screen; the passthrough
@@ -1246,7 +1374,7 @@ namespace F1XR.Drone
             // SkyShell to transition depth mode so mask fragments (queue 1999) can
             // depth-block the sky (queue 2050). Without this the sky at Background queue
             // paints alpha 1 over the whole view before the masks run.
-            skyShell?.SetSkyboxSource(vrSkybox);
+            skyShell?.SetSkyboxSource(ActiveVrSkybox);
             skyShell?.SetTransitionDepthMode(true);
 
             // Passthrough compositing: layer ON, camera alpha 0. The VR environment +

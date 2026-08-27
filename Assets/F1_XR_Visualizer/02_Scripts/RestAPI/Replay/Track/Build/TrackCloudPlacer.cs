@@ -74,6 +74,7 @@ namespace F1XR.RestAPI.Replay.Track.Build
         bool appliedDrone;
         bool appliedSplashOn = true;
         float appliedScale;
+        [SerializeField] bool rainEnabled;
 
         void Awake()
         {
@@ -144,6 +145,40 @@ namespace F1XR.RestAPI.Replay.Track.Build
                 ps.Clear(true);
                 if (!ps.main.loop)
                     ps.Play(true);
+            }
+
+            ApplyRainVisibility(false);
+        }
+
+        public void SetRainEnabled(bool enabled)
+        {
+            bool changed = rainEnabled != enabled;
+            rainEnabled = enabled;
+            ApplyRainVisibility(changed && enabled);
+        }
+
+        void ApplyRainVisibility(bool restartParticles)
+        {
+            if (cloudInstance == null)
+                return;
+
+            if (!rainEnabled)
+            {
+                foreach (var ps in cloudInstance.GetComponentsInChildren<ParticleSystem>(true))
+                    ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+                cloudInstance.SetActive(false);
+                return;
+            }
+
+            cloudInstance.SetActive(true);
+            if (!restartParticles)
+                return;
+
+            foreach (var ps in cloudInstance.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                ps.Clear(true);
+                ps.Play(true);
             }
         }
 

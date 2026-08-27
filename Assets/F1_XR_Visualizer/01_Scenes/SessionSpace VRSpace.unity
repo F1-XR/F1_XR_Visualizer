@@ -380,7 +380,7 @@ MonoBehaviour:
   coordinatorWaitSeconds: 10
   skipSpatialSetupOnPlay: 0
   showTablePlacementCandidatesOnPlay: 0
-  placeTemporaryMapInFrontOfVrOrigin: 1
+  placeTemporaryMapInFrontOfVrOrigin: 0
   enterVrDroneOnPlay: 0
 --- !u!1 &417482157
 GameObject:
@@ -2057,6 +2057,8 @@ GameObject:
   - component: {fileID: 1113257133}
   - component: {fileID: 1113257131}
   - component: {fileID: 1113257129}
+  - component: {fileID: 1770001234}
+  - component: {fileID: 1770001235}
   m_Layer: 0
   m_Name: Track Placement
   m_TagString: Untagged
@@ -3608,6 +3610,50 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+--- !u!114 &1770001234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113257128}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e090f31d21a6ff4f91337ecd6047549, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::F1XR.RestAPI.Replay.Track.Build.TrackCloudPlacer
+  trackPlacer: {fileID: 1113257129}
+  cloudPrefab: {fileID: 6351855780575177041, guid: 8f93a849e381118469f4fef822615e42, type: 3}
+  cloudHeightOffset: 0.15
+  cloudSizeRatio: 1.2
+  cloudPositionOffset: {x: 0, y: 0, z: 0}
+  rainDropWidthMm: 0.77
+  rainStreakLengthMm: 49
+  rainAmount: 392
+  rainSplashSizeMm: 4
+  vrRainDropWidthMm: 191
+  vrRainStreakLengthMm: 3819
+  vrRainAmount: 1086
+  vrRainOpacity: 1
+  vrRainSplash: 1
+  vrRainSplashSizeMm: 1
+  vrScaleThreshold: 2.9
+--- !u!114 &1770001235
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113257128}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9724ec875f05b5d41becfe6f2fbdc2c3, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::WeatherController
+  clouds: []
+  trackCloudPlacer: {fileID: 1770001234}
+  isRaining: 0
+  rainIntensity: 0.7
 --- !u!1 &1948394329
 GameObject:
   m_ObjectHideFlags: 0

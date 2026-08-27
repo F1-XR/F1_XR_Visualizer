@@ -30,8 +30,12 @@ namespace F1XR.Debugging
         [SerializeField] bool placeTemporaryMapInFrontOfVrOrigin;
         [Header("VR Drone")]
         [SerializeField] bool enterVrDroneOnPlay;
+        [Header("Weather Debug")]
+        [SerializeField] bool debugRaining;
 
         Coroutine droneEntryRoutine;
+        bool hasAppliedDebugWeather;
+        bool appliedDebugRaining;
 
         public bool SkipSpatialSetupOnPlay =>
             skipSpatialSetupOnPlay || placeTemporaryMapInFrontOfVrOrigin;
@@ -62,6 +66,8 @@ namespace F1XR.Debugging
 
         void Start()
         {
+            ApplyDebugWeather();
+
             if (placeTemporaryMapInFrontOfVrOrigin)
             {
                 StartCoroutine(PlaceTemporaryMapRoutine());
@@ -70,6 +76,32 @@ namespace F1XR.Debugging
 
             if (enterVrDroneOnPlay)
                 EnterVrDroneWithoutPlacement();
+        }
+
+        void Update()
+        {
+            if (!hasAppliedDebugWeather || appliedDebugRaining != debugRaining)
+                ApplyDebugWeather();
+        }
+
+        public void SetDebugRaining(bool raining)
+        {
+            debugRaining = raining;
+            ApplyDebugWeather();
+        }
+
+        void ApplyDebugWeather()
+        {
+            if (!Application.isPlaying)
+                return;
+
+            var weather = FindInScene<WeatherController>(gameObject.scene);
+            if (weather == null)
+                return;
+
+            weather.SetRaining(debugRaining);
+            appliedDebugRaining = debugRaining;
+            hasAppliedDebugWeather = true;
         }
 
         public void EnableVrDroneBypassStart()
