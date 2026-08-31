@@ -74,6 +74,30 @@ namespace F1XR.RestAPI.Replay
                 Quaternion.AngleAxis(localYaw, Vector3.up) * visualBaseRotation;
         }
 
+        public void ApplyVisualMotionFacing(
+            Vector3 worldOffset,
+            Vector3 desiredWorldForward)
+        {
+            if (LogicalRoot == transform)
+                return;
+
+            Vector3 baseForward = Vector3.ProjectOnPlane(
+                visualBaseRotation * Vector3.forward,
+                Vector3.up);
+            Vector3 desiredForward = Vector3.ProjectOnPlane(
+                LogicalRoot.InverseTransformDirection(
+                    desiredWorldForward),
+                Vector3.up);
+            float localYaw = baseForward.sqrMagnitude > 0.000001f &&
+                desiredForward.sqrMagnitude > 0.000001f
+                    ? Vector3.SignedAngle(
+                        baseForward,
+                        desiredForward,
+                        Vector3.up)
+                    : 0f;
+            ApplyVisualMotion(worldOffset, localYaw);
+        }
+
         public void ResetVisualMotion()
         {
             if (LogicalRoot == transform)

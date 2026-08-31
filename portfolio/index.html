@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080a0c" />
+    <meta
+      name="description"
+      content="과거 F1 데이터셋을 하나의 시간축으로 맞춘 다중 차량 리플레이와 방 크기 MR 디오라마로 재구성한 Unity/OpenXR 기술 사례."
+    />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:site_name" content="MY LITTLE GRAND PRIX" />
+    <meta property="og:title" content="MY LITTLE GRAND PRIX — Unity MR F1 Replay Case Study" />
+    <meta
+      property="og:description"
+      content="과거 F1 데이터셋을 하나의 시간축에서 재생하고 실제 방의 Hero 지점에 MR 디오라마로 다시 배치한 기술 사례."
+    />
+    <meta property="og:url" content="__SITE_URL__" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="MY LITTLE GRAND PRIX — Unity MR F1 Replay Case Study" />
+    <meta
+      name="twitter:description"
+      content="Unity/OpenXR로 구현한 다중 차량 F1 리플레이와 방 크기 MR 디오라마 기술 사례."
+    />
+    <link rel="canonical" href="__SITE_URL__" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 fill=%22%23080a0c%22/><path d=%22M7 23V9h5l4 7 4-7h5v14h-4v-8l-4 7h-2l-4-7v8z%22 fill=%22%23e5322d%22/></svg>" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>MY LITTLE GRAND PRIX — Unity MR F1 Replay Case Study</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "MY LITTLE GRAND PRIX",
+        "alternateName": "F1_XR_Visualizer",
+        "description": "A Unity XR technical study that reconstructs externally prepared historical F1 replay datasets on a shared source-time timeline and presents selected events as a room-scale mixed-reality diorama.",
+        "url": "__SITE_URL__",
+        "codeRepository": "https://github.com/SiyeolKwak/F1_XR_Visualizer",
+        "programmingLanguage": "C#",
+        "runtimePlatform": "Unity 6000.4.11f1, Android, OpenXR",
+        "applicationCategory": "Mixed Reality Technical Study",
+        "inLanguage": ["ko", "en"],
+        "isAccessibleForFree": true,
+        "keywords": [
+          "Unity",
+          "OpenXR",
+          "Meta Quest",
+          "mixed reality",
+          "F1 replay",
+          "spatial computing"
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="wordmark" href="#top" aria-label="MY LITTLE GRAND PRIX 맨 위로">
+          <span class="wordmark-mark" aria-hidden="true">ML</span>
+          MY LITTLE GRAND PRIX
+        </a>
+        <nav class="site-nav" aria-label="프로젝트 섹션">
+          <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#pipeline">Pipeline</a></li>
+            <li><a href="#systems">Systems</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#evidence">Evidence</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <div id="top" class="shell hero" aria-labelledby="project-title">
+        <div class="reveal">
+          <p class="eyebrow">Repository-audited technical case study</p>
+          <h1 id="project-title" class="hero-title">
+            <span>My Little</span>
+            <span class="outline">Grand Prix</span>
+          </h1>
+        </div>
+
+        <div class="hero-copy reveal">
+          <p class="hero-tagline">The race. In your space.</p>
+          <div>
+            <p class="hero-lede">
+              외부 서비스가 준비한 과거 F1 데이터셋을 하나의 시간축에서 다중 차량 리플레이로
+              재구성하고, 선택한 이벤트를 실제 방의 <strong>Hero</strong> 지점에 MR 디오라마로 다시
+              배치한 Unity XR 프로젝트입니다.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#systems">시스템 보기</a>
+              <a
+                class="button"
+                href="https://github.com/SiyeolKwak/F1_XR_Visualizer"
+                target="_blank"
+                rel="noreferrer"
+              >소스 보기 <span class="sr-only">새 창</span></a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shell hero-rail" aria-label="프로젝트 요약">
+        <div class="rail-item">
+          <span class="rail-label">Status</span>
+          <span class="rail-value">In development</span>
+        </div>
+        <div class="rail-item">
+          <span class="rail-label">Engine</span>
+          <span class="rail-value">Unity 6000.4</span>
+        </div>
+        <div class="rail-item">
+          <span class="rail-label">Target</span>
+          <span class="rail-value">Meta Quest / OpenXR</span>
+        </div>
+        <div class="rail-item">
+          <span class="rail-label">Evidence</span>
+          <span class="rail-value">Code + scene wiring</span>
+        </div>
+      </div>
+
+      <section id="overview" class="section" aria-labelledby="overview-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">01</span>
+            <span class="section-kicker">Project thesis</span>
+          </div>
+          <div>
+            <h2 id="overview-title" class="section-title reveal">Keep the race true. Move the presentation.</h2>
+            <div class="intro-grid reveal">
+              <p class="lead">
+                레이스의 시간과 차량 상태는 그대로 두고, 방 안에서 보이는 크기·방향·초점만 별도의
+                프레젠테이션 계층으로 다뤘습니다.
+              </p>
+              <div>
+                <p class="body-copy">
+                  일반적인 화면 속 리플레이를 그대로 공간에 띄우는 대신, AR plane에서 서로 다른 두
+                  벽을 Entry와 Exit로 고르고 사용자의 시선에 가까운 Hero 지점을 정의합니다. 확정된 방
+                  프레임은 고정하고, 이벤트 로컬 트랙을 Hero 중심의 방 크기 디오라마로 강체 변환합니다.
+                </p>
+                <p class="body-copy">
+                  Entry와 Exit는 배치 맥락과 방향을 정하지만, 현재 기본 차량 경로가 두 벽을 반드시
+                  통과하는 것은 아닙니다. 이 차이를 숨기지 않고 현재 구현과 다음 개선 과제로 분리했습니다.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pipeline" class="section" aria-labelledby="pipeline-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">02</span>
+            <span class="section-kicker">Runtime pipeline</span>
+          </div>
+          <div>
+            <h2 id="pipeline-title" class="section-title reveal">From dataset to room-scale replay.</h2>
+            <ol class="pipeline reveal">
+              <li>
+                <h3>Dataset request</h3>
+                <p>Unity 클라이언트가 companion REST 서비스의 catalog, dataset, manifest, chunk 계약을 사용합니다.</p>
+              </li>
+              <li>
+                <h3>Ready-range loading</h3>
+                <p>manifest 준비 상태를 polling하고 현재 재생 시각과 이벤트 구간에 필요한 ready chunk만 메모리로 가져옵니다.</p>
+              </li>
+              <li>
+                <h3>Source / playback split</h3>
+                <p>서버 위치 샘플을 시간순 정렬·동일 시각 중복 제거한 normalized source copy로 유지하고, 분리된 playback copy에 방향 글리치 제거와 움직임 안정화를 추가 적용합니다.</p>
+              </li>
+              <li>
+                <h3>Shared race clock</h3>
+                <p>로드된 차량을 하나의 source-time으로 샘플링해 pause, speed, seek를 일관되게 처리하고 red-flag downtime compression을 선택적으로 지원합니다.</p>
+              </li>
+              <li>
+                <h3>Room layout</h3>
+                <p>containing floor boundary가 확인된 자동 구성에서는 후보를 해당 경계로 제한합니다. 자동 구성이 성립하지 않으면 서로 다른 Entry/Exit 벽을 수동 선택하고 Hero pose와 확정 프레임을 구성합니다.</p>
+              </li>
+              <li>
+                <h3>Event diorama</h3>
+                <p>일반 이벤트의 첫 두 차량과 source-track shape를 event-local stage에 묶고 Hero를 중심으로 scale·yaw·position을 적용합니다.</p>
+              </li>
+            </ol>
+            <p class="fact-note reveal">
+              데이터 출처 경계 — 이 Unity 저장소에는 OpenF1 fetcher가 없고 companion REST dataset만 소비합니다.
+              따라서 “OpenF1 직접 연동”이나 “실시간 F1 데이터”는 이 사례의 검증된 주장이 아닙니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="demo" class="section" aria-labelledby="demo-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">03</span>
+            <span class="section-kicker">Demo evidence</span>
+          </div>
+          <div>
+            <h2 id="demo-title" class="section-title reveal">Real capture belongs here.</h2>
+            <div
+              class="media-stage reveal"
+              role="img"
+              aria-label="Quest 3에서 방 설정부터 이벤트 디오라마 재생까지 보여 줄 메인 데모 영상 자리"
+            >
+              <div class="media-placeholder">
+                <span class="micro-label">Media slot / 16:9</span>
+                <strong>Quest MR hero demo</strong>
+                <p>
+                  저장소에 공개 가능한 실제 제품 영상이 없어 비워 두었습니다. 방 설정 → 이벤트 선택 →
+                  Hero 중심 재생을 한 흐름으로 촬영한 권리 확인 영상을 넣어야 합니다.
+                </p>
+              </div>
+            </div>
+            <div class="media-grid reveal">
+              <article class="media-tile">
+                <span class="micro-label">01 / Room</span>
+                <h3>Wall discovery</h3>
+                <p>Entry/Exit 벽의 자동 구성 또는 수동 선택 장면</p>
+              </article>
+              <article class="media-tile">
+                <span class="micro-label">02 / Layout</span>
+                <h3>Entry · Hero · Exit</h3>
+                <p>방향과 Hero focus를 확인하는 setup 장면</p>
+              </article>
+              <article class="media-tile">
+                <span class="micro-label">03 / Replay</span>
+                <h3>Two-car diorama</h3>
+                <p>event-local source track을 방 크기로 재배치한 장면</p>
+              </article>
+              <article class="media-tile">
+                <span class="micro-label">04 / Event</span>
+                <h3>Overtake reconstruction</h3>
+                <p>실제 경로 증명이 아닌 연출 재구성임이 보이는 장면</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="systems" class="section" aria-labelledby="systems-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">04</span>
+            <span class="section-kicker">Core systems</span>
+          </div>
+          <div>
+            <h2 id="systems-title" class="section-title reveal">What is actually wired.</h2>
+            <div class="system-ledger reveal">
+              <article class="system-row">
+                <span class="system-code">SYS–01</span>
+                <h3>Chunked dataset client</h3>
+                <p>manifest polling과 ready-range fetch를 driver별 in-memory sample store로 연결했습니다.</p>
+                <span class="status">Verified</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">SYS–02</span>
+                <h3>Shared replay timeline</h3>
+                <p>하나의 source-time으로 다중 차량의 위치·순위·타이어 상태를 샘플링하고 seek와 속도 제어를 유지합니다.</p>
+                <span class="status">Verified</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">SYS–03</span>
+                <h3>Room layout</h3>
+                <p>AR plane 의미와 vertical fallback으로 벽을 찾고, containing floor boundary가 확인되면 그 경계로 제한합니다. plane ID churn에는 제한된 재획득 휴리스틱으로 대응합니다.</p>
+                <span class="status">Verified</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">SYS–04</span>
+                <h3>Two-car RoomDiorama</h3>
+                <p>일반 이벤트의 첫 두 차량을 source-track shape 그대로 Hero 중심에 강체 배치합니다.</p>
+                <span class="status">Verified</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">SYS–05</span>
+                <h3>Logical / visual split</h3>
+                <p>authoritative replay root는 유지하고 EventReplayStage에 방별 position·yaw·uniform scale을 적용합니다. VisualMotionRoot의 차량별 presentation effect·scale도 종료 시 복구합니다.</p>
+                <span class="status">Verified</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">LAB–01</span>
+                <h3>Overtake &amp; pit beats</h3>
+                <p>공급된 이벤트 구간을 바탕으로 순서 변화와 피트 단계를 presentation reconstruction으로 정제합니다.</p>
+                <span class="status status-experimental">Experimental</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">LAB–02</span>
+                <h3>Collision forensics</h3>
+                <p>현재 로컬의 단일 Suzuka fixture에서 관측 source와 post-impact 연출을 분리한 curated showcase입니다.</p>
+                <span class="status status-experimental">Experimental</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">LAB–03</span>
+                <h3>Entry–Hero–Exit preview</h3>
+                <p>61-point preview와 geometry gate는 존재하지만 실제 차량 mapper가 이 경로를 소비하지 않습니다.</p>
+                <span class="status status-planned">Disconnected</span>
+              </article>
+              <article class="system-row">
+                <span class="system-code">LAB–04</span>
+                <h3>Room-shell transition</h3>
+                <p>AR surface proxy와 fracture 기반 MR↔VR 전환은 대체 SessionSpace 1에만 연결된 실험 경로입니다.</p>
+                <span class="status status-experimental">Experimental</span>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture" class="section" aria-labelledby="architecture-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">05</span>
+            <span class="section-kicker">Architecture</span>
+          </div>
+          <div>
+            <h2 id="architecture-title" class="section-title reveal">Two flows. One reversible stage.</h2>
+            <figure class="architecture reveal">
+              <div class="architecture-frame" tabindex="0" aria-label="아키텍처 다이어그램 가로 스크롤 영역">
+                <svg
+                  viewBox="0 0 1200 650"
+                  role="img"
+                  aria-labelledby="architecture-svg-title architecture-svg-desc"
+                >
+                  <title id="architecture-svg-title">MLGP replay and room presentation architecture</title>
+                  <desc id="architecture-svg-desc">
+                    External dataset chunks flow through sample stores, a shared timeline, and an event-local two-car stage.
+                    AR planes flow through wall discovery and Entry Exit Hero layout. Both meet at a Hero-centered RoomDiorama.
+                  </desc>
+                  <defs>
+                    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#e5322d" />
+                    </marker>
+                    <style>
+                      .box { fill: #0f1215; stroke: #4a4f52; stroke-width: 1; }
+                      .box-focus { fill: #15191c; stroke: #e5322d; stroke-width: 2; }
+                      .flow { fill: none; stroke: #e5322d; stroke-width: 2; marker-end: url(#arrow); }
+                      .join { fill: none; stroke: #74736e; stroke-width: 1; stroke-dasharray: 5 7; marker-end: url(#arrow); }
+                      .label { fill: #f1eee7; font: 700 20px "Segoe UI", sans-serif; }
+                      .meta { fill: #aaa8a2; font: 500 14px "Segoe UI", sans-serif; }
+                      .tag { fill: #ff6b63; font: 700 12px "Segoe UI", sans-serif; letter-spacing: 1px; }
+                    </style>
+                  </defs>
+
+                  <text x="45" y="42" class="tag">REPLAY FLOW</text>
+                  <rect class="box" x="40" y="65" width="230" height="105" />
+                  <text x="65" y="105" class="label">External dataset</text>
+                  <text x="65" y="134" class="meta">catalog · manifest · chunks</text>
+
+                  <path class="flow" d="M270 117 H335" />
+                  <rect class="box" x="340" y="65" width="230" height="105" />
+                  <text x="365" y="105" class="label">Sample stores</text>
+                  <text x="365" y="134" class="meta">source copy + processed</text>
+
+                  <path class="flow" d="M570 117 H635" />
+                  <rect class="box" x="640" y="65" width="230" height="105" />
+                  <text x="665" y="105" class="label">Shared timeline</text>
+                  <text x="665" y="134" class="meta">pause · speed · seek</text>
+
+                  <path class="flow" d="M870 117 H935" />
+                  <rect class="box" x="940" y="65" width="220" height="105" />
+                  <text x="965" y="105" class="label">Main replay</text>
+                  <text x="965" y="134" class="meta">loaded drivers / one clock</text>
+
+                  <path class="flow" d="M1050 170 V245" />
+                  <rect class="box" x="900" y="250" width="260" height="120" />
+                  <text x="925" y="292" class="label">Event-local stage</text>
+                  <text x="925" y="321" class="meta">source path + first two drivers</text>
+                  <text x="925" y="344" class="meta">reversible visual roots</text>
+
+                  <text x="45" y="445" class="tag">ROOM FLOW</text>
+                  <rect class="box" x="40" y="465" width="230" height="105" />
+                  <text x="65" y="505" class="label">AR planes</text>
+                  <text x="65" y="534" class="meta">vertical walls + optional floor boundary</text>
+
+                  <path class="flow" d="M270 517 H335" />
+                  <rect class="box" x="340" y="465" width="230" height="105" />
+                  <text x="365" y="505" class="label">Wall discovery</text>
+                  <text x="365" y="534" class="meta">filter · reacquire · freeze</text>
+
+                  <path class="flow" d="M570 517 H635" />
+                  <rect class="box" x="640" y="465" width="230" height="105" />
+                  <text x="665" y="505" class="label">Room layout</text>
+                  <text x="665" y="534" class="meta">Entry · Exit · Hero</text>
+
+                  <path class="join" d="M1030 370 V430" />
+                  <path class="join" d="M870 517 H930" />
+                  <rect class="box-focus" x="935" y="430" width="225" height="140" />
+                  <text x="960" y="477" class="label">RoomDiorama</text>
+                  <text x="960" y="508" class="meta">Hero-centered rigid fit</text>
+                  <text x="960" y="533" class="meta">position · yaw · scale</text>
+                </svg>
+              </div>
+              <figcaption>
+                데이터 흐름과 방 흐름은 Hero 중심 RoomDiorama에서 만납니다. PathPreview와 connected dual-wall portal은
+                실제 기본 차량 경로에 연결되지 않아 다이어그램에서 의도적으로 제외했습니다.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section id="challenges" class="section" aria-labelledby="challenges-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">06</span>
+            <span class="section-kicker">Engineering challenges</span>
+          </div>
+          <div>
+            <h2 id="challenges-title" class="section-title reveal">Three constraints shaped the system.</h2>
+            <div class="challenge-list reveal">
+              <article class="challenge">
+                <div>
+                  <span class="challenge-meta">Problem 01</span>
+                  <h3>Chunked data, coherent clock</h3>
+                </div>
+                <p>
+                  데이터가 구간별로 늦게 준비되어도 차량마다 다른 시간을 보이면 안 됩니다. manifest와 ready range를
+                  분리하고 모든 차량을 하나의 source-time에 샘플링했습니다. 대가로, 이 클라이언트는 companion
+                  service의 dataset lifecycle에 의존합니다.
+                </p>
+              </article>
+              <article class="challenge">
+                <div>
+                  <span class="challenge-meta">Problem 02</span>
+                  <h3>Stable layout, unstable plane IDs</h3>
+                </div>
+                <p>
+                  AR plane은 방이 그대로여도 사라지거나 새 ID로 돌아올 수 있습니다. exact ID를 먼저 찾고 법선·거리·
+                  겹침·크기 점수를 제한된 유예 시간 안에서 비교하며, 모호하면 선택을 보류합니다. 확정 뒤에는 방 프레임을
+                  고정하지만, 휴리스틱이므로 실패 가능성은 남습니다.
+                </p>
+              </article>
+              <article class="challenge">
+                <div>
+                  <span class="challenge-meta">Problem 03</span>
+                  <h3>Spatial drama without rewriting truth</h3>
+                </div>
+                <p>
+                  방에 맞춰 차량을 옮기면서 source trajectory까지 덮어쓰면 리플레이와 분석이 섞입니다. authoritative
+                  logical root는 유지하고 EventReplayStage가 방 배치를, VisualMotionRoot가 차량별 presentation effect와
+                  scale을 맡도록 분리했습니다. 종료 시 stage·vehicle transform과 playback state를 복구하며, 공간 연출은
+                  ‘물리적 원본’이 아닌 재구성으로 명시합니다.
+                </p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="layout" class="section" aria-labelledby="layout-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">07</span>
+            <span class="section-kicker">Spatial decisions</span>
+          </div>
+          <div>
+            <h2 id="layout-title" class="section-title reveal">Entry. Hero. Exit.</h2>
+            <div class="decision-grid reveal">
+              <article class="decision">
+                <span class="decision-index">01 / ENTRY</span>
+                <h3>First wall, inward</h3>
+                <p>첫 번째 벽의 안쪽 방향으로 프레임을 만들고, 방 안에서 연출이 시작되는 방향 맥락을 제공합니다.</p>
+              </article>
+              <article class="decision">
+                <span class="decision-index">02 / HERO</span>
+                <h3>Viewer focus, spatial pose</h3>
+                <p>HMD 시선 또는 Entry–Exit 사이의 자동 지점으로 잡으며, 현재 기본 디오라마가 실제로 맞춰지는 중심입니다.</p>
+              </article>
+              <article class="decision">
+                <span class="decision-index">03 / EXIT</span>
+                <h3>Different wall, outward</h3>
+                <p>Entry와 다른 벽의 바깥 방향을 사용합니다. 현재는 배치 맥락이며 차량의 벽 관통을 보장하는 path constraint는 아닙니다.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="facts" class="section" aria-labelledby="facts-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">08</span>
+            <span class="section-kicker">Implementation constants</span>
+          </div>
+          <div>
+            <h2 id="facts-title" class="section-title reveal">Constants, not benchmarks.</h2>
+            <div class="verified-facts reveal">
+              <article class="fact">
+                <span class="micro-label">Replay clock</span>
+                <strong class="fact-value">01</strong>
+                <p>모든 로드된 차량이 공유하는 source-time 기준</p>
+              </article>
+              <article class="fact">
+                <span class="micro-label">Layout walls</span>
+                <strong class="fact-value">02</strong>
+                <p>표준 layout이 요구하는 서로 다른 Entry / Exit 벽</p>
+              </article>
+              <article class="fact">
+                <span class="micro-label">Mapped drivers</span>
+                <strong class="fact-value">02</strong>
+                <p>일반 room event stage에 연결되는 첫 두 distinct drivers</p>
+              </article>
+              <article class="fact">
+                <span class="micro-label">Reacquire grace</span>
+                <strong class="fact-value">2s</strong>
+                <p>기본 SessionSpace에 직렬화된 wall reacquisition 유예 시간</p>
+              </article>
+            </div>
+            <p class="fact-note reveal">
+              FPS·latency·memory·accuracy·success rate가 아닙니다. Quest 실기기 profiler 결과가 없어 성능 수치는 공개하지 않았습니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="technology" class="section" aria-labelledby="technology-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">09</span>
+            <span class="section-kicker">Technology</span>
+          </div>
+          <div>
+            <h2 id="technology-title" class="section-title reveal">Built for a Quest-class XR target.</h2>
+            <div class="intro-grid reveal">
+              <p class="lead">
+                Android ARM64 / IL2CPP, Mobile URP, OpenXR와 controller-based XRI 상호작용으로 구성했습니다.
+              </p>
+              <div>
+                <p class="body-copy">
+                  Quest 3가 포함된 Meta Quest 대상, passthrough camera, planes, anchors, raycasts, mesh, boundary와
+                  composition-layer feature가 설정되어 있습니다. 다만 이 정적 감사에서는 OpenXR 초기화와 실기기 동작을
+                  실행하지 않았으므로 “Quest 3에서 검증 완료”라고 표현하지 않습니다.
+                </p>
+                <p class="body-copy">
+                  Hand Tracking과 environment occlusion은 현재 플랫폼 설정에서 꺼져 있으며 기술 스택 주장에 포함하지 않았습니다.
+                </p>
+              </div>
+            </div>
+            <ul class="stack-list reveal" aria-label="기술 스택">
+              <li>Unity 6000.4.11f1</li>
+              <li>C#</li>
+              <li>URP 17.4.0</li>
+              <li>OpenXR 1.16.1</li>
+              <li>Meta OpenXR 2.5.1</li>
+              <li>XR Interaction Toolkit 3.4.1</li>
+              <li>AR Foundation 6.5.0 · transitive</li>
+              <li>REST / JSON</li>
+              <li>Android ARM64 / IL2CPP</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="contribution" class="section" aria-labelledby="contribution-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">10</span>
+            <span class="section-kicker">My contribution</span>
+          </div>
+          <div>
+            <h2 id="contribution-title" class="section-title reveal">Ownership must be evidenced.</h2>
+            <div class="contribution-panel reveal">
+              <div class="contribution-copy">
+                <h3>Verified role goes here</h3>
+                <p>
+                  공개 전 본인의 역할, 담당 시스템, 팀 규모, 작업 기간을 입력하세요. “리플레이 타임라인 설계”,
+                  “MR room layout 구현”, “Quest 배포”처럼 실제로 소유한 범위만 쓰고 commit·issue·설계 문서 또는
+                  데모 기록으로 뒷받침해야 합니다.
+                </p>
+              </div>
+              <aside class="verification-box" aria-label="기여 범위 검증 상태">
+                <span class="status status-experimental">Verification required</span>
+                <h3>여러 기여자가 확인됨</h3>
+                <p>저장소 이력만으로 개인 기여 범위를 안전하게 확정할 수 없어 의도적으로 비워 두었습니다.</p>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="evidence" class="section" aria-labelledby="evidence-title">
+        <div class="shell section-grid">
+          <div class="section-index">
+            <span class="section-number">11</span>
+            <span class="section-kicker">Evidence &amp; next work</span>
+          </div>
+          <div>
+            <h2 id="evidence-title" class="section-title reveal">What the repository proves — and does not.</h2>
+            <div class="intro-grid reveal">
+              <p class="lead">
+                이 페이지의 “Verified”는 코드와 기본 씬 연결을 확인했다는 뜻입니다. 기기 실행이나 성능 보증은 아닙니다.
+              </p>
+              <p class="body-copy">
+                감사 과정에서 호출점, 직렬화된 컴포넌트, 활성 플랫폼 설정을 우선했습니다. 대체 씬과 미호출 코드는 별도
+                상태로 내렸고, 테스트·Quest·백엔드는 실행하지 않았습니다.
+              </p>
+            </div>
+            <div class="evidence-details reveal">
+              <details>
+                <summary>검증된 중심 경로</summary>
+                <p>
+                  REST dataset → manifest/chunks → source/processed samples → shared timeline → multi-driver replay →
+                  event-local two-car stage → Hero-centered RoomDiorama. 벽 필터링·재획득·Entry/Exit/Hero·frame freeze가
+                  이 room presentation에 배치 맥락을 제공합니다.
+                </p>
+              </details>
+              <details>
+                <summary>실험 또는 curated 경로</summary>
+                <p>
+                  공급된 이벤트 구간 기반 추월/피트 재구성, 현재 작업 트리의 단일 Suzuka collision forensics,
+                  대체 씬의 room-shell transition, life-size/trackside modes, car LOD budget입니다.
+                </p>
+              </details>
+              <details>
+                <summary>공개 주장에 넣지 않은 것</summary>
+                <p>
+                  Unity의 OpenF1 직접 연동, live data, 자동 전체 이벤트 검출, connected dual-wall portal, Entry/Exit
+                  차량 관통 보장, full room mesh, hand tracking, environment occlusion, Quest 검증·FPS·latency·accuracy입니다.
+                </p>
+              </details>
+            </div>
+
+            <h3 class="section-title improvement-title reveal">Highest-impact next moves.</h3>
+            <div class="challenge-list reveal">
+              <article class="challenge">
+                <div>
+                  <span class="challenge-meta">Priority 01</span>
+                  <h3>One path, one source of truth</h3>
+                </div>
+                <p>setup preview와 실제 vehicle mapper가 같은 검증된 Entry/Hero/Exit path를 소비하도록 통합하거나, UX를 현재 Hero 중심 디오라마에 맞춰 단순화합니다.</p>
+              </article>
+              <article class="challenge">
+                <div>
+                  <span class="challenge-meta">Priority 02</span>
+                  <h3>One releaseable Quest path</h3>
+                </div>
+                <p>누락된 build scene과 localhost 설정을 정리하고, Editor tests·permission·input·passthrough·comfort·profiler를 하나의 Quest 3 release checklist로 검증합니다.</p>
+              </article>
+              <article class="challenge">
+                <div>
+                  <span class="challenge-meta">Priority 03</span>
+                  <h3>Provenance and rights</h3>
+                </div>
+                <p>backend/OpenF1 변환 출처, curated event 경계, 기여 범위, F1·팀·음원·항공 이미지의 공개 권리를 문서화하고 unwired 실험 코드는 feature gate 또는 제거합니다.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-section" aria-labelledby="cta-title">
+        <div class="shell">
+          <p class="eyebrow reveal">Technical study / In development</p>
+          <h2 id="cta-title" class="cta-title reveal">The room becomes the grandstand.</h2>
+          <p class="cta-copy reveal">
+            MY LITTLE GRAND PRIX는 완성품을 가장하는 페이지가 아니라, 데이터 리플레이와 공간 연출의 경계를
+            실제 코드 근거로 보여 주는 개발 중 사례입니다.
+          </p>
+          <div class="hero-actions reveal">
+            <a
+              class="button button-primary"
+              href="https://github.com/SiyeolKwak/F1_XR_Visualizer"
+              target="_blank"
+              rel="noreferrer"
+            >GitHub repository <span class="sr-only">새 창</span></a>
+            <a class="button" href="https://yundonggeurami.github.io/">Portfolio home</a>
+            <a class="button" href="#top">Back to top</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <span>© <span data-current-year>2026</span> MY LITTLE GRAND PRIX</span>
+        <span>Independent technical study · Not affiliated with Formula 1, its teams, Meta, Unity, or data providers.</span>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

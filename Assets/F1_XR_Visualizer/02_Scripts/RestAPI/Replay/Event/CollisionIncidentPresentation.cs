@@ -163,6 +163,8 @@ namespace F1XR.RestAPI.Replay
             island = islandRoot;
             victim = victimCar;
             other = otherCar;
+            victim?.SetDrivingContactShadowAllowed(false);
+            other?.SetDrivingContactShadowAllowed(false);
             anchorTime = collisionAnchorTime;
             contactLocal = collisionContactLocal;
             forwardLocal = FlattenNormalized(
@@ -278,7 +280,7 @@ namespace F1XR.RestAPI.Replay
                 true);
             impactMaterial = CreateTransparentMaterial(
                 "Runtime_CollisionImpact",
-                new Color(1.5f, 0.28f, 0.015f, 0.96f),
+                new Color(1.55f, 1.68f, 1.9f, 0.98f),
                 true);
             pulseMaterial = CreateTransparentMaterial(
                 "Runtime_CollisionImpactPulse",
@@ -665,6 +667,8 @@ namespace F1XR.RestAPI.Replay
             presentationRoot = null;
             stage = null;
             island = null;
+            victim?.SetDrivingContactShadowAllowed(true);
+            other?.SetDrivingContactShadowAllowed(true);
             victim = null;
             other = null;
             impactAudio = null;
@@ -1033,16 +1037,16 @@ namespace F1XR.RestAPI.Replay
             CollisionShowcaseVfxSettings settings)
         {
             Transform sparksRoot = CreateRoot(
-                "FrozenOrangeSparks_12",
+                "DirectionalContactSparks_16",
                 impactTransientRoot);
             sparksRoot.localPosition = contactLocal +
                 Vector3.up * carWidth * 0.14f;
-            for (int i = 0; i < 12; i++)
+            for (int i = 0; i < 16; i++)
             {
                 float angle = (i * 137.508f + 17f) *
                     Mathf.Deg2Rad;
                 bool groundScrape = i < 5;
-                float spread = (i - 5.5f) / 5.5f;
+                float spread = (i - 7.5f) / 7.5f;
                 float rise = groundScrape
                     ? 0.035f + (i % 3) * 0.025f
                     : 0.16f + (i % 4) * 0.08f;
@@ -1057,8 +1061,8 @@ namespace F1XR.RestAPI.Replay
                     sparksRoot,
                     impactMaterial,
                     carWidth * Mathf.Lerp(
-                        0.02f,
-                        0.04f,
+                        0.026f,
+                        0.052f,
                         (i % 5) / 4f),
                     false);
                 spark.positionCount = 2;
@@ -1072,9 +1076,9 @@ namespace F1XR.RestAPI.Replay
 
             Mesh shardMesh = CreateShardMesh();
             Material shardMaterial = CreateOpaqueMaterial(
-                "Runtime_CollisionOrangeDebris",
-                new Color(1f, 0.22f, 0.025f, 1f));
-            for (int i = 0; i < 12; i++)
+                "Runtime_CollisionContactDebris",
+                new Color(0.48f, 0.54f, 0.62f, 1f));
+            for (int i = 0; i < 6; i++)
             {
                 GameObject shard = new(
                     $"FrozenDebris_{i:00}",
@@ -1096,8 +1100,8 @@ namespace F1XR.RestAPI.Replay
                     i * 47f,
                     i * 19f);
                 float size = carWidth * Mathf.Lerp(
-                    0.03f,
-                    0.07f,
+                    0.036f,
+                    0.084f,
                     (i % 6) / 5f);
                 Vector3 finalScale = Vector3.one * size;
                 shard.transform.localPosition = finalPosition;
@@ -2340,12 +2344,15 @@ namespace F1XR.RestAPI.Replay
                 victim.LogicalRoot.gameObject.SetActive(visible);
             if (other != null)
                 other.LogicalRoot.gameObject.SetActive(visible);
+            SetAccidentContactShadowsVisible(visible);
         }
 
         private void ResetVehicleMotion()
         {
-            victim?.ResetVisualMotion();
-            other?.ResetVisualMotion();
+            if (victim != null)
+                victim.ResetVisualMotion();
+            if (other != null)
+                other.ResetVisualMotion();
         }
 
         private static void SetRootVisible(

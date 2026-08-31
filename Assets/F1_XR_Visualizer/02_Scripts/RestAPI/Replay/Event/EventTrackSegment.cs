@@ -38,8 +38,18 @@ namespace F1XR.RestAPI.Replay
         private const float MinimumSurfaceNormalY = 0.35f;
         private const float MinimumReliableEdgeCoverage = 0.7f;
         private const int MinimumTrackContextPrimaryTriangles = 24;
+        private const string AccidentRoadShaderName =
+            "F1XR/Accident Suzuka Road Clip";
+        private const string SuzukaRoadRendererName = "suzuka_2001";
+        private const string SuzukaRoadMaterialName = "ROAD01";
+        private const int SuzukaRoadExpectedSubmesh = 242;
+        private const int SuzukaClipBoxCount = 5;
 
         private readonly List<Mesh> meshes = new();
+        private readonly List<Material> runtimeMaterials = new();
+        private readonly Dictionary<Material, Material> convertedMaterials =
+            new();
+        private readonly List<string> sourceRendererNames = new();
         private readonly List<RoadTriangle> roadTriangles = new();
         private readonly List<RoadTriangle> drivableTriangles = new();
         private readonly List<OcclusionTriangle> occlusionTriangles = new();
@@ -47,6 +57,35 @@ namespace F1XR.RestAPI.Replay
         private Transform segmentRoot;
         private EventTrackSegmentSurfaceMode surfaceMode;
         private int trackContextPrimaryTriangles;
+        private int trackContextConnectedComponents;
+        private int trackContextSelectedSubmeshes;
+        private int unsupportedSourceMaterialCount;
+        private float maximumTrackTriangleEdge;
+        private bool usesIntactSuzukaRoad;
+        private int sourceRoadSubmesh = -1;
+        private int sourceRoadIndexCount;
+        private int sourceRoadVertexCount;
+        private readonly List<Vector3> clipBoxCenters = new();
+        private readonly List<Vector3> clipBoxSizes = new();
+        private readonly List<float> clipBoxYawDegrees = new();
+
+        public int ConvertedMaterialCount => convertedMaterials.Count;
+        public int UnsupportedSourceMaterialCount =>
+            unsupportedSourceMaterialCount;
+        public IReadOnlyList<string> SourceRendererNames =>
+            sourceRendererNames;
+        public float MaximumTrackTriangleEdge => maximumTrackTriangleEdge;
+        public int TrackContextConnectedComponents =>
+            trackContextConnectedComponents;
+        public int TrackContextSelectedSubmeshes =>
+            trackContextSelectedSubmeshes;
+        public int SourceRoadSubmesh => sourceRoadSubmesh;
+        public int SourceRoadIndexCount => sourceRoadIndexCount;
+        public int SourceRoadVertexCount => sourceRoadVertexCount;
+        public IReadOnlyList<Vector3> ClipBoxCenters => clipBoxCenters;
+        public IReadOnlyList<Vector3> ClipBoxSizes => clipBoxSizes;
+        public IReadOnlyList<float> ClipBoxYawDegrees =>
+            clipBoxYawDegrees;
 
         public bool Build(
             Transform parent,
@@ -78,13 +117,49 @@ namespace F1XR.RestAPI.Replay
             EventTrackSegmentSurfaceMode requestedSurfaceMode,
             out Bounds stageBounds)
         {
+            return Build(
+                parent,
+                sourceRoot,
+                sourcePath,
+                sourceCenter,
+                sourceToLocalRotation,
+                padding,
+                padding,
+                requestedSurfaceMode,
+                out stageBounds);
+        }
+
+        public bool Build(
+            Transform parent,
+            Transform sourceRoot,
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation,
+            float lateralPadding,
+            float longitudinalPadding,
+            EventTrackSegmentSurfaceMode requestedSurfaceMode,
+            out Bounds stageBounds)
+        {
             surfaceMode = requestedSurfaceMode;
             trackContextPrimaryTriangles = 0;
+            trackContextConnectedComponents = 0;
+            trackContextSelectedSubmeshes = 0;
+            unsupportedSourceMaterialCount = 0;
+            maximumTrackTriangleEdge = 0f;
+            usesIntactSuzukaRoad = false;
+            sourceRoadSubmesh = -1;
+            sourceRoadIndexCount = 0;
+            sourceRoadVertexCount = 0;
+            sourceRendererNames.Clear();
+            clipBoxCenters.Clear();
+            clipBoxSizes.Clear();
+            clipBoxYawDegrees.Clear();
             stageBounds = BuildStageBounds(
                 sourcePath,
                 sourceCenter,
                 sourceToLocalRotation,
-                padding);
+                lateralPadding,
+                longitudinalPadding);
 
             if (parent == null || sourceRoot == null || sourcePath == null || sourcePath.Count < 2)
                 return false;
@@ -101,6 +176,28 @@ namespace F1XR.RestAPI.Replay
                 sourcePath,
                 sourceCenter,
                 sourceToLocalRotation);
+            if (surfaceMode ==
+                EventTrackSegmentSurfaceMode.TrackContextOnly)
+            {
+                if (BuildIntactSuzukaRoad(
+                        visualRoot,
+                        sourceRoot,
+                        sourcePath,
+                        sourceCenter,
+                        sourceToLocalRotation,
+                        lateralPadding,
+                        longitudinalPadding,
+                        out Bounds intactBounds))
+                {
+                    stageBounds = intactBounds;
+                    return true;
+                }
+
+                Object.Destroy(segmentObject);
+                Clear();
+                return false;
+            }
+
             float[] nearestSurfaceY = new float[localPath.Length];
             float[] nearestPrimarySurfaceY = surfaceMode ==
                 EventTrackSegmentSurfaceMode.TrackContextOnly
@@ -127,7 +224,8 @@ namespace F1XR.RestAPI.Replay
                     sourceToLocalRotation,
                     stageBounds,
                     localPath,
-                    padding,
+                    lateralPadding,
+                    longitudinalPadding,
                     nearestSurfaceY,
                     nearestPrimarySurfaceY);
             }
@@ -165,6 +263,20 @@ namespace F1XR.RestAPI.Replay
                     $"meshCenter={copiedBounds.center:F4}, meshSize={copiedBounds.size:F4}, " +
                     $"centerDelta={(copiedBounds.center - stageBounds.center):F4}, " +
                     $"surfaceOffset={surfaceOffset:F4}, sourceScale={sourceRoot.lossyScale:F4}");
+                if (surfaceMode ==
+                    EventTrackSegmentSurfaceMode.TrackContextOnly)
+                {
+                    Debug.Log(
+                        $"[EventTrackSegment] actualSourceRenderers=" +
+                        $"{string.Join(",", sourceRendererNames)}, " +
+                        $"selectedSubmeshes=" +
+                        $"{TrackContextSelectedSubmeshes}, " +
+                        $"connectedComponents=" +
+                        $"{TrackContextConnectedComponents}, " +
+                        $"convertedMaterials={ConvertedMaterialCount}, " +
+                        $"unsupportedSourceMaterials=" +
+                        $"{UnsupportedSourceMaterialCount}.");
+                }
                 return true;
             }
 
@@ -252,6 +364,63 @@ namespace F1XR.RestAPI.Replay
             return hasBounds;
         }
 
+        public bool ApplyUniformScale(
+            float scale,
+            Vector3 pivot,
+            out Bounds scaledBounds)
+        {
+            scaledBounds = default;
+            if (segmentRoot == null || meshes.Count == 0)
+                return false;
+
+            float safeScale = Mathf.Max(0.0001f, scale);
+            if (usesIntactSuzukaRoad)
+            {
+                segmentRoot.localPosition = pivot +
+                    (segmentRoot.localPosition - pivot) * safeScale;
+                segmentRoot.localScale *= safeScale;
+                return TryCalculateSegmentBounds(out scaledBounds);
+            }
+
+            Vector3 rootPosition = segmentRoot.localPosition;
+            Vector3 meshPivot = pivot - rootPosition;
+            bool hasBounds = false;
+            for (int meshIndex = 0; meshIndex < meshes.Count; meshIndex++)
+            {
+                Mesh mesh = meshes[meshIndex];
+                if (mesh == null || !mesh.isReadable)
+                    return false;
+
+                Vector3[] vertices = mesh.vertices;
+                for (int vertexIndex = 0;
+                     vertexIndex < vertices.Length;
+                     vertexIndex++)
+                {
+                    vertices[vertexIndex] = meshPivot +
+                        (vertices[vertexIndex] - meshPivot) * safeScale;
+                }
+
+                mesh.vertices = vertices;
+                mesh.RecalculateNormals();
+                if (mesh.uv != null && mesh.uv.Length == vertices.Length)
+                    mesh.RecalculateTangents();
+                mesh.RecalculateBounds();
+                if (!hasBounds)
+                {
+                    scaledBounds = mesh.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    scaledBounds.Encapsulate(mesh.bounds);
+                }
+            }
+
+            segmentRoot.localPosition = pivot +
+                (rootPosition - pivot) * safeScale;
+            return hasBounds;
+        }
+
         public void Clear()
         {
             foreach (Mesh mesh in meshes)
@@ -259,14 +428,33 @@ namespace F1XR.RestAPI.Replay
                 if (mesh != null)
                     Object.Destroy(mesh);
             }
+            foreach (Material material in runtimeMaterials)
+            {
+                if (material != null)
+                    Object.Destroy(material);
+            }
 
             meshes.Clear();
+            runtimeMaterials.Clear();
+            convertedMaterials.Clear();
+            sourceRendererNames.Clear();
             roadTriangles.Clear();
             drivableTriangles.Clear();
             occlusionTriangles.Clear();
             ignoredOcclusionMaterials.Clear();
             segmentRoot = null;
             trackContextPrimaryTriangles = 0;
+            trackContextConnectedComponents = 0;
+            trackContextSelectedSubmeshes = 0;
+            unsupportedSourceMaterialCount = 0;
+            maximumTrackTriangleEdge = 0f;
+            usesIntactSuzukaRoad = false;
+            sourceRoadSubmesh = -1;
+            sourceRoadIndexCount = 0;
+            sourceRoadVertexCount = 0;
+            clipBoxCenters.Clear();
+            clipBoxSizes.Clear();
+            clipBoxYawDegrees.Clear();
         }
 
         public void SetIgnoredOcclusionMaterials(
@@ -625,6 +813,522 @@ namespace F1XR.RestAPI.Replay
                 stageBounds);
         }
 
+        private bool BuildIntactSuzukaRoad(
+            Transform visualRoot,
+            Transform sourceRoot,
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation,
+            float lateralPadding,
+            float longitudinalPadding,
+            out Bounds roadBounds)
+        {
+            roadBounds = default;
+            MeshFilter roadFilter = null;
+            MeshRenderer roadRenderer = null;
+            Material roadSourceMaterial = null;
+            int roadSubmesh = -1;
+            MeshFilter[] filters = visualRoot
+                .GetComponentsInChildren<MeshFilter>(true);
+            for (int filterIndex = 0;
+                 filterIndex < filters.Length;
+                 filterIndex++)
+            {
+                MeshFilter candidate = filters[filterIndex];
+                if (candidate == null ||
+                    candidate.sharedMesh == null ||
+                    !candidate.sharedMesh.isReadable ||
+                    !string.Equals(
+                        candidate.name,
+                        SuzukaRoadRendererName,
+                        System.StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                MeshRenderer candidateRenderer =
+                    candidate.GetComponent<MeshRenderer>();
+                if (candidateRenderer == null)
+                    continue;
+
+                Material[] materials = candidateRenderer.sharedMaterials;
+                int submeshCount = candidate.sharedMesh.subMeshCount;
+                for (int submesh = 0;
+                     submesh < submeshCount;
+                     submesh++)
+                {
+                    Material material = materials.Length > 0
+                        ? materials[Mathf.Min(
+                            submesh,
+                            materials.Length - 1)]
+                        : null;
+                    if (!IsExactSuzukaRoadMaterial(material))
+                        continue;
+
+                    roadFilter = candidate;
+                    roadRenderer = candidateRenderer;
+                    roadSourceMaterial = material;
+                    roadSubmesh = submesh;
+                    break;
+                }
+
+                if (roadSubmesh >= 0)
+                    break;
+            }
+
+            if (roadFilter == null ||
+                roadRenderer == null ||
+                roadSubmesh < 0)
+            {
+                Debug.LogError(
+                    "[EventTrackSegment] Intact Suzuka ROAD01 was not " +
+                    "found on renderer suzuka_2001.");
+                return false;
+            }
+
+            Shader shader = Shader.Find(AccidentRoadShaderName);
+            if (shader == null || !shader.isSupported)
+            {
+                Debug.LogError(
+                    "[EventTrackSegment] Quest-safe Suzuka road clip " +
+                    $"shader is unavailable: {AccidentRoadShaderName}.");
+                return false;
+            }
+
+            Mesh source = roadFilter.sharedMesh;
+            int[] completeRoadIndices = source.GetIndices(roadSubmesh);
+            if (completeRoadIndices.Length < 3)
+                return false;
+
+            Mesh roadMesh = new()
+            {
+                name = $"EventTrack_{source.name}_ROAD01_Intact",
+                indexFormat = source.indexFormat
+            };
+            CopyCompleteVertexAttributes(source, roadMesh);
+            roadMesh.subMeshCount = 1;
+            roadMesh.SetIndices(
+                completeRoadIndices,
+                MeshTopology.Triangles,
+                0,
+                false);
+            roadMesh.bounds = source.GetSubMesh(roadSubmesh).bounds;
+            meshes.Add(roadMesh);
+
+            GameObject roadObject = new(
+                "ActualSuzukaRoad01",
+                typeof(MeshFilter),
+                typeof(MeshRenderer));
+            roadObject.transform.SetParent(segmentRoot, false);
+            Matrix4x4 sourceToEvent =
+                Matrix4x4.Translate(
+                    -(sourceToLocalRotation * sourceCenter)) *
+                Matrix4x4.Rotate(sourceToLocalRotation) *
+                sourceRoot.worldToLocalMatrix *
+                roadFilter.transform.localToWorldMatrix;
+            ApplyLocalMatrix(roadObject.transform, sourceToEvent);
+            roadObject.GetComponent<MeshFilter>().sharedMesh = roadMesh;
+
+            Material roadMaterial = new(shader)
+            {
+                name = "Runtime_AccidentSuzuka_ROAD01_Clip"
+            };
+            runtimeMaterials.Add(roadMaterial);
+            if (roadMaterial.HasProperty("_BaseColor"))
+            {
+                roadMaterial.SetColor(
+                    "_BaseColor",
+                    new Color(0.29f, 0.30f, 0.32f, 1f));
+            }
+            Texture baseTexture = ResolveTrackContextBaseTexture(
+                roadSourceMaterial);
+            if (baseTexture != null &&
+                roadMaterial.HasProperty("_BaseMap"))
+            {
+                roadMaterial.SetTexture("_BaseMap", baseTexture);
+                CopyTextureTransform(
+                    roadSourceMaterial,
+                    roadMaterial);
+            }
+
+            Matrix4x4[] clipMatrices = BuildSuzukaClipMatrices(
+                roadFilter,
+                sourceRoot,
+                sourcePath,
+                sourceCenter,
+                sourceToLocalRotation,
+                lateralPadding,
+                longitudinalPadding,
+                out Bounds visibleObjectBounds);
+            roadMesh.bounds = visibleObjectBounds;
+            roadMaterial.SetInt("_ClipBoxCount", clipMatrices.Length);
+            roadMaterial.SetMatrixArray(
+                "_ClipBoxInverse",
+                clipMatrices);
+
+            MeshRenderer runtimeRenderer =
+                roadObject.GetComponent<MeshRenderer>();
+            runtimeRenderer.sharedMaterial = roadMaterial;
+            runtimeRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            runtimeRenderer.receiveShadows = false;
+            runtimeRenderer.lightProbeUsage = LightProbeUsage.Off;
+            runtimeRenderer.reflectionProbeUsage =
+                ReflectionProbeUsage.Off;
+            runtimeRenderer.motionVectorGenerationMode =
+                MotionVectorGenerationMode.ForceNoMotion;
+
+            usesIntactSuzukaRoad = true;
+            sourceRoadSubmesh = roadSubmesh;
+            sourceRoadIndexCount = completeRoadIndices.Length;
+            sourceRoadVertexCount = source.vertexCount;
+            trackContextPrimaryTriangles =
+                completeRoadIndices.Length / 3;
+            trackContextSelectedSubmeshes = 1;
+            sourceRendererNames.Add(roadFilter.name);
+            UpdateMaximumTriangleEdge(
+                source.vertices,
+                completeRoadIndices);
+            convertedMaterials[roadSourceMaterial] = roadMaterial;
+
+            if (!TryCalculateSegmentBounds(out roadBounds))
+                return false;
+
+            Debug.Log(
+                "[EventTrackSegment] Intact ROAD01 GPU clip active: " +
+                $"renderer={roadFilter.name}, " +
+                $"submesh={roadSubmesh}, " +
+                $"expectedSubmesh={SuzukaRoadExpectedSubmesh}, " +
+                $"vertices={sourceRoadVertexCount}, " +
+                $"indices={sourceRoadIndexCount}, " +
+                $"triangles={sourceRoadIndexCount / 3}, " +
+                $"clipBoxes={clipMatrices.Length}, " +
+                "cpuTriangleCropping=False, grooveEnabled=False, " +
+                $"shader={shader.name}.");
+            if (roadSubmesh != SuzukaRoadExpectedSubmesh)
+            {
+                Debug.LogWarning(
+                    "[EventTrackSegment] ROAD01 material resolved to " +
+                    $"submesh {roadSubmesh}; GLB source expectation is " +
+                    $"{SuzukaRoadExpectedSubmesh}.");
+            }
+            return true;
+        }
+
+        private static void CopyCompleteVertexAttributes(
+            Mesh source,
+            Mesh destination)
+        {
+            int vertexCount = source.vertexCount;
+            destination.vertices = source.vertices;
+            Vector3[] normals = source.normals;
+            if (normals.Length == vertexCount)
+                destination.normals = normals;
+            Vector4[] tangents = source.tangents;
+            if (tangents.Length == vertexCount)
+                destination.tangents = tangents;
+            Color32[] colors = source.colors32;
+            if (colors.Length == vertexCount)
+                destination.colors32 = colors;
+
+            for (int channel = 0; channel < 8; channel++)
+            {
+                List<Vector4> uv = new(vertexCount);
+                source.GetUVs(channel, uv);
+                if (uv.Count == vertexCount)
+                    destination.SetUVs(channel, uv);
+            }
+        }
+
+        private Matrix4x4[] BuildSuzukaClipMatrices(
+            MeshFilter roadFilter,
+            Transform sourceRoot,
+            IReadOnlyList<Vector3> sourcePath,
+            Vector3 sourceCenter,
+            Quaternion sourceToLocalRotation,
+            float lateralPadding,
+            float longitudinalPadding,
+            out Bounds visibleObjectBounds)
+        {
+            visibleObjectBounds = default;
+            bool hasVisibleBounds = false;
+            float[] progress = BuildPathProgress(sourcePath);
+            float pathLength = progress.Length > 0
+                ? progress[progress.Length - 1]
+                : 0f;
+            float segmentLength = Mathf.Max(
+                0.0001f,
+                pathLength / SuzukaClipBoxCount);
+            float overlap = Mathf.Max(
+                longitudinalPadding,
+                segmentLength * 0.18f);
+            float lateralSize = Mathf.Max(
+                lateralPadding * 3f,
+                segmentLength * 0.8f);
+            float verticalSize = Mathf.Max(
+                lateralSize * 0.75f,
+                0.012f);
+            Matrix4x4 sourceToRoadObject =
+                roadFilter.transform.worldToLocalMatrix *
+                sourceRoot.localToWorldMatrix;
+            Matrix4x4[] matrices =
+                new Matrix4x4[SuzukaClipBoxCount];
+            for (int box = 0;
+                 box < SuzukaClipBoxCount;
+                 box++)
+            {
+                float start = segmentLength * box - overlap;
+                float end = segmentLength * (box + 1) + overlap;
+                if (box == 0)
+                    start -= longitudinalPadding;
+                if (box == SuzukaClipBoxCount - 1)
+                    end += longitudinalPadding;
+                float middle = (start + end) * 0.5f;
+                Vector3 center = EvaluatePathAtDistance(
+                    sourcePath,
+                    progress,
+                    middle);
+                Vector3 before = EvaluatePathAtDistance(
+                    sourcePath,
+                    progress,
+                    middle - segmentLength * 0.25f);
+                Vector3 after = EvaluatePathAtDistance(
+                    sourcePath,
+                    progress,
+                    middle + segmentLength * 0.25f);
+                Vector3 tangent = after - before;
+                tangent.y = 0f;
+                if (tangent.sqrMagnitude <= 0.00000001f)
+                    tangent = Vector3.forward;
+                else
+                    tangent.Normalize();
+                Quaternion rotation = Quaternion.LookRotation(
+                    tangent,
+                    Vector3.up);
+                Vector3 size = new(
+                    lateralSize,
+                    verticalSize,
+                    Mathf.Max(0.0001f, end - start));
+                Matrix4x4 boxToRoadObject = sourceToRoadObject *
+                    Matrix4x4.TRS(center, rotation, size);
+                matrices[box] = boxToRoadObject.inverse;
+                EncapsulateUnitBox(
+                    boxToRoadObject,
+                    ref visibleObjectBounds,
+                    ref hasVisibleBounds);
+
+                Vector3 eventCenter = sourceToLocalRotation *
+                    (center - sourceCenter);
+                Vector3 eventTangent = sourceToLocalRotation * tangent;
+                eventTangent.y = 0f;
+                clipBoxCenters.Add(eventCenter);
+                clipBoxSizes.Add(size);
+                clipBoxYawDegrees.Add(
+                    Vector3.SignedAngle(
+                        Vector3.forward,
+                        eventTangent,
+                        Vector3.up));
+            }
+            return matrices;
+        }
+
+        private static void EncapsulateUnitBox(
+            Matrix4x4 boxToDestination,
+            ref Bounds bounds,
+            ref bool hasBounds)
+        {
+            for (int x = 0; x < 2; x++)
+            {
+                for (int y = 0; y < 2; y++)
+                {
+                    for (int z = 0; z < 2; z++)
+                    {
+                        Vector3 point = boxToDestination.MultiplyPoint3x4(
+                            new Vector3(
+                                x == 0 ? -0.5f : 0.5f,
+                                y == 0 ? -0.5f : 0.5f,
+                                z == 0 ? -0.5f : 0.5f));
+                        if (!hasBounds)
+                        {
+                            bounds = new Bounds(point, Vector3.zero);
+                            hasBounds = true;
+                        }
+                        else
+                        {
+                            bounds.Encapsulate(point);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static Vector3 EvaluatePathAtDistance(
+            IReadOnlyList<Vector3> path,
+            IReadOnlyList<float> progress,
+            float distance)
+        {
+            if (path == null || path.Count == 0)
+                return Vector3.zero;
+            if (path.Count == 1)
+                return path[0];
+
+            float total = progress[progress.Count - 1];
+            if (distance <= 0f)
+            {
+                Vector3 tangent = path[1] - path[0];
+                return path[0] +
+                    tangent.normalized * distance;
+            }
+            if (distance >= total)
+            {
+                Vector3 tangent =
+                    path[path.Count - 1] - path[path.Count - 2];
+                return path[path.Count - 1] +
+                    tangent.normalized * (distance - total);
+            }
+
+            for (int index = 0;
+                 index + 1 < path.Count;
+                 index++)
+            {
+                if (distance > progress[index + 1])
+                    continue;
+                float length = Mathf.Max(
+                    0.00000001f,
+                    progress[index + 1] - progress[index]);
+                return Vector3.LerpUnclamped(
+                    path[index],
+                    path[index + 1],
+                    (distance - progress[index]) / length);
+            }
+            return path[path.Count - 1];
+        }
+
+        private static bool IsExactSuzukaRoadMaterial(
+            Material material)
+        {
+            if (material == null)
+                return false;
+            string name = material.name;
+            int suffix = name.IndexOf(
+                " (",
+                System.StringComparison.Ordinal);
+            if (suffix >= 0)
+                name = name.Substring(0, suffix);
+            return string.Equals(
+                name,
+                SuzukaRoadMaterialName,
+                System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void CopyTextureTransform(
+            Material source,
+            Material destination)
+        {
+            if (source == null || destination == null)
+                return;
+            string property = source.HasProperty("_BaseMap")
+                ? "_BaseMap"
+                : source.HasProperty("_MainTex")
+                    ? "_MainTex"
+                    : null;
+            if (property == null)
+                return;
+            destination.SetTextureScale(
+                "_BaseMap",
+                source.GetTextureScale(property));
+            destination.SetTextureOffset(
+                "_BaseMap",
+                source.GetTextureOffset(property));
+        }
+
+        private static void ApplyLocalMatrix(
+            Transform target,
+            Matrix4x4 matrix)
+        {
+            Vector3 forward = matrix.GetColumn(2);
+            Vector3 up = matrix.GetColumn(1);
+            float scaleX = matrix.GetColumn(0).magnitude;
+            float scaleY = up.magnitude;
+            float scaleZ = forward.magnitude;
+            if (matrix.determinant < 0f)
+                scaleX = -scaleX;
+            target.localPosition = matrix.GetColumn(3);
+            target.localRotation = Quaternion.LookRotation(
+                forward.normalized,
+                up.normalized);
+            target.localScale = new Vector3(
+                scaleX,
+                scaleY,
+                scaleZ);
+        }
+
+        private bool TryCalculateSegmentBounds(
+            out Bounds bounds)
+        {
+            bounds = default;
+            if (segmentRoot == null || segmentRoot.parent == null)
+                return false;
+            MeshFilter[] filters = segmentRoot
+                .GetComponentsInChildren<MeshFilter>(true);
+            bool found = false;
+            Transform destination = segmentRoot.parent;
+            for (int filterIndex = 0;
+                 filterIndex < filters.Length;
+                 filterIndex++)
+            {
+                MeshFilter filter = filters[filterIndex];
+                if (filter == null || filter.sharedMesh == null)
+                    continue;
+                Bounds meshBounds = filter.sharedMesh.bounds;
+                Vector3 minimum = meshBounds.min;
+                Vector3 maximum = meshBounds.max;
+                for (int x = 0; x < 2; x++)
+                {
+                    for (int y = 0; y < 2; y++)
+                    {
+                        for (int z = 0; z < 2; z++)
+                        {
+                            Vector3 point = destination.InverseTransformPoint(
+                                filter.transform.TransformPoint(
+                                    new Vector3(
+                                        x == 0 ? minimum.x : maximum.x,
+                                        y == 0 ? minimum.y : maximum.y,
+                                        z == 0 ? minimum.z : maximum.z)));
+                            if (!found)
+                            {
+                                bounds = new Bounds(point, Vector3.zero);
+                                found = true;
+                            }
+                            else
+                            {
+                                bounds.Encapsulate(point);
+                            }
+                        }
+                    }
+                }
+            }
+            return found;
+        }
+
+        private void UpdateMaximumTriangleEdge(
+            IReadOnlyList<Vector3> vertices,
+            IReadOnlyList<int> indices)
+        {
+            for (int index = 0;
+                 index + 2 < indices.Count;
+                 index += 3)
+            {
+                Vector3 a = vertices[indices[index]];
+                Vector3 b = vertices[indices[index + 1]];
+                Vector3 c = vertices[indices[index + 2]];
+                maximumTrackTriangleEdge = Mathf.Max(
+                    maximumTrackTriangleEdge,
+                    Vector3.Distance(a, b),
+                    Vector3.Distance(b, c),
+                    Vector3.Distance(c, a));
+            }
+        }
+
         private int CopyMesh(
             MeshFilter sourceFilter,
             Transform parent,
@@ -633,17 +1337,20 @@ namespace F1XR.RestAPI.Replay
             Quaternion sourceToLocalRotation,
             Bounds clipBounds,
             IReadOnlyList<Vector3> localPath,
-            float padding,
+            float lateralPadding,
+            float longitudinalPadding,
             float[] nearestSurfaceY,
             float[] nearestPrimarySurfaceY)
         {
             Mesh source = sourceFilter.sharedMesh;
             Vector3[] sourceVertices = source.vertices;
             Vector3[] sourceNormals = source.normals;
+            Vector4[] sourceTangents = source.tangents;
             Vector2[] sourceUv = source.uv;
             Vector2[] sourceUv2 = source.uv2;
             Color[] sourceColors = source.colors;
             bool hasNormals = sourceNormals.Length == sourceVertices.Length;
+            bool hasTangents = sourceTangents.Length == sourceVertices.Length;
             bool hasUv = sourceUv.Length == sourceVertices.Length;
             bool hasUv2 = sourceUv2.Length == sourceVertices.Length;
             bool hasColors = sourceColors.Length == sourceVertices.Length;
@@ -661,6 +1368,7 @@ namespace F1XR.RestAPI.Replay
 
             Vector3[] positions = new Vector3[sourceVertices.Length];
             Vector3[] normals = hasNormals ? new Vector3[sourceVertices.Length] : null;
+            Vector4[] tangents = hasTangents ? new Vector4[sourceVertices.Length] : null;
             bool[] resolvedVertices = trackContextOnly
                 ? new bool[sourceVertices.Length]
                 : null;
@@ -680,26 +1388,49 @@ namespace F1XR.RestAPI.Replay
                             .MultiplyVector(sourceNormals[i])
                             .normalized;
                     }
+                    if (hasTangents)
+                    {
+                        Vector3 direction = sourceToEvent.MultiplyVector(
+                            new Vector3(
+                                sourceTangents[i].x,
+                                sourceTangents[i].y,
+                                sourceTangents[i].z)).normalized;
+                        tangents[i] = new Vector4(
+                            direction.x,
+                            direction.y,
+                            direction.z,
+                            sourceTangents[i].w *
+                            (reverseWinding ? -1f : 1f));
+                    }
                 }
             }
 
             List<Vector3> vertices = new();
             List<Vector3> copiedNormals = hasNormals ? new List<Vector3>() : null;
+            List<Vector4> copiedTangents = hasTangents ? new List<Vector4>() : null;
             List<Vector2> uv = hasUv ? new List<Vector2>() : null;
             List<Vector2> uv2 = hasUv2 ? new List<Vector2>() : null;
             List<Color> colors = hasColors ? new List<Color>() : null;
             List<List<int>> submeshes = new(source.subMeshCount);
-            List<Material> materials = new(source.subMeshCount);
+            List<Material> copiedMaterials = new(source.subMeshCount);
             Material[] sourceMaterials = sourceRenderer.sharedMaterials;
             Dictionary<int, int> remap = new();
             int keptTriangles = 0;
-            Vector2 maximumTriangleSpan = new Vector2(
-                clipBounds.size.x * 2f,
-                clipBounds.size.z * 2f);
+            float[] pathProgress = trackContextOnly
+                ? BuildPathProgress(localPath)
+                : null;
+            Vector2 maximumTriangleSpan = trackContextOnly
+                ? new Vector2(float.PositiveInfinity, float.PositiveInfinity)
+                : new Vector2(
+                    clipBounds.size.x * 2f,
+                    clipBounds.size.z * 2f);
 
             for (int submesh = 0; submesh < source.subMeshCount; submesh++)
             {
                 List<int> triangles = new();
+                List<int> candidateSourceIndices = trackContextOnly
+                    ? new List<int>()
+                    : null;
                 if (source.GetTopology(submesh) != MeshTopology.Triangles)
                     continue;
 
@@ -745,6 +1476,9 @@ namespace F1XR.RestAPI.Replay
                 bool isPrimaryTrackContext = trackContextOnly &&
                     IsPrimaryTrackContextSurface(sourceMaterial);
                 int[] indices = source.GetIndices(submesh);
+                Dictionary<int, int> sourceComponentRoots = trackContextOnly
+                    ? BuildTriangleComponentRoots(indices)
+                    : null;
                 for (int index = 0; index + 2 < indices.Length; index += 3)
                 {
                     int a = indices[index];
@@ -753,6 +1487,30 @@ namespace F1XR.RestAPI.Replay
                     Vector3 pointA = ResolveVertex(a);
                     Vector3 pointB = ResolveVertex(b);
                     Vector3 pointC = ResolveVertex(c);
+                    if (trackContextOnly)
+                    {
+                        Vector3 center =
+                            (pointA + pointB + pointC) / 3f;
+                        if (!TryProjectToPathWindow(
+                                center,
+                                localPath,
+                                pathProgress,
+                                longitudinalPadding,
+                                lateralPadding,
+                                out _,
+                                out float verticalDistance) ||
+                            verticalDistance > Mathf.Max(
+                                0.0015f,
+                                lateralPadding * 0.3f))
+                        {
+                            continue;
+                        }
+                        candidateSourceIndices.Add(a);
+                        candidateSourceIndices.Add(b);
+                        candidateSourceIndices.Add(c);
+                        continue;
+                    }
+
                     if (!TriangleIntersects(
                             pointA,
                             pointB,
@@ -760,8 +1518,10 @@ namespace F1XR.RestAPI.Replay
                             clipBounds,
                             maximumTriangleSpan,
                             localPath,
-                            padding))
+                            lateralPadding))
+                    {
                         continue;
+                    }
 
                     RecordNearestSurfaceHeights(
                         pointA,
@@ -809,11 +1569,59 @@ namespace F1XR.RestAPI.Replay
                     }
                 }
 
+                if (trackContextOnly)
+                {
+                    for (int triangleIndex = 0;
+                         triangleIndex + 2 < candidateSourceIndices.Count;
+                         triangleIndex += 3)
+                    {
+                        int a = candidateSourceIndices[triangleIndex];
+                        int b = candidateSourceIndices[triangleIndex + 1];
+                        int c = candidateSourceIndices[triangleIndex + 2];
+                        Vector3 pointA = ResolveVertex(a);
+                        Vector3 pointB = ResolveVertex(b);
+                        Vector3 pointC = ResolveVertex(c);
+                        maximumTrackTriangleEdge = Mathf.Max(
+                            maximumTrackTriangleEdge,
+                            Vector3.Distance(pointA, pointB),
+                            Vector3.Distance(pointB, pointC),
+                            Vector3.Distance(pointC, pointA));
+                        RecordNearestSurfaceHeights(
+                            pointA,
+                            pointB,
+                            pointC,
+                            localPath,
+                            nearestSurfaceY,
+                            isPrimaryTrackContext
+                                ? nearestPrimarySurfaceY
+                                : null);
+                        triangles.Add(CopyVertex(a));
+                        triangles.Add(CopyVertex(
+                            reverseWinding ? c : b));
+                        triangles.Add(CopyVertex(
+                            reverseWinding ? b : c));
+                        keptTriangles++;
+                        if (isPrimaryTrackContext)
+                            trackContextPrimaryTriangles++;
+                    }
+                }
+
                 if (triangles.Count == 0)
                     continue;
 
+                if (trackContextOnly)
+                {
+                    trackContextSelectedSubmeshes++;
+                    trackContextConnectedComponents +=
+                        CountSelectedComponentRoots(
+                            candidateSourceIndices,
+                            sourceComponentRoots);
+                }
+
                 submeshes.Add(triangles);
-                materials.Add(sourceMaterial);
+                copiedMaterials.Add(trackContextOnly
+                    ? ResolveTrackContextMaterial(sourceMaterial)
+                    : sourceMaterial);
             }
 
             if (keptTriangles == 0)
@@ -829,6 +1637,8 @@ namespace F1XR.RestAPI.Replay
             mesh.SetVertices(vertices);
             if (hasNormals)
                 mesh.SetNormals(copiedNormals);
+            if (hasTangents)
+                mesh.SetTangents(copiedTangents);
             if (hasUv)
                 mesh.SetUVs(0, uv);
             if (hasUv2)
@@ -850,7 +1660,7 @@ namespace F1XR.RestAPI.Replay
             copy.GetComponent<MeshFilter>().sharedMesh = mesh;
 
             MeshRenderer renderer = copy.GetComponent<MeshRenderer>();
-            renderer.sharedMaterials = materials.ToArray();
+            renderer.sharedMaterials = copiedMaterials.ToArray();
             renderer.shadowCastingMode = trackContextOnly
                 ? ShadowCastingMode.Off
                 : sourceRenderer.shadowCastingMode;
@@ -862,6 +1672,8 @@ namespace F1XR.RestAPI.Replay
             {
                 renderer.motionVectorGenerationMode =
                     MotionVectorGenerationMode.ForceNoMotion;
+                if (!sourceRendererNames.Contains(sourceFilter.name))
+                    sourceRendererNames.Add(sourceFilter.name);
             }
 
             return keptTriangles;
@@ -883,10 +1695,56 @@ namespace F1XR.RestAPI.Replay
                             .MultiplyVector(sourceNormals[sourceIndex])
                             .normalized;
                     }
+                    if (hasTangents)
+                    {
+                        Vector4 sourceTangent = sourceTangents[sourceIndex];
+                        Vector3 direction = sourceToEvent.MultiplyVector(
+                            new Vector3(
+                                sourceTangent.x,
+                                sourceTangent.y,
+                                sourceTangent.z)).normalized;
+                        tangents[sourceIndex] = new Vector4(
+                            direction.x,
+                            direction.y,
+                            direction.z,
+                            sourceTangent.w *
+                            (reverseWinding ? -1f : 1f));
+                    }
                     resolvedVertices[sourceIndex] = true;
                 }
 
                 return positions[sourceIndex];
+            }
+
+            TrackClipVertex CreateClipVertex(int sourceIndex)
+            {
+                ResolveVertex(sourceIndex);
+                return new TrackClipVertex(
+                    positions[sourceIndex],
+                    hasNormals ? normals[sourceIndex] : Vector3.up,
+                    hasTangents
+                        ? tangents[sourceIndex]
+                        : new Vector4(1f, 0f, 0f, 1f),
+                    hasUv ? sourceUv[sourceIndex] : Vector2.zero,
+                    hasUv2 ? sourceUv2[sourceIndex] : Vector2.zero,
+                    hasColors ? sourceColors[sourceIndex] : Color.white);
+            }
+
+            int CopyClippedVertex(TrackClipVertex vertex)
+            {
+                int copied = vertices.Count;
+                vertices.Add(vertex.Position);
+                if (hasNormals)
+                    copiedNormals.Add(vertex.Normal);
+                if (hasTangents)
+                    copiedTangents.Add(vertex.Tangent);
+                if (hasUv)
+                    uv.Add(vertex.Uv);
+                if (hasUv2)
+                    uv2.Add(vertex.Uv2);
+                if (hasColors)
+                    colors.Add(vertex.Color);
+                return copied;
             }
 
             int CopyVertex(int sourceIndex)
@@ -899,6 +1757,8 @@ namespace F1XR.RestAPI.Replay
                 vertices.Add(ResolveVertex(sourceIndex));
                 if (hasNormals)
                     copiedNormals.Add(normals[sourceIndex]);
+                if (hasTangents)
+                    copiedTangents.Add(tangents[sourceIndex]);
                 if (hasUv)
                     uv.Add(sourceUv[sourceIndex]);
                 if (hasUv2)
@@ -907,6 +1767,481 @@ namespace F1XR.RestAPI.Replay
                     colors.Add(sourceColors[sourceIndex]);
                 return copied;
             }
+        }
+
+        private static float[] BuildPathProgress(
+            IReadOnlyList<Vector3> path)
+        {
+            int count = path?.Count ?? 0;
+            float[] progress = new float[count];
+            for (int index = 1; index < count; index++)
+            {
+                progress[index] = progress[index - 1] +
+                    Vector2.Distance(
+                        new Vector2(
+                            path[index - 1].x,
+                            path[index - 1].z),
+                        new Vector2(
+                            path[index].x,
+                            path[index].z));
+            }
+            return progress;
+        }
+
+        private static bool TryProjectToPathWindow(
+            Vector3 point,
+            IReadOnlyList<Vector3> path,
+            IReadOnlyList<float> progress,
+            float longitudinalPadding,
+            float lateralWidth,
+            out float alongTrackProgress,
+            out float verticalDistance)
+        {
+            alongTrackProgress = 0f;
+            verticalDistance = float.PositiveInfinity;
+            int count = path?.Count ?? 0;
+            if (count < 2 || progress == null || progress.Count != count)
+                return false;
+
+            Vector2 candidate = new(point.x, point.z);
+            float bestDistanceSquared = float.PositiveInfinity;
+            float bestProgress = 0f;
+            float bestPathHeight = 0f;
+            for (int index = 0; index + 1 < count; index++)
+            {
+                Vector2 start = new(path[index].x, path[index].z);
+                Vector2 end = new(path[index + 1].x, path[index + 1].z);
+                Vector2 segment = end - start;
+                float lengthSquared = segment.sqrMagnitude;
+                if (lengthSquared <= 0.00000001f)
+                    continue;
+
+                float length = Mathf.Sqrt(lengthSquared);
+                float interpolation = Vector2.Dot(
+                    candidate - start,
+                    segment) / lengthSquared;
+                float minimum = index == 0
+                    ? -longitudinalPadding / length
+                    : 0f;
+                float maximum = index + 2 == count
+                    ? 1f + longitudinalPadding / length
+                    : 1f;
+                interpolation = Mathf.Clamp(
+                    interpolation,
+                    minimum,
+                    maximum);
+                Vector2 nearest = start + segment * interpolation;
+                float distanceSquared =
+                    (candidate - nearest).sqrMagnitude;
+                if (distanceSquared >= bestDistanceSquared)
+                    continue;
+
+                bestDistanceSquared = distanceSquared;
+                bestProgress = progress[index] +
+                    length * interpolation;
+                bestPathHeight = Mathf.LerpUnclamped(
+                    path[index].y,
+                    path[index + 1].y,
+                    interpolation);
+            }
+
+            alongTrackProgress = bestProgress;
+            verticalDistance = Mathf.Abs(point.y - bestPathHeight);
+            float totalLength = progress[count - 1];
+            return bestDistanceSquared <= lateralWidth * lateralWidth &&
+                bestProgress >= -longitudinalPadding &&
+                bestProgress <= totalLength + longitudinalPadding;
+        }
+
+        private static int CountTriangleComponents(
+            IReadOnlyList<int> triangleIndices)
+        {
+            if (triangleIndices == null || triangleIndices.Count < 3)
+                return 0;
+
+            Dictionary<int, int> parents = new();
+            for (int index = 0;
+                 index + 2 < triangleIndices.Count;
+                 index += 3)
+            {
+                int a = triangleIndices[index];
+                int b = triangleIndices[index + 1];
+                int c = triangleIndices[index + 2];
+                Add(a);
+                Add(b);
+                Add(c);
+                Union(a, b);
+                Union(b, c);
+            }
+
+            HashSet<int> components = new();
+            List<int> vertices = new(parents.Keys);
+            foreach (int vertex in vertices)
+                components.Add(Find(vertex));
+            return components.Count;
+
+            void Add(int vertex)
+            {
+                if (!parents.ContainsKey(vertex))
+                    parents[vertex] = vertex;
+            }
+
+            int Find(int vertex)
+            {
+                int parent = parents[vertex];
+                if (parent == vertex)
+                    return vertex;
+                int root = Find(parent);
+                parents[vertex] = root;
+                return root;
+            }
+
+            void Union(int left, int right)
+            {
+                int leftRoot = Find(left);
+                int rightRoot = Find(right);
+                if (leftRoot != rightRoot)
+                    parents[rightRoot] = leftRoot;
+            }
+        }
+
+        private static Dictionary<int, int> BuildTriangleComponentRoots(
+            IReadOnlyList<int> triangleIndices)
+        {
+            Dictionary<int, int> parents = new();
+            for (int index = 0;
+                 index + 2 < triangleIndices.Count;
+                 index += 3)
+            {
+                int a = triangleIndices[index];
+                int b = triangleIndices[index + 1];
+                int c = triangleIndices[index + 2];
+                Add(a);
+                Add(b);
+                Add(c);
+                Union(a, b);
+                Union(b, c);
+            }
+
+            Dictionary<int, int> roots = new(parents.Count);
+            foreach (int vertex in new List<int>(parents.Keys))
+                roots[vertex] = Find(vertex);
+            return roots;
+
+            void Add(int vertex)
+            {
+                if (!parents.ContainsKey(vertex))
+                    parents[vertex] = vertex;
+            }
+
+            int Find(int vertex)
+            {
+                int parent = parents[vertex];
+                if (parent == vertex)
+                    return vertex;
+                int root = Find(parent);
+                parents[vertex] = root;
+                return root;
+            }
+
+            void Union(int left, int right)
+            {
+                int leftRoot = Find(left);
+                int rightRoot = Find(right);
+                if (leftRoot != rightRoot)
+                    parents[rightRoot] = leftRoot;
+            }
+        }
+
+        private static int CountSelectedComponentRoots(
+            IReadOnlyList<int> candidateTriangleIndices,
+            IReadOnlyDictionary<int, int> componentRoots)
+        {
+            if (candidateTriangleIndices == null ||
+                candidateTriangleIndices.Count < 3 ||
+                componentRoots == null)
+            {
+                return 0;
+            }
+
+            HashSet<int> selectedRoots = new();
+            for (int index = 0;
+                 index + 2 < candidateTriangleIndices.Count;
+                 index += 3)
+            {
+                int vertex = candidateTriangleIndices[index];
+                if (!componentRoots.TryGetValue(vertex, out int root))
+                    continue;
+                selectedRoots.Add(root);
+            }
+            return selectedRoots.Count;
+        }
+
+        private readonly struct TrackClipVertex
+        {
+            public TrackClipVertex(
+                Vector3 position,
+                Vector3 normal,
+                Vector4 tangent,
+                Vector2 uv,
+                Vector2 uv2,
+                Color color)
+            {
+                Position = position;
+                Normal = normal;
+                Tangent = tangent;
+                Uv = uv;
+                Uv2 = uv2;
+                Color = color;
+            }
+
+            public Vector3 Position { get; }
+            public Vector3 Normal { get; }
+            public Vector4 Tangent { get; }
+            public Vector2 Uv { get; }
+            public Vector2 Uv2 { get; }
+            public Color Color { get; }
+
+            public static TrackClipVertex Lerp(
+                TrackClipVertex from,
+                TrackClipVertex to,
+                float interpolation)
+            {
+                float t = Mathf.Clamp01(interpolation);
+                Vector3 normal = Vector3.LerpUnclamped(
+                    from.Normal,
+                    to.Normal,
+                    t).normalized;
+                Vector4 tangent = Vector4.LerpUnclamped(
+                    from.Tangent,
+                    to.Tangent,
+                    t);
+                Vector3 tangentDirection = new(
+                    tangent.x,
+                    tangent.y,
+                    tangent.z);
+                if (tangentDirection.sqrMagnitude > 0.000001f)
+                    tangentDirection.Normalize();
+                tangent = new Vector4(
+                    tangentDirection.x,
+                    tangentDirection.y,
+                    tangentDirection.z,
+                    tangent.w >= 0f ? 1f : -1f);
+                return new TrackClipVertex(
+                    Vector3.LerpUnclamped(
+                        from.Position,
+                        to.Position,
+                        t),
+                    normal,
+                    tangent,
+                    Vector2.LerpUnclamped(from.Uv, to.Uv, t),
+                    Vector2.LerpUnclamped(from.Uv2, to.Uv2, t),
+                    Color.LerpUnclamped(from.Color, to.Color, t));
+            }
+        }
+
+        private static List<TrackClipVertex> ClipTrackTriangle(
+            TrackClipVertex a,
+            TrackClipVertex b,
+            TrackClipVertex c,
+            Bounds bounds)
+        {
+            List<TrackClipVertex> polygon = new(7) { a, b, c };
+            polygon = ClipTrackPolygon(polygon, 0, bounds.min.x, true);
+            polygon = ClipTrackPolygon(polygon, 0, bounds.max.x, false);
+            polygon = ClipTrackPolygon(polygon, 2, bounds.min.z, true);
+            return ClipTrackPolygon(polygon, 2, bounds.max.z, false);
+        }
+
+        private static List<TrackClipVertex> ClipTrackPolygon(
+            IReadOnlyList<TrackClipVertex> input,
+            int axis,
+            float limit,
+            bool keepGreater)
+        {
+            List<TrackClipVertex> output = new(input.Count + 1);
+            if (input.Count == 0)
+                return output;
+
+            TrackClipVertex previous = input[input.Count - 1];
+            float previousCoordinate = ResolveClipCoordinate(
+                previous.Position,
+                axis);
+            bool previousInside = keepGreater
+                ? previousCoordinate >= limit
+                : previousCoordinate <= limit;
+            for (int index = 0; index < input.Count; index++)
+            {
+                TrackClipVertex current = input[index];
+                float currentCoordinate = ResolveClipCoordinate(
+                    current.Position,
+                    axis);
+                bool currentInside = keepGreater
+                    ? currentCoordinate >= limit
+                    : currentCoordinate <= limit;
+                if (currentInside != previousInside)
+                {
+                    float denominator =
+                        currentCoordinate - previousCoordinate;
+                    float interpolation = Mathf.Abs(denominator) >
+                        0.00000001f
+                            ? (limit - previousCoordinate) / denominator
+                            : 0f;
+                    output.Add(TrackClipVertex.Lerp(
+                        previous,
+                        current,
+                        interpolation));
+                }
+                if (currentInside)
+                    output.Add(current);
+
+                previous = current;
+                previousCoordinate = currentCoordinate;
+                previousInside = currentInside;
+            }
+            return output;
+        }
+
+        private static float ResolveClipCoordinate(
+            Vector3 point,
+            int axis)
+        {
+            return axis == 0 ? point.x : point.z;
+        }
+
+        private Material ResolveTrackContextMaterial(Material source)
+        {
+            if (source != null &&
+                convertedMaterials.TryGetValue(
+                    source,
+                    out Material cached))
+            {
+                return cached;
+            }
+
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit") ??
+                Shader.Find("Universal Render Pipeline/Unlit") ??
+                Shader.Find("Unlit/Color");
+            if (shader == null)
+                return source;
+
+            bool unsupported = source == null ||
+                source.shader == null ||
+                !source.shader.isSupported;
+            if (unsupported)
+                unsupportedSourceMaterialCount++;
+
+            string sourceName = source != null
+                ? source.name
+                : "MissingTrackMaterial";
+            string lowerName = sourceName.ToLowerInvariant();
+            Color baseColor = ResolveTrackContextBaseColor(
+                source,
+                lowerName);
+            Material converted = new(shader)
+            {
+                name = $"AccidentSuzuka_{sourceName}"
+            };
+            if (converted.HasProperty("_BaseColor"))
+                converted.SetColor("_BaseColor", baseColor);
+            if (converted.HasProperty("_Color"))
+                converted.SetColor("_Color", baseColor);
+            if (converted.HasProperty("_Metallic"))
+                converted.SetFloat("_Metallic", 0f);
+            if (converted.HasProperty("_Smoothness"))
+                converted.SetFloat("_Smoothness", 0.16f);
+
+            Texture baseTexture = ResolveTrackContextBaseTexture(source);
+            if (baseTexture != null)
+            {
+                if (converted.HasProperty("_BaseMap"))
+                    converted.SetTexture("_BaseMap", baseTexture);
+                if (converted.HasProperty("_MainTex"))
+                    converted.SetTexture("_MainTex", baseTexture);
+                string sourceTextureProperty = source != null &&
+                    source.HasProperty("_BaseMap")
+                        ? "_BaseMap"
+                        : "_MainTex";
+                if (source != null &&
+                    source.HasProperty(sourceTextureProperty))
+                {
+                    Vector2 scale = source.GetTextureScale(
+                        sourceTextureProperty);
+                    Vector2 offset = source.GetTextureOffset(
+                        sourceTextureProperty);
+                    if (converted.HasProperty("_BaseMap"))
+                    {
+                        converted.SetTextureScale("_BaseMap", scale);
+                        converted.SetTextureOffset("_BaseMap", offset);
+                    }
+                }
+            }
+
+            runtimeMaterials.Add(converted);
+            if (source != null)
+                convertedMaterials[source] = converted;
+            Debug.Log(
+                $"[EventTrackSegment] material source={sourceName}, " +
+                $"shader={(source != null && source.shader != null ? source.shader.name : "missing")}, " +
+                $"supported={!unsupported}, converted={shader.name}.");
+            return converted;
+        }
+
+        private static Texture ResolveTrackContextBaseTexture(
+            Material source)
+        {
+            if (source == null)
+                return null;
+            if (source.HasProperty("_BaseMap"))
+                return source.GetTexture("_BaseMap");
+            if (source.HasProperty("_MainTex"))
+                return source.GetTexture("_MainTex");
+            return null;
+        }
+
+        private static Color ResolveTrackContextBaseColor(
+            Material source,
+            string lowerName)
+        {
+            Color color = Color.white;
+            if (source != null)
+            {
+                if (source.HasProperty("_BaseColor"))
+                    color = source.GetColor("_BaseColor");
+                else if (source.HasProperty("_Color"))
+                    color = source.GetColor("_Color");
+            }
+
+            if (lowerName.Contains("road") ||
+                lowerName.Contains("asphalt") ||
+                lowerName.Contains("tarmac"))
+            {
+                color *= new Color(0.34f, 0.35f, 0.37f, 1f);
+            }
+            else if (lowerName.Contains("green") ||
+                     lowerName.Contains("runoff") ||
+                     lowerName.Contains("grass") ||
+                     lowerName.Contains("ground") ||
+                     lowerName.Contains("terrain"))
+            {
+                color *= new Color(0.30f, 0.48f, 0.24f, 1f);
+            }
+            else if (lowerName.Contains("gravel") ||
+                     lowerName.Contains("grvl"))
+            {
+                color *= new Color(0.48f, 0.39f, 0.27f, 1f);
+            }
+            else if (lowerName.Contains("skid") ||
+                     lowerName.Contains("groove"))
+            {
+                color *= new Color(0.15f, 0.16f, 0.17f, 1f);
+            }
+            else
+            {
+                color *= new Color(0.42f, 0.43f, 0.45f, 1f);
+            }
+            color.a = 1f;
+            return color;
         }
 
         private static bool IsRemovableForegroundOccluder(
@@ -1199,28 +2534,16 @@ namespace F1XR.RestAPI.Replay
                 name.Contains("tree") ||
                 name.Contains("building") ||
                 name.Contains("grandstand") ||
-                name.Contains("gravel") ||
-                name.Contains("grvl") ||
                 name.Contains("terrain") ||
                 name.Contains("ground"))
             {
                 return false;
             }
 
-            return name.Contains("road") ||
+            return (name.Contains("road") &&
+                    !name.Contains("road_rk_green")) ||
                 name.Contains("asphalt") ||
-                name.Contains("tarmac") ||
-                name.Contains("curb") ||
-                name.Contains("kerb") ||
-                name.Contains("rumble") ||
-                name.Contains("rmbl") ||
-                name.Contains("rdcp") ||
-                name.Contains("runoff") ||
-                name.Contains("road_rk_green") ||
-                name.Contains("skid") ||
-                name.Contains("groove") ||
-                name == "grid" ||
-                name.StartsWith("line");
+                name.Contains("tarmac");
         }
 
         private static bool IsPrimaryTrackContextSurface(
@@ -1481,7 +2804,8 @@ namespace F1XR.RestAPI.Replay
             IReadOnlyList<Vector3> sourcePath,
             Vector3 sourceCenter,
             Quaternion sourceToLocalRotation,
-            float padding)
+            float lateralPadding,
+            float longitudinalPadding)
         {
             if (sourcePath == null || sourcePath.Count == 0)
                 return new Bounds(Vector3.zero, new Vector3(0.1f, 0.04f, 0.1f));
@@ -1495,8 +2819,14 @@ namespace F1XR.RestAPI.Replay
                     sourceToLocalRotation * (sourcePath[i] - sourceCenter));
             }
 
-            float safePadding = Mathf.Max(0f, padding);
-            bounds.Expand(new Vector3(safePadding * 2f, 0.04f, safePadding * 2f));
+            float safeLateralPadding = Mathf.Max(0f, lateralPadding);
+            float safeLongitudinalPadding = Mathf.Max(
+                0f,
+                longitudinalPadding);
+            bounds.Expand(new Vector3(
+                safeLateralPadding * 2f,
+                0.04f,
+                safeLongitudinalPadding * 2f));
             return bounds;
         }
 

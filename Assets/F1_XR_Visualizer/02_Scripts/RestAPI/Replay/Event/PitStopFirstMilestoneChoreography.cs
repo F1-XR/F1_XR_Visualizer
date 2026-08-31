@@ -750,6 +750,15 @@ namespace F1XR.RestAPI.Replay
                     corner.Outward,
                     corner.TyreDiameter,
                     corner.TyreDiameter * 0.55f);
+                MatchStandbyLayoutToFl(
+                    flGround,
+                    crewTransitions[0],
+                    crewTransitions[1],
+                    crewTransitions[2],
+                    corner,
+                    crewTransitions[transitionIndex],
+                    crewTransitions[transitionIndex + 1],
+                    crewTransitions[transitionIndex + 2]);
             }
 
             CreateAnchor(
@@ -1698,6 +1707,59 @@ namespace F1XR.RestAPI.Replay
                 EgressStart = egressStart,
                 EgressEnd = egressEnd
             };
+        }
+
+        private void MatchStandbyLayoutToFl(
+            Vector3 flGround,
+            CrewTransition flGunner,
+            CrewTransition flWheelOff,
+            CrewTransition flWheelOn,
+            WheelServiceCorner targetCorner,
+            CrewTransition targetGunner,
+            CrewTransition targetWheelOff,
+            CrewTransition targetWheelOn)
+        {
+            Vector3 targetGround = new(
+                targetCorner.Hub.x,
+                0f,
+                targetCorner.Hub.z);
+            Vector3 targetTangent = targetCorner.IsFront
+                ? Vector3.forward
+                : Vector3.back;
+            targetGunner.StandbyPosition = MapFlStandbyPosition(
+                flGunner.StandbyPosition,
+                flGround,
+                targetGround,
+                targetCorner.Outward,
+                targetTangent);
+            targetWheelOff.StandbyPosition = MapFlStandbyPosition(
+                flWheelOff.StandbyPosition,
+                flGround,
+                targetGround,
+                targetCorner.Outward,
+                targetTangent);
+            targetWheelOn.StandbyPosition = MapFlStandbyPosition(
+                flWheelOn.StandbyPosition,
+                flGround,
+                targetGround,
+                targetCorner.Outward,
+                targetTangent);
+        }
+
+        private Vector3 MapFlStandbyPosition(
+            Vector3 flStandbyPosition,
+            Vector3 flGround,
+            Vector3 targetGround,
+            Vector3 targetOutward,
+            Vector3 targetTangent)
+        {
+            Vector3 flOffset = flStandbyPosition - flGround;
+            return targetGround +
+                targetOutward * Vector3.Dot(flOffset, flOutward) +
+                targetTangent * Vector3.Dot(
+                    flOffset,
+                    Vector3.forward) +
+                Vector3.up * flOffset.y;
         }
 
         private void SetCrewServicePositions()

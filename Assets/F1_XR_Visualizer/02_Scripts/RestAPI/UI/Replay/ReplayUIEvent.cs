@@ -20,6 +20,10 @@ namespace F1XR.RestAPI.UI
         private Button eventOpenPitButton;
         private Button eventPlayButton;
         private Button eventRestartButton;
+        private Button eventAccidentEditButton;
+        private Button eventAccidentResetButton;
+        private Button eventAccidentDoneButton;
+        private Button eventAccidentTrackButton;
         private Button eventNextButton;
         private Button eventCloseButton;
         private Button eventPitWallButton;
@@ -92,6 +96,30 @@ namespace F1XR.RestAPI.UI
             eventPlayButton = CreateEventButton("Play", 8f, -42f, 86f, ToggleEventPlay);
             eventRestartButton = CreateEventButton("Restart", 104f, -42f, 86f, RestartEvent);
             eventCloseButton = CreateEventButton("Close", 200f, -42f, 92f, CloseEvent);
+            eventAccidentEditButton = CreateEventButton(
+                "Edit Accident",
+                8f,
+                -84f,
+                284f,
+                EnterAccidentEdit);
+            eventAccidentResetButton = CreateEventButton(
+                "Reset",
+                8f,
+                -84f,
+                136f,
+                ResetAccidentEdit);
+            eventAccidentDoneButton = CreateEventButton(
+                "Done",
+                156f,
+                -84f,
+                136f,
+                CompleteAccidentEdit);
+            eventAccidentTrackButton = CreateEventButton(
+                "Track: ON",
+                8f,
+                -126f,
+                284f,
+                ToggleAccidentTrack);
             eventNextButton = CreateEventButton(
                 "Next Overtake",
                 8f,
@@ -444,6 +472,8 @@ namespace F1XR.RestAPI.UI
                 eventReplay.IsCollisionRevealComplete;
             bool collisionTimeLensGrabbed = collisionActive &&
                 eventReplay.IsCollisionTimeLensGrabbed;
+            bool accidentEditing = collisionActive &&
+                eventReplay.IsAccidentEditMode;
             bool pitActive = active && eventReplay.IsPitStopActive;
             bool pitEditing = pitActive &&
                 pitWallPresenter != null &&
@@ -459,11 +489,16 @@ namespace F1XR.RestAPI.UI
                 !active && !loading);
             eventOpenPitButton.gameObject.SetActive(!active && !loading);
             eventPlayButton.gameObject.SetActive(
-                active &&
-                (!collisionActive || collisionRevealComplete));
+                active && !collisionActive);
             eventRestartButton.gameObject.SetActive(
                 active &&
-                (!collisionActive || collisionRevealComplete));
+                (!collisionActive || collisionRevealComplete) &&
+                !accidentEditing);
+            eventAccidentEditButton.gameObject.SetActive(
+                collisionActive && !accidentEditing);
+            eventAccidentResetButton.gameObject.SetActive(accidentEditing);
+            eventAccidentDoneButton.gameObject.SetActive(accidentEditing);
+            eventAccidentTrackButton.gameObject.SetActive(collisionActive);
             eventNextButton.gameObject.SetActive(
                 active && !collisionActive);
             eventPitWallButton.gameObject.SetActive(pitActive);
@@ -476,7 +511,7 @@ namespace F1XR.RestAPI.UI
                 active && !collisionActive);
             eventControls.sizeDelta = new Vector2(
                 300f,
-                pitActive ? 268f : 184f);
+                pitActive ? 268f : collisionActive ? 226f : 184f);
             SetRect(
                 eventSlider.GetComponent<RectTransform>(),
                 12f,
@@ -559,7 +594,9 @@ namespace F1XR.RestAPI.UI
 
             string title = FormatEventTitle(
                 eventReplay.CurrentEvent);
-            eventStatus.text = pitEditing
+            eventStatus.text = accidentEditing
+                ? "EDIT ACCIDENT  /  GRAB  /  TWO-HAND SCALE"
+                : pitEditing
                 ? "EDIT PIT  /  GRAB TOP  /  TWO-HAND"
                 : pitActive &&
                                pitWallPresenter != null &&
@@ -572,6 +609,26 @@ namespace F1XR.RestAPI.UI
                     : FormatActiveEventStatus(
                         eventReplay,
                         title);
+            SetButton(
+                eventAccidentEditButton,
+                "Edit Accident",
+                collisionActive &&
+                !accidentEditing &&
+                eventReplay.CanEditAccident);
+            SetButton(
+                eventAccidentResetButton,
+                "Reset",
+                accidentEditing);
+            SetButton(
+                eventAccidentDoneButton,
+                "Done",
+                accidentEditing);
+            SetButton(
+                eventAccidentTrackButton,
+                eventReplay.IsCollisionTrackVisible
+                    ? "Track: ON"
+                    : "Track: OFF",
+                eventReplay.CanToggleCollisionTrack);
             SetButton(
                 eventPitEditButton,
                 pitEditing ? "Confirm" : "Edit Pit",
@@ -1065,6 +1122,30 @@ namespace F1XR.RestAPI.UI
             {
                 eventReplay?.Restart();
             }
+            RefreshEventControls();
+        }
+
+        private void EnterAccidentEdit()
+        {
+            player?.EventReplay?.EnterAccidentEditMode();
+            RefreshEventControls();
+        }
+
+        private void ResetAccidentEdit()
+        {
+            player?.EventReplay?.ResetAccidentEditTransform();
+            RefreshEventControls();
+        }
+
+        private void CompleteAccidentEdit()
+        {
+            player?.EventReplay?.CompleteAccidentEditMode();
+            RefreshEventControls();
+        }
+
+        private void ToggleAccidentTrack()
+        {
+            player?.EventReplay?.ToggleCollisionTrackVisibility();
             RefreshEventControls();
         }
 

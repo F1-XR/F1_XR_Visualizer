@@ -3154,6 +3154,7 @@ MonoBehaviour:
   enableCarLod: 0
   hideLeaderHighlightAfterRaceStart: 1
   leaderHighlightDelaySeconds: 10
+  fitinAutoOpenCollision: 1
   engineSound:
     useEngineSound: 1
     generateFallbackClips: 0

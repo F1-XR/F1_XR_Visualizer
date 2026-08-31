@@ -2564,8 +2564,20 @@ namespace F1XR.RestAPI.Replay
 
         private void CreateStageRoot()
         {
-            stageRoot = new GameObject("EventReplayStage");
+            stageRoot = new GameObject(
+                collisionShowcase != null
+                    ? "AccidentPresentationRoot"
+                    : "EventReplayStage");
             TryRestoreTableRelativePose();
+            if (collisionShowcase != null)
+            {
+                Debug.Log(
+                    "[CollisionPresentationRoot] authoritative root=" +
+                    "AccidentPresentationRoot; internal accident space " +
+                    "owns Cars, proxy environment and local VFX; future " +
+                    "placement supports position/yaw/uniform scale.",
+                    this);
+            }
         }
 
         private void ResolveStagePose(out Vector3 position, out Quaternion rotation)
@@ -3510,6 +3522,8 @@ namespace F1XR.RestAPI.Replay
             if (restoreTableTrack)
                 RestoreTableTrackRendering();
 
+            ClearAccidentEditMode();
+
             if (stageRoot != null)
                 stageRoot.SetActive(false);
 
@@ -4341,6 +4355,12 @@ namespace F1XR.RestAPI.Replay
                 color = color
             };
             return material;
+        }
+
+        private void OnDisable()
+        {
+            if (!TryClosePreparedCollision())
+                collisionIncidentPresentation?.HidePrepared();
         }
 
         private void OnDestroy()

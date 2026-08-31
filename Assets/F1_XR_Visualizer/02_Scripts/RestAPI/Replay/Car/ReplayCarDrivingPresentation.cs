@@ -63,6 +63,7 @@ namespace F1XR.RestAPI.Replay
         private bool hasShowcasePosition;
         private bool configured;
         private bool showcaseEmphasis;
+        private bool contactShadowAllowed = true;
         private bool brakeCueVisible;
         private bool brakeCueColorValid;
         private bool lastBrakeCueActive;
@@ -212,11 +213,11 @@ namespace F1XR.RestAPI.Replay
 
             if (enabled && speedStreakRoot == null)
                 CreateSpeedStreaks();
-            if (enabled && contactShadow == null)
+            if (enabled && contactShadowAllowed && contactShadow == null)
                 CreateContactShadow();
 
             if (contactShadow != null)
-                contactShadow.SetActive(enabled);
+                contactShadow.SetActive(enabled && contactShadowAllowed);
 
             if (brakeCue != null)
             {
@@ -229,6 +230,13 @@ namespace F1XR.RestAPI.Replay
 
             ApplyBrakeCue(currentBrake);
             ApplySpeedStreaks(currentSpeedKph);
+        }
+
+        public void SetContactShadowAllowed(bool allowed)
+        {
+            contactShadowAllowed = allowed;
+            if (contactShadow != null)
+                contactShadow.SetActive(allowed && showcaseEmphasis);
         }
 
         public float ResolveShowcaseGroundLiftWorld()
@@ -937,6 +945,14 @@ namespace F1XR.RestAPI.Replay
             }
 
             SetDrivingPresentationLocalOffset(localLift);
+        }
+
+        public void SetDrivingContactShadowAllowed(bool allowed)
+        {
+            if (drivingPresentation == null)
+                ConfigureDrivingPresentation();
+
+            drivingPresentation.SetContactShadowAllowed(allowed);
         }
     }
 }

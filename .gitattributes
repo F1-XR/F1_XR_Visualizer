@@ -135,6 +135,11 @@ Packages/packages-lock.json linguist-generated
 *.tiff                  lfs
 *.webp                  lfs
 
+# Keep the small, web-optimized portfolio media in regular Git so GitHub Pages
+# sparse checkout receives real files rather than Git LFS pointer text.
+portfolio/public/assets/*.webp -filter -diff -merge -text
+portfolio/public/assets/*.mp4  -filter -diff -merge -text
+
 # Compressed Archive
 *.7z                    lfs
 *.bz2                   lfs

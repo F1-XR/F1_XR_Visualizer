@@ -416,7 +416,7 @@ namespace F1XR.RestAPI.Replay.Tests
         }
 
         [Test]
-        public void RetainsRealWallStructureAndSuppressesDetachedBackdrop()
+        public void SuppressesPitWallAndDetachedBackdropsInEveryView()
         {
             ShowcasePortalPresentation presentation =
                 Create("PortalOccluderOwner")
@@ -496,9 +496,9 @@ namespace F1XR.RestAPI.Replay.Tests
             Assert.That(immersive, Is.Not.SameAs(source));
             Assert.That(source.GetIndexCount(1), Is.EqualTo(6));
             Assert.That(immersive.GetIndexCount(0), Is.EqualTo(3));
-            Assert.That(immersive.GetIndexCount(1), Is.EqualTo(3));
+            Assert.That(immersive.GetIndexCount(1), Is.EqualTo(0));
             Assert.That(immersive.GetIndexCount(2), Is.EqualTo(0));
-            Assert.That(immersive.GetIndexCount(3), Is.EqualTo(3));
+            Assert.That(immersive.GetIndexCount(3), Is.EqualTo(0));
             Assert.That(
                 presentation.PitOverheadOccluderSuppressed,
                 Is.True);

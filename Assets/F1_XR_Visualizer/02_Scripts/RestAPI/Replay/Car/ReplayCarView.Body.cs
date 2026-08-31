@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -17,9 +18,17 @@ namespace F1XR.RestAPI.Replay
 
         private readonly List<Renderer> bodyRenderers = new();
         private readonly Dictionary<Renderer, MaterialPropertyBlock> bodyBlocks = new();
+        private readonly List<CollisionTintSlot> collisionTintSlots = new();
         private bool bodyRenderersDirty = true;
         private float visualWidth;
         private float visualLength;
+
+        private sealed class CollisionTintSlot
+        {
+            public Renderer Renderer;
+            public int MaterialIndex;
+            public MaterialPropertyBlock Original;
+        }
 
         private void ApplyBodyHighlight()
         {
@@ -132,6 +141,217 @@ namespace F1XR.RestAPI.Replay
         public bool TryGetBodyBounds(out Bounds bounds)
         {
             return TryGetCarBounds(out bounds);
+        }
+
+        internal bool TryGetCollisionFootprint(
+            out Vector2 centerRightForward,
+            out float length,
+            out float width)
+        {
+            RefreshBodyRenderers();
+            centerRightForward = Vector2.zero;
+            length = 0f;
+            width = 0f;
+            float minimumRight = float.PositiveInfinity;
+            float maximumRight = float.NegativeInfinity;
+            float minimumForward = float.PositiveInfinity;
+            float maximumForward = float.NegativeInfinity;
+
+            for (int rendererIndex = 0;
+                 rendererIndex < bodyRenderers.Count;
+                 rendererIndex++)
+            {
+                Renderer item = bodyRenderers[rendererIndex];
+                if (item == null)
+                    continue;
+                Bounds bounds = item.localBounds;
+                Matrix4x4 rendererToCar =
+                    LogicalRoot.worldToLocalMatrix *
+                    item.transform.localToWorldMatrix;
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    Vector3 localPoint = new(
+                        (corner & 1) == 0
+                            ? bounds.min.x
+                            : bounds.max.x,
+                        (corner & 2) == 0
+                            ? bounds.min.y
+                            : bounds.max.y,
+                        (corner & 4) == 0
+                            ? bounds.min.z
+                            : bounds.max.z);
+                    Vector3 carPoint =
+                        rendererToCar.MultiplyPoint3x4(localPoint);
+                    minimumRight = Mathf.Min(minimumRight, carPoint.x);
+                    maximumRight = Mathf.Max(maximumRight, carPoint.x);
+                    minimumForward = Mathf.Min(minimumForward, carPoint.z);
+                    maximumForward = Mathf.Max(maximumForward, carPoint.z);
+                }
+            }
+
+            if (float.IsInfinity(minimumRight) ||
+                float.IsInfinity(minimumForward))
+            {
+                return false;
+            }
+
+            centerRightForward = new Vector2(
+                (minimumRight + maximumRight) * 0.5f,
+                (minimumForward + maximumForward) * 0.5f);
+            width = Mathf.Max(0.001f, maximumRight - minimumRight);
+            length = Mathf.Max(
+                0.001f,
+                maximumForward - minimumForward);
+            return true;
+        }
+
+        internal int ApplyCollisionBodyTint(Color color)
+        {
+            ClearCollisionBodyTint();
+            RefreshBodyRenderers();
+            int applied = ApplyCollisionBodyTintPass(color, true);
+            if (applied == 0)
+                applied = ApplyCollisionBodyTintPass(color, false);
+
+            if (renderLodProxyRenderer != null)
+            {
+                applied += ApplyCollisionTintSlot(
+                    renderLodProxyRenderer,
+                    0,
+                    color);
+            }
+            return applied;
+        }
+
+        internal void ClearCollisionBodyTint()
+        {
+            for (int i = collisionTintSlots.Count - 1; i >= 0; i--)
+            {
+                CollisionTintSlot slot = collisionTintSlots[i];
+                if (slot?.Renderer == null)
+                    continue;
+                slot.Renderer.SetPropertyBlock(
+                    slot.Original,
+                    slot.MaterialIndex);
+            }
+            collisionTintSlots.Clear();
+        }
+
+        private int ApplyCollisionBodyTintPass(
+            Color color,
+            bool preferredOnly)
+        {
+            int applied = 0;
+            for (int rendererIndex = 0;
+                 rendererIndex < bodyRenderers.Count;
+                 rendererIndex++)
+            {
+                Renderer renderer = bodyRenderers[rendererIndex];
+                if (renderer == null)
+                    continue;
+                Material[] shared = renderer.sharedMaterials;
+                for (int materialIndex = 0;
+                     materialIndex < shared.Length;
+                     materialIndex++)
+                {
+                    Material material = shared[materialIndex];
+                    if (!IsCollisionTintCandidate(
+                            renderer,
+                            material,
+                            preferredOnly))
+                    {
+                        continue;
+                    }
+                    applied += ApplyCollisionTintSlot(
+                        renderer,
+                        materialIndex,
+                        color);
+                }
+            }
+            return applied;
+        }
+
+        private int ApplyCollisionTintSlot(
+            Renderer renderer,
+            int materialIndex,
+            Color color)
+        {
+            if (renderer == null || materialIndex < 0)
+                return 0;
+            MaterialPropertyBlock original = new();
+            renderer.GetPropertyBlock(original, materialIndex);
+            MaterialPropertyBlock tinted = new();
+            renderer.GetPropertyBlock(tinted, materialIndex);
+            tinted.SetColor(BaseColorId, color);
+            tinted.SetColor(ColorId, color);
+            renderer.SetPropertyBlock(tinted, materialIndex);
+            collisionTintSlots.Add(new CollisionTintSlot
+            {
+                Renderer = renderer,
+                MaterialIndex = materialIndex,
+                Original = original
+            });
+            return 1;
+        }
+
+        private static bool IsCollisionTintCandidate(
+            Renderer renderer,
+            Material material,
+            bool preferredOnly)
+        {
+            if (renderer == null || material == null ||
+                (!material.HasProperty(BaseColorId) &&
+                 !material.HasProperty(ColorId)))
+            {
+                return false;
+            }
+
+            string combined = $"{renderer.name} {material.name}";
+            if (ContainsCollisionTintToken(
+                combined,
+                "tyre", "tire", "wheel", "rim", "glass", "window",
+                "windscreen", "carbon", "brake", "suspension", "halo"))
+            {
+                return false;
+            }
+
+            Color source = material.HasProperty(BaseColorId)
+                ? material.GetColor(BaseColorId)
+                : material.GetColor(ColorId);
+            Color.RGBToHSV(source, out float hue, out float saturation,
+                out float value);
+            bool usablePaint = source.a > 0.5f &&
+                saturation > 0.15f && value > 0.14f;
+            if (!usablePaint)
+                return false;
+            if (!preferredOnly)
+                return true;
+
+            bool bodyNamed = ContainsCollisionTintToken(
+                combined,
+                "body", "chassis", "paint", "livery", "nose",
+                "sidepod", "engine", "cover", "cowling", "fairing");
+            bool visiblyCool = hue >= 0.48f && hue <= 0.75f &&
+                saturation > 0.2f;
+            return bodyNamed || visiblyCool;
+        }
+
+        private static bool ContainsCollisionTintToken(
+            string value,
+            params string[] tokens)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+            for (int i = 0; i < tokens.Length; i++)
+            {
+                if (value.IndexOf(
+                    tokens[i],
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         internal bool TryGetVisualGroundOffset(

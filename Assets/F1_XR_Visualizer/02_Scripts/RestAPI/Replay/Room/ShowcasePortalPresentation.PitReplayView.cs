@@ -20,14 +20,11 @@ namespace F1XR.RestAPI.Replay.Room
         private const string SuzukaContextMeshName =
             "SuzukaPitLaneContextMesh";
         private const string SuzukaWallMaterialName = "WALL1";
-        private const float SuzukaGarageStructureMinX = 1.65f;
-        private const float SuzukaGarageStructureMaxX = 6.75f;
-        private const float SuzukaGarageStructureMaxY = 3.25f;
-        private const float SuzukaGarageVerticalNormalY = 0.35f;
         private static readonly HashSet<string>
             SuzukaDetachedBackdropMaterialNames = new(
                 System.StringComparer.OrdinalIgnoreCase)
             {
+                "garageback",
                 "TWALL",
                 "TWALL1",
                 "GRDR",
@@ -225,10 +222,9 @@ namespace F1XR.RestAPI.Replay.Room
                     if (material.name == SuzukaWallMaterialName)
                     {
                         pitOverheadContextMesh.SetIndices(
-                            CreateSuzukaWallArchitectureIndices(
-                                pitOverheadContextSourceMesh,
+                            System.Array.Empty<int>(),
+                            pitOverheadContextSourceMesh.GetTopology(
                                 subMesh),
-                            MeshTopology.Triangles,
                             subMesh,
                             false);
                     }
@@ -282,65 +278,6 @@ namespace F1XR.RestAPI.Replay.Room
             }
 
             return false;
-        }
-
-        private static int[] CreateSuzukaWallArchitectureIndices(
-            Mesh source,
-            int subMesh)
-        {
-            if (source == null ||
-                subMesh < 0 ||
-                subMesh >= source.subMeshCount ||
-                source.GetTopology(subMesh) != MeshTopology.Triangles)
-            {
-                return System.Array.Empty<int>();
-            }
-
-            Vector3[] vertices = source.vertices;
-            int[] sourceIndices = source.GetIndices(subMesh);
-            List<int> retained = new(sourceIndices.Length);
-            for (int index = 0;
-                 index + 2 < sourceIndices.Length;
-                 index += 3)
-            {
-                int first = sourceIndices[index];
-                int second = sourceIndices[index + 1];
-                int third = sourceIndices[index + 2];
-                if (first < 0 || first >= vertices.Length ||
-                    second < 0 || second >= vertices.Length ||
-                    third < 0 || third >= vertices.Length)
-                {
-                    continue;
-                }
-
-                Vector3 a = vertices[first];
-                Vector3 b = vertices[second];
-                Vector3 c = vertices[third];
-                Vector3 normal = Vector3.Cross(b - a, c - a);
-                if (normal.sqrMagnitude <= Mathf.Epsilon)
-                    continue;
-
-                float centerX = (a.x + b.x + c.x) / 3f;
-                float highestY = Mathf.Max(a.y, Mathf.Max(b.y, c.y));
-                bool isGarageSide =
-                    centerX >= SuzukaGarageStructureMinX &&
-                    centerX <= SuzukaGarageStructureMaxX;
-                bool isVerticalStructure =
-                    Mathf.Abs(normal.normalized.y) <=
-                    SuzukaGarageVerticalNormalY;
-                if (!isGarageSide ||
-                    !isVerticalStructure ||
-                    highestY > SuzukaGarageStructureMaxY)
-                {
-                    continue;
-                }
-
-                retained.Add(first);
-                retained.Add(second);
-                retained.Add(third);
-            }
-
-            return retained.ToArray();
         }
 
         private bool UsesPitTacticalView(Camera portalCamera) =>

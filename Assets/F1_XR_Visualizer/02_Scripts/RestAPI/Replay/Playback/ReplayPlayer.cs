@@ -59,6 +59,9 @@ namespace F1XR.RestAPI.Replay
         public bool enableCarLod = true;
         public bool hideLeaderHighlightAfterRaceStart = true;
         public float leaderHighlightDelaySeconds = 10f;
+        [Header("Fit-in Development Event")]
+        [Tooltip("Off opens the pit stop showcase. On opens the collision showcase.")]
+        public bool fitinAutoOpenCollision;
         public CarEngineSoundSettings engineSound = new();
         public OvertakeMotionSettings overtakeMotion = new();
         public OvertakeApproachRibbonSettings overtakeApproachRibbon =
@@ -138,6 +141,8 @@ namespace F1XR.RestAPI.Replay
             buildPlacer.PlacementMode != TrackPlacementMode.Free;
         public bool IsTrackEditMode => buildPlacer != null && buildPlacer.IsEditMode;
         public bool CanUndoTrackManipulation => buildPlacer != null && buildPlacer.CanUndo;
+        internal bool UseFitinCollisionViewerPresentation =>
+            IsFitinScene && fitinAutoOpenCollision;
         public event Action<int> SelectedDriverChanged;
 
         public void SetEngineAudioDistanceScale(float value)
@@ -445,6 +450,47 @@ namespace F1XR.RestAPI.Replay
             return true;
         }
 
+        internal bool TryCreateCollisionTrackGeometrySource(
+            Transform parent,
+            out Transform sourceRoot,
+            out GameObject ownedRoot)
+        {
+            sourceRoot = null;
+            ownedRoot = null;
+            if (parent == null || trackAssets == null || _manifest == null)
+                return false;
+
+            for (int index = 0; index < trackAssets.Length; index++)
+            {
+                TrackAsset asset = trackAssets[index];
+                if (!asset.Matches(null, _manifest))
+                    continue;
+
+                GameObject prefab = asset.mapPrefab != null
+                    ? asset.mapPrefab
+                    : asset.visualizerPrefab;
+                if (prefab == null)
+                    continue;
+
+                ownedRoot = new GameObject(
+                    "CollisionActualSuzukaGeometrySource");
+                ownedRoot.transform.SetParent(parent, false);
+                GameObject instance = Instantiate(
+                    prefab,
+                    ownedRoot.transform);
+                instance.name = prefab.name;
+                instance.transform.SetLocalPositionAndRotation(
+                    Vector3.zero,
+                    Quaternion.identity);
+                instance.transform.localScale =
+                    Vector3.one * asset.MapScale;
+                sourceRoot = ownedRoot.transform;
+                return true;
+            }
+
+            return false;
+        }
+
         internal float GetTrackMapScaleRatio()
         {
             Transform track = GetTrackPlacementTransform();
@@ -524,10 +570,28 @@ namespace F1XR.RestAPI.Replay
 
             if (IsFitinScene &&
                 !fitinAutoPitStopRequested &&
-                eventReplay != null &&
-                eventReplay.TryOpenFirstPitStop())
+                eventReplay != null)
             {
-                fitinAutoPitStopRequested = true;
+                if (fitinAutoOpenCollision)
+                {
+                    if (!eventReplay.IsCollisionPrepared &&
+                        string.IsNullOrWhiteSpace(
+                            eventReplay.CollisionPreparationFailure))
+                    {
+                        eventReplay.PreloadTestCollision();
+                    }
+
+                    if (eventReplay.IsCollisionPrepared)
+                    {
+                        eventReplay.OpenTestCollision();
+                        fitinAutoPitStopRequested =
+                            eventReplay.IsCurrentCollision;
+                    }
+                }
+                else if (eventReplay.TryOpenFirstPitStop())
+                {
+                    fitinAutoPitStopRequested = true;
+                }
             }
 
             if (eventPresentationSuppressed)

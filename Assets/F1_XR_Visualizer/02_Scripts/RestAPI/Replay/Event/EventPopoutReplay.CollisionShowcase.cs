@@ -333,11 +333,15 @@ namespace F1XR.RestAPI.Replay
             string datasetId = player?.Manifest != null
                 ? player.Manifest.datasetId
                 : string.Empty;
-            int layoutRevision = ResolveCollisionShowcaseLayout() != null
-                ? collisionShowcaseLayout.LayoutRevision
-                : -1;
+            bool viewerPresentation = player != null &&
+                player.UseFitinCollisionViewerPresentation;
+            int layoutRevision = !viewerPresentation &&
+                ResolveCollisionShowcaseLayout() != null
+                    ? collisionShowcaseLayout.LayoutRevision
+                    : -1;
             int trackGeometryRevision = 0;
-            if (RequiresCollisionTrackGeometry())
+            if (RequiresCollisionTrackGeometry() &&
+                !viewerPresentation)
             {
                 trackGeometryRevision = player != null &&
                     player.TryGetReadyTrackGeometrySource(
@@ -411,6 +415,8 @@ namespace F1XR.RestAPI.Replay
                     ResolveCollisionContactPosition(),
                     0.12f);
                 stageRoot.SetActive(true);
+                EnsureAccidentEditModeReady();
+                LogCollisionViewerPlacement();
                 return;
             }
 
@@ -455,6 +461,34 @@ namespace F1XR.RestAPI.Replay
                 collisionResolvedStageScale * parentWorldScale);
             SetStageInteractionEnabled(false);
             stageRoot.SetActive(true);
+            EnsureAccidentEditModeReady();
+            LogCollisionViewerPlacement();
+        }
+
+        private void LogCollisionViewerPlacement()
+        {
+            if (PresentationRoot == null || Camera.main == null)
+                return;
+
+            Transform viewer = Camera.main.transform;
+            Vector3 flatForward = Vector3.ProjectOnPlane(
+                viewer.forward,
+                Vector3.up);
+            if (flatForward.sqrMagnitude < 0.001f)
+                flatForward = Vector3.forward;
+            else
+                flatForward.Normalize();
+
+            Vector3 placedFocus = PresentationRoot.TransformPoint(
+                ResolveCollisionContactPosition());
+            Vector3 viewerToFocus = placedFocus - viewer.position;
+            Debug.Log(
+                $"[CollisionPlacementAudit] contactForward=" +
+                $"{Vector3.Dot(viewerToFocus, flatForward):0.000}m, " +
+                $"contactBelowEye={-viewerToFocus.y:0.000}m, " +
+                $"contactWorld={placedFocus:F3}, " +
+                $"stageScale={collisionResolvedStageScale:0.000000}.",
+                this);
         }
 
         private bool TryRefreshCollisionPlacementForActivation()
@@ -645,7 +679,10 @@ namespace F1XR.RestAPI.Replay
                 collisionShowcase.otherWallMarginMeters);
 
             bool placementReady = collisionRoomPlacementResolver.Prepare(
-                ResolveCollisionShowcaseLayout(),
+                player != null &&
+                player.UseFitinCollisionViewerPresentation
+                    ? null
+                    : ResolveCollisionShowcaseLayout(),
                 Camera.main,
                 sourceGeometryRevision,
                 content,
@@ -1030,6 +1067,16 @@ namespace F1XR.RestAPI.Replay
                     desiredFocus -
                     PresentationRoot.TransformPoint(
                         focusLocal);
+                Vector3 placedFocus =
+                    PresentationRoot.TransformPoint(focusLocal);
+                Vector3 viewerToFocus = placedFocus - viewer.position;
+                Debug.Log(
+                    $"[CollisionPlacement] mode=ViewerCompact, " +
+                    $"contactForward=" +
+                    $"{Vector3.Dot(viewerToFocus, flatForward):0.000}m, " +
+                    $"contactBelowEye={-viewerToFocus.y:0.000}m, " +
+                    $"contactWorld={placedFocus:F3}.",
+                    this);
             }
 
             float safeWorldScale = Mathf.Max(
@@ -2374,6 +2421,24 @@ namespace F1XR.RestAPI.Replay
                 ? collisionIncidentPresentation.Phase
                 : CollisionPresentationPhase.Preparing;
 
+        public bool CanToggleCollisionTrack =>
+            isActive &&
+            IsCurrentCollision &&
+            collisionIncidentPresentation != null &&
+            collisionIncidentPresentation.CanToggleForensicsTrack;
+
+        public bool IsCollisionTrackVisible =>
+            CanToggleCollisionTrack &&
+            collisionIncidentPresentation.IsForensicsTrackVisible;
+
+        public void ToggleCollisionTrackVisibility()
+        {
+            if (!CanToggleCollisionTrack)
+                return;
+
+            collisionIncidentPresentation.ToggleForensicsTrackVisibility();
+        }
+
         public bool IsCollisionImpactReplaying =>
             isActive &&
             IsCurrentCollision &&
@@ -2450,7 +2515,10 @@ namespace F1XR.RestAPI.Replay
                 CreatePresentationEvent(source);
             Transform trackGeometrySource = null;
             int trackGeometryRevision = 0;
+            bool viewerPresentation =
+                player.UseFitinCollisionViewerPresentation;
             if (RequiresCollisionTrackGeometry() &&
+                !viewerPresentation &&
                 !player.TryGetReadyTrackGeometrySource(
                     out trackGeometrySource,
                     out trackGeometryRevision))
@@ -2752,9 +2820,12 @@ namespace F1XR.RestAPI.Replay
                     reportedTime,
                     observedTime,
                     collisionShowcase,
-                    trackGeometrySource,
+                    null,
                     eventSpaceCenter,
                     sourceToEventRotation);
+            collisionPresentationContactTime =
+                collisionIncidentPresentation
+                    .VisualContactPresentationTime;
             yield return null;
 
             ShowCollisionCars(CollisionPresentationContactTime);
@@ -2861,10 +2932,10 @@ namespace F1XR.RestAPI.Replay
             CollisionTrajectoryForensicsOptions options = new()
             {
                 visibleLeadSeconds = Mathf.Max(
-                    1.35f,
+                    3.35f,
                     collisionShowcase.observedLeadSeconds),
                 vehicleRevealLeadSeconds = Mathf.Max(
-                    1.35f,
+                    3.35f,
                     collisionShowcase.observedLeadSeconds),
                 visibleTailSeconds = Mathf.Max(
                     0.1f,
@@ -3046,6 +3117,11 @@ namespace F1XR.RestAPI.Replay
             ActivateCollisionPresentationStage();
             ShowCollisionCars(CollisionPresentationContactTime);
             collisionIncidentPresentation.BeginReveal();
+            float openingReplayTime =
+                collisionIncidentPresentation.Tick(0f);
+            timeline.SetTime(openingReplayTime);
+            ShowCollisionCars(openingReplayTime);
+            collisionIncidentPresentation.ApplyVehicleMotion();
             eventAudio?.SetPlaying(false);
 
             if (collisionFirstFrameRoutine != null)
@@ -3071,6 +3147,15 @@ namespace F1XR.RestAPI.Replay
                 eventCars == null ||
                 currentEvent == null)
             {
+                return;
+            }
+
+            UpdateAccidentEditMode();
+            if (accidentEditModeActive)
+            {
+                timeline.Pause();
+                eventAudio?.SetPlaying(false);
+                collisionIncidentPresentation.ApplyVehicleMotion();
                 return;
             }
 
@@ -3141,6 +3226,8 @@ namespace F1XR.RestAPI.Replay
                 return false;
             }
 
+            SuspendAccidentEditModeForClose();
+
             if (collisionFirstFrameRoutine != null)
             {
                 StopCoroutine(collisionFirstFrameRoutine);
@@ -3182,6 +3269,12 @@ namespace F1XR.RestAPI.Replay
         {
             if (!RequiresCollisionTrackGeometry())
                 return true;
+
+            if (player != null &&
+                player.UseFitinCollisionViewerPresentation)
+            {
+                return expectedSource == null;
+            }
 
             return player != null &&
                 player.TryGetReadyTrackGeometrySource(
